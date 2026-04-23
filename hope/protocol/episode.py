@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 
 class Goal(BaseModel):
-    type: Literal["CPA", "ROAS", "CONVERSIONS", "COST"]
+    type: str  # CPA, ROAS, CONVERSIONS, COST, cost_per_conversion, etc.
     target: float
     deviation: float
     tolerance: float
