@@ -1,0 +1,47 @@
+# ============================================================================
+# OPERATOR-ONLY Render manifest. Public miners do NOT need this file.
+#
+# This manifest deploys the operator's hosted SN21 validator. Public miners
+# run `hope-miner` against an existing validator URL — see
+# docs/miner_quickstart.md.
+#
+# Service type is "web" — keeps the existing service + custom domain alive.
+# The on-chain validator is a one-shot per-epoch process, so start_validator.sh
+# spins up a tiny health endpoint on $PORT in the background to satisfy
+# Render's port-binding requirement, then runs the validator. Trigger a
+# redeploy each epoch by bumping RELEASE_KEY in the dashboard.
+#
+# This file ships with the public repo for now and will move to a private
+# deploy repo once that's wired up.
+# ============================================================================
+services:
+  - type: web
+    name: sn21-validator
+    runtime: python
+    plan: starter
+    buildCommand: pip install -e . && chmod +x scripts/start_validator.sh
+    startCommand: bash scripts/start_validator.sh
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: HOTKEY_NAME
+        value: default
+      - key: BT_NETWORK
+        value: finney
+      - key: NETUID
+        value: "21"
+      # Sensitive values — set in Render dashboard, not here:
+      #   WALLET_NAME           Bittensor wallet name
+      #   RELEASE_KEY           Current epoch / release key
+      #   HOTKEY_B64            base64-encoded hotkey file
+      #   COLDKEYPUB_B64        base64-encoded coldkeypub.txt
+      #   ED25519_KEY_B64       base64-encoded ed25519 PEM (for inner_sig)
+      #   HOPE_API_KEY          operator data API key
+      #   HOPE_API_URL          operator data API base URL
+      #   ARCHIVE_TIER_2_URLS   comma-separated Tier-2 archive base URLs (optional)
+      #
+      # NOTE: BT_NETWORK and NETUID must agree:
+      #   mainnet → BT_NETWORK=finney, NETUID=21
+      #   testnet → BT_NETWORK=test,   NETUID=466
