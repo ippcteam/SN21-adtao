@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from hope.protocol.episode import Episode
 from hope.protocol.prediction import Prediction, HorizonPrediction

@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
-from hope.constants import EPOCH_DURATION_DAYS, PREDICTION_DEADLINE_HOURS
+from hope.constants import PREDICTION_DEADLINE_HOURS
 from hope.protocol.episode import Episode
 from hope.protocol.outcomes import Outcome
 from hope.protocol.prediction import Prediction

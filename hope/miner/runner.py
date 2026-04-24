@@ -129,7 +129,7 @@ def main():
     result = loop.run_until_complete(runner.run_epoch(args.epoch))
     loop.close()
 
-    print(f"\nResults:")
+    print("\nResults:")
     for k, v in result.items():
         print(f"  {k}: {v}")
 

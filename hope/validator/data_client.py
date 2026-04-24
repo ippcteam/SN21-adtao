@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import httpx
 
 from hope.constants import HOPE_API_BASE_URL, HOPE_API_VERSION
-from hope.protocol.episode import Episode, EpisodeMetadata, AccountState, PreWindow, ActionBundle
+from hope.protocol.episode import Episode
 from hope.protocol.outcomes import HorizonOutcome, Outcome, ScoringMetadata
 
 logger = logging.getLogger(__name__)

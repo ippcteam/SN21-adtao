@@ -1,6 +1,5 @@
 """Tests for the validator HTTP API."""
 
-import json
 
 from fastapi.testclient import TestClient
 
