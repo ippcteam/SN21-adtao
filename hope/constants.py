@@ -32,6 +32,14 @@ DEFAULT_WEIGHTS = {
     "goal_accuracy": 0.15,
 }
 
+# Launch action types (Phase 1 Epoch 1)
+LAUNCH_ACTION_TYPES = [
+    "BUDGET_CHANGE",
+    "BID_STRATEGY_CHANGE",
+    "TARGET_VALUE_CHANGE",
+    "CAMPAIGN_PAUSE",
+]
+
 # Horizon weights by measurement resolution
 HORIZON_WEIGHTS = {
     "high": {"7": 0.40, "14": 0.60},      # Launch: only 7+14
