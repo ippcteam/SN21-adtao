@@ -30,7 +30,7 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
         validator_state: Shared state dict injected by the validator runner.
             Contains epoch data, predictions, scores, etc.
     """
-    state = validator_state or {}
+    state = validator_state if validator_state is not None else {}
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

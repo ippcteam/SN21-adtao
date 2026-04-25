@@ -81,38 +81,13 @@ class EpochManager:
         self.history: list[EpochContext] = []
         self.scorer = EpochScorer()
 
-    def get_validator_state(self) -> dict:
-        """Get the shared state dict for the FastAPI app."""
-        if not self.current:
-            return {}
+    def get_validator_state(self) -> "LiveState":
+        """Get a live state proxy for the FastAPI app.
 
-        return {
-            "current_epoch_id": self.current.epoch_id,
-            "episodes": self.current.episodes,
-            "predictions": self.current.predictions,
-            "deadline": self.current.deadline,
-            "commitment": {
-                "hash": self.current.commitment_hash,
-                "merkle_root": self.current.merkle_root,
-                "committed_at": self.current.committed_at,
-                "episode_count": len(self.current.episodes),
-            } if self.current.commitment_hash else None,
-            "reveal": {
-                "commitment_hash": self.current.commitment_hash,
-                "salt": self.current.salt,
-                "scoring_weights": self.current.weights.to_commitment_json(),
-                "outcomes": [o.model_dump(mode="json") for o in self.current.outcomes],
-                "scores": {
-                    mid: {
-                        "raw_score": s.raw_score,
-                        "skill_score": s.skill_score,
-                        "final_score": s.final_score,
-                    }
-                    for mid, s in self.current.scores.items()
-                },
-            } if self.current.revealed_at else None,
-            "miner_scores": self.current.scores if self.current.scores else None,
-        }
+        Returns an object that always reads from self.current,
+        so scoring/reveal updates are visible immediately.
+        """
+        return LiveState(self)
 
     # -- State transitions --
 
@@ -256,3 +231,75 @@ class EpochManager:
         payload = f"{revealed_outcomes_json}{salt}{weights_json}"
         computed = hashlib.sha256(payload.encode()).hexdigest()
         return computed == self.current.commitment_hash
+
+
+class LiveState(dict):
+    """Dict-like proxy that reads from EpochManager.current on every access.
+
+    This ensures the FastAPI app always sees the latest epoch state,
+    including post-scoring results and revealed outcomes.
+    """
+
+    def __init__(self, manager: EpochManager):
+        super().__init__()
+        self._mgr = manager
+
+    def get(self, key, default=None):
+        ctx = self._mgr.current
+        if not ctx:
+            return default
+
+        if key == "current_epoch_id":
+            return ctx.epoch_id
+        if key == "episodes":
+            return ctx.episodes
+        if key == "predictions":
+            return ctx.predictions
+        if key == "deadline":
+            return ctx.deadline
+        if key == "registered_miners":
+            return set()
+        if key == "commitment":
+            if not ctx.commitment_hash:
+                return default
+            return {
+                "hash": ctx.commitment_hash,
+                "merkle_root": ctx.merkle_root,
+                "committed_at": ctx.committed_at,
+                "episode_count": len(ctx.episodes),
+            }
+        if key == "reveal":
+            if not ctx.revealed_at:
+                return default
+            return {
+                "commitment_hash": ctx.commitment_hash,
+                "salt": ctx.salt,
+                "scoring_weights": ctx.weights.to_commitment_json(),
+                "outcomes": [o.model_dump(mode="json") for o in ctx.outcomes],
+                "scores": {
+                    mid: {
+                        "raw_score": s.raw_score,
+                        "skill_score": s.skill_score,
+                        "final_score": s.final_score,
+                    }
+                    for mid, s in ctx.scores.items()
+                },
+            }
+        if key == "miner_scores":
+            return ctx.scores if ctx.scores else default
+        return default
+
+    def __getitem__(self, key):
+        result = self.get(key)
+        if result is None and key not in self:
+            raise KeyError(key)
+        return result
+
+    def __contains__(self, key):
+        return key in ("current_epoch_id", "episodes", "predictions", "deadline",
+                       "commitment", "reveal", "miner_scores", "registered_miners")
+
+    def __setitem__(self, key, value):
+        ctx = self._mgr.current
+        if ctx and key == "predictions":
+            ctx.predictions = value

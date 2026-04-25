@@ -54,11 +54,10 @@ async def submit_predictions(
     episodes = state.get("episodes", [])
     valid_ids = {ep.episode_metadata.episode_id for ep in episodes}
 
-    # Initialize predictions storage
-    if "predictions" not in state:
-        state["predictions"] = {}
-    if miner.hotkey not in state["predictions"]:
-        state["predictions"][miner.hotkey] = []
+    # Get predictions dict (LiveState returns it from EpochContext)
+    predictions = state.get("predictions", {})
+    if miner.hotkey not in predictions:
+        predictions[miner.hotkey] = []
 
     accepted = 0
     rejected = 0
@@ -96,7 +95,7 @@ async def submit_predictions(
                 horizons=horizons,
             )
 
-            state["predictions"][miner.hotkey].append(prediction)
+            predictions[miner.hotkey].append(prediction)
             accepted += 1
 
         except Exception as e:
@@ -109,5 +108,5 @@ async def submit_predictions(
         "accepted": accepted,
         "rejected": rejected,
         "errors": errors if errors else None,
-        "total_predictions": len(state["predictions"].get(miner.hotkey, [])),
+        "total_predictions": len(predictions.get(miner.hotkey, [])),
     }
