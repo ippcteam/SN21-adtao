@@ -66,6 +66,8 @@ hope-validator --release WR-2026-W18-PUB-E1 --port 8080
 
 Read the setup guide: [Validator Setup](docs/validator_setup.md)
 
+**Operations (cadence, workload, TBDs for launch):** [Miner operations](docs/MINER_OPERATIONS.md) · [Validator operations](docs/VALIDATOR_OPERATIONS.md)
+
 ---
 
 ## Repository Structure
