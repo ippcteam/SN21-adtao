@@ -2,7 +2,7 @@
 
 **Purpose:** Handoff list for the **HOPE application** and data pipeline that own governance, episode generation, and the **package API**. This work is **out of scope** for `tao-discovery` (subnet); the subnet only consumes `GET /internal/bittensor/v1/releases/<release_key>/package`.
 
-**Primary references:** `SN21_LAUNCH_DEVELOPER_SPEC.md` (authoritative for implementation), `SN21_LAUNCH_RECONCILIATION_SUMMARY.md` (decisions), plus referenced docs: `data_sharding_and_dataset_control_strategy.md`, `miner_data_delivery_structure.md`, `SN21_EPOCH_STRUCTURE_v1_2.md`, `SN21_REWARD_MECHANISM.md`.
+**Primary references:** `SN21_LAUNCH_DEVELOPER_SPEC.md` (authoritative for implementation), `SN21_LAUNCH_RECONCILIATION_SUMMARY.md` (decisions), plus referenced docs: `data_sharding_and_dataset_control_strategy.md`, `miner_data_delivery_structure.md`, `SN21_EPOCH_STRUCTURE.md`, `SN21_REWARD_MECHANISM.md` (this repo, `docs/`).
 
 **Companion:** Subnet-side gaps: [GAP_CHECKLIST_TAO_DISCOVERY.md](./GAP_CHECKLIST_TAO_DISCOVERY.md).
 

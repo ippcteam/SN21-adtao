@@ -36,6 +36,12 @@ Archetype data ───┘                             ──→ Serve episodes
 
 **Verification** is cryptographic: the validator commits to outcomes before distributing episodes. After scoring, outcomes are revealed and anyone can verify the commitment matches.
 
+### Specifications (economics & roadmap)
+
+- **[Miner economics (short)](docs/MINER_ECONOMICS.md)** — gates, tiers, multipliers, how this repo fits  
+- **[SN21 Reward Mechanism](docs/SN21_REWARD_MECHANISM.md)** — emissions, tiers, reviews, emergency rules  
+- **[SN21 Epoch Structure](docs/SN21_EPOCH_STRUCTURE.md)** — phases, campaign types, consolidation, announcements  
+
 ---
 
 ## Quick Start
@@ -52,7 +58,7 @@ pip install -e ".[miner]"
 hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY --epoch WR-2026-W18-PUB-E1
 ```
 
-Read the full guide: [Miner Quickstart](docs/miner_quickstart.md)
+Read the full guide: [Miner Quickstart](docs/miner_quickstart.md) · [Miner economics](docs/MINER_ECONOMICS.md)
 
 ### For Validators
 
@@ -113,8 +119,11 @@ tao-discovery/
 │           └── baseline.py         # Reference baseline model
 │
 ├── docs/
-│   ├── miner_quickstart.md     # Everything miners need to know
-│   ├── validator_setup.md      # Validator deployment guide
+│   ├── MINER_ECONOMICS.md       # Gates, tiers, multipliers (summary)
+│   ├── SN21_REWARD_MECHANISM.md # Emissions & governance spec
+│   ├── SN21_EPOCH_STRUCTURE.md  # Phases & epoch roadmap
+│   ├── miner_quickstart.md      # Tutorial & scoring detail
+│   ├── validator_setup.md      # Validator deployment
 │   └── PHASE1_BUILD_PLAN.md    # Build plan and architecture
 │
 ├── scripts/
