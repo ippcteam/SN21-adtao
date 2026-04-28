@@ -59,15 +59,24 @@ class WeightSetter:
             weights = [1.0 / len(uids)] * len(uids)
 
         # Apply EMA smoothing against previous weights
+        # BUT: miners with zero score (inactive/non-submitters) stay at zero
         if self.previous_weights:
             smoothed = []
             for uid, w in zip(uids, weights):
-                prev = self.previous_weights.get(uid, w)
-                smoothed_w = EMA_ALPHA * w + (1 - EMA_ALPHA) * prev
-                smoothed.append(smoothed_w)
+                if w == 0.0:
+                    # Hard zero for non-submitters — no EMA blending
+                    smoothed.append(0.0)
+                else:
+                    prev = self.previous_weights.get(uid, w)
+                    if prev == 0.0:
+                        # Miner was inactive last epoch, now active — no blend
+                        smoothed.append(w)
+                    else:
+                        smoothed_w = EMA_ALPHA * w + (1 - EMA_ALPHA) * prev
+                        smoothed.append(smoothed_w)
             weights = smoothed
 
-            # Re-normalize after smoothing
+            # Re-normalize (only non-zero weights)
             total = sum(weights)
             if total > 0:
                 weights = [w / total for w in weights]
