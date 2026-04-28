@@ -3,16 +3,15 @@
 Orchestrates the complete validator lifecycle:
 1. Initialize Bittensor wallet, subtensor, metagraph
 2. Fetch epoch data from HOPE API
-3. Compute and publish commitment on-chain
-4. Start FastAPI server for miner interaction
-5. Broadcast EpochAnnouncement to miners via dendrite
-6. Collect predictions until deadline
-7. Score all predictions
-8. Set weights on-chain
-9. Broadcast CommitmentReveal to miners
-10. Reveal outcomes
+3. Compute commitment hash
+4. Start FastAPI server for miner interaction (HTTP only — no Synapses)
+5. Collect predictions until deadline
+6. Score all predictions
+7. Set weights on-chain
+8. Reveal outcomes
 
-Supports both testnet (1-hour epochs) and mainnet (weekly epochs).
+HTTP-only architecture per Tensora recommendation — Synapses are not used.
+Miners discover epochs and interact entirely via the validator's HTTP API.
 """
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 class ValidatorRunner:
-    """Main validator runner with optional Bittensor integration."""
+    """Main validator runner — HTTP only, no Synapse transport."""
 
     def __init__(
         self,
@@ -64,10 +63,9 @@ class ValidatorRunner:
         self.wallet = None
         self.subtensor = None
         self.metagraph = None
-        self.dendrite = None
 
     def init_bittensor(self):
-        """Initialize Bittensor wallet, subtensor, metagraph, and dendrite."""
+        """Initialize Bittensor wallet, subtensor, and metagraph."""
         if self.no_chain:
             logger.info("Running without chain (--no-chain mode)")
             return
@@ -75,24 +73,17 @@ class ValidatorRunner:
         try:
             import bittensor as bt
 
-            # Wallet
-            self.wallet = bt.wallet(
+            self.wallet = bt.Wallet(
                 name=self.wallet_name,
                 hotkey=self.wallet_hotkey,
             )
             logger.info(f"Wallet loaded: {self.wallet_name}/{self.wallet_hotkey}")
 
-            # Subtensor
-            self.subtensor = bt.subtensor(network=self.network)
+            self.subtensor = bt.Subtensor(network=self.network)
             logger.info(f"Connected to subtensor: {self.network}")
 
-            # Metagraph
             self.metagraph = self.subtensor.metagraph(netuid=self.netuid)
             logger.info(f"Metagraph loaded: netuid={self.netuid}, n={self.metagraph.n}")
-
-            # Dendrite (for sending Synapses to miners)
-            self.dendrite = bt.dendrite(wallet=self.wallet)
-            logger.info("Dendrite initialized")
 
         except ImportError:
             logger.warning("Bittensor not installed — running in no-chain mode")
@@ -105,44 +96,30 @@ class ValidatorRunner:
         """Build hotkey → UID mapping from metagraph."""
         if not self.metagraph:
             return {}
-        uid_map = {}
-        for uid in range(self.metagraph.n):
-            hotkey = self.metagraph.hotkeys[uid]
-            uid_map[hotkey] = uid
-        return uid_map
+        return {self.metagraph.hotkeys[uid]: uid for uid in range(self.metagraph.n)}
 
     async def run_epoch(self, release_key: str) -> dict:
         """Run a complete epoch cycle for a given release."""
         logger.info(f"Starting epoch for release {release_key}")
 
-        # Step 1: Fetch data from HOPE
+        # Fetch data from HOPE
         logger.info("Fetching epoch data from HOPE API...")
         epoch_data = await self.hope_client.fetch_epoch_data(release_key)
 
         if not self.hope_client.verify_package_hash(epoch_data):
-            raise ValueError("Package hash verification failed — data may be corrupted")
+            raise ValueError("Package hash verification failed")
 
         logger.info(
             f"Fetched {epoch_data.episode_count} episodes, "
             f"{sum(1 for o in epoch_data.outcomes if o.t7)} with t7 outcomes"
         )
 
-        # Step 2: Prepare epoch (compute commitments)
+        # Prepare epoch (compute commitments)
         ctx = self.epoch_manager.prepare(epoch_data)
         logger.info(f"Epoch prepared. Commitment: {ctx.commitment_hash[:16]}...")
 
-        # Step 3: Publish commitment on-chain
-        if not self.no_chain:
-            from hope.commitment.on_chain import OnChainCommitment
-            chain = OnChainCommitment(self.subtensor, self.wallet, self.netuid)
-            await chain.publish_commitment(ctx.commitment_hash, release_key)
-
-        # Step 4: Start distribution
+        # Start distribution — miners fetch via HTTP
         self.epoch_manager.start_distribution()
-
-        # Step 5: Broadcast EpochAnnouncement to miners
-        if self.dendrite and self.metagraph:
-            await self.broadcast_epoch_announcement(ctx)
 
         return {
             "epoch_id": ctx.epoch_id,
@@ -152,39 +129,8 @@ class ValidatorRunner:
             "status": "collecting",
         }
 
-    async def broadcast_epoch_announcement(self, ctx):
-        """Send EpochAnnouncement Synapse to all miners."""
-        try:
-            from hope.protocol.synapse import EpochAnnouncement
-
-            synapse = EpochAnnouncement(
-                epoch_id=ctx.epoch_id,
-                episode_count=len(ctx.episodes),
-                commitment_root=ctx.merkle_root,
-                deadline=ctx.deadline,
-                api_endpoint=f"http://{self.host}:{self.port}",
-            )
-
-            # Get all miner axons from metagraph
-            axons = [self.metagraph.axons[uid] for uid in range(self.metagraph.n)
-                     if self.metagraph.axons[uid].is_serving]
-
-            if axons:
-                logger.info(f"Broadcasting EpochAnnouncement to {len(axons)} miners")
-                responses = await self.dendrite.forward(
-                    axons=axons,
-                    synapse=synapse,
-                    timeout=30,
-                )
-                logger.info(f"Broadcast complete: {len(responses)} responses")
-            else:
-                logger.warning("No serving miners found on metagraph")
-
-        except Exception as e:
-            logger.error(f"Error broadcasting epoch announcement: {e}")
-
     def score_epoch(self) -> dict:
-        """Score all submitted predictions, set weights, and reveal."""
+        """Score all submitted predictions and set weights on-chain."""
         # Score
         scores = self.epoch_manager.score()
 
@@ -206,12 +152,6 @@ class ValidatorRunner:
         # Reveal
         reveal = self.epoch_manager.reveal()
 
-        # Broadcast CommitmentReveal to miners
-        if self.dendrite and self.metagraph:
-            loop = asyncio.new_event_loop()
-            loop.run_until_complete(self.broadcast_commitment_reveal(reveal))
-            loop.close()
-
         # Complete
         self.epoch_manager.complete()
 
@@ -224,29 +164,6 @@ class ValidatorRunner:
             },
             "commitment_verified": True,
         }
-
-    async def broadcast_commitment_reveal(self, reveal: dict):
-        """Send CommitmentReveal Synapse to all miners."""
-        try:
-            from hope.protocol.synapse import CommitmentReveal
-
-            ctx = self.epoch_manager.current or self.epoch_manager.history[-1]
-            synapse = CommitmentReveal(
-                epoch_id=reveal["epoch_id"],
-                epoch_salt=ctx.salt,
-                outcomes_url=f"http://{self.host}:{self.port}/epochs/{reveal['epoch_id']}/verification",
-                weights_json=reveal.get("scoring_weights", "{}"),
-            )
-
-            axons = [self.metagraph.axons[uid] for uid in range(self.metagraph.n)
-                     if self.metagraph.axons[uid].is_serving]
-
-            if axons:
-                logger.info(f"Broadcasting CommitmentReveal to {len(axons)} miners")
-                await self.dendrite.forward(axons=axons, synapse=synapse, timeout=30)
-
-        except Exception as e:
-            logger.error(f"Error broadcasting commitment reveal: {e}")
 
     def start_api_server(self) -> None:
         """Start the FastAPI server in a background thread."""
@@ -266,15 +183,13 @@ class ValidatorRunner:
         return create_app(state)
 
     def run_continuous(self, release_key: str, epoch_duration_seconds: int = 3600):
-        """Run continuous epoch loop (for testnet testing).
+        """Run continuous epoch loop.
 
         Args:
             release_key: Release to use for all epochs
-            epoch_duration_seconds: How long each epoch lasts (3600 = 1 hour for testnet)
+            epoch_duration_seconds: How long each epoch lasts (3600 = 1 hour)
         """
         self.init_bittensor()
-
-        # Start API server
         self.start_api_server()
         logger.info(f"Running continuous epochs ({epoch_duration_seconds}s each)")
 
@@ -284,22 +199,23 @@ class ValidatorRunner:
             logger.info(f"=== EPOCH {epoch_num} ===")
 
             try:
-                # Run epoch
                 loop = asyncio.new_event_loop()
                 result = loop.run_until_complete(self.run_epoch(release_key))
                 loop.close()
                 logger.info(f"Epoch started: {result['episode_count']} episodes")
 
-                # Wait for predictions
                 logger.info(f"Collecting predictions for {epoch_duration_seconds}s...")
                 time.sleep(epoch_duration_seconds)
 
-                # Score and set weights
                 score_result = self.score_epoch()
                 logger.info(f"Epoch scored: {score_result['miners_scored']} miners")
 
                 for mid, s in score_result["scores"].items():
                     logger.info(f"  {mid[:20]}...: {s['final_score']:.4f}")
+
+                # Refresh metagraph
+                if self.metagraph:
+                    self.metagraph.sync()
 
             except KeyboardInterrupt:
                 logger.info("Shutting down")
@@ -319,11 +235,8 @@ def main():
     parser.add_argument("--api-key", type=str, default="hope-bt-internal-2026",
                         help="HOPE API key")
     parser.add_argument("--port", type=int, default=8080, help="API server port")
-
-    # Bittensor args
     parser.add_argument("--network", type=str, default="test",
-                        choices=["test", "finney", "local"],
-                        help="Bittensor network")
+                        choices=["test", "finney", "local"], help="Bittensor network")
     parser.add_argument("--netuid", type=int, default=0, help="Subnet netuid")
     parser.add_argument("--wallet-name", type=str, default="adtao_validator",
                         help="Wallet name")
@@ -331,35 +244,27 @@ def main():
                         help="Wallet hotkey")
     parser.add_argument("--no-chain", action="store_true",
                         help="Run without Bittensor chain (HTTP only)")
-
-    # Mode args
     parser.add_argument("--score-now", action="store_true",
                         help="Score immediately (single epoch, no waiting)")
     parser.add_argument("--continuous", action="store_true",
                         help="Run continuous epoch loop")
     parser.add_argument("--epoch-duration", type=int, default=3600,
-                        help="Epoch duration in seconds (default: 3600 = 1 hour)")
+                        help="Epoch duration in seconds (default: 3600)")
 
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     runner = ValidatorRunner(
-        hope_api_key=args.api_key,
-        port=args.port,
-        network=args.network,
-        netuid=args.netuid,
-        wallet_name=args.wallet_name,
-        wallet_hotkey=args.wallet_hotkey,
-        no_chain=args.no_chain,
+        hope_api_key=args.api_key, port=args.port, network=args.network,
+        netuid=args.netuid, wallet_name=args.wallet_name,
+        wallet_hotkey=args.wallet_hotkey, no_chain=args.no_chain,
     )
 
     if args.continuous:
         runner.run_continuous(args.release, args.epoch_duration)
     else:
-        # Single epoch
         runner.init_bittensor()
-
         loop = asyncio.new_event_loop()
         result = loop.run_until_complete(runner.run_epoch(args.release))
         loop.close()
@@ -367,7 +272,6 @@ def main():
         print(f"\nEpoch started: {result['epoch_id']}")
         print(f"Episodes: {result['episode_count']}")
         print(f"Commitment: {result['commitment_hash'][:32]}...")
-        print(f"Deadline: {result['deadline']}")
 
         if args.score_now:
             score_result = runner.score_epoch()
@@ -377,7 +281,7 @@ def main():
         else:
             runner.start_api_server()
             print(f"\nValidator API running on port {args.port}")
-            print("Press Ctrl+C to stop.")
+            print("Miners connect via HTTP. Press Ctrl+C to stop.")
             try:
                 while True:
                     time.sleep(1)
