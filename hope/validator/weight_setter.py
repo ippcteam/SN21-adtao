@@ -1,7 +1,15 @@
-"""Weight Setter — normalize miner scores and set weights on-chain.
+"""Weight Setter — normalize miner scores, apply burn, and set weights on-chain.
 
-After scoring an epoch, converts miner scores to normalized weights
-and publishes them to the Bittensor network via subtensor.set_weights().
+After scoring an epoch, converts miner scores to normalized weights,
+applies burn rate (weight to UID 0), and publishes to the Bittensor
+network via subtensor.set_weights().
+
+Burn rate explained:
+- Burn assigns a fraction of total weight to UID 0 (the validator/subnet owner)
+- This reduces miner emissions proportionally
+- High burn (95%) at launch = low miner incentive = fewer exploiters
+- Lower burn gradually as the system proves stable
+- Implemented per Tensora guidance (not a protocol parameter)
 """
 
 from __future__ import annotations
@@ -15,12 +23,50 @@ logger = logging.getLogger(__name__)
 # EMA smoothing factor — how much previous weights influence new weights
 EMA_ALPHA = 0.1
 
+# Default burn rate for launch (95% per Tensora recommendation)
+DEFAULT_BURN_FRACTION = 0.95
+
 
 class WeightSetter:
     """Compute normalized weights from miner scores and set on-chain."""
 
-    def __init__(self):
+    def __init__(self, burn_fraction: float = DEFAULT_BURN_FRACTION):
+        self.burn_fraction = burn_fraction
         self.previous_weights: dict[int, float] = {}
+
+    def apply_burn(self, weights: dict[int, float]) -> dict[int, float]:
+        """Apply burn rate by assigning burn_fraction of weight to UID 0.
+
+        Per Tensora/Jack: burn is implemented by setting a percentage of
+        weight to UID 0 (subnet owner). The remaining weight is split
+        among miners proportionally.
+
+        Args:
+            weights: uid → weight (before burn)
+
+        Returns:
+            uid → weight (with UID 0 burn applied)
+        """
+        if not weights or self.burn_fraction >= 1.0:
+            return {0: 1.0}
+
+        miner_fraction = 1.0 - self.burn_fraction
+        total = sum(weights.values())
+
+        if total < 1e-12:
+            return {0: 1.0}
+
+        scale = miner_fraction / total
+        result: dict[int, float] = {0: self.burn_fraction}
+
+        for uid, w in weights.items():
+            if uid == 0:
+                continue
+            scaled = w * scale
+            if scaled > 1e-12:
+                result[uid] = scaled
+
+        return result
 
     def normalize_scores(
         self,
@@ -55,28 +101,25 @@ class WeightSetter:
         if total > 0:
             weights = [w / total for w in raw_weights]
         else:
-            # All zeros — distribute equally
             weights = [1.0 / len(uids)] * len(uids)
 
         # Apply EMA smoothing against previous weights
-        # BUT: miners with zero score (inactive/non-submitters) stay at zero
+        # Non-submitters (score=0) stay at hard zero
         if self.previous_weights:
             smoothed = []
             for uid, w in zip(uids, weights):
                 if w == 0.0:
-                    # Hard zero for non-submitters — no EMA blending
                     smoothed.append(0.0)
                 else:
                     prev = self.previous_weights.get(uid, w)
                     if prev == 0.0:
-                        # Miner was inactive last epoch, now active — no blend
                         smoothed.append(w)
                     else:
                         smoothed_w = EMA_ALPHA * w + (1 - EMA_ALPHA) * prev
                         smoothed.append(smoothed_w)
             weights = smoothed
 
-            # Re-normalize (only non-zero weights)
+            # Re-normalize
             total = sum(weights)
             if total > 0:
                 weights = [w / total for w in weights]
@@ -84,8 +127,21 @@ class WeightSetter:
         # Store for next round
         self.previous_weights = dict(zip(uids, weights))
 
-        logger.info(f"Normalized {len(uids)} miners: max={max(weights):.4f} min={min(weights):.4f}")
-        return uids, weights
+        # Apply burn — assigns burn_fraction to UID 0
+        pre_burn = dict(zip(uids, weights))
+        post_burn = self.apply_burn(pre_burn)
+
+        # Convert back to sorted lists
+        final_uids = sorted(post_burn.keys())
+        final_weights = [post_burn[uid] for uid in final_uids]
+
+        active_miners = sum(1 for u in final_uids if u != 0 and post_burn[u] > 0)
+        logger.info(
+            f"Weights: {active_miners} active miners, "
+            f"burn={self.burn_fraction:.0%} (UID 0 = {post_burn.get(0, 0):.4f})"
+        )
+
+        return final_uids, final_weights
 
     async def set_weights(
         self,
@@ -101,7 +157,7 @@ class WeightSetter:
             subtensor: Bittensor subtensor instance
             wallet: Bittensor wallet (validator)
             netuid: Subnet network UID
-            uids: List of miner UIDs
+            uids: List of miner UIDs (includes UID 0 for burn)
             weights: Normalized weights (sum to 1.0)
 
         Returns:
@@ -112,11 +168,10 @@ class WeightSetter:
             return False
 
         try:
-            # Convert to numpy arrays as required by bittensor
             uid_array = np.array(uids, dtype=np.int64)
             weight_array = np.array(weights, dtype=np.float32)
 
-            logger.info(f"Setting weights for {len(uids)} miners on netuid {netuid}")
+            logger.info(f"Setting weights for {len(uids)} UIDs on netuid {netuid}")
 
             result = subtensor.set_weights(
                 wallet=wallet,

@@ -65,6 +65,11 @@ DIRECTIONAL_NEAR_ZERO_THRESHOLD = 1.0
 EPOCH_DURATION_DAYS = 7
 PREDICTION_DEADLINE_HOURS = 48
 
+# Burn rate — percentage of emissions assigned to UID 0 (subnet owner)
+# Start high (95%) to deter exploiters, decrease in 5% chunks as testing progresses
+# Per Tensora: "start with 95% burn on mainnet, lower as good miners show up"
+DEFAULT_BURN_FRACTION = 0.95
+
 # HOPE Data API
 HOPE_API_BASE_URL = "https://hope-bittensor-api.onrender.com"
 HOPE_API_VERSION = "v1"

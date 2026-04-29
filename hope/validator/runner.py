@@ -47,10 +47,11 @@ class ValidatorRunner:
         wallet_name: str = "adtao_validator",
         wallet_hotkey: str = "default",
         no_chain: bool = False,
+        burn_fraction: float = 0.95,
     ):
         self.hope_client = HopeDataClient(api_key=hope_api_key, base_url=hope_api_url)
         self.epoch_manager = EpochManager()
-        self.weight_setter = WeightSetter()
+        self.weight_setter = WeightSetter(burn_fraction=burn_fraction)
         self.host = host
         self.port = port
         self.no_chain = no_chain
@@ -250,6 +251,8 @@ def main():
                         help="Run continuous epoch loop")
     parser.add_argument("--epoch-duration", type=int, default=3600,
                         help="Epoch duration in seconds (default: 3600)")
+    parser.add_argument("--burn", type=float, default=0.95,
+                        help="Burn rate 0.0-1.0 (default: 0.95 = 95%% to UID 0)")
 
     args = parser.parse_args()
 
@@ -259,6 +262,7 @@ def main():
         hope_api_key=args.api_key, port=args.port, network=args.network,
         netuid=args.netuid, wallet_name=args.wallet_name,
         wallet_hotkey=args.wallet_hotkey, no_chain=args.no_chain,
+        burn_fraction=args.burn,
     )
 
     if args.continuous:
