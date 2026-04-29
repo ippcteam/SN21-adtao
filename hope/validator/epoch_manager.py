@@ -255,6 +255,8 @@ class LiveState(dict):
             return ctx.episodes
         if key == "predictions":
             return ctx.predictions
+        if key == "outcomes":
+            return ctx.outcomes
         if key == "deadline":
             return ctx.deadline
         if key == "registered_miners":

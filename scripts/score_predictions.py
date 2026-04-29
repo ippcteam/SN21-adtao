@@ -18,14 +18,13 @@ import asyncio
 import json
 import logging
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hope.protocol.episode import Episode
-from hope.protocol.prediction import Prediction, HorizonPrediction, QuantilePrediction
+from hope.protocol.prediction import Prediction
 from hope.protocol.outcomes import Outcome
 from hope.scoring import EpochScorer, ScoringWeights
 
@@ -135,7 +134,7 @@ def main():
 
     # Results
     print(f"\n{'='*60}")
-    print(f"  SCORING RESULTS")
+    print("  SCORING RESULTS")
     print(f"{'='*60}")
 
     for miner_id, score in scores.items():
@@ -147,7 +146,7 @@ def main():
         print(f"  Final score:     {score.final_score:.4f}")
 
         if args.verbose and score.episode_scores:
-            print(f"\n  Per-episode breakdown:")
+            print("\n  Per-episode breakdown:")
             for ep_score in score.episode_scores:
                 print(f"    {ep_score.episode_id}: {ep_score.weighted_total:.4f} "
                       f"(res={ep_score.measurement_resolution})")
@@ -162,7 +161,7 @@ def main():
 
     # Scoring weights used
     weights = ScoringWeights()
-    print(f"\n  Scoring weights:")
+    print("\n  Scoring weights:")
     print(f"    Quantile accuracy: {weights.quantile_accuracy}")
     print(f"    Calibration:       {weights.calibration}")
     print(f"    Directional:       {weights.directional}")

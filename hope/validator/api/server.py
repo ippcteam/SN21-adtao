@@ -19,6 +19,7 @@ from hope.validator.api.episodes import router as episodes_router
 from hope.validator.api.predictions import router as predictions_router
 from hope.validator.api.commitments import router as commitments_router
 from hope.validator.api.verification import router as verification_router
+from hope.validator.api.training import router as training_router
 
 logger = logging.getLogger(__name__)
 
@@ -69,5 +70,6 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
     app.include_router(predictions_router, prefix="/epochs", tags=["predictions"])
     app.include_router(commitments_router, prefix="/epochs", tags=["commitments"])
     app.include_router(verification_router, prefix="/epochs", tags=["verification"])
+    app.include_router(training_router, tags=["training"])
 
     return app
