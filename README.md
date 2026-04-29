@@ -54,9 +54,22 @@ git clone https://github.com/ippcteam/tao-discovery.git
 cd tao-discovery
 pip install -e ".[miner]"
 
-# Run with baseline model
-hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY --epoch WR-2026-W18-PUB-E1
+# Train on historical data first (recommended)
+python scripts/train_example_model.py --data-file data/training/training_episodes.json
+
+# Run miner (auto-discovers current epoch from validator)
+hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY
+
+# Or run continuously (polls for new epochs)
+hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY --continuous
+
+# Check your score after an epoch
+python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
 ```
+
+**Validator URL:** Check the AdTAO Discord `#sn21-miners` channel for the active validator.
+
+**Training data:** 10 episodes with known outcomes are bundled in `data/training/`. Use these to build a model before predicting on live epochs.
 
 Read the full guide: [Miner Quickstart](docs/miner_quickstart.md) · [Miner economics](docs/MINER_ECONOMICS.md)
 

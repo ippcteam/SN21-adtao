@@ -1,6 +1,7 @@
 # HOPE Impact Prediction Subnet (SN21) — Miner Quickstart
 
 **For:** Miners joining the HOPE Impact Prediction Subnet on Bittensor
+**Subnet:** SN21 (testnet netuid: 466)
 **Schema:** v1.9 (Phase 1 Epoch 1 — Search campaigns, campaign-level actions)
 **Horizons:** 7-day and 14-day predictions
 
@@ -18,53 +19,85 @@ You output **probabilistic distributions** (P10/P50/P90), not point estimates. Y
 
 ## 2. Getting Started
 
-### Install
+### Step 1: Install
 
 ```bash
+git clone https://github.com/ippcteam/tao-discovery.git
+cd tao-discovery
 pip install -e ".[miner]"
 ```
 
-### Run with baseline model
+### Step 2: Register on the subnet
+
+You need a Bittensor wallet registered on SN21 to earn emissions. If you're just testing, you can skip this and use any string as your hotkey.
 
 ```bash
+# Create a wallet (if you don't have one)
+btcli wallet create --wallet.name my_miner
+
+# Register on the subnet (costs a small amount of TAO)
+btcli subnet register --wallet.name my_miner --hotkey default --netuid 466 --network test
+```
+
+Your hotkey address (e.g. `5Hoo2cR...`) is what you pass to `--hotkey`. The validator uses this to identify you when setting weights on-chain.
+
+**For testing only:** You can skip registration and use any string (e.g. `--hotkey test_miner`). You won't earn emissions but you can test the full flow.
+
+### Step 3: Train on historical data (recommended)
+
+Before predicting on live epochs, train a model on past episodes with known outcomes:
+
+```bash
+# Download training data (10 episodes with measured t7/t14 outcomes)
+python scripts/generate_training_data.py
+
+# Train an example XGBoost model and compare with baseline
+python scripts/train_example_model.py --data-file data/training/training_episodes.json
+```
+
+The training set is also bundled in `data/training/training_episodes.json`. Each example has:
+- `input` — the full episode payload (what you receive during a live epoch)
+- `outcome` — the actual t7/t14 deltas (what really happened)
+
+Use these to train: given input features → predict outcome deltas.
+
+### Step 4: Run the miner
+
+```bash
+# Connect to the validator and submit predictions
+hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY
+
+# Or specify an epoch explicitly
 hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY --epoch WR-2026-W18-PUB-E1
+
+# Or run continuously (polls validator for new epochs every 30s)
+hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY --continuous
 ```
 
-This fetches episodes from the validator, runs the baseline prediction model, and submits predictions. The baseline model is a starting point — you should build your own model to beat it.
+**Finding the validator:** The active validator URL will be announced in the AdTAO Discord. During testnet, ask in the `#sn21-miners` channel.
 
-### Build your own model
+If no `--epoch` is provided, the miner auto-discovers the current epoch from the validator's `/health` endpoint.
 
-```python
-from hope.miner.prediction_engine import PredictionEngine
-from hope.protocol.episode import Episode
-from hope.protocol.prediction import Prediction, HorizonPrediction, QuantilePrediction
-from datetime import datetime, timezone
+### Step 5: Check your score
 
+After an epoch is scored, check your results:
 
-class MyModel(PredictionEngine):
-    def predict(self, episode: Episode) -> Prediction:
-        # Your prediction logic here
-        ...
-        return Prediction(
-            episode_id=episode.episode_metadata.episode_id,
-            miner_id="my_model",
-            submitted_at=datetime.now(timezone.utc),
-            horizons={"7": h7_prediction, "14": h14_prediction},
-        )
+```bash
+# Check scores via the validator API
+curl http://VALIDATOR_IP:8080/epochs/WR-2026-W18-PUB-E1/scores
+
+# Or score yourself offline (exact same scoring the validator uses)
+python scripts/score_predictions.py --release WR-2026-W17-PUB-E1 --run-baseline
+
+# Verify the validator didn't cheat (commitment verification)
+curl http://VALIDATOR_IP:8080/epochs/WR-2026-W18-PUB-E1/verification
 ```
 
-Then run:
-
-```python
-from hope.miner.runner import MinerRunner
-
-runner = MinerRunner(model=MyModel(), hotkey="YOUR_HOTKEY", validator_url="http://VALIDATOR:8080")
-await runner.run_epoch("WR-2026-W18-PUB-E1")
-```
+The `/scores` endpoint shows your raw score, null penalty, and final score. The `/verification` endpoint reveals outcomes + salt so you can independently verify the commitment hash.
 
 ---
 
-## 3. Episode Structure (What You Receive)
+## 3. What You Receive (Episode Structure)
 
 Each episode has 6 sections. For Phase 1, all episodes are Search campaigns with campaign-level actions.
 
@@ -181,8 +214,8 @@ All arrays are length 60 (60-day pre-window), indexed by `date_index`.
 |------|--------------|------------|
 | `BUDGET_CHANGE` | Daily budget increased/decreased | `magnitude.spend_change_pct` — the % budget change |
 | `BID_STRATEGY_CHANGE` | Bidding strategy switched (e.g., Manual CPC → Target CPA) | `magnitude.from/to` — expect 7-14 day learning period volatility |
+| `TARGET_VALUE_CHANGE` | tCPA/tROAS target adjusted (same strategy, different target) | `magnitude.metric`, `magnitude.new_target`, `magnitude.target_vs_current_pct` |
 | `CAMPAIGN_PAUSE` | Campaign paused | `magnitude.spend_change_pct = -100` — deterministic |
-| `CAMPAIGN_ENABLE` | Campaign re-enabled after pause | `magnitude.prior_pause_duration_days` — longer pause = slower recovery |
 
 ---
 
@@ -317,13 +350,15 @@ For `measurement_resolution = "high"`:
 
 2. **Use the magnitude field.** For budget changes, `magnitude.spend_change_pct.expected` is the system's estimate. Start from it, then improve.
 
-3. **Model portfolio redistribution.** When `bundle_summary.has_destructive = true` and the account is constrained (`portfolio_context.constraint_level = "SEVERELY_CONSTRAINED"`), freed budget redirects to siblings — conversions may *increase* despite a destructive action.
+3. **Use the training data.** Run `python scripts/train_example_model.py` — it shows how to extract 19 features, train XGBoost, and score 1.5x better than baseline.
 
 4. **Calibrate your intervals.** Wide intervals are safe but penalized (^1.3 convex penalty). Narrow intervals score well when right but get hammered when wrong (2.5x miss penalty). Target 80% coverage.
 
 5. **Campaign pauses are deterministic.** `CAMPAIGN_PAUSE` → cost drops 100%, conversions drop 100%. Predict this with tight intervals and high certainty.
 
 6. **Bid strategy changes are volatile.** 7-14 day learning period means noisy outcomes. Use wider intervals for t7, narrower for t14 as learning stabilizes.
+
+7. **Target value changes have known direction.** `TARGET_VALUE_CHANGE` includes `target_vs_current_pct` — telling you exactly how far the new target is from current performance.
 
 ### What Loses
 
@@ -341,65 +376,49 @@ For `measurement_resolution = "high"`:
 
 The baseline model (`hope/miner/models/baseline.py`) demonstrates the approach:
 
-### Step 1: Parse the episode
+### Parse the episode
 
 ```python
 from hope.protocol.episode import Episode
 
-# Episode is a Pydantic model — all fields are typed
 ep = Episode.model_validate(payload)
-
-# Get the action
 action = ep.action_bundle.actions[0]
 action_type = action.type  # "BUDGET_CHANGE", "CAMPAIGN_PAUSE", etc.
-
-# Get pre-window stats
 agg = ep.pre_window.account_aggregates
-spend_cv = agg.spend_cv  # Coefficient of variation — volatility signal
+spend_cv = agg.spend_cv  # Volatility signal
 ```
 
-### Step 2: Extract magnitude estimates
+### Extract magnitude estimates
 
 ```python
-mag = action.magnitude  # dict or None
+mag = action.magnitude
 
 if action_type == "BUDGET_CHANGE":
     cost_p50 = mag["spend_change_pct"]["expected"]  # e.g., 20.0 (= +20%)
-    conv_p50 = cost_p50 * 0.7  # Diminishing returns assumption
+    conv_p50 = cost_p50 * 0.7  # Diminishing returns
 
 elif action_type == "CAMPAIGN_PAUSE":
     cost_p50 = -100.0  # Deterministic
     conv_p50 = -100.0
 
-elif action_type == "CAMPAIGN_ENABLE":
-    pause_days = mag["prior_pause_duration_days"]
-    recovery = min(0.8, 0.5 + pause_days * 0.02)
-    cost_p50 = recovery * 80
-    conv_p50 = recovery * 60
+elif action_type == "TARGET_VALUE_CHANGE":
+    # target_vs_current_pct tells you the gap
+    pct_change = mag.get("target_vs_current_pct", 0)
+    cost_p50 = pct_change * 0.5  # Partial adjustment expected
 
 elif action_type == "BID_STRATEGY_CHANGE":
     cost_p50 = 0.0  # Direction uncertain during learning
     conv_p50 = 0.0
 ```
 
-### Step 3: Size your intervals
-
-```python
-spread = 5.0  # Base spread
-
-# Wider for volatile accounts
-if spend_cv > 0.3:
-    spread *= 1.5
-
-# Wider for bid strategy changes (learning period)
-if action_type == "BID_STRATEGY_CHANGE":
-    spread *= 2.0
-```
-
-### Step 4: Format and submit
+### Format and submit
 
 ```python
 from hope.protocol.prediction import Prediction, HorizonPrediction, QuantilePrediction
+
+spread = 5.0
+if spend_cv > 0.3:
+    spread *= 1.5  # Wider for volatile accounts
 
 prediction = Prediction(
     episode_id=ep.episode_metadata.episode_id,
@@ -414,12 +433,8 @@ prediction = Prediction(
             instability_risk=0.15,
         ),
         "14": HorizonPrediction(
-            # 14-day: dampened estimates, slightly wider intervals
-            cost_delta_pct=QuantilePrediction(p10=cost_p50*0.85 - spread*1.1, p50=cost_p50*0.85, p90=cost_p50*0.85 + spread*1.1),
-            conversions_delta_pct=QuantilePrediction(p10=conv_p50*0.85 - spread*1.1, p50=conv_p50*0.85, p90=conv_p50*0.85 + spread*1.1),
-            efficiency_delta_pct=QuantilePrediction(p10=-spread*1.1, p50=0.0, p90=spread*1.1),
-            goal_miss_probability=0.3,
-            instability_risk=0.1,
+            # 14-day: dampened, slightly wider
+            ...
         ),
     },
 )
@@ -431,15 +446,15 @@ prediction = Prediction(
 
 Ordered by expected impact:
 
-1. **Train a model on historical episodes.** XGBoost/LightGBM on extracted features will outperform heuristics. Use the magnitude as an input feature.
+1. **Use the training data.** `data/training/training_episodes.json` has 10 examples with known outcomes. `scripts/train_example_model.py` shows how to build a 1.5x baseline model with XGBoost.
 
 2. **Learn portfolio redistribution.** The interaction between constraint_level, redistribution_likelihood, and action type is the biggest gap in baseline estimates.
 
 3. **Model temporal evolution.** Predict different values for t7 vs t14 based on how effects compound — learning periods stabilize, trends accumulate.
 
-4. **Learn interval calibration.** After initial training, check what % of actuals fall in your P10-P90. Target 80%. Too wide? Narrow (saves calibration score). Too narrow? Widen (avoids miss penalty).
+4. **Learn interval calibration.** After initial training, check what % of actuals fall in your P10-P90. Target 80%. Too wide? Narrow. Too narrow? Widen.
 
-5. **Specialise by action type.** Budget changes, bid strategy changes, pauses, and enables have fundamentally different outcome distributions. Train separate models or use action_type as a key feature.
+5. **Specialise by action type.** Budget changes, bid strategy changes, target value changes, and pauses have fundamentally different outcome distributions.
 
 ---
 
@@ -455,15 +470,13 @@ Before the epoch started, the validator committed to outcomes by publishing a ha
 commitment_hash = SHA256(outcomes_json + salt + weights_json)
 ```
 
-After scoring, the validator reveals the outcomes, salt, and weights. Verify:
+After scoring, verify:
 
 ```python
-import hashlib, json
+import hashlib, json, httpx
 
-# Fetch from validator
-verification = requests.get(f"{VALIDATOR_URL}/epochs/{epoch_id}/verification").json()
+verification = httpx.get(f"{VALIDATOR_URL}/epochs/{epoch_id}/verification").json()
 
-# Recompute
 payload = json.dumps(verification["outcomes"], sort_keys=True) + verification["salt"] + verification["scoring_weights"]
 computed = hashlib.sha256(payload.encode()).hexdigest()
 
@@ -473,21 +486,45 @@ assert computed == verification["commitment_hash"], "Validator changed outcomes!
 ### Score yourself locally
 
 ```bash
-hope-score --episodes episodes.json --predictions my_predictions.json --outcomes outcomes.json
+python scripts/score_predictions.py --release WR-2026-W17-PUB-E1 --run-baseline
 ```
 
-This runs the exact same scoring pipeline the validator uses — your local score should match.
+This runs the exact same scoring pipeline the validator uses.
 
 ---
 
-## 10. Quick Reference
+## 10. Validator API Reference
+
+All interaction with the validator is via HTTP:
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/health` | None | Current epoch, episode count |
+| `GET` | `/training/episodes` | None | Training data (episodes + outcomes) |
+| `GET` | `/training/summary` | None | Training data stats |
+| `GET` | `/epochs/{id}/episodes` | Hotkey | List episode metadata |
+| `GET` | `/epochs/{id}/episodes/{ep_id}` | Hotkey | Single episode payload |
+| `GET` | `/epochs/{id}/episodes_batch` | Hotkey | All episodes in one request |
+| `POST` | `/epochs/{id}/predictions` | Hotkey | Submit predictions |
+| `GET` | `/epochs/{id}/commitment` | None | Commitment proof |
+| `GET` | `/epochs/{id}/scores` | None | Per-miner scores (post-scoring) |
+| `GET` | `/epochs/{id}/verification` | None | Revealed outcomes (post-scoring) |
+
+**Authentication:** Set the `X-Miner-Hotkey` header to your Bittensor hotkey address.
+
+**Finding the validator:** Check the AdTAO Discord `#sn21-miners` channel for the current validator URL. Or query the Bittensor metagraph for serving axons on netuid 466.
+
+---
+
+## 11. Quick Reference
 
 | Item | Value |
 |------|-------|
+| Subnet | SN21 (testnet netuid: 466) |
 | Schema version | v1.9 |
 | Horizons | 7-day, 14-day |
 | Campaign types | SEARCH only (Phase 1) |
-| Action types | BUDGET_CHANGE, BID_STRATEGY_CHANGE, CAMPAIGN_PAUSE, CAMPAIGN_ENABLE |
+| Action types | BUDGET_CHANGE, BID_STRATEGY_CHANGE, TARGET_VALUE_CHANGE, CAMPAIGN_PAUSE |
 | Pre-window length | 60 days |
 | Prediction format | P10/P50/P90 quantiles per metric per horizon |
 | Metrics | cost_delta_pct, conversions_delta_pct, efficiency_delta_pct |
@@ -495,3 +532,5 @@ This runs the exact same scoring pipeline the validator uses — your local scor
 | Scoring weights | Quantile 50%, Calibration 20%, Directional 15%, Goal 15% |
 | Horizon weights | t7=40%, t14=60% (high resolution) |
 | Null penalty | Ramps from 40% to 85% near-zero predictions, max 60% penalty |
+| Training data | `data/training/training_episodes.json` (10 examples) |
+| Offline scoring | `python scripts/score_predictions.py --run-baseline` |
