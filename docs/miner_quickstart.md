@@ -29,19 +29,32 @@ pip install -e ".[miner]"
 
 ### Step 2: Register on the subnet
 
-You need a Bittensor wallet registered on SN21 to earn emissions. If you're just testing, you can skip this and use any string as your hotkey.
+You **must** register on-chain to participate and earn emissions. Registration burns a small amount of TAO.
 
 ```bash
 # Create a wallet (if you don't have one)
 btcli wallet create --wallet.name my_miner
 
-# Register on the subnet (costs a small amount of TAO)
+# Create a hotkey for mining
+btcli wallet new_hotkey --wallet.name my_miner --hotkey default --n-words 12
+
+# Register on SN21 (testnet)
 btcli subnet register --wallet.name my_miner --hotkey default --netuid 466 --network test
+
+# Verify registration
+btcli subnet metagraph --netuid 466 --network test
 ```
 
-Your hotkey address (e.g. `5Hoo2cR...`) is what you pass to `--hotkey`. The validator uses this to identify you when setting weights on-chain.
+Your hotkey address (e.g. `5Hoo2cR...`) is what you pass to `--hotkey`. The validator identifies you by this address when setting weights on-chain. You can find your hotkey address with:
 
-**For testing only:** You can skip registration and use any string (e.g. `--hotkey test_miner`). You won't earn emissions but you can test the full flow.
+```bash
+btcli wallet list --wallet.name my_miner
+```
+
+**Requirements:**
+- TAO in your wallet (testnet: ask in Discord for testnet TAO, mainnet: purchase TAO)
+- Registration costs ~τ1-3 (burned to the subnet)
+- You get a UID on the metagraph after registration
 
 ### Step 3: Train on historical data (recommended)
 
