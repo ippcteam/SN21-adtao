@@ -100,7 +100,7 @@ After an epoch is scored, check your results:
 curl https://validator.adtao.io/epochs/WR-2026-W18-PUB-E1/scores
 
 # Or score yourself offline (exact same scoring the validator uses)
-python scripts/score_predictions.py --release WR-2026-W17-PUB-E1 --run-baseline
+python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
 
 # Verify the validator didn't cheat (commitment verification)
 curl https://validator.adtao.io/epochs/WR-2026-W18-PUB-E1/verification
@@ -499,7 +499,7 @@ assert computed == verification["commitment_hash"], "Validator changed outcomes!
 ### Score yourself locally
 
 ```bash
-python scripts/score_predictions.py --release WR-2026-W17-PUB-E1 --run-baseline
+python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
 ```
 
 This runs the exact same scoring pipeline the validator uses.

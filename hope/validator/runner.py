@@ -231,7 +231,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="HOPE SN21 Validator")
-    parser.add_argument("--release", type=str, default="WR-2026-W17-PUB-E1",
+    parser.add_argument("--release", type=str, default="WR-2026-W18-PUB-E1",
                         help="Release key to process")
     parser.add_argument("--api-key", type=str, default="hope-bt-internal-2026",
                         help="HOPE API key")

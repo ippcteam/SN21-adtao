@@ -2,13 +2,13 @@
 
 Usage:
     # Score predictions against a live release
-    python scripts/score_predictions.py --release WR-2026-W17-PUB-E1
+    python scripts/score_predictions.py --release WR-2026-W18-PUB-E1
 
     # Score from local files
     python scripts/score_predictions.py --episodes episodes.json --predictions predictions.json --outcomes outcomes.json
 
     # Run baseline model and score it
-    python scripts/score_predictions.py --release WR-2026-W17-PUB-E1 --run-baseline
+    python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
 """
 
 from __future__ import annotations

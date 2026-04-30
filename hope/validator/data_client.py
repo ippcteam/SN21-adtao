@@ -44,7 +44,7 @@ class HopeDataClient:
 
     Usage:
         client = HopeDataClient(api_key="hope-bt-internal-2026")
-        data = await client.fetch_epoch_data("WR-2026-W17-PUB-E1")
+        data = await client.fetch_epoch_data("WR-2026-W18-PUB-E1")
         print(f"Fetched {len(data.episodes)} episodes")
     """
 

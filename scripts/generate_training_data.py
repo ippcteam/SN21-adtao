@@ -7,7 +7,7 @@ predicting on live epochs.
 Usage:
     python scripts/generate_training_data.py
     python scripts/generate_training_data.py --output data/training
-    python scripts/generate_training_data.py --release WR-2026-W17-PUB-E1
+    python scripts/generate_training_data.py --release WR-2026-W18-PUB-E1
 """
 
 from __future__ import annotations
@@ -106,7 +106,7 @@ async def generate(release_key: str, output_dir: str, api_key: str):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Generate training data for miners")
-    parser.add_argument("--release", type=str, default="WR-2026-W17-PUB-E1")
+    parser.add_argument("--release", type=str, default="WR-2026-W18-PUB-E1")
     parser.add_argument("--output", type=str, default="data/training")
     parser.add_argument("--api-key", type=str, default="hope-bt-internal-2026")
     args = parser.parse_args()

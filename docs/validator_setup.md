@@ -20,7 +20,7 @@ pip install -e .
 Run a single epoch against the live HOPE data API:
 
 ```bash
-hope-validator --release WR-2026-W17-PUB-E1 --port 8080 --score-now
+hope-validator --release WR-2026-W18-PUB-E1 --port 8080 --score-now
 ```
 
 This will:
@@ -31,7 +31,7 @@ This will:
 
 Output:
 ```
-Epoch started: WR-2026-W17-PUB-E1
+Epoch started: WR-2026-W18-PUB-E1
 Episodes: 101
 Commitment: 2c55f687a5dedf81...
 Deadline: 2026-04-25T11:15:23+00:00
@@ -44,13 +44,13 @@ Deadline: 2026-04-25T11:15:23+00:00
 ### Start the validator
 
 ```bash
-hope-validator --release WR-2026-W17-PUB-E1 --port 8080
+hope-validator --release WR-2026-W18-PUB-E1 --port 8080
 ```
 
 This starts the FastAPI server and waits for miners to connect. The validator:
 - Fetches episodes from HOPE API
 - Commits outcome hash before distributing
-- Serves episodes at `http://YOUR_IP:8080/epochs/{epoch_id}/episodes`
+- Serves episodes at `https://validator.adtao.io/epochs/{epoch_id}/episodes`
 - Accepts predictions at `POST /epochs/{epoch_id}/predictions`
 
 ### Tell miners your endpoint
@@ -58,7 +58,7 @@ This starts the FastAPI server and waits for miners to connect. The validator:
 Miners connect with:
 
 ```bash
-hope-miner --validator-url http://YOUR_IP:8080 --hotkey MINER_HOTKEY --epoch WR-2026-W17-PUB-E1
+hope-miner --validator-url https://validator.adtao.io --hotkey MINER_HOTKEY --epoch WR-2026-W18-PUB-E1
 ```
 
 ### Score after deadline
@@ -83,7 +83,7 @@ async def run():
     runner = ValidatorRunner(port=8080)
 
     # Start epoch
-    await runner.run_epoch("WR-2026-W17-PUB-E1")
+    await runner.run_epoch("WR-2026-W18-PUB-E1")
 
     # Start API server for miners
     runner.start_api_server()
