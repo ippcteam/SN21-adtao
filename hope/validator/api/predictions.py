@@ -8,7 +8,6 @@ Security (per Tensora review):
 
 from __future__ import annotations
 
-import time
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -20,22 +19,28 @@ from hope.validator.api.auth import MinerIdentity, verify_miner
 
 router = APIRouter()
 
-# Rate limiting: max submissions per miner per minute
-RATE_LIMIT_PER_MINUTE = 10
-_rate_tracker: dict[str, list[float]] = defaultdict(list)
+# Rate limiting: max submissions per miner per epoch
+# Per Tensora: "Why would a miner need to call any endpoint more than 5/epoch?"
+RATE_LIMIT_PER_EPOCH = 5
+_submission_count: dict[str, int] = defaultdict(int)
+_current_epoch_id: str = ""
 
 
-def _check_rate_limit(hotkey: str):
-    """Enforce rate limit per miner hotkey."""
-    now = time.time()
-    # Clean old entries
-    _rate_tracker[hotkey] = [t for t in _rate_tracker[hotkey] if now - t < 60]
-    if len(_rate_tracker[hotkey]) >= RATE_LIMIT_PER_MINUTE:
+def _check_rate_limit(hotkey: str, epoch_id: str):
+    """Enforce rate limit per miner per epoch."""
+    global _current_epoch_id
+
+    # Reset counters on new epoch
+    if epoch_id != _current_epoch_id:
+        _submission_count.clear()
+        _current_epoch_id = epoch_id
+
+    if _submission_count[hotkey] >= RATE_LIMIT_PER_EPOCH:
         raise HTTPException(
             status_code=429,
-            detail=f"Rate limit exceeded ({RATE_LIMIT_PER_MINUTE} submissions/minute)",
+            detail=f"Rate limit exceeded ({RATE_LIMIT_PER_EPOCH} submissions per epoch)",
         )
-    _rate_tracker[hotkey].append(now)
+    _submission_count[hotkey] += 1
 
 
 class PredictionSubmission(BaseModel):
@@ -87,8 +92,8 @@ async def submit_predictions(
         if datetime.now(timezone.utc) > deadline:
             raise HTTPException(status_code=403, detail="Prediction deadline has passed")
 
-    # Rate limit
-    _check_rate_limit(miner.hotkey)
+    # Rate limit (5 submissions per epoch per miner)
+    _check_rate_limit(miner.hotkey, epoch_id)
 
     # Get valid episode IDs
     episodes = state.get("episodes", [])
