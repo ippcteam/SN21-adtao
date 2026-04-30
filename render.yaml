@@ -5,8 +5,8 @@ services:
     buildCommand: pip install -e . && chmod +x scripts/start_validator.sh
     startCommand: bash scripts/start_validator.sh
     envVars:
-      - key: HOPE_API_KEY
-        value: hope-bt-internal-2026
+      # HOPE_API_KEY — set in Render dashboard (sensitive, not in yaml)
+      # HOPE_API_URL — set in Render dashboard (sensitive, not in yaml)
       - key: PYTHON_VERSION
         value: "3.12.0"
       - key: WALLET_NAME

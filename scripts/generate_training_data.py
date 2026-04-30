@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -108,7 +109,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate training data for miners")
     parser.add_argument("--release", type=str, default="WR-2026-W18-PUB-E1")
     parser.add_argument("--output", type=str, default="data/training")
-    parser.add_argument("--api-key", type=str, default="hope-bt-internal-2026")
+    parser.add_argument("--api-key", type=str, default=os.environ.get("HOPE_API_KEY", ""))
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING)

@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -50,7 +51,7 @@ def load_from_files(episodes_path: str, predictions_path: str, outcomes_path: st
     return episodes, predictions, outcomes
 
 
-async def load_from_release(release_key: str, api_key: str = "hope-bt-internal-2026", api_url: str | None = None):
+async def load_from_release(release_key: str, api_key: str = "", api_url: str | None = None):
     """Fetch episodes and outcomes from the live HOPE API."""
     from hope.validator.data_client import HopeDataClient
 
@@ -86,7 +87,8 @@ def main():
     parser.add_argument("--predictions", type=str, help="Path to predictions JSON file")
     parser.add_argument("--outcomes", type=str, help="Path to outcomes JSON file")
     parser.add_argument("--run-baseline", action="store_true", help="Run baseline model and score it")
-    parser.add_argument("--api-key", type=str, default="hope-bt-internal-2026", help="HOPE API key")
+    parser.add_argument("--api-key", type=str, default=os.environ.get("HOPE_API_KEY", ""),
+                        help="HOPE API key (or set HOPE_API_KEY env var)")
     parser.add_argument("--api-url", type=str, default=None, help="Override HOPE API base URL")
     parser.add_argument("--verbose", action="store_true", help="Show per-episode scores")
     args = parser.parse_args()

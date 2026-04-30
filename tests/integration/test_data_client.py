@@ -1,19 +1,29 @@
-"""Integration test — fetch real data from the live HOPE API."""
+"""Integration test — fetch real data from the live HOPE API.
+
+Requires HOPE_API_KEY and HOPE_API_URL environment variables to be set.
+"""
 
 import asyncio
+import os
 
 import pytest
 
 from hope.validator.data_client import HopeDataClient
 
 
-LIVE_API_KEY = "hope-bt-internal-2026"
+LIVE_API_KEY = os.environ.get("HOPE_API_KEY", "")
+LIVE_API_URL = os.environ.get("HOPE_API_URL", "")
 LIVE_RELEASE_KEY = "WR-2026-W18-PUB-E1"
+
+pytestmark = pytest.mark.skipif(
+    not LIVE_API_KEY or not LIVE_API_URL,
+    reason="HOPE_API_KEY and HOPE_API_URL env vars required for integration tests",
+)
 
 
 @pytest.fixture
 def client():
-    return HopeDataClient(api_key=LIVE_API_KEY)
+    return HopeDataClient(api_key=LIVE_API_KEY, base_url=LIVE_API_URL)
 
 
 def _run(coro):

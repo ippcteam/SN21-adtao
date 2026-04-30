@@ -18,12 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 import time
 
 import uvicorn
-
-from hope.constants import HOPE_API_BASE_URL
 from hope.validator.api.server import create_app
 from hope.validator.data_client import HopeDataClient
 from hope.validator.epoch_manager import EpochManager
@@ -37,8 +36,8 @@ class ValidatorRunner:
 
     def __init__(
         self,
-        hope_api_key: str = "hope-bt-internal-2026",
-        hope_api_url: str = HOPE_API_BASE_URL,
+        hope_api_key: str = "",
+        hope_api_url: str = "",
         host: str = "0.0.0.0",
         port: int = 8080,
         # Bittensor config
@@ -271,8 +270,9 @@ def main():
     parser = argparse.ArgumentParser(description="HOPE SN21 Validator")
     parser.add_argument("--release", type=str, default="WR-2026-W18-PUB-E1",
                         help="Release key to process")
-    parser.add_argument("--api-key", type=str, default="hope-bt-internal-2026",
-                        help="HOPE API key")
+    parser.add_argument("--api-key", type=str,
+                        default=os.environ.get("HOPE_API_KEY", ""),
+                        help="HOPE API key (or set HOPE_API_KEY env var)")
     parser.add_argument("--port", type=int, default=8080, help="API server port")
     parser.add_argument("--network", type=str, default="test",
                         choices=["test", "finney", "local"], help="Bittensor network")

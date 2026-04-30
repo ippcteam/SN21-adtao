@@ -35,7 +35,7 @@ Files:
 - `hope/protocol/synapse.py` — EpochAnnouncement, Heartbeat, CommitmentReveal
 - `hope/validator/data_client.py` — HopeDataClient (fetches `/releases/<key>/package`)
 
-Test: Client fetches real package from `hope-bittensor-api.onrender.com`, parses all 101 episodes.
+Test: Client fetches real package from HOPE API (via HOPE_API_URL env var), parses all 101 episodes.
 
 ### Step 2: Validator HTTP API
 

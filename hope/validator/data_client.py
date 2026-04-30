@@ -17,7 +17,9 @@ from typing import Optional
 
 import httpx
 
-from hope.constants import HOPE_API_BASE_URL, HOPE_API_VERSION
+import os
+
+from hope.constants import HOPE_API_VERSION
 from hope.protocol.episode import Episode
 from hope.protocol.outcomes import HorizonOutcome, Outcome, ScoringMetadata
 
@@ -43,22 +45,27 @@ class HopeDataClient:
     """Fetch weekly challenge packages from HOPE's internal data API.
 
     Usage:
-        client = HopeDataClient(api_key="hope-bt-internal-2026")
+        client = HopeDataClient(api_key=os.environ["HOPE_API_KEY"])
         data = await client.fetch_epoch_data("WR-2026-W18-PUB-E1")
         print(f"Fetched {len(data.episodes)} episodes")
     """
 
     def __init__(
         self,
-        api_key: str,
-        base_url: str = HOPE_API_BASE_URL,
+        api_key: str = "",
+        base_url: str = "",
         api_version: str = HOPE_API_VERSION,
         timeout: float = 120.0,
     ):
-        self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key or os.environ.get("HOPE_API_KEY", "")
+        self.base_url = (base_url or os.environ.get("HOPE_API_URL", "")).rstrip("/")
         self.api_version = api_version
         self.timeout = timeout
+
+        if not self.api_key:
+            raise ValueError("HOPE_API_KEY must be set (pass api_key or set HOPE_API_KEY env var)")
+        if not self.base_url:
+            raise ValueError("HOPE_API_URL must be set (pass base_url or set HOPE_API_URL env var)")
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}/internal/bittensor/{self.api_version}/{path.lstrip('/')}"

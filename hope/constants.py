@@ -1,5 +1,7 @@
 """Subnet-wide constants for HOPE SN21."""
 
+import os
+
 # Subnet registration
 SUBNET_NETUID = 21
 SUBNET_NAME = "hope-impact-prediction"
@@ -78,6 +80,6 @@ PREDICTION_DEADLINE_HOURS = 156  # ~6.5 days (Mon 17:00 UTC → next Mon 05:00 U
 # Per Tensora: "start with 95% burn on mainnet, lower as good miners show up"
 DEFAULT_BURN_FRACTION = 0.95
 
-# HOPE Data API
-HOPE_API_BASE_URL = "https://hope-ads-backend.onrender.com"
+# HOPE Data API — must be set via environment variables
+HOPE_API_BASE_URL = os.environ.get("HOPE_API_URL", "")
 HOPE_API_VERSION = "v1"

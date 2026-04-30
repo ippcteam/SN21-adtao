@@ -191,7 +191,7 @@ The validator fetches data from HOPE's internal API:
 
 **Authentication:** `X-API-Key` header or `?api_key=` query parameter.
 
-**Live endpoint:** `https://hope-bittensor-api.onrender.com`
+**Live endpoint:** Set via `HOPE_API_URL` environment variable (provided on validator registration).
 
 The data client handles this automatically:
 
@@ -246,8 +246,8 @@ Weights must sum to 1.0 and stay within published ranges.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HOPE_API_KEY` | `hope-bt-internal-2026` | HOPE data API key |
-| `HOPE_API_URL` | `https://hope-bittensor-api.onrender.com` | HOPE API base URL |
+| `HOPE_API_KEY` | *(required)* | HOPE data API key — provided on validator registration |
+| `HOPE_API_URL` | *(required)* | HOPE data API base URL — provided on validator registration |
 | `VALIDATOR_PORT` | `8080` | HTTP API port |
 | `PREDICTION_DEADLINE_HOURS` | `48` | Hours miners have to submit |
 

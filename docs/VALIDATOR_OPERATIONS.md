@@ -90,7 +90,7 @@ hope-validator --release WR-2026-W18-PUB-E1 --port 8080
 | `--port` / `VALIDATOR_PORT` | Miner HTTP |
 | `--score-now` | Development: skip waiting for miners |
 
-**Default HOPE base URL:** `https://hope-bittensor-api.onrender.com` — `hope/constants.py` (**TBD** if production URL differs).
+**HOPE base URL:** Set via `HOPE_API_URL` env var (provided on validator registration).
 
 ---
 
@@ -98,8 +98,8 @@ hope-validator --release WR-2026-W18-PUB-E1 --port 8080
 
 | Variable | Default (repo) | Production |
 |----------|----------------|--------------|
-| `HOPE_API_KEY` | See validator_setup (example only) | **TBD** — *secret store* |
-| `HOPE_API_URL` / override | `HOPE_API_BASE_URL` in constants | **TBD** |
+| `HOPE_API_KEY` | *(none — required)* | Set in secret store |
+| `HOPE_API_URL` | *(none — required)* | Set in secret store |
 | `PREDICTION_DEADLINE_HOURS` | `48` | **TBD** if subnet changes |
 | `VALIDATOR_PORT` | `8080` | **TBD** |
 
