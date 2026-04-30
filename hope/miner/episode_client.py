@@ -42,7 +42,7 @@ class EpisodeClient:
 
     async def fetch_episode_list(self, api_endpoint: str, epoch_id: str) -> list[dict]:
         """Get the list of episode metadata for an epoch."""
-        url = f"{api_endpoint}/epochs/{epoch_id}/episodes"
+        url = f"{api_endpoint}/v1/epochs/{epoch_id}/episodes"
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(url, headers=self._headers())
             resp.raise_for_status()
@@ -50,7 +50,7 @@ class EpisodeClient:
 
     async def fetch_episode(self, api_endpoint: str, epoch_id: str, episode_id: str) -> Episode:
         """Fetch a single episode's full payload."""
-        url = f"{api_endpoint}/epochs/{epoch_id}/episodes/{episode_id}"
+        url = f"{api_endpoint}/v1/epochs/{epoch_id}/episodes/{episode_id}"
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(url, headers=self._headers())
             resp.raise_for_status()
@@ -59,7 +59,7 @@ class EpisodeClient:
 
     async def fetch_all_episodes(self, api_endpoint: str, epoch_id: str) -> list[Episode]:
         """Fetch all episodes in one batch request."""
-        url = f"{api_endpoint}/epochs/{epoch_id}/episodes_batch"
+        url = f"{api_endpoint}/v1/epochs/{epoch_id}/episodes_batch"
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(url, headers=self._headers())
             resp.raise_for_status()

@@ -97,13 +97,13 @@ After an epoch is scored, check your results:
 
 ```bash
 # Check scores via the validator API
-curl https://validator.adtao.io/epochs/WR-2026-W18-PUB-E1/scores
+curl https://validator.adtao.io/v1/epochs/WR-2026-W18-PUB-E1/scores
 
 # Or score yourself offline (exact same scoring the validator uses)
 python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
 
 # Verify the validator didn't cheat (commitment verification)
-curl https://validator.adtao.io/epochs/WR-2026-W18-PUB-E1/verification
+curl https://validator.adtao.io/v1/epochs/WR-2026-W18-PUB-E1/verification
 ```
 
 The `/scores` endpoint shows your raw score, null penalty, and final score. The `/verification` endpoint reveals outcomes + salt so you can independently verify the commitment hash.
@@ -488,7 +488,7 @@ After scoring, verify:
 ```python
 import hashlib, json, httpx
 
-verification = httpx.get(f"{VALIDATOR_URL}/epochs/{epoch_id}/verification").json()
+verification = httpx.get(f"{VALIDATOR_URL}/v1/epochs/{epoch_id}/verification").json()
 
 payload = json.dumps(verification["outcomes"], sort_keys=True) + verification["salt"] + verification["scoring_weights"]
 computed = hashlib.sha256(payload.encode()).hexdigest()
@@ -515,13 +515,13 @@ All interaction with the validator is via HTTP:
 | `GET` | `/health` | None | Current epoch, episode count |
 | `GET` | `/training/episodes` | None | Training data (episodes + outcomes) |
 | `GET` | `/training/summary` | None | Training data stats |
-| `GET` | `/epochs/{id}/episodes` | Hotkey | List episode metadata |
-| `GET` | `/epochs/{id}/episodes/{ep_id}` | Hotkey | Single episode payload |
-| `GET` | `/epochs/{id}/episodes_batch` | Hotkey | All episodes in one request |
-| `POST` | `/epochs/{id}/predictions` | Hotkey | Submit predictions |
-| `GET` | `/epochs/{id}/commitment` | None | Commitment proof |
-| `GET` | `/epochs/{id}/scores` | None | Per-miner scores (post-scoring) |
-| `GET` | `/epochs/{id}/verification` | None | Revealed outcomes (post-scoring) |
+| `GET` | `/v1/epochs/{id}/episodes` | Hotkey | List episode metadata |
+| `GET` | `/v1/epochs/{id}/episodes/{ep_id}` | Hotkey | Single episode payload |
+| `GET` | `/v1/epochs/{id}/episodes_batch` | Hotkey | All episodes in one request |
+| `POST` | `/v1/epochs/{id}/predictions` | Hotkey | Submit predictions |
+| `GET` | `/v1/epochs/{id}/commitment` | None | Commitment proof |
+| `GET` | `/v1/epochs/{id}/scores` | None | Per-miner scores (post-scoring) |
+| `GET` | `/v1/epochs/{id}/verification` | None | Revealed outcomes (post-scoring) |
 
 **Authentication:** Set the `X-Miner-Hotkey` header to your Bittensor hotkey address.
 

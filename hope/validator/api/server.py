@@ -66,10 +66,10 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
         }
 
     # Register routers
-    app.include_router(episodes_router, prefix="/epochs", tags=["episodes"])
-    app.include_router(predictions_router, prefix="/epochs", tags=["predictions"])
-    app.include_router(commitments_router, prefix="/epochs", tags=["commitments"])
-    app.include_router(verification_router, prefix="/epochs", tags=["verification"])
+    app.include_router(episodes_router, prefix="/v1/epochs", tags=["episodes"])
+    app.include_router(predictions_router, prefix="/v1/epochs", tags=["predictions"])
+    app.include_router(commitments_router, prefix="/v1/epochs", tags=["commitments"])
+    app.include_router(verification_router, prefix="/v1/epochs", tags=["verification"])
     app.include_router(training_router, tags=["training"])
 
     return app

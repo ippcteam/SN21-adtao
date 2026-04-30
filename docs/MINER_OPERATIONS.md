@@ -118,8 +118,8 @@ hope-miner --validator-url http://VALIDATOR_IP:PORT --hotkey YOUR_HOTKEY --epoch
 | Step | Details |
 |------|---------|
 | Auth | `X-Miner-Hotkey` header (simplified; **TBD** for production Ed25519 verification). |
-| Fetch | `GET /epochs/{epoch_id}/episodes` or `.../episodes_batch` |
-| Submit | `POST /epochs/{epoch_id}/predictions` |
+| Fetch | `GET /v1/epochs/{epoch_id}/episodes` or `.../episodes_batch` |
+| Submit | `POST /v1/epochs/{epoch_id}/predictions` |
 
 **Interactive docs** on a running validator: `/docs` (FastAPI).
 
@@ -154,8 +154,8 @@ Full formulas: **[miner_quickstart.md](./miner_quickstart.md)** §5.
 
 | Channel | When available | TBD / detail |
 |---------|----------------|--------------|
-| `GET /epochs/{epoch_id}/scores` (validator API) | After scoring | **TBD** — *exposure policy (public or miner-only)* |
-| `GET /epochs/{epoch_id}/verification` | After reveal | Commitment + outcomes + weights for self-verify |
+| `GET /v1/epochs/{epoch_id}/scores` (validator API) | After scoring | **TBD** — *exposure policy (public or miner-only)* |
+| `GET /v1/epochs/{epoch_id}/verification` | After reveal | Commitment + outcomes + weights for self-verify |
 | **Local** recompute | Anytime with saved JSON | `hope-score` — see quickstart §9 |
 | **On-chain** weight / reward | | **TBD** — *not specified in this repo* |
 

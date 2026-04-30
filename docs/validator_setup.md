@@ -50,8 +50,8 @@ hope-validator --release WR-2026-W18-PUB-E1 --port 8080
 This starts the FastAPI server and waits for miners to connect. The validator:
 - Fetches episodes from HOPE API
 - Commits outcome hash before distributing
-- Serves episodes at `https://validator.adtao.io/epochs/{epoch_id}/episodes`
-- Accepts predictions at `POST /epochs/{epoch_id}/predictions`
+- Serves episodes at `https://validator.adtao.io/v1/epochs/{epoch_id}/episodes`
+- Accepts predictions at `POST /v1/epochs/{epoch_id}/predictions`
 
 ### Tell miners your endpoint
 
@@ -109,13 +109,13 @@ Once running, the validator exposes:
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | `GET` | `/health` | None | Validator status |
-| `GET` | `/epochs/{id}/episodes` | Hotkey | List episode metadata |
-| `GET` | `/epochs/{id}/episodes/{ep_id}` | Hotkey | Single episode payload |
-| `GET` | `/epochs/{id}/episodes_batch` | Hotkey | All episodes in one request |
-| `POST` | `/epochs/{id}/predictions` | Hotkey | Submit predictions |
-| `GET` | `/epochs/{id}/commitment` | None | Commitment proof |
-| `GET` | `/epochs/{id}/verification` | None | Revealed outcomes (post-scoring) |
-| `GET` | `/epochs/{id}/scores` | None | Per-miner scores (post-scoring) |
+| `GET` | `/v1/epochs/{id}/episodes` | Hotkey | List episode metadata |
+| `GET` | `/v1/epochs/{id}/episodes/{ep_id}` | Hotkey | Single episode payload |
+| `GET` | `/v1/epochs/{id}/episodes_batch` | Hotkey | All episodes in one request |
+| `POST` | `/v1/epochs/{id}/predictions` | Hotkey | Submit predictions |
+| `GET` | `/v1/epochs/{id}/commitment` | None | Commitment proof |
+| `GET` | `/v1/epochs/{id}/verification` | None | Revealed outcomes (post-scoring) |
+| `GET` | `/v1/epochs/{id}/scores` | None | Per-miner scores (post-scoring) |
 
 ### Authentication
 
@@ -163,9 +163,9 @@ After scoring, it reveals the salt and outcomes. Anyone can verify:
 import hashlib, json
 
 # The revealed data
-outcomes = [...]  # from /epochs/{id}/verification
-salt = "abc..."   # from /epochs/{id}/verification
-weights = "{...}" # from /epochs/{id}/verification
+outcomes = [...]  # from /v1/epochs/{id}/verification
+salt = "abc..."   # from /v1/epochs/{id}/verification
+weights = "{...}" # from /v1/epochs/{id}/verification
 
 # Recompute
 payload = json.dumps(outcomes, sort_keys=True) + salt + weights

@@ -61,7 +61,7 @@ class TestEpisodeEndpoints:
         app = create_app(_state_with_episodes())
         client = TestClient(app)
         resp = client.get(
-            "/epochs/test-epoch-1/episodes",
+            "/v1/epochs/test-epoch-1/episodes",
             headers={"X-Miner-Hotkey": "miner123"},
         )
         assert resp.status_code == 200
@@ -73,7 +73,7 @@ class TestEpisodeEndpoints:
         app = create_app(_state_with_episodes())
         client = TestClient(app)
         resp = client.get(
-            "/epochs/test-epoch-1/episodes/ep_001",
+            "/v1/epochs/test-epoch-1/episodes/ep_001",
             headers={"X-Miner-Hotkey": "miner123"},
         )
         assert resp.status_code == 200
@@ -84,7 +84,7 @@ class TestEpisodeEndpoints:
         app = create_app(_state_with_episodes())
         client = TestClient(app)
         resp = client.get(
-            "/epochs/wrong-epoch/episodes",
+            "/v1/epochs/wrong-epoch/episodes",
             headers={"X-Miner-Hotkey": "miner123"},
         )
         assert resp.status_code == 404
@@ -92,7 +92,7 @@ class TestEpisodeEndpoints:
     def test_missing_hotkey_returns_422(self):
         app = create_app(_state_with_episodes())
         client = TestClient(app)
-        resp = client.get("/epochs/test-epoch-1/episodes")
+        resp = client.get("/v1/epochs/test-epoch-1/episodes")
         assert resp.status_code == 422
 
 
@@ -124,7 +124,7 @@ class TestPredictionEndpoints:
         }
 
         resp = client.post(
-            "/epochs/test-epoch-1/predictions",
+            "/v1/epochs/test-epoch-1/predictions",
             json=prediction,
             headers={"X-Miner-Hotkey": "miner_abc"},
         )
@@ -153,7 +153,7 @@ class TestPredictionEndpoints:
         }
 
         resp = client.post(
-            "/epochs/test-epoch-1/predictions",
+            "/v1/epochs/test-epoch-1/predictions",
             json=prediction,
             headers={"X-Miner-Hotkey": "miner_abc"},
         )
@@ -167,7 +167,7 @@ class TestCommitmentEndpoints:
     def test_no_commitment_returns_409(self):
         app = create_app(_state_with_episodes())
         client = TestClient(app)
-        resp = client.get("/epochs/test-epoch-1/commitment")
+        resp = client.get("/v1/epochs/test-epoch-1/commitment")
         assert resp.status_code == 409
 
     def test_commitment_returns_data(self):
@@ -180,7 +180,7 @@ class TestCommitmentEndpoints:
         }
         app = create_app(state)
         client = TestClient(app)
-        resp = client.get("/epochs/test-epoch-1/commitment")
+        resp = client.get("/v1/epochs/test-epoch-1/commitment")
         assert resp.status_code == 200
         assert resp.json()["commitment_hash"] == "abc123"
 
@@ -189,11 +189,11 @@ class TestVerificationEndpoints:
     def test_no_reveal_returns_409(self):
         app = create_app(_state_with_episodes())
         client = TestClient(app)
-        resp = client.get("/epochs/test-epoch-1/verification")
+        resp = client.get("/v1/epochs/test-epoch-1/verification")
         assert resp.status_code == 409
 
     def test_scores_not_ready_returns_409(self):
         app = create_app(_state_with_episodes())
         client = TestClient(app)
-        resp = client.get("/epochs/test-epoch-1/scores")
+        resp = client.get("/v1/epochs/test-epoch-1/scores")
         assert resp.status_code == 409

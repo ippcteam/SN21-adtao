@@ -147,13 +147,13 @@ State machine: **IDLE → PREPARING → … → COMPLETE** — [validator_setup.
 | Method | Path | Auth |
 |--------|------|------|
 | GET | `/health` | None |
-| GET | `/epochs/{id}/episodes` | `X-Miner-Hotkey` |
-| GET | `/epochs/{id}/episodes/{ep_id}` | same |
-| GET | `/epochs/{id}/episodes_batch` | same |
-| POST | `/epochs/{id}/predictions` | same |
-| GET | `/epochs/{id}/commitment` | **TBD** public? |
-| GET | `/epochs/{id}/verification` | post-reveal |
-| GET | `/epochs/{id}/scores` | post-scoring **TBD** access policy |
+| GET | `/v1/epochs/{id}/episodes` | `X-Miner-Hotkey` |
+| GET | `/v1/epochs/{id}/episodes/{ep_id}` | same |
+| GET | `/v1/epochs/{id}/episodes_batch` | same |
+| POST | `/v1/epochs/{id}/predictions` | same |
+| GET | `/v1/epochs/{id}/commitment` | **TBD** public? |
+| GET | `/v1/epochs/{id}/verification` | post-reveal |
+| GET | `/v1/epochs/{id}/scores` | post-scoring **TBD** access policy |
 
 **TLS / DDoS / `allowed_hosts`:** **TBD**
 

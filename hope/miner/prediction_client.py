@@ -46,7 +46,7 @@ class PredictionClient:
         self, api_endpoint: str, epoch_id: str, predictions: list[Prediction]
     ) -> dict:
         """Submit a batch of signed predictions for an epoch."""
-        url = f"{api_endpoint}/epochs/{epoch_id}/predictions"
+        url = f"{api_endpoint}/v1/epochs/{epoch_id}/predictions"
 
         payload = {
             "predictions": [

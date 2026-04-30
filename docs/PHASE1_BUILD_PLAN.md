@@ -43,10 +43,10 @@ Test: Client fetches real package from `hope-bittensor-api.onrender.com`, parses
 
 Files:
 - `hope/validator/api/server.py` — FastAPI app factory
-- `hope/validator/api/episodes.py` — `GET /epochs/{id}/episodes`
-- `hope/validator/api/predictions.py` — `POST /epochs/{id}/predictions`
-- `hope/validator/api/commitments.py` — `GET /epochs/{id}/commitment`
-- `hope/validator/api/verification.py` — `GET /epochs/{id}/verification`
+- `hope/validator/api/episodes.py` — `GET /v1/epochs/{id}/episodes`
+- `hope/validator/api/predictions.py` — `POST /v1/epochs/{id}/predictions`
+- `hope/validator/api/commitments.py` — `GET /v1/epochs/{id}/commitment`
+- `hope/validator/api/verification.py` — `GET /v1/epochs/{id}/verification`
 - `hope/validator/api/auth.py` — Hotkey signature verification
 
 Test: Miner can fetch episodes and submit predictions via HTTP.
@@ -111,10 +111,10 @@ Validator stores episodes + outcomes locally
 Validator HTTP API (FastAPI)
     |  (authenticated, miner hotkey signature)
     |
-    ├── GET /epochs/{id}/episodes → miners fetch episodes
-    ├── POST /epochs/{id}/predictions → miners submit predictions
-    ├── GET /epochs/{id}/commitment → anyone verifies commitment
-    └── GET /epochs/{id}/verification → post-scoring, outcomes revealed
+    ├── GET /v1/epochs/{id}/episodes → miners fetch episodes
+    ├── POST /v1/epochs/{id}/predictions → miners submit predictions
+    ├── GET /v1/epochs/{id}/commitment → anyone verifies commitment
+    └── GET /v1/epochs/{id}/verification → post-scoring, outcomes revealed
 ```
 
 ## Verification Flow (How miners verify scoring is fair)
