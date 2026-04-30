@@ -71,5 +71,5 @@ PREDICTION_DEADLINE_HOURS = 48
 DEFAULT_BURN_FRACTION = 0.95
 
 # HOPE Data API
-HOPE_API_BASE_URL = "https://hope-bittensor-api.onrender.com"
+HOPE_API_BASE_URL = "https://hope-ads-backend.onrender.com"
 HOPE_API_VERSION = "v1"
