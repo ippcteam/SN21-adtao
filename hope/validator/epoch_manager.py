@@ -83,6 +83,7 @@ class EpochManager:
         self.current: Optional[EpochContext] = None
         self.history: list[EpochContext] = []
         self.scorer = EpochScorer()
+        self.registered_miners: set[str] = set()  # Populated from metagraph
 
     def get_validator_state(self) -> "LiveState":
         """Get a live state proxy for the FastAPI app."""
@@ -321,7 +322,7 @@ class LiveState(dict):
         if key == "submission_open":
             return self._mgr.is_submission_open()
         if key == "registered_miners":
-            return set()
+            return self._mgr.registered_miners
         if key == "commitment":
             if not ctx.commitment_hash:
                 return default

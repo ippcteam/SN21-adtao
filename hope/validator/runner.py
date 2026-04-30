@@ -99,6 +99,12 @@ class ValidatorRunner:
             return {}
         return {self.metagraph.hotkeys[uid]: uid for uid in range(self.metagraph.n)}
 
+    def get_registered_hotkeys(self) -> set[str]:
+        """Get the set of registered miner hotkeys from metagraph."""
+        if not self.metagraph:
+            return set()
+        return {self.metagraph.hotkeys[uid] for uid in range(self.metagraph.n)}
+
     async def run_epoch(self, release_key: str) -> dict:
         """Start an epoch — fetch episodes ONLY, defer outcomes until after deadline.
 
@@ -107,15 +113,20 @@ class ValidatorRunner:
         answers while miners are predicting.
         """
         logger.info(f"Starting epoch for release {release_key}")
+        self._release_key = release_key
 
-        # Fetch episodes ONLY (outcomes deferred)
-        logger.info("Fetching episodes from HOPE API (outcomes deferred)...")
-        epoch_data = await self.hope_client.fetch_epoch_data(release_key)
+        # Sync registered miners from metagraph (for auth)
+        registered = self.get_registered_hotkeys()
+        self.epoch_manager.registered_miners = registered
+        if registered:
+            logger.info(f"Registered miners from metagraph: {len(registered)}")
 
-        # Prepare with episodes only — outcomes stored separately for later
-        self._deferred_outcomes = epoch_data.outcomes
+        # Fetch episodes ONLY — outcomes are NOT fetched here
+        logger.info("Fetching episodes ONLY from HOPE API (outcomes NOT fetched)...")
+        episodes_data = await self.hope_client.fetch_episodes_only(release_key)
+
         ctx = self.epoch_manager.prepare_episodes_only(
-            episodes=epoch_data.episodes,
+            episodes=episodes_data.episodes,
             release_key=release_key,
         )
 
@@ -140,7 +151,7 @@ class ValidatorRunner:
 
         Phase separation enforced:
         1. Close submission window
-        2. NOW load outcomes (provably after deadline)
+        2. NOW fetch outcomes from HOPE API (provably after deadline)
         3. Score predictions against outcomes
         4. Set weights on-chain
         5. Reveal for verification
@@ -148,8 +159,16 @@ class ValidatorRunner:
         # Step 1: Close submissions
         self.epoch_manager.close_submissions()
 
-        # Step 2: Load outcomes NOW (after deadline)
-        outcomes = getattr(self, '_deferred_outcomes', [])
+        # Step 2: Fetch outcomes NOW — this is the first time outcomes are accessed
+        release_key = getattr(self, '_release_key', '')
+        logger.info(f"Fetching outcomes NOW (after deadline) for {release_key}")
+        loop = asyncio.new_event_loop()
+        outcomes = loop.run_until_complete(
+            self.hope_client.fetch_outcomes_only(release_key)
+        )
+        loop.close()
+        logger.info(f"Outcomes fetched: {len(outcomes)} (after submissions closed)")
+
         scores = self.epoch_manager.load_outcomes_and_score(outcomes)
 
         # Step 3: Set weights on-chain

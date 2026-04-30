@@ -84,11 +84,42 @@ class HopeDataClient:
             resp.raise_for_status()
             return resp.json()
 
-    async def fetch_epoch_data(self, release_key: str) -> EpochData:
-        """Fetch the full challenge package for a release.
+    async def fetch_episodes_only(self, release_key: str) -> EpochData:
+        """Fetch episodes WITHOUT outcomes — for distribution phase.
 
-        Returns parsed episodes, outcomes, and integrity metadata.
-        This is the main method validators call at the start of each epoch.
+        Per Tensora review: outcomes must not be available to the validator
+        until after the submission deadline. This method returns episodes
+        with outcomes stripped out.
+        """
+        data = await self.fetch_epoch_data(release_key)
+        # Strip outcomes — return episodes only
+        return EpochData(
+            release_key=data.release_key,
+            schema_version=data.schema_version,
+            episode_count=data.episode_count,
+            episodes=data.episodes,
+            outcomes=[],  # Deliberately empty
+            package_hash=data.package_hash,
+            trust_enriched_count=data.trust_enriched_count,
+            baseline_count=data.baseline_count,
+            raw_package=None,  # Don't store raw package (contains outcomes)
+        )
+
+    async def fetch_outcomes_only(self, release_key: str) -> list[Outcome]:
+        """Fetch outcomes ONLY — for scoring phase (after deadline).
+
+        This should only be called AFTER the submission window closes.
+        """
+        data = await self.fetch_epoch_data(release_key)
+        logger.info(f"Fetched outcomes for {release_key}: {sum(1 for o in data.outcomes if o.t7)} with t7")
+        return data.outcomes
+
+    async def fetch_epoch_data(self, release_key: str) -> EpochData:
+        """Fetch the full challenge package (episodes + outcomes).
+
+        WARNING: For production use, prefer fetch_episodes_only() during
+        distribution and fetch_outcomes_only() after deadline.
+        This method is kept for backward compatibility and testing.
         """
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             logger.info(f"Fetching package for {release_key} from {self.base_url}")
