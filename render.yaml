@@ -2,13 +2,30 @@ services:
   - type: web
     name: adtao-validator
     runtime: python
-    buildCommand: pip install -e .
-    startCommand: hope-validator --release WR-2026-W18-PUB-E1 --port 8080 --no-chain
+    buildCommand: pip install -e . && chmod +x scripts/start_validator.sh
+    startCommand: bash scripts/start_validator.sh
     envVars:
       - key: HOPE_API_KEY
         value: hope-bt-internal-2026
       - key: PYTHON_VERSION
         value: "3.12.0"
+      - key: WALLET_NAME
+        value: sn21-testnet-1
+      - key: HOTKEY_NAME
+        value: validator
+      - key: RELEASE_KEY
+        value: WR-2026-W18-PUB-E1
+      - key: NETUID
+        value: "466"
+      - key: BT_NETWORK
+        value: test
+      - key: PORT
+        value: "8080"
+      - key: BURN_FRACTION
+        value: "0.95"
+      # Set these in Render dashboard (not in yaml — sensitive):
+      # HOTKEY_B64    — base64 encoded hotkey file
+      # COLDKEYPUB_B64 — base64 encoded coldkeypub.txt
     plan: starter
     healthCheckPath: /health
     autoDeploy: true
