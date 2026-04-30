@@ -40,7 +40,7 @@ SN21 is centrally governed by HOPE at launch. Parameter changes are published wi
 
 ## Validator architecture
 
-At launch, SN21 runs a **single validator** operated by **Tensura**, a Bittensor validator operator. Tensura runs the scoring implementation provided by HOPE: operationally independent infrastructure, logically HOPE-authored scoring code.
+At launch, SN21 runs a **single validator** operated by **Tensora**, a Bittensor validator operator. Tensora runs the scoring implementation provided by HOPE: operationally independent infrastructure, logically HOPE-authored scoring code.
 
 HOPE may introduce an additional validator later (two-validator configuration). **Third-party validators are not supported at launch.** Opening validator registration is on the Review 4 agenda.
 

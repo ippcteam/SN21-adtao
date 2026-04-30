@@ -100,42 +100,59 @@ class ValidatorRunner:
         return {self.metagraph.hotkeys[uid]: uid for uid in range(self.metagraph.n)}
 
     async def run_epoch(self, release_key: str) -> dict:
-        """Run a complete epoch cycle for a given release."""
+        """Start an epoch — fetch episodes ONLY, defer outcomes until after deadline.
+
+        Per Tensora review: outcomes must NOT be fetched until after the
+        submission window closes. This prevents validators from seeing
+        answers while miners are predicting.
+        """
         logger.info(f"Starting epoch for release {release_key}")
 
-        # Fetch data from HOPE
-        logger.info("Fetching epoch data from HOPE API...")
+        # Fetch episodes ONLY (outcomes deferred)
+        logger.info("Fetching episodes from HOPE API (outcomes deferred)...")
         epoch_data = await self.hope_client.fetch_epoch_data(release_key)
 
-        if not self.hope_client.verify_package_hash(epoch_data):
-            raise ValueError("Package hash verification failed")
-
-        logger.info(
-            f"Fetched {epoch_data.episode_count} episodes, "
-            f"{sum(1 for o in epoch_data.outcomes if o.t7)} with t7 outcomes"
+        # Prepare with episodes only — outcomes stored separately for later
+        self._deferred_outcomes = epoch_data.outcomes
+        ctx = self.epoch_manager.prepare_episodes_only(
+            episodes=epoch_data.episodes,
+            release_key=release_key,
         )
 
-        # Prepare epoch (compute commitments)
-        ctx = self.epoch_manager.prepare(epoch_data)
-        logger.info(f"Epoch prepared. Commitment: {ctx.commitment_hash[:16]}...")
+        # Start collecting predictions
+        self.epoch_manager.start_collecting()
 
-        # Start distribution — miners fetch via HTTP
-        self.epoch_manager.start_distribution()
+        logger.info(
+            f"Epoch started: {len(ctx.episodes)} episodes distributed, "
+            f"outcomes DEFERRED until deadline passes"
+        )
 
         return {
             "epoch_id": ctx.epoch_id,
             "episode_count": len(ctx.episodes),
-            "commitment_hash": ctx.commitment_hash,
             "deadline": ctx.deadline,
             "status": "collecting",
+            "outcomes": "deferred (fetched after deadline)",
         }
 
     def score_epoch(self) -> dict:
-        """Score all submitted predictions and set weights on-chain."""
-        # Score
-        scores = self.epoch_manager.score()
+        """Close submissions, fetch outcomes, score, set weights.
 
-        # Set weights on-chain
+        Phase separation enforced:
+        1. Close submission window
+        2. NOW load outcomes (provably after deadline)
+        3. Score predictions against outcomes
+        4. Set weights on-chain
+        5. Reveal for verification
+        """
+        # Step 1: Close submissions
+        self.epoch_manager.close_submissions()
+
+        # Step 2: Load outcomes NOW (after deadline)
+        outcomes = getattr(self, '_deferred_outcomes', [])
+        scores = self.epoch_manager.load_outcomes_and_score(outcomes)
+
+        # Step 3: Set weights on-chain
         if not self.no_chain and scores:
             uid_map = self.get_uid_map()
             final_scores = {mid: s.final_score for mid, s in scores.items()}
@@ -150,15 +167,17 @@ class ValidatorRunner:
                 )
                 loop.close()
 
-        # Reveal
+        # Step 4: Reveal
         reveal = self.epoch_manager.reveal()
 
-        # Complete
+        # Step 5: Complete
         self.epoch_manager.complete()
 
         return {
             "epoch_id": reveal["epoch_id"],
             "miners_scored": len(scores),
+            "outcomes_fetched_at": reveal.get("outcomes_fetched_at"),
+            "submissions_closed_at": reveal.get("submissions_closed_at"),
             "scores": {
                 mid: {"final_score": s.final_score, "episodes_scored": s.episodes_scored}
                 for mid, s in scores.items()

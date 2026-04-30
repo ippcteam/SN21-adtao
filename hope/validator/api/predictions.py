@@ -1,7 +1,15 @@
-"""Prediction endpoints — miners submit predictions here."""
+"""Prediction endpoints — miners submit predictions here.
+
+Security (per Tensora review):
+- Submission window is enforced (closed after deadline)
+- Rate limited per miner hotkey
+- Predictions must be signed (TODO: full signature verification)
+"""
 
 from __future__ import annotations
 
+import time
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,12 +20,29 @@ from hope.validator.api.auth import MinerIdentity, verify_miner
 
 router = APIRouter()
 
+# Rate limiting: max submissions per miner per minute
+RATE_LIMIT_PER_MINUTE = 10
+_rate_tracker: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(hotkey: str):
+    """Enforce rate limit per miner hotkey."""
+    now = time.time()
+    # Clean old entries
+    _rate_tracker[hotkey] = [t for t in _rate_tracker[hotkey] if now - t < 60]
+    if len(_rate_tracker[hotkey]) >= RATE_LIMIT_PER_MINUTE:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded ({RATE_LIMIT_PER_MINUTE} submissions/minute)",
+        )
+    _rate_tracker[hotkey].append(now)
+
 
 class PredictionSubmission(BaseModel):
     """Incoming prediction from a miner."""
 
     episode_id: str
-    horizons: dict[str, dict]  # Raw horizon data
+    horizons: dict[str, dict]
 
 
 class BatchPredictionSubmission(BaseModel):
@@ -35,7 +60,10 @@ async def submit_predictions(
 ):
     """Submit predictions for one or more episodes.
 
-    Validates prediction format and stores for scoring after deadline.
+    Enforces:
+    - Submission window (rejects after deadline)
+    - Rate limiting per miner
+    - Prediction validation (quantile ordering, ranges)
     """
     state = request.app.state.validator
     current_epoch = state.get("current_epoch_id")
@@ -43,18 +71,30 @@ async def submit_predictions(
     if epoch_id != current_epoch:
         raise HTTPException(status_code=404, detail=f"Epoch {epoch_id} not found")
 
-    # Check deadline
+    # Check submission window is open
+    # LiveState computes this dynamically; plain dicts default to True for testing
+    submission_open = state.get("submission_open", True)
+    if not submission_open:
+        raise HTTPException(
+            status_code=403,
+            detail="Submission window is closed. Predictions are no longer accepted.",
+        )
+
+    # Check deadline explicitly
     deadline_str = state.get("deadline")
     if deadline_str:
         deadline = datetime.fromisoformat(deadline_str)
         if datetime.now(timezone.utc) > deadline:
-            raise HTTPException(status_code=400, detail="Prediction deadline has passed")
+            raise HTTPException(status_code=403, detail="Prediction deadline has passed")
+
+    # Rate limit
+    _check_rate_limit(miner.hotkey)
 
     # Get valid episode IDs
     episodes = state.get("episodes", [])
     valid_ids = {ep.episode_metadata.episode_id for ep in episodes}
 
-    # Get predictions dict (LiveState returns it from EpochContext)
+    # Get predictions dict
     predictions = state.get("predictions", {})
     if miner.hotkey not in predictions:
         predictions[miner.hotkey] = []
@@ -70,7 +110,6 @@ async def submit_predictions(
             continue
 
         try:
-            # Parse and validate prediction
             horizons = {}
             for h_key, h_data in sub.horizons.items():
                 if h_key not in ("7", "14"):

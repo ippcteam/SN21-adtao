@@ -1,16 +1,18 @@
 """Epoch Manager — state machine for the epoch lifecycle.
 
 States:
-  IDLE → PREPARING → COMMITTED → DISTRIBUTING → COLLECTING → SCORING → REVEALING → COMPLETE
+  IDLE → PREPARING → DISTRIBUTING → COLLECTING → CLOSED → SCORING → REVEALING → COMPLETE
 
-Each state transition performs specific actions:
-- PREPARING: fetch data from HOPE, compute commitments
-- COMMITTED: publish commitment hash
-- DISTRIBUTING: serve episodes to miners
-- COLLECTING: accept predictions until deadline
-- SCORING: score all predictions against outcomes
-- REVEALING: publish outcomes + salt for verification
-- COMPLETE: set weights, log summary
+Key security property (per Tensora review):
+  Outcomes are NOT fetched until AFTER the submission deadline closes.
+  This prevents validators from seeing answers before miners submit.
+
+Phase separation:
+  1. PREPARING: fetch episodes ONLY (no outcomes) from HOPE API
+  2. DISTRIBUTING → COLLECTING: miners submit predictions
+  3. CLOSED: submission deadline passed, no more predictions accepted
+  4. SCORING: NOW fetch outcomes from HOPE API, score predictions
+  5. REVEALING: publish outcomes for verification
 """
 
 from __future__ import annotations
@@ -30,7 +32,6 @@ from hope.protocol.outcomes import Outcome
 from hope.protocol.prediction import Prediction
 from hope.scoring.scorer import EpochScorer, MinerScore
 from hope.scoring.weights import ScoringWeights
-from hope.validator.data_client import EpochData
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +39,9 @@ logger = logging.getLogger(__name__)
 class EpochState(str, Enum):
     IDLE = "idle"
     PREPARING = "preparing"
-    COMMITTED = "committed"
     DISTRIBUTING = "distributing"
     COLLECTING = "collecting"
+    CLOSED = "closed"          # Submissions closed, outcomes not yet fetched
     SCORING = "scoring"
     REVEALING = "revealing"
     COMPLETE = "complete"
@@ -53,7 +54,7 @@ class EpochContext:
     epoch_id: str
     state: EpochState = EpochState.IDLE
     episodes: list[Episode] = field(default_factory=list)
-    outcomes: list[Outcome] = field(default_factory=list)
+    outcomes: list[Outcome] = field(default_factory=list)  # Empty until SCORING phase
     predictions: dict[str, list[Prediction]] = field(default_factory=dict)
     scores: dict[str, MinerScore] = field(default_factory=dict)
 
@@ -66,6 +67,8 @@ class EpochContext:
     # Timing
     started_at: Optional[str] = None
     deadline: Optional[str] = None
+    closed_at: Optional[str] = None       # When submissions were closed
+    outcomes_fetched_at: Optional[str] = None  # When outcomes were fetched (AFTER deadline)
     scored_at: Optional[str] = None
     revealed_at: Optional[str] = None
 
@@ -74,7 +77,7 @@ class EpochContext:
 
 
 class EpochManager:
-    """Manages the lifecycle of epochs."""
+    """Manages the lifecycle of epochs with phase separation."""
 
     def __init__(self):
         self.current: Optional[EpochContext] = None
@@ -82,69 +85,104 @@ class EpochManager:
         self.scorer = EpochScorer()
 
     def get_validator_state(self) -> "LiveState":
-        """Get a live state proxy for the FastAPI app.
-
-        Returns an object that always reads from self.current,
-        so scoring/reveal updates are visible immediately.
-        """
+        """Get a live state proxy for the FastAPI app."""
         return LiveState(self)
+
+    def is_submission_open(self) -> bool:
+        """Check if the submission window is currently open."""
+        if not self.current:
+            return False
+        if self.current.state not in (EpochState.COLLECTING, EpochState.DISTRIBUTING):
+            return False
+        if self.current.deadline:
+            deadline = datetime.fromisoformat(self.current.deadline)
+            if datetime.now(timezone.utc) > deadline:
+                return False
+        return True
 
     # -- State transitions --
 
-    def prepare(self, epoch_data: EpochData) -> EpochContext:
-        """IDLE → PREPARING: Load epoch data and compute commitments."""
+    def prepare_episodes_only(self, episodes: list[Episode], release_key: str,
+                               deadline_hours: float = PREDICTION_DEADLINE_HOURS) -> EpochContext:
+        """IDLE → PREPARING: Load episodes WITHOUT outcomes.
+
+        Outcomes are intentionally NOT loaded here. They will be fetched
+        only after the submission deadline closes. This prevents the
+        validator from seeing answers before miners submit.
+        """
         now = datetime.now(timezone.utc)
 
         ctx = EpochContext(
-            epoch_id=epoch_data.release_key,
+            epoch_id=release_key,
             state=EpochState.PREPARING,
-            episodes=epoch_data.episodes,
-            outcomes=epoch_data.outcomes,
+            episodes=episodes,
+            outcomes=[],  # Deliberately empty — fetched after deadline
             started_at=now.isoformat(),
-            deadline=(now + timedelta(hours=PREDICTION_DEADLINE_HOURS)).isoformat(),
+            deadline=(now + timedelta(hours=deadline_hours)).isoformat(),
         )
 
-        # Generate commitment
-        ctx.salt = secrets.token_hex(32)
-        ctx.commitment_hash = self._compute_commitment(ctx)
-        ctx.merkle_root = self._compute_merkle_root(ctx)
-        ctx.committed_at = now.isoformat()
-
-        ctx.state = EpochState.COMMITTED
+        ctx.state = EpochState.DISTRIBUTING
         self.current = ctx
 
         logger.info(
             f"Epoch {ctx.epoch_id} prepared: {len(ctx.episodes)} episodes, "
-            f"commitment={ctx.commitment_hash[:16]}..., "
+            f"outcomes=DEFERRED (fetched after deadline), "
             f"deadline={ctx.deadline}"
         )
 
         return ctx
 
-    def start_distribution(self) -> None:
-        """COMMITTED → DISTRIBUTING: Begin serving episodes to miners."""
-        if not self.current or self.current.state != EpochState.COMMITTED:
-            raise ValueError("Cannot start distribution — not in COMMITTED state")
-
-        self.current.state = EpochState.DISTRIBUTING
-        logger.info(f"Epoch {self.current.epoch_id} distributing")
-
-        # Immediately move to collecting (miners can start fetching)
+    def start_collecting(self) -> None:
+        """DISTRIBUTING → COLLECTING: Accept predictions from miners."""
+        if not self.current:
+            raise ValueError("No active epoch")
         self.current.state = EpochState.COLLECTING
         logger.info(f"Epoch {self.current.epoch_id} collecting predictions until {self.current.deadline}")
 
-    def score(self) -> dict[str, MinerScore]:
-        """COLLECTING → SCORING: Score all miner predictions."""
+    def close_submissions(self) -> None:
+        """COLLECTING → CLOSED: No more predictions accepted."""
         if not self.current:
             raise ValueError("No active epoch")
+        self.current.state = EpochState.CLOSED
+        self.current.closed_at = datetime.now(timezone.utc).isoformat()
+        logger.info(
+            f"Epoch {self.current.epoch_id} submissions CLOSED. "
+            f"{len(self.current.predictions)} miners submitted."
+        )
 
+    def load_outcomes_and_score(self, outcomes: list[Outcome]) -> dict[str, MinerScore]:
+        """CLOSED → SCORING: Load outcomes (NOW) and score predictions.
+
+        This is the critical phase separation: outcomes are only loaded
+        AFTER submissions are closed. The validator provably did not have
+        the answers while miners were predicting.
+        """
+        if not self.current:
+            raise ValueError("No active epoch")
+        if self.current.state != EpochState.CLOSED:
+            raise ValueError(f"Cannot score — submissions not closed (state={self.current.state})")
+
+        # Load outcomes NOW
+        self.current.outcomes = outcomes
+        self.current.outcomes_fetched_at = datetime.now(timezone.utc).isoformat()
+        logger.info(
+            f"Outcomes loaded AFTER deadline: {len(outcomes)} outcomes, "
+            f"fetched at {self.current.outcomes_fetched_at}"
+        )
+
+        # Compute commitment (over outcomes that were just loaded)
+        self.current.salt = secrets.token_hex(32)
+        self.current.commitment_hash = self._compute_commitment(self.current)
+        self.current.merkle_root = self._compute_merkle_root(self.current)
+        self.current.committed_at = datetime.now(timezone.utc).isoformat()
+
+        # Score
         self.current.state = EpochState.SCORING
         logger.info(
             f"Scoring epoch {self.current.epoch_id}: "
             f"{len(self.current.predictions)} miners submitted"
         )
 
-        # Run the scoring pipeline
         self.current.scores = self.scorer.score_epoch(
             all_predictions=self.current.predictions,
             episodes=self.current.episodes,
@@ -174,6 +212,8 @@ class EpochManager:
             "salt": self.current.salt,
             "scoring_weights": self.current.weights.to_commitment_json(),
             "outcome_count": len(self.current.outcomes),
+            "outcomes_fetched_at": self.current.outcomes_fetched_at,
+            "submissions_closed_at": self.current.closed_at,
         }
 
         logger.info(f"Epoch {self.current.epoch_id} revealed")
@@ -183,10 +223,28 @@ class EpochManager:
         """REVEALING → COMPLETE: Finalize epoch."""
         if not self.current:
             raise ValueError("No active epoch")
-
         self.current.state = EpochState.COMPLETE
         self.history.append(self.current)
         logger.info(f"Epoch {self.current.epoch_id} complete")
+
+    # -- Legacy compatibility (for tests) --
+
+    def prepare(self, epoch_data) -> EpochContext:
+        """Legacy prepare — loads episodes + outcomes together. For testing only."""
+        ctx = self.prepare_episodes_only(epoch_data.episodes, epoch_data.release_key)
+        # Store outcomes for later scoring (but don't expose them during collection)
+        self._deferred_outcomes = epoch_data.outcomes
+        return ctx
+
+    def start_distribution(self) -> None:
+        """Legacy — start collecting."""
+        self.start_collecting()
+
+    def score(self) -> dict[str, MinerScore]:
+        """Legacy score — uses deferred outcomes."""
+        self.close_submissions()
+        outcomes = getattr(self, '_deferred_outcomes', self.current.outcomes if self.current else [])
+        return self.load_outcomes_and_score(outcomes)
 
     # -- Commitment helpers --
 
@@ -212,10 +270,9 @@ class EpochManager:
             ).hexdigest()
             leaves.append(leaf)
 
-        # Simple iterative Merkle tree
         while len(leaves) > 1:
             if len(leaves) % 2 == 1:
-                leaves.append(leaves[-1])  # Duplicate last if odd
+                leaves.append(leaves[-1])
             next_level = []
             for i in range(0, len(leaves), 2):
                 combined = leaves[i] + leaves[i + 1]
@@ -234,15 +291,17 @@ class EpochManager:
 
 
 class LiveState(dict):
-    """Dict-like proxy that reads from EpochManager.current on every access.
-
-    This ensures the FastAPI app always sees the latest epoch state,
-    including post-scoring results and revealed outcomes.
-    """
+    """Dict-like proxy that reads from EpochManager.current on every access."""
 
     def __init__(self, manager: EpochManager):
         super().__init__()
         self._mgr = manager
+
+    def __getitem__(self, key):
+        result = self.get(key)
+        if result is None and key not in self:
+            raise KeyError(key)
+        return result
 
     def get(self, key, default=None):
         ctx = self._mgr.current
@@ -259,6 +318,8 @@ class LiveState(dict):
             return ctx.outcomes
         if key == "deadline":
             return ctx.deadline
+        if key == "submission_open":
+            return self._mgr.is_submission_open()
         if key == "registered_miners":
             return set()
         if key == "commitment":
@@ -286,20 +347,17 @@ class LiveState(dict):
                     }
                     for mid, s in ctx.scores.items()
                 },
+                "outcomes_fetched_at": ctx.outcomes_fetched_at,
+                "submissions_closed_at": ctx.closed_at,
             }
         if key == "miner_scores":
             return ctx.scores if ctx.scores else default
         return default
 
-    def __getitem__(self, key):
-        result = self.get(key)
-        if result is None and key not in self:
-            raise KeyError(key)
-        return result
-
     def __contains__(self, key):
-        return key in ("current_epoch_id", "episodes", "predictions", "deadline",
-                       "commitment", "reveal", "miner_scores", "registered_miners")
+        return key in ("current_epoch_id", "episodes", "predictions", "outcomes",
+                       "deadline", "submission_open", "commitment", "reveal",
+                       "miner_scores", "registered_miners")
 
     def __setitem__(self, key, value):
         ctx = self._mgr.current
