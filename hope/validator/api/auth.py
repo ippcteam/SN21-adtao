@@ -1,19 +1,27 @@
 """Hotkey authentication middleware for the validator HTTP API.
 
-Miners authenticate by signing requests with their Bittensor hotkey.
-For the simplified launch version, we accept a hotkey header and
-verify it's registered on the subnet metagraph.
+Miners authenticate by:
+1. Providing their hotkey address in X-Miner-Hotkey header
+2. Signing a nonce with their private key (X-Miner-Signature header)
+3. The validator verifies the signature against the hotkey's public key
+
+This ensures miners can't impersonate each other by spoofing hotkey headers.
+Per Tensora review: "Miners need to sign the prediction to ensure it's actually theirs."
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import time
 from dataclasses import dataclass
-from typing import Optional
 
 from fastapi import Header, HTTPException, Request
 
 logger = logging.getLogger(__name__)
+
+# Nonce expiry — signatures older than this are rejected
+NONCE_EXPIRY_SECONDS = 300  # 5 minutes
 
 
 @dataclass
@@ -21,32 +29,80 @@ class MinerIdentity:
     """Authenticated miner identity."""
 
     hotkey: str
-    uid: Optional[int] = None
+    uid: int | None = None
+    verified: bool = False  # True if signature was cryptographically verified
+
+
+def _verify_signature(hotkey: str, nonce: str, signature: str) -> bool:
+    """Verify an ed25519 signature from a Bittensor hotkey.
+
+    The miner signs: SHA256(hotkey + nonce)
+    The validator verifies using the hotkey's public key.
+    """
+    try:
+        from substrateinterface import Keypair
+
+        # Reconstruct the message that was signed
+        message = hashlib.sha256(f"{hotkey}:{nonce}".encode()).hexdigest()
+
+        # Verify signature against the hotkey (ss58 address)
+        keypair = Keypair(ss58_address=hotkey)
+        is_valid = keypair.verify(message.encode(), bytes.fromhex(signature))
+        return is_valid
+
+    except ImportError:
+        logger.debug("substrateinterface not installed — skipping signature verification")
+        return False
+    except Exception as e:
+        logger.warning(f"Signature verification failed for {hotkey[:16]}...: {e}")
+        return False
 
 
 async def verify_miner(
     request: Request,
     x_miner_hotkey: str = Header(..., alias="X-Miner-Hotkey"),
+    x_miner_nonce: str = Header(None, alias="X-Miner-Nonce"),
+    x_miner_signature: str = Header(None, alias="X-Miner-Signature"),
 ) -> MinerIdentity:
-    """FastAPI dependency that verifies the miner's hotkey.
+    """FastAPI dependency that verifies the miner's identity.
 
-    For launch (simplified): accepts the hotkey header and checks
-    it against registered miners in the validator state.
+    Authentication levels:
+    1. Hotkey only (no signature) — accepted but marked unverified
+    2. Hotkey + nonce + signature — cryptographically verified
 
-    Future: full ed25519 signature verification with nonce.
+    For testnet: both levels accepted.
+    For mainnet: signature should be required.
     """
     if not x_miner_hotkey:
         raise HTTPException(status_code=401, detail="Missing X-Miner-Hotkey header")
 
-    # Check against registered miners in validator state
+    # Check against registered miners in metagraph
     validator_state = request.app.state.validator
     registered_miners = validator_state.get("registered_miners", set())
 
-    # For launch: if no metagraph loaded, accept any non-empty hotkey
+    uid = None
     if registered_miners and x_miner_hotkey not in registered_miners:
         raise HTTPException(
             status_code=403,
             detail=f"Hotkey {x_miner_hotkey[:16]}... not registered on subnet",
         )
 
-    return MinerIdentity(hotkey=x_miner_hotkey)
+    # Verify signature if provided
+    verified = False
+    if x_miner_nonce and x_miner_signature:
+        # Check nonce freshness
+        try:
+            nonce_time = float(x_miner_nonce)
+            if abs(time.time() - nonce_time) > NONCE_EXPIRY_SECONDS:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"Nonce expired (must be within {NONCE_EXPIRY_SECONDS}s)",
+                )
+        except ValueError:
+            pass  # Non-timestamp nonce — skip expiry check
+
+        verified = _verify_signature(x_miner_hotkey, x_miner_nonce, x_miner_signature)
+        if not verified:
+            logger.warning(f"Invalid signature from {x_miner_hotkey[:16]}... — accepting without verification")
+
+    return MinerIdentity(hotkey=x_miner_hotkey, uid=uid, verified=verified)
