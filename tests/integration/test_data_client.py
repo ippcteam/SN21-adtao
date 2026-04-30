@@ -8,7 +8,7 @@ from hope.validator.data_client import HopeDataClient
 
 
 LIVE_API_KEY = "hope-bt-internal-2026"
-LIVE_RELEASE_KEY = "WR-2026-W17-PUB-E1"
+LIVE_RELEASE_KEY = "WR-2026-W18-PUB-E1"
 
 
 @pytest.fixture
