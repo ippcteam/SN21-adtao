@@ -31,7 +31,7 @@ class MinerRunner:
         self,
         model: PredictionEngine | None = None,
         hotkey: str = "miner_default",
-        validator_url: str = "http://localhost:8080",
+        validator_url: str = "https://validator.adtao.io",
     ):
         self.model = model or BaselineModel()
         self.hotkey = hotkey
@@ -130,7 +130,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="HOPE SN21 Miner")
-    parser.add_argument("--validator-url", type=str, default="http://localhost:8080",
+    parser.add_argument("--validator-url", type=str, default="https://validator.adtao.io",
                         help="Validator HTTP API URL")
     parser.add_argument("--hotkey", type=str, default="miner_default",
                         help="Miner hotkey for authentication")

@@ -58,16 +58,16 @@ pip install -e ".[miner]"
 python scripts/train_example_model.py --data-file data/training/training_episodes.json
 
 # Run miner (auto-discovers current epoch from validator)
-hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY
+hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY
 
 # Or run continuously (polls for new epochs)
-hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY --continuous
+hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY --continuous
 
 # Check your score after an epoch
 python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
 ```
 
-**Validator URL:** Check the AdTAO Discord `#sn21-miners` channel for the active validator.
+**Validator URL:** `https://validator.adtao.io`
 
 **Training data:** 10 episodes with known outcomes are bundled in `data/training/`. Use these to build a model before predicting on live epochs.
 

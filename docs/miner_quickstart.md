@@ -78,16 +78,16 @@ Use these to train: given input features → predict outcome deltas.
 
 ```bash
 # Connect to the validator and submit predictions
-hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY
+hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY
 
 # Or specify an epoch explicitly
-hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY --epoch WR-2026-W18-PUB-E1
+hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY --epoch WR-2026-W18-PUB-E1
 
 # Or run continuously (polls validator for new epochs every 30s)
-hope-miner --validator-url http://VALIDATOR_IP:8080 --hotkey YOUR_HOTKEY --continuous
+hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY --continuous
 ```
 
-**Finding the validator:** The active validator URL will be announced in the AdTAO Discord. During testnet, ask in the `#sn21-miners` channel.
+**Validator URL:** `https://validator.adtao.io` — this is the official AdTAO validator.
 
 If no `--epoch` is provided, the miner auto-discovers the current epoch from the validator's `/health` endpoint.
 
@@ -97,13 +97,13 @@ After an epoch is scored, check your results:
 
 ```bash
 # Check scores via the validator API
-curl http://VALIDATOR_IP:8080/epochs/WR-2026-W18-PUB-E1/scores
+curl https://validator.adtao.io/epochs/WR-2026-W18-PUB-E1/scores
 
 # Or score yourself offline (exact same scoring the validator uses)
 python scripts/score_predictions.py --release WR-2026-W17-PUB-E1 --run-baseline
 
 # Verify the validator didn't cheat (commitment verification)
-curl http://VALIDATOR_IP:8080/epochs/WR-2026-W18-PUB-E1/verification
+curl https://validator.adtao.io/epochs/WR-2026-W18-PUB-E1/verification
 ```
 
 The `/scores` endpoint shows your raw score, null penalty, and final score. The `/verification` endpoint reveals outcomes + salt so you can independently verify the commitment hash.
@@ -525,7 +525,7 @@ All interaction with the validator is via HTTP:
 
 **Authentication:** Set the `X-Miner-Hotkey` header to your Bittensor hotkey address.
 
-**Finding the validator:** Check the AdTAO Discord `#sn21-miners` channel for the current validator URL. Or query the Bittensor metagraph for serving axons on netuid 466.
+**Validator URL:** `https://validator.adtao.io`
 
 ---
 
