@@ -313,7 +313,8 @@ def main():
 
         print(f"\nEpoch started: {result['epoch_id']}")
         print(f"Episodes: {result['episode_count']}")
-        print(f"Commitment: {result['commitment_hash'][:32]}...")
+        print(f"Deadline: {result['deadline']}")
+        print(f"Outcomes: {result.get('outcomes', 'deferred')}")
 
         if args.score_now:
             score_result = runner.score_epoch()
