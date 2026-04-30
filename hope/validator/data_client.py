@@ -87,32 +87,64 @@ class HopeDataClient:
     async def fetch_episodes_only(self, release_key: str) -> EpochData:
         """Fetch episodes WITHOUT outcomes — for distribution phase.
 
-        Per Tensora review: outcomes must not be available to the validator
-        until after the submission deadline. This method returns episodes
-        with outcomes stripped out.
+        Calls HOPE API without ?include_outcomes=true, so the server
+        does not return outcome data. Double protection: even if
+        outcomes leaked, we strip them client-side too.
         """
-        data = await self.fetch_epoch_data(release_key)
-        # Strip outcomes — return episodes only
+        # Request WITHOUT include_outcomes — server won't return outcomes
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            logger.info(f"Fetching episodes-only for {release_key} (no outcomes)")
+            resp = await client.get(
+                self._url(f"/releases/{release_key}/package"),
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            package = resp.json()
+
+        episodes = []
+        for ep_data in package.get("episodes", []):
+            payload = ep_data.get("payload")
+            if payload:
+                episodes.append(self._parse_episode(payload))
+
         return EpochData(
-            release_key=data.release_key,
-            schema_version=data.schema_version,
-            episode_count=data.episode_count,
-            episodes=data.episodes,
+            release_key=release_key,
+            schema_version=package.get("schema_version", "v0.1"),
+            episode_count=len(episodes),
+            episodes=episodes,
             outcomes=[],  # Deliberately empty
-            package_hash=data.package_hash,
-            trust_enriched_count=data.trust_enriched_count,
-            baseline_count=data.baseline_count,
-            raw_package=None,  # Don't store raw package (contains outcomes)
+            package_hash=package.get("integrity", {}).get("package_hash", ""),
+            trust_enriched_count=0,
+            baseline_count=len(episodes),
+            raw_package=None,  # Don't store raw package
         )
 
     async def fetch_outcomes_only(self, release_key: str) -> list[Outcome]:
         """Fetch outcomes ONLY — for scoring phase (after deadline).
 
-        This should only be called AFTER the submission window closes.
+        Calls HOPE API WITH ?include_outcomes=true. This should only
+        be called AFTER the submission window closes.
         """
-        data = await self.fetch_epoch_data(release_key)
-        logger.info(f"Fetched outcomes for {release_key}: {sum(1 for o in data.outcomes if o.t7)} with t7")
-        return data.outcomes
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            logger.info(f"Fetching outcomes for {release_key} (include_outcomes=true)")
+            resp = await client.get(
+                self._url(f"/releases/{release_key}/package?include_outcomes=true"),
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            package = resp.json()
+
+        outcomes = []
+        for ep_data in package.get("episodes", []):
+            episode_id = ep_data.get("episode_id", "")
+            payload = ep_data.get("payload", {})
+            voo = ep_data.get("validator_only_outcomes")
+            outcome = self._parse_outcome(episode_id, voo, payload)
+            outcomes.append(outcome)
+
+        with_t7 = sum(1 for o in outcomes if o.t7)
+        logger.info(f"Fetched outcomes for {release_key}: {with_t7} with t7")
+        return outcomes
 
     async def fetch_epoch_data(self, release_key: str) -> EpochData:
         """Fetch the full challenge package (episodes + outcomes).

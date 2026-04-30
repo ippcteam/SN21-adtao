@@ -70,8 +70,9 @@ async def verify_miner(
     1. Hotkey only (no signature) — accepted but marked unverified
     2. Hotkey + nonce + signature — cryptographically verified
 
-    For testnet: both levels accepted.
-    For mainnet: signature should be required.
+    Configurable via REQUIRE_SIGNATURES env var:
+    - "false" (default for testnet): unsigned requests accepted
+    - "true" (for mainnet): unsigned requests rejected with 401
     """
     if not x_miner_hotkey:
         raise HTTPException(status_code=401, detail="Missing X-Miner-Hotkey header")
@@ -86,6 +87,10 @@ async def verify_miner(
             status_code=403,
             detail=f"Hotkey {x_miner_hotkey[:16]}... not registered on subnet",
         )
+
+    # Check if signatures are required (mainnet enforcement)
+    import os
+    require_sigs = os.environ.get("REQUIRE_SIGNATURES", "false").lower() == "true"
 
     # Verify signature if provided
     verified = False
@@ -103,6 +108,14 @@ async def verify_miner(
 
         verified = _verify_signature(x_miner_hotkey, x_miner_nonce, x_miner_signature)
         if not verified:
+            if require_sigs:
+                raise HTTPException(status_code=401, detail="Invalid signature")
             logger.warning(f"Invalid signature from {x_miner_hotkey[:16]}... — accepting without verification")
+    elif require_sigs:
+        # No signature provided but signatures are required
+        raise HTTPException(
+            status_code=401,
+            detail="Signature required. Include X-Miner-Nonce and X-Miner-Signature headers.",
+        )
 
     return MinerIdentity(hotkey=x_miner_hotkey, uid=uid, verified=verified)
