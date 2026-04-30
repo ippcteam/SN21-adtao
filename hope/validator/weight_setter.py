@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -33,22 +32,10 @@ class WeightSetter:
     def __init__(self, burn_fraction: float = DEFAULT_BURN_FRACTION):
         self.burn_fraction = burn_fraction
         self.previous_weights: dict[int, float] = {}
-        # Track hotkey→uid mapping to detect deregistrations
         self._hotkey_at_uid: dict[int, str] = {}
 
     def apply_burn(self, weights: dict[int, float]) -> dict[int, float]:
-        """Apply burn rate by assigning burn_fraction of weight to UID 0.
-
-        Per Tensora/Jack: burn is implemented by setting a percentage of
-        weight to UID 0 (subnet owner). The remaining weight is split
-        among miners proportionally.
-
-        Args:
-            weights: uid → weight (before burn)
-
-        Returns:
-            uid → weight (with UID 0 burn applied)
-        """
+        """Apply burn rate by assigning burn_fraction of weight to UID 0."""
         if not weights or self.burn_fraction >= 1.0:
             return {0: 1.0}
 
@@ -75,15 +62,7 @@ class WeightSetter:
         scores: dict[str, float],
         uid_map: dict[str, int],
     ) -> tuple[list[int], list[float]]:
-        """Convert miner_id → score to (uids, weights) for set_weights.
-
-        Args:
-            scores: miner_hotkey → final_score
-            uid_map: miner_hotkey → uid on the metagraph
-
-        Returns:
-            (uids, weights) tuple ready for subtensor.set_weights()
-        """
+        """Convert miner_id → score to (uids, weights) for set_weights."""
         uids = []
         raw_weights = []
 
@@ -95,12 +74,10 @@ class WeightSetter:
             uids.append(uid)
             raw_weights.append(max(score, 0.0))
 
-            # Detect deregistration: if the hotkey at this UID changed,
-            # reset the EMA for this UID (per Tensora: new miner should
-            # not inherit a deregistered miner's score)
+            # Detect deregistration: reset EMA if hotkey changed at this UID
             prev_hotkey = self._hotkey_at_uid.get(uid)
             if prev_hotkey and prev_hotkey != hotkey:
-                logger.info(f"UID {uid} hotkey changed ({prev_hotkey[:12]}→{hotkey[:12]}), resetting EMA")
+                logger.info(f"UID {uid} hotkey changed, resetting EMA")
                 self.previous_weights.pop(uid, None)
             self._hotkey_at_uid[uid] = hotkey
 
@@ -114,9 +91,7 @@ class WeightSetter:
         else:
             weights = [1.0 / len(uids)] * len(uids)
 
-        # Apply EMA smoothing against previous weights
-        # Non-submitters (score=0) stay at hard zero
-        # Deregistered UIDs already had their EMA cleared above
+        # Apply EMA smoothing (non-submitters stay at zero)
         if self.previous_weights:
             smoothed = []
             for uid, w in zip(uids, weights):
@@ -127,25 +102,22 @@ class WeightSetter:
                     if prev == 0.0:
                         smoothed.append(w)
                     else:
-                        smoothed_w = EMA_ALPHA * w + (1 - EMA_ALPHA) * prev
-                        smoothed.append(smoothed_w)
+                        smoothed.append(EMA_ALPHA * w + (1 - EMA_ALPHA) * prev)
             weights = smoothed
 
-            # Re-normalize
             total = sum(weights)
             if total > 0:
                 weights = [w / total for w in weights]
 
-        # Store for next round
         self.previous_weights = dict(zip(uids, weights))
 
-        # Apply burn — assigns burn_fraction to UID 0
+        # Apply burn
         pre_burn = dict(zip(uids, weights))
         post_burn = self.apply_burn(pre_burn)
 
-        # Convert back to sorted lists
-        final_uids = sorted(post_burn.keys())
-        final_weights = [post_burn[uid] for uid in final_uids]
+        # Return as Python native lists (avoid numpy types for subtensor compatibility)
+        final_uids = [int(u) for u in sorted(post_burn.keys())]
+        final_weights = [float(post_burn[uid]) for uid in final_uids]
 
         active_miners = sum(1 for u in final_uids if u != 0 and post_burn[u] > 0)
         logger.info(
@@ -163,81 +135,34 @@ class WeightSetter:
         uids: list[int],
         weights: list[float],
     ) -> bool:
-        """Set weights on-chain using commit-reveal protocol.
+        """Set weights on-chain.
 
-        Per Tensora: use commit_weights/reveal_weights so the commitment
-        hash is public and no other validator can influence it.
-
-        Flow:
-        1. commit_weights — publishes hash of weights on-chain
-        2. reveal_weights — reveals actual weights after delay
-
-        Falls back to set_weights if commit_reveal is not enabled.
+        Uses subtensor.set_weights() which automatically handles
+        commit-reveal if enabled on the subnet. Python native lists
+        are used (not numpy) for subtensor compatibility.
         """
         if not uids:
             logger.warning("No UIDs to set weights for")
             return False
 
         try:
-            uid_array = np.array(uids, dtype=np.int64)
-            weight_array = np.array(weights, dtype=np.float32)
-
-            # Generate salt for commit-reveal
-            import secrets
-            salt = [secrets.randbelow(2**16) for _ in range(len(uids))]
-            salt_array = np.array(salt, dtype=np.int64)
-
             logger.info(f"Setting weights for {len(uids)} UIDs on netuid {netuid}")
 
-            # Try commit-reveal first (preferred per Tensora)
-            try:
-                cr_enabled = subtensor.commit_reveal_enabled(netuid=netuid)
-            except Exception:
-                cr_enabled = False
+            result = subtensor.set_weights(
+                wallet=wallet,
+                netuid=int(netuid),
+                uids=uids,
+                weights=weights,
+                wait_for_inclusion=True,
+                wait_for_finalization=False,
+            )
 
-            if cr_enabled:
-                logger.info("Using commit-reveal protocol for weight setting")
-
-                # Step 1: Commit
-                commit_result = subtensor.commit_weights(
-                    wallet=wallet,
-                    netuid=netuid,
-                    salt=salt_array,
-                    uids=uid_array,
-                    weights=weight_array,
-                    wait_for_inclusion=True,
-                    wait_for_finalization=False,
-                )
-
-                if commit_result:
-                    logger.info("Weights committed on-chain (hash public)")
-                else:
-                    logger.error("Failed to commit weights")
-                    return False
-
-                # Step 2: Reveal (handled automatically by commit_weights
-                # when wait_for_revealed_execution=True, which is the default)
-                logger.info("Weights committed and will be revealed automatically")
-                return True
-
+            if result:
+                logger.info("Weights set successfully on-chain")
             else:
-                # Fallback: direct set_weights (for testnet or when CR not enabled)
-                logger.info("Commit-reveal not enabled, using direct set_weights")
-                result = subtensor.set_weights(
-                    wallet=wallet,
-                    netuid=netuid,
-                    uids=uid_array,
-                    weights=weight_array,
-                    wait_for_inclusion=True,
-                    wait_for_finalization=False,
-                )
+                logger.error("Failed to set weights on-chain")
 
-                if result:
-                    logger.info("Weights set successfully on-chain (direct)")
-                else:
-                    logger.error("Failed to set weights on-chain")
-
-                return bool(result)
+            return bool(result)
 
         except Exception as e:
             logger.error(f"Error setting weights: {e}")

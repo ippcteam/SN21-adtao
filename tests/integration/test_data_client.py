@@ -62,8 +62,8 @@ class TestHopeDataClientLive:
         assert campaign.campaign_type == "SEARCH"
 
     def test_outcomes_parsed(self, client):
-        data = _run(client.fetch_epoch_data(LIVE_RELEASE_KEY))
-        with_t7 = sum(1 for o in data.outcomes if o.t7 is not None)
+        outcomes = _run(client.fetch_outcomes_only(LIVE_RELEASE_KEY))
+        with_t7 = sum(1 for o in outcomes if o.t7 is not None)
         assert with_t7 > 0, "Expected at least some episodes with t7 outcomes"
 
     def test_package_hash_verification(self, client):
