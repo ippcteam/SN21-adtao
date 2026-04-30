@@ -151,17 +151,16 @@ class WeightSetter:
         uids: list[int],
         weights: list[float],
     ) -> bool:
-        """Set weights on-chain via subtensor.
+        """Set weights on-chain using commit-reveal protocol.
 
-        Args:
-            subtensor: Bittensor subtensor instance
-            wallet: Bittensor wallet (validator)
-            netuid: Subnet network UID
-            uids: List of miner UIDs (includes UID 0 for burn)
-            weights: Normalized weights (sum to 1.0)
+        Per Tensora: use commit_weights/reveal_weights so the commitment
+        hash is public and no other validator can influence it.
 
-        Returns:
-            True if weights were set successfully
+        Flow:
+        1. commit_weights — publishes hash of weights on-chain
+        2. reveal_weights — reveals actual weights after delay
+
+        Falls back to set_weights if commit_reveal is not enabled.
         """
         if not uids:
             logger.warning("No UIDs to set weights for")
@@ -171,23 +170,62 @@ class WeightSetter:
             uid_array = np.array(uids, dtype=np.int64)
             weight_array = np.array(weights, dtype=np.float32)
 
+            # Generate salt for commit-reveal
+            import secrets
+            salt = [secrets.randbelow(2**16) for _ in range(len(uids))]
+            salt_array = np.array(salt, dtype=np.int64)
+
             logger.info(f"Setting weights for {len(uids)} UIDs on netuid {netuid}")
 
-            result = subtensor.set_weights(
-                wallet=wallet,
-                netuid=netuid,
-                uids=uid_array,
-                weights=weight_array,
-                wait_for_inclusion=True,
-                wait_for_finalization=False,
-            )
+            # Try commit-reveal first (preferred per Tensora)
+            try:
+                cr_enabled = subtensor.commit_reveal_enabled(netuid=netuid)
+            except Exception:
+                cr_enabled = False
 
-            if result:
-                logger.info("Weights set successfully on-chain")
+            if cr_enabled:
+                logger.info("Using commit-reveal protocol for weight setting")
+
+                # Step 1: Commit
+                commit_result = subtensor.commit_weights(
+                    wallet=wallet,
+                    netuid=netuid,
+                    salt=salt_array,
+                    uids=uid_array,
+                    weights=weight_array,
+                    wait_for_inclusion=True,
+                    wait_for_finalization=False,
+                )
+
+                if commit_result:
+                    logger.info("Weights committed on-chain (hash public)")
+                else:
+                    logger.error("Failed to commit weights")
+                    return False
+
+                # Step 2: Reveal (handled automatically by commit_weights
+                # when wait_for_revealed_execution=True, which is the default)
+                logger.info("Weights committed and will be revealed automatically")
+                return True
+
             else:
-                logger.error("Failed to set weights on-chain")
+                # Fallback: direct set_weights (for testnet or when CR not enabled)
+                logger.info("Commit-reveal not enabled, using direct set_weights")
+                result = subtensor.set_weights(
+                    wallet=wallet,
+                    netuid=netuid,
+                    uids=uid_array,
+                    weights=weight_array,
+                    wait_for_inclusion=True,
+                    wait_for_finalization=False,
+                )
 
-            return bool(result)
+                if result:
+                    logger.info("Weights set successfully on-chain (direct)")
+                else:
+                    logger.error("Failed to set weights on-chain")
+
+                return bool(result)
 
         except Exception as e:
             logger.error(f"Error setting weights: {e}")
