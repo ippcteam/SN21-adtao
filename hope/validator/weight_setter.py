@@ -33,6 +33,8 @@ class WeightSetter:
     def __init__(self, burn_fraction: float = DEFAULT_BURN_FRACTION):
         self.burn_fraction = burn_fraction
         self.previous_weights: dict[int, float] = {}
+        # Track hotkey→uid mapping to detect deregistrations
+        self._hotkey_at_uid: dict[int, str] = {}
 
     def apply_burn(self, weights: dict[int, float]) -> dict[int, float]:
         """Apply burn rate by assigning burn_fraction of weight to UID 0.
@@ -93,6 +95,15 @@ class WeightSetter:
             uids.append(uid)
             raw_weights.append(max(score, 0.0))
 
+            # Detect deregistration: if the hotkey at this UID changed,
+            # reset the EMA for this UID (per Tensora: new miner should
+            # not inherit a deregistered miner's score)
+            prev_hotkey = self._hotkey_at_uid.get(uid)
+            if prev_hotkey and prev_hotkey != hotkey:
+                logger.info(f"UID {uid} hotkey changed ({prev_hotkey[:12]}→{hotkey[:12]}), resetting EMA")
+                self.previous_weights.pop(uid, None)
+            self._hotkey_at_uid[uid] = hotkey
+
         if not uids:
             return [], []
 
@@ -105,6 +116,7 @@ class WeightSetter:
 
         # Apply EMA smoothing against previous weights
         # Non-submitters (score=0) stay at hard zero
+        # Deregistered UIDs already had their EMA cleared above
         if self.previous_weights:
             smoothed = []
             for uid, w in zip(uids, weights):
