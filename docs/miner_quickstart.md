@@ -545,5 +545,8 @@ All interaction with the validator is via HTTP:
 | Scoring weights | Quantile 50%, Calibration 20%, Directional 15%, Goal 15% |
 | Horizon weights | t7=40%, t14=60% (high resolution) |
 | Null penalty | Ramps from 40% to 85% near-zero predictions, max 60% penalty |
+| **Weekly cadence** | Mining: Monday noon EST → Sunday midnight EST (6.5 days) |
+| **Scoring window** | Sunday midnight EST → Monday noon EST (12 hours) |
+| Rate limit | 5 submissions per epoch per miner |
 | Training data | `data/training/training_episodes.json` (10 examples) |
 | Offline scoring | `python scripts/score_predictions.py --run-baseline` |

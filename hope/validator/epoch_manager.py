@@ -26,7 +26,10 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
-from hope.constants import PREDICTION_DEADLINE_HOURS
+from hope.constants import (
+    PREDICTION_DEADLINE_HOURS,
+    MINING_CLOSE_HOUR_UTC,
+)
 from hope.protocol.episode import Episode
 from hope.protocol.outcomes import Outcome
 from hope.protocol.prediction import Prediction
@@ -103,6 +106,21 @@ class EpochManager:
 
     # -- State transitions --
 
+    def _compute_deadline(self, now: datetime) -> datetime:
+        """Compute the next mining close time based on Rob's cadence.
+
+        Mining closes: Sunday midnight EST = Monday 05:00 UTC
+        If we're past this week's close, target next week's.
+        """
+        # Find next Monday 05:00 UTC
+        days_until_monday = (7 - now.weekday()) % 7
+        if days_until_monday == 0 and now.hour >= MINING_CLOSE_HOUR_UTC:
+            days_until_monday = 7  # Already past this Monday's close
+        next_close = now.replace(
+            hour=MINING_CLOSE_HOUR_UTC, minute=0, second=0, microsecond=0
+        ) + timedelta(days=days_until_monday)
+        return next_close
+
     def prepare_episodes_only(self, episodes: list[Episode], release_key: str,
                                deadline_hours: float = PREDICTION_DEADLINE_HOURS) -> EpochContext:
         """IDLE → PREPARING: Load episodes WITHOUT outcomes.
@@ -110,8 +128,18 @@ class EpochManager:
         Outcomes are intentionally NOT loaded here. They will be fetched
         only after the submission deadline closes. This prevents the
         validator from seeing answers before miners submit.
+
+        Cadence (per Rob):
+          Mining:    Monday noon EST (17:00 UTC) → Sunday midnight EST (Mon 05:00 UTC)
+          Scoring:   Monday 05:00 UTC → Monday 17:00 UTC
         """
         now = datetime.now(timezone.utc)
+
+        # Use the cadence-based deadline, or fallback to hours-based for testing
+        if deadline_hours == PREDICTION_DEADLINE_HOURS:
+            deadline = self._compute_deadline(now)
+        else:
+            deadline = now + timedelta(hours=deadline_hours)
 
         ctx = EpochContext(
             epoch_id=release_key,
@@ -119,7 +147,7 @@ class EpochManager:
             episodes=episodes,
             outcomes=[],  # Deliberately empty — fetched after deadline
             started_at=now.isoformat(),
-            deadline=(now + timedelta(hours=deadline_hours)).isoformat(),
+            deadline=deadline.isoformat(),
         )
 
         ctx.state = EpochState.DISTRIBUTING

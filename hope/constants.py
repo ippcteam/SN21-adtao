@@ -61,9 +61,17 @@ CALIBRATION_LOW_RES_REDUCTION = 0.50
 # Directional accuracy
 DIRECTIONAL_NEAR_ZERO_THRESHOLD = 1.0
 
-# Epoch timing
+# Epoch timing — Rob's weekly cadence:
+#   Mining open:    Monday 12:00 noon EST (17:00 UTC) → Sunday 23:59 EST (Monday 04:59 UTC)
+#   Validation:     Monday 00:00 EST (05:00 UTC) → Monday 12:00 noon EST (17:00 UTC)
+#   Total mining:   ~6.5 days
+#   Total scoring:  ~12 hours
 EPOCH_DURATION_DAYS = 7
-PREDICTION_DEADLINE_HOURS = 48
+MINING_OPEN_DAY = "monday"
+MINING_OPEN_HOUR_UTC = 17     # Monday noon EST = 17:00 UTC
+MINING_CLOSE_HOUR_UTC = 5     # Sunday midnight EST = Monday 05:00 UTC
+SCORING_CLOSE_HOUR_UTC = 17   # Monday noon EST = 17:00 UTC (next epoch starts)
+PREDICTION_DEADLINE_HOURS = 156  # ~6.5 days (Mon 17:00 UTC → next Mon 05:00 UTC)
 
 # Burn rate — percentage of emissions assigned to UID 0 (subnet owner)
 # Start high (95%) to deter exploiters, decrease in 5% chunks as testing progresses
