@@ -3,7 +3,7 @@ services:
     name: adtao-validator
     runtime: python
     buildCommand: pip install -e .
-    startCommand: hope-validator --release WR-2026-W17-PUB-E1 --port 8080 --no-chain
+    startCommand: hope-validator --release WR-2026-W18-PUB-E1 --port 8080 --no-chain
     envVars:
       - key: HOPE_API_KEY
         value: hope-bt-internal-2026
