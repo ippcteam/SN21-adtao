@@ -175,7 +175,7 @@
 
 ### 2.1 Remove all person/company references
 
-- [x] **E1-E11 — Remove all external reviewer references** (11 occurrences in 7 files)
+- [x] **E1-E11 — Remove all external reviewer references** (done)
   - `hope/miner/prediction_client.py:3`
   - `hope/miner/runner.py:8`
   - `hope/constants.py:80`
@@ -189,10 +189,7 @@
   - `hope/constants.py:66`
   - `hope/validator/epoch_manager.py:110,132`
 
-- [ ] **E15 — Review PPCRebel/ippcteam references**
-  - `LICENSE:3`, `README.md:201`
-  - `docs/validator_setup.md:11`, `docs/PHASE1_BUILD_PLAN.md:3`
-  - `docs/SN21_REWARD_MECHANISM.md:49`, `docs/miner_quickstart.md:25`, `README.md:53`
+- [x] **E15 — Remove company name references** (done — LICENSE cleaned, docs reviewed)
 
 ### 2.2 Delete internal development documents
 
@@ -207,7 +204,7 @@
 - [ ] **G1** — Move `WR-2026-W18-PUB-E1` defaults to env vars (runner.py, render.yaml, start_validator.sh, scripts)
 - [ ] **G2** — Move testnet wallet name `sn21-testnet-1` to env var only
 - [ ] **G3** — Move testnet netuid `466` to env var only
-- [ ] **G4** — Remove `https://hope.ppcrebel.com` from README.md
+- [x] **G4** — Removed internal platform URL from README.md (done)
 
 ---
 
