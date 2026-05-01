@@ -1,7 +1,7 @@
 # SN21 Security Audit & Remediation Tracker
 
 **Audit date:** 2026-05-01
-**Source:** Tensora code review + internal deep audit
+**Source:** External code review + internal deep audit
 **Principle:** Can we PROVE this data hasn't been manipulated? HOPE's data, validator scores, miner answers — every link in the chain must be cryptographically verifiable.
 
 ---
@@ -175,7 +175,7 @@
 
 ### 2.1 Remove all person/company references
 
-- [ ] **E1-E11 — Remove all "Tensora" references** (11 occurrences in 7 files)
+- [x] **E1-E11 — Remove all external reviewer references** (11 occurrences in 7 files)
   - `hope/miner/prediction_client.py:3`
   - `hope/miner/runner.py:8`
   - `hope/constants.py:80`
