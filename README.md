@@ -85,7 +85,7 @@ hope-validator --release CURRENT_RELEASE_KEY --port 8080
 
 Read the setup guide: [Validator Setup](docs/validator_setup.md)
 
-**Operations (cadence, workload, TBDs for launch):** [Miner operations](docs/MINER_OPERATIONS.md) · [Validator operations](docs/VALIDATOR_OPERATIONS.md)
+See also: [Miner economics](docs/MINER_ECONOMICS.md) · [Epoch structure](docs/SN21_EPOCH_STRUCTURE.md)
 
 ---
 
@@ -136,14 +136,13 @@ tao-discovery/
 │   ├── SN21_REWARD_MECHANISM.md # Emissions & governance spec
 │   ├── SN21_EPOCH_STRUCTURE.md  # Phases & epoch roadmap
 │   ├── miner_quickstart.md      # Tutorial & scoring detail
-│   ├── validator_setup.md      # Validator deployment
-│   └── PHASE1_BUILD_PLAN.md    # Build plan and architecture
+│   └── validator_setup.md      # Validator deployment
 │
 ├── scripts/
 │   └── score_predictions.py    # Offline scoring tool
 │
 └── tests/
-    ├── unit/                   # 22 unit tests
+    ├── unit/                   # 50 unit tests
     └── integration/            # 7 integration tests (live API)
 ```
 

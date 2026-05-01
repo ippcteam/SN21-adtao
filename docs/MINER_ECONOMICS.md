@@ -43,4 +43,3 @@ Short reference for how emissions relate to your behaviour. **Authoritative deta
 ## Related
 
 - Task & API detail: [miner_quickstart.md](./miner_quickstart.md)  
-- Ops cadence: [MINER_OPERATIONS.md](./MINER_OPERATIONS.md)  

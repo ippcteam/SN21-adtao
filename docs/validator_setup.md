@@ -119,7 +119,12 @@ Once running, the validator exposes:
 
 ### Authentication
 
-Miners authenticate with the `X-Miner-Hotkey` header. For launch (simplified), any non-empty hotkey is accepted. Future versions will verify ed25519 signatures against the subnet metagraph.
+Miners authenticate with ed25519 signatures. Each request must include:
+- `X-Miner-Hotkey` — the miner's ss58 address (must be registered on the subnet)
+- `X-Miner-Nonce` — numeric timestamp (valid for 5 minutes, single-use)
+- `X-Miner-Signature` — ed25519 signature of `SHA256(hotkey:nonce:METHOD:path:body_hash)`
+
+Signatures are verified against the metagraph. Unregistered hotkeys are rejected (403). Invalid or missing signatures are rejected (401).
 
 ### Interactive docs
 
