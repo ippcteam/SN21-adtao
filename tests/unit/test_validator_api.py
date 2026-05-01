@@ -2,6 +2,7 @@
 
 import os
 
+import pytest
 from fastapi.testclient import TestClient
 
 from hope.protocol.episode import (
@@ -11,8 +12,16 @@ from hope.protocol.episode import (
 from hope.validator.api.server import create_app
 
 
-# Unit tests run without real wallets — disable signature requirement
-os.environ["REQUIRE_SIGNATURES"] = "false"
+@pytest.fixture(autouse=True)
+def _disable_signatures():
+    """Unit tests run without real wallets — disable signature requirement."""
+    old = os.environ.get("REQUIRE_SIGNATURES")
+    os.environ["REQUIRE_SIGNATURES"] = "false"
+    yield
+    if old is None:
+        os.environ.pop("REQUIRE_SIGNATURES", None)
+    else:
+        os.environ["REQUIRE_SIGNATURES"] = old
 
 
 def _make_episode(episode_id: str = "ep_test_001") -> Episode:
