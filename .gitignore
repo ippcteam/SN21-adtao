@@ -12,3 +12,9 @@ build/
 .venv/
 venv/
 .env
+
+# Internal test files (kept locally, not in public repo)
+tests/unit/test_auth_signatures.py
+tests/unit/test_validator_api.py
+tests/unit/test_weight_setter.py
+tests/integration/test_data_client.py
