@@ -114,9 +114,10 @@ class ValidatorRunner:
         logger.info(f"Starting epoch for release {release_key}")
         self._release_key = release_key
 
-        # Sync registered miners from metagraph (for auth)
+        # Sync registered miners and UID map from metagraph (for auth)
         registered = self.get_registered_hotkeys()
         self.epoch_manager.registered_miners = registered
+        self.epoch_manager.uid_map = self.get_uid_map()
         if registered:
             logger.info(f"Registered miners from metagraph: {len(registered)}")
 
