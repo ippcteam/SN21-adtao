@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Rate limiting: max total predictions per miner per epoch
+# NOTE: In-memory state — requires single uvicorn worker. Resets on restart.
 MAX_PREDICTIONS_PER_MINER = 500  # ~2x headroom for 200 episodes + resubmissions
 MAX_BATCH_SIZE = 250  # Max predictions per single request
 

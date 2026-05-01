@@ -1,6 +1,4 @@
-"""Subnet-wide constants for HOPE SN21."""
-
-import os
+"""Subnet-wide constants for AdTAO SN21."""
 
 # Subnet registration
 SUBNET_NETUID = 21
@@ -53,7 +51,8 @@ HORIZON_WEIGHTS = {
 NULL_PENALTY_RAMP_START = 0.40
 NULL_PENALTY_RAMP_END = 0.85
 NULL_PENALTY_MAX = 0.60
-NEAR_ZERO_THRESHOLD = 1.0
+NEAR_ZERO_THRESHOLD = 2.0  # |p50| must exceed this to not be near-zero
+MIN_INTERVAL_WIDTH = 3.0   # p90-p10 must exceed this to carry information
 
 # Calibration parameters
 CALIBRATION_WIDTH_EXPONENT = 1.3
@@ -79,6 +78,5 @@ PREDICTION_DEADLINE_HOURS = 156  # ~6.5 days (Mon 17:00 UTC → next Mon 05:00 U
 # Start high (95%) to deter exploiters, decrease as the system proves stable
 DEFAULT_BURN_FRACTION = 0.95
 
-# HOPE Data API — must be set via environment variables
-HOPE_API_BASE_URL = os.environ.get("HOPE_API_URL", "")
+# HOPE Data API
 HOPE_API_VERSION = "v1"

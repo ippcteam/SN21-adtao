@@ -65,7 +65,7 @@ class EpochContext:
     state: EpochState = EpochState.IDLE
     episodes: list[Episode] = field(default_factory=list)
     outcomes: list[Outcome] = field(default_factory=list)  # Empty until SCORING phase
-    predictions: dict[str, list[Prediction]] = field(default_factory=dict)
+    predictions: dict[str, dict[str, Prediction]] = field(default_factory=dict)
     prediction_receipts: dict[str, dict] = field(default_factory=dict)  # hotkey -> {episode_id -> receipt}
     scores: dict[str, MinerScore] = field(default_factory=dict)
 
@@ -293,25 +293,6 @@ class EpochManager:
         self.current.state = EpochState.COMPLETE
         self.history.append(self.current)
         logger.info(f"Epoch {self.current.epoch_id} complete")
-
-    # -- Legacy compatibility (for tests) --
-
-    def prepare(self, epoch_data) -> EpochContext:
-        """Legacy prepare — loads episodes + outcomes together. For testing only."""
-        ctx = self.prepare_episodes_only(epoch_data.episodes, epoch_data.release_key)
-        # Store outcomes for later scoring (but don't expose them during collection)
-        self._deferred_outcomes = epoch_data.outcomes
-        return ctx
-
-    def start_distribution(self) -> None:
-        """Legacy — start collecting."""
-        self.start_collecting()
-
-    def score(self) -> dict[str, MinerScore]:
-        """Legacy score — uses deferred outcomes."""
-        self.close_submissions()
-        outcomes = getattr(self, '_deferred_outcomes', self.current.outcomes if self.current else [])
-        return self.load_outcomes_and_score(outcomes)
 
     # -- Commitment helpers --
 

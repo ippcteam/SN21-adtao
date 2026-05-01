@@ -322,7 +322,7 @@ class HopeDataClient:
                     cost_delta_pct=t7_data.get("cost_delta_pct", 0.0) or 0.0,
                     conversions_delta_pct=t7_data.get("conversions_delta_pct", 0.0) or 0.0,
                     efficiency_delta_pct=t7_data.get("cpa_delta_pct", 0.0) or 0.0,
-                    goal_miss=0,
+                    goal_miss=int(t7_data.get("goal_miss", 0) or 0),
                 )
 
             if "t14" in raw_outcomes and raw_outcomes["t14"]:
@@ -331,7 +331,7 @@ class HopeDataClient:
                     cost_delta_pct=t14_data.get("cost_delta_pct", 0.0) or 0.0,
                     conversions_delta_pct=t14_data.get("conversions_delta_pct", 0.0) or 0.0,
                     efficiency_delta_pct=t14_data.get("cpa_delta_pct", 0.0) or 0.0,
-                    goal_miss=0,
+                    goal_miss=int(t14_data.get("goal_miss", 0) or 0),
                 )
 
         # Determine scoring metadata from episode payload

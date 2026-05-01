@@ -164,19 +164,58 @@ def compute_merkle_inclusion_proof(
     hotkey: str,
     episode_id: str,
 ) -> dict | None:
-    """Generate a Merkle inclusion proof for a specific prediction.
+    """Generate a full Merkle inclusion proof for a specific prediction.
 
-    Returns proof that a miner's prediction was included in the scored set.
+    Returns the sibling hashes along the path from leaf to root,
+    allowing independent verification that the leaf is in the tree.
     """
     leaf_key = f"{hotkey}:{episode_id}"
     if leaf_key not in tree.leaves:
         return None
 
+    # Reconstruct the tree to find the path
+    sorted_keys = sorted(tree.leaves.keys())
+    leaf_index = sorted_keys.index(leaf_key)
+    leaf_hashes = [tree.leaves[k] for k in sorted_keys]
+
+    # Build proof: collect sibling at each level
+    proof_siblings = []
+    index = leaf_index
+    level = list(leaf_hashes)
+
+    while len(level) > 1:
+        if len(level) % 2 == 1:
+            level.append(level[-1])
+
+        # Sibling is the other node in the pair
+        if index % 2 == 0:
+            sibling = level[index + 1] if index + 1 < len(level) else level[index]
+            proof_siblings.append({"position": "right", "hash": sibling})
+        else:
+            sibling = level[index - 1]
+            proof_siblings.append({"position": "left", "hash": sibling})
+
+        # Move to next level
+        next_level = []
+        for i in range(0, len(level), 2):
+            combined = level[i] + level[i + 1]
+            next_level.append(hashlib.sha256(combined.encode()).hexdigest())
+        level = next_level
+        index = index // 2
+
     return {
         "leaf_key": leaf_key,
         "leaf_hash": tree.leaves[leaf_key],
+        "leaf_index": leaf_index,
         "merkle_root": tree.root,
         "total_predictions": tree.leaf_count,
+        "proof": proof_siblings,
+        "verification_instructions": (
+            "To verify: start with leaf_hash. For each sibling in proof, "
+            "if position='left', compute SHA256(sibling.hash + current), "
+            "if position='right', compute SHA256(current + sibling.hash). "
+            "Final result must equal merkle_root."
+        ),
     }
 
 

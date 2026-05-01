@@ -19,15 +19,13 @@ Ramp: 40% near-zero is free, 85%+ gets maximum 60% penalty.
 from __future__ import annotations
 
 from hope.constants import (
+    MIN_INTERVAL_WIDTH,
+    NEAR_ZERO_THRESHOLD,
     NULL_PENALTY_MAX,
     NULL_PENALTY_RAMP_END,
     NULL_PENALTY_RAMP_START,
 )
 from hope.protocol.prediction import Prediction
-
-# Thresholds for detecting near-zero/low-information predictions
-NEAR_ZERO_THRESHOLD = 2.0  # |p50| must exceed this (was 1.0 — too easy to game at boundary)
-MIN_INTERVAL_WIDTH = 3.0   # p90-p10 must exceed this to carry meaningful information
 
 
 class NullPenalty:
