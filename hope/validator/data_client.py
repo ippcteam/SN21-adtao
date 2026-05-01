@@ -110,9 +110,12 @@ class HopeDataClient:
             resp.raise_for_status()
             package = resp.json()
 
-        # Verify HOPE's cryptographic signature
+        # Verify HOPE's cryptographic signature — reject unsigned/tampered data
         if not self.verify_hope_signature(package):
-            logger.warning("HOPE signature verification failed for episodes — proceeding with caution")
+            raise ValueError(
+                "HOPE signature verification failed for episodes. "
+                "Data may be tampered with — refusing to use unverified episodes."
+            )
 
         episodes = []
         for ep_data in package.get("episodes", []):
@@ -147,9 +150,12 @@ class HopeDataClient:
             resp.raise_for_status()
             package = resp.json()
 
-        # Verify HOPE's cryptographic signature
+        # Verify HOPE's cryptographic signature — reject unsigned/tampered data
         if not self.verify_hope_signature(package):
-            logger.warning("HOPE signature verification failed for outcomes — proceeding with caution")
+            raise ValueError(
+                "HOPE signature verification failed for outcomes. "
+                "Data may be tampered with — refusing to use unverified outcomes."
+            )
 
         outcomes = []
         for ep_data in package.get("episodes", []):

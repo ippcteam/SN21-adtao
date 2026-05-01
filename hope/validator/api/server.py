@@ -40,15 +40,30 @@ _RATE_WINDOW_SECONDS = 60
 
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
-    """Reject requests with bodies larger than MAX_REQUEST_BODY_BYTES."""
+    """Reject requests with bodies larger than MAX_REQUEST_BODY_BYTES.
+
+    Handles both Content-Length header (pre-check) and chunked transfers
+    (reads body and checks actual size).
+    """
 
     async def dispatch(self, request: Request, call_next):
+        # Pre-check via Content-Length header
         content_length = request.headers.get("content-length")
         if content_length and int(content_length) > MAX_REQUEST_BODY_BYTES:
             return JSONResponse(
                 status_code=413,
                 content={"detail": f"Request body too large (max {MAX_REQUEST_BODY_BYTES} bytes)"},
             )
+
+        # For POST/PUT/PATCH without Content-Length (chunked), read and check actual size
+        if request.method in ("POST", "PUT", "PATCH") and not content_length:
+            body = await request.body()
+            if len(body) > MAX_REQUEST_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": f"Request body too large (max {MAX_REQUEST_BODY_BYTES} bytes)"},
+                )
+
         return await call_next(request)
 
 
