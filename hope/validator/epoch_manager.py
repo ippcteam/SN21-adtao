@@ -100,6 +100,7 @@ class EpochManager:
         self.history: list[EpochContext] = []
         self.scorer = EpochScorer()
         self.registered_miners: set[str] = set()  # Populated from metagraph
+        self.uid_map: dict[str, int] = {}  # hotkey -> UID, populated from metagraph
 
     def get_validator_state(self) -> "LiveState":
         """Get a live state proxy for the FastAPI app."""
@@ -386,6 +387,8 @@ class LiveState(dict):
             return self._mgr.is_submission_open()
         if key == "registered_miners":
             return self._mgr.registered_miners
+        if key == "uid_map":
+            return self._mgr.uid_map
         if key == "episode_commitment":
             if not ctx.episode_commitment:
                 return default
@@ -434,13 +437,15 @@ class LiveState(dict):
             return ctx.scores if ctx.scores else default
         if key == "prediction_receipts":
             return ctx.prediction_receipts
+        if key == "prediction_merkle":
+            return ctx.prediction_merkle
         return default
 
     def __contains__(self, key):
         return key in ("current_epoch_id", "episodes", "predictions", "outcomes",
                        "deadline", "submission_open", "commitment", "reveal",
                        "miner_scores", "registered_miners", "episode_commitment",
-                       "uid_map", "prediction_receipts")
+                       "uid_map", "prediction_receipts", "prediction_merkle")
 
     def __setitem__(self, key, value):
         ctx = self._mgr.current

@@ -11,7 +11,7 @@ Floored at 0.0 — no negative rewards.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from hope.protocol.prediction import HorizonPrediction, Prediction, QuantilePrediction
 
@@ -37,7 +37,7 @@ class SkillScoreCalculator:
         return Prediction(
             episode_id=episode_id,
             miner_id="system_baseline",
-            submitted_at=datetime.utcnow(),
+            submitted_at=datetime.now(timezone.utc),
             horizons={"7": zero_horizon, "14": zero_horizon},
         )
 

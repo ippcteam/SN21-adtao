@@ -33,7 +33,6 @@ miner = [
 [project.scripts]
 hope-miner = "hope.miner.runner:main"
 hope-validator = "hope.validator.runner:main"
-hope-verify = "scripts.verify_commitment:main"
 hope-score = "scripts.score_predictions:main"
 
 [tool.setuptools.packages.find]

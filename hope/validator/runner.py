@@ -285,7 +285,9 @@ def main():
     parser.add_argument("--port", type=int, default=8080, help="API server port")
     parser.add_argument("--network", type=str, default="test",
                         choices=["test", "finney", "local"], help="Bittensor network")
-    parser.add_argument("--netuid", type=int, default=0, help="Subnet netuid")
+    parser.add_argument("--netuid", type=int,
+                        default=int(os.environ.get("NETUID", "21")),
+                        help="Subnet netuid (or set NETUID env var)")
     parser.add_argument("--wallet-name", type=str, default="adtao_validator",
                         help="Wallet name")
     parser.add_argument("--wallet-hotkey", type=str, default="default",

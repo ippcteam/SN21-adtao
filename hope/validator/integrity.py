@@ -238,14 +238,24 @@ def _merkle_root(hashes: list[str]) -> str:
 
 
 def compute_scoring_hash(scores: dict) -> str:
-    """Deterministic hash of scoring output for verification."""
+    """Deterministic hash of ALL scoring fields for verification.
+
+    Includes every field from MinerScore so a validator cannot selectively
+    change null_penalty, coverage_penalty, skill_score, or per-component
+    scores without breaking the hash.
+    """
     score_data = {}
     for miner_id, score in sorted(scores.items()):
         if hasattr(score, "final_score"):
             score_data[miner_id] = {
                 "raw_score": score.raw_score,
+                "skill_score": score.skill_score,
+                "null_penalty": score.null_penalty,
+                "coverage_penalty": score.coverage_penalty,
                 "final_score": score.final_score,
                 "episodes_scored": score.episodes_scored,
+                "episodes_total": score.episodes_total,
+                "coverage_fraction": score.coverage_fraction,
             }
         elif isinstance(score, dict):
             score_data[miner_id] = score

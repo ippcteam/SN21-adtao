@@ -13,6 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hope.validator.api.auth import MinerIdentity, verify_miner
+from hope.validator.integrity import compute_merkle_inclusion_proof
 
 router = APIRouter()
 
@@ -131,10 +132,23 @@ async def get_my_prediction_proof(
             "prediction_merkle_root": reveal.get("prediction_merkle_root"),
         }
 
+    # Build Merkle inclusion proofs with sibling hashes
+    prediction_merkle = state.get("prediction_merkle")
+    proofs = {}
+    for episode_id, receipt in miner_receipts.items():
+        if prediction_merkle:
+            proof = compute_merkle_inclusion_proof(prediction_merkle, miner.hotkey, episode_id)
+            proofs[episode_id] = {
+                **receipt,
+                "inclusion_proof": proof,
+            }
+        else:
+            proofs[episode_id] = receipt
+
     return {
         "epoch_id": epoch_id,
         "miner_hotkey": miner.hotkey[:16] + "...",
         "predictions_found": len(miner_receipts),
         "prediction_merkle_root": reveal.get("prediction_merkle_root"),
-        "predictions": miner_receipts,
+        "predictions": proofs,
     }

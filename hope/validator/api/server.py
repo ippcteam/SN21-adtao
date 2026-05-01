@@ -83,9 +83,20 @@ class IPRateLimitMiddleware(BaseHTTPMiddleware):
         self._requests: dict[str, list[float]] = defaultdict(list)
         self._post_requests: dict[str, list[float]] = defaultdict(list)
 
+    # Cap on unique IPs tracked to prevent unbounded memory growth
+    _MAX_TRACKED_IPS = 10_000
+
     def _clean_old_entries(self, entries: list[float], now: float) -> list[float]:
         cutoff = now - _RATE_WINDOW_SECONDS
         return [t for t in entries if t > cutoff]
+
+    def _evict_stale_ips(self, now: float) -> None:
+        """Remove IPs with no recent requests to bound memory."""
+        cutoff = now - _RATE_WINDOW_SECONDS * 2
+        stale = [ip for ip, times in self._requests.items() if not times or times[-1] < cutoff]
+        for ip in stale:
+            del self._requests[ip]
+            self._post_requests.pop(ip, None)
 
     async def dispatch(self, request: Request, call_next):
         # Skip rate limiting for health checks
@@ -94,6 +105,10 @@ class IPRateLimitMiddleware(BaseHTTPMiddleware):
 
         client_ip = request.client.host if request.client else "unknown"
         now = time.time()
+
+        # Evict stale IPs periodically to bound memory
+        if len(self._requests) > self._MAX_TRACKED_IPS:
+            self._evict_stale_ips(now)
 
         # Clean and check global rate
         self._requests[client_ip] = self._clean_old_entries(self._requests[client_ip], now)

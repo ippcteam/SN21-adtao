@@ -38,8 +38,8 @@ async def get_episode_commitment(epoch_id: str, request: Request):
         "algorithm": "sha256",
         "how_to_verify": (
             "After fetching episodes, compute "
-            "SHA256(json.dumps([ep.model_dump() for ep in episodes], sort_keys=True, default=str)) "
-            "and compare with episode_hash."
+            "SHA256(json.dumps([ep.model_dump(mode='json') for ep in episodes], sort_keys=True, default=str)) "
+            "and compare with episode_hash. Use mode='json' for consistent serialization."
         ),
     }
 
