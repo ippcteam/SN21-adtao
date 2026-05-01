@@ -162,9 +162,12 @@ async def submit_predictions(
                     instability_risk=h_data.get("instability_risk", 0.0),
                 )
 
-            if not horizons:
+            # Require ALL active horizons (7 and 14)
+            required_horizons = {"7", "14"}
+            if set(horizons.keys()) != required_horizons:
+                missing = required_horizons - set(horizons.keys())
                 rejected += 1
-                errors.append(f"{sub.episode_id}: no valid horizons")
+                errors.append(f"{sub.episode_id}: missing required horizons {missing}")
                 continue
 
             prediction = Prediction(

@@ -85,11 +85,14 @@ class WeightSetter:
             return [], []
 
         # Normalize to sum to 1.0
+        # If all scores are zero, assign zero weight to all miners (burn gets 100%)
+        # This prevents Sybil clusters from splitting emissions with junk submissions
         total = sum(raw_weights)
         if total > 0:
             weights = [w / total for w in raw_weights]
         else:
-            weights = [1.0 / len(uids)] * len(uids)
+            logger.warning("All miner scores are zero — assigning zero weights (full burn)")
+            return [0], [1.0]  # Only UID 0 (burn) gets weight
 
         # Apply EMA smoothing (non-submitters stay at zero)
         if self.previous_weights:

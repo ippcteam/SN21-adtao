@@ -34,10 +34,12 @@ class NullPenalty:
     def is_near_zero(self, prediction: Prediction) -> bool:
         """Check if a prediction is near-zero or low-information.
 
-        A prediction is considered near-zero if ALL metrics across ALL horizons
-        have both:
-        - |p50| < NEAR_ZERO_THRESHOLD (point estimate near zero)
-        - interval width (p90-p10) < MIN_INTERVAL_WIDTH (narrow, uninformative)
+        A prediction is NOT near-zero only if at least one metric has BOTH:
+        - |p50| > NEAR_ZERO_THRESHOLD (meaningful point estimate)
+        - interval width (p90-p10) > MIN_INTERVAL_WIDTH (meaningful uncertainty range)
+
+        Both conditions must hold — a wide interval centered on zero is still
+        low-information, and a strong p50 with a tiny interval lacks calibration.
         """
         for horizon_pred in prediction.horizons.values():
             metrics = [
@@ -46,11 +48,10 @@ class NullPenalty:
                 horizon_pred.efficiency_delta_pct,
             ]
             for q in metrics:
-                # If any metric has a meaningful p50 AND meaningful interval width,
-                # the prediction is NOT near-zero
-                if abs(q.p50) > NEAR_ZERO_THRESHOLD:
-                    return False
-                if (q.p90 - q.p10) > MIN_INTERVAL_WIDTH:
+                has_directional_signal = abs(q.p50) > NEAR_ZERO_THRESHOLD
+                has_meaningful_width = (q.p90 - q.p10) > MIN_INTERVAL_WIDTH
+                # Must have BOTH a meaningful p50 AND meaningful interval
+                if has_directional_signal and has_meaningful_width:
                     return False
         return True
 

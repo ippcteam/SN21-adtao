@@ -58,10 +58,10 @@ pip install -e ".[miner]"
 python scripts/train_example_model.py --data-file data/training/training_episodes.json
 
 # Run miner (auto-discovers current epoch from validator)
-hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY
+hope-miner --wallet-name my_miner --validator-url https://validator.adtao.io
 
 # Or run continuously (polls for new epochs)
-hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY --continuous
+hope-miner --wallet-name my_miner --validator-url https://validator.adtao.io --continuous
 
 # Check your score after an epoch
 python scripts/score_predictions.py --release CURRENT_RELEASE_KEY --run-baseline

@@ -1,13 +1,15 @@
-"""Miner Runner — main entry point for HOPE SN21 miners.
+"""Miner Runner — main entry point for AdTAO SN21 miners.
 
 Handles the complete miner lifecycle:
-1. Fetch episodes from validator HTTP API
-2. Run prediction model on each episode
-3. Submit predictions back to validator
+1. Load Bittensor wallet for signing
+2. Fetch episodes from validator HTTP API
+3. Run prediction model on each episode
+4. Submit signed predictions back to validator
 
 HTTP-only architecture — no Synapses.
 Miners discover epochs via the validator's /health endpoint and
-interact entirely over HTTP.
+interact entirely over HTTP. All requests are signed with the
+miner's hotkey private key.
 """
 
 from __future__ import annotations
@@ -25,19 +27,21 @@ logger = logging.getLogger(__name__)
 
 
 class MinerRunner:
-    """Main miner runner — HTTP only."""
+    """Main miner runner — HTTP only, wallet-authenticated."""
 
     def __init__(
         self,
         model: PredictionEngine | None = None,
-        hotkey: str = "miner_default",
+        hotkey: str = "",
+        wallet=None,
         validator_url: str = "https://validator.adtao.io",
     ):
         self.model = model or BaselineModel()
         self.hotkey = hotkey
+        self.wallet = wallet
         self.validator_url = validator_url
-        self.episode_client = EpisodeClient(hotkey=hotkey)
-        self.prediction_client = PredictionClient(hotkey=hotkey)
+        self.episode_client = EpisodeClient(hotkey=hotkey, wallet=wallet)
+        self.prediction_client = PredictionClient(hotkey=hotkey, wallet=wallet)
 
     async def run_epoch(self, epoch_id: str) -> dict:
         """Run the full miner cycle for one epoch."""
@@ -129,11 +133,13 @@ def main():
     """CLI entry point for the miner."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="HOPE SN21 Miner")
+    parser = argparse.ArgumentParser(description="AdTAO SN21 Miner")
     parser.add_argument("--validator-url", type=str, default="https://validator.adtao.io",
                         help="Validator HTTP API URL")
-    parser.add_argument("--hotkey", type=str, default="miner_default",
-                        help="Miner hotkey for authentication")
+    parser.add_argument("--wallet-name", type=str, required=True,
+                        help="Bittensor wallet name (required for signing)")
+    parser.add_argument("--wallet-hotkey", type=str, default="default",
+                        help="Wallet hotkey name")
     parser.add_argument("--epoch", type=str, default=None,
                         help="Epoch ID (omit for auto-discover from validator)")
     parser.add_argument("--model", type=str, default="baseline",
@@ -147,8 +153,17 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+    # Load Bittensor wallet for request signing
+    import bittensor as bt
+    wallet = bt.wallet(name=args.wallet_name, hotkey=args.wallet_hotkey)
+    hotkey = wallet.hotkey.ss58_address
+    logger.info(f"Loaded wallet {args.wallet_name}/{args.wallet_hotkey}: {hotkey[:16]}...")
+
     runner = MinerRunner(
-        model=BaselineModel(), hotkey=args.hotkey, validator_url=args.validator_url
+        model=BaselineModel(),
+        hotkey=hotkey,
+        wallet=wallet,
+        validator_url=args.validator_url,
     )
 
     if args.continuous:

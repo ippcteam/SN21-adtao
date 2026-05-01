@@ -424,6 +424,11 @@ class LiveState(dict):
                 },
                 "outcomes_fetched_at": ctx.outcomes_fetched_at,
                 "submissions_closed_at": ctx.closed_at,
+                # Integrity proof fields
+                "episode_hash": ctx.episode_commitment.episode_hash if ctx.episode_commitment else None,
+                "prediction_merkle_root": ctx.prediction_merkle.root if ctx.prediction_merkle else None,
+                "prediction_count": ctx.prediction_merkle.leaf_count if ctx.prediction_merkle else 0,
+                "scoring_hash": ctx.scoring_hash,
             }
         if key == "miner_scores":
             return ctx.scores if ctx.scores else default

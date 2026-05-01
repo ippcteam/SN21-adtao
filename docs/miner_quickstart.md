@@ -78,13 +78,13 @@ Use these to train: given input features → predict outcome deltas.
 
 ```bash
 # Connect to the validator and submit predictions
-hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY
+hope-miner --wallet-name my_miner --validator-url https://validator.adtao.io
 
 # Or specify an epoch explicitly
-hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY --epoch WR-2026-W18-PUB-E1
+hope-miner --wallet-name my_miner --validator-url https://validator.adtao.io --epoch WR-2026-W18-PUB-E1
 
 # Or run continuously (polls validator for new epochs every 30s)
-hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY --continuous
+hope-miner --wallet-name my_miner --validator-url https://validator.adtao.io --continuous
 ```
 
 **Validator URL:** `https://validator.adtao.io` — this is the official AdTAO validator.

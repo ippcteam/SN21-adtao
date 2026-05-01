@@ -58,7 +58,7 @@ This starts the FastAPI server and waits for miners to connect. The validator:
 Miners connect with:
 
 ```bash
-hope-miner --validator-url https://validator.adtao.io --hotkey MINER_HOTKEY --epoch WR-2026-W18-PUB-E1
+hope-miner --validator-url https://validator.adtao.io --epoch WR-2026-W18-PUB-E1
 ```
 
 ### Score after deadline
