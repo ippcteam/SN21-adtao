@@ -2,6 +2,8 @@
 
 Serves from the bundled training dataset (data/training/training_episodes.json),
 NOT from the current epoch's outcomes (which are deferred until after deadline).
+
+Requires miner authentication to prevent abuse.
 """
 
 from __future__ import annotations
@@ -10,7 +12,9 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Query
+
+from hope.validator.api.auth import MinerIdentity, verify_miner
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -26,34 +30,41 @@ try:
 except Exception as e:
     logger.warning(f"Failed to load training data: {e}")
 
+# Pagination defaults
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 50
+
 
 @router.get("/training/episodes")
-async def get_training_episodes():
+async def get_training_episodes(
+    miner: MinerIdentity = Depends(verify_miner),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Items per page"),
+):
     """Get historical episodes with known outcomes for model training.
 
-    Serves from the bundled training dataset — not from the current epoch.
-    This ensures training data is always available regardless of epoch state.
-
-    Each training example contains:
-    - input: the full episode payload (same format as live epochs)
-    - outcome: the actual t7/t14 deltas (what really happened)
-    - scoring_metadata: goal type, resolution, coverage status
+    Paginated to prevent large response abuse. Requires miner authentication.
     """
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_data = _training_data[start:end]
+    total_pages = (len(_training_data) + page_size - 1) // page_size if _training_data else 0
+
     return {
-        "training_episodes": _training_data,
-        "count": len(_training_data),
+        "training_episodes": page_data,
+        "count": len(page_data),
+        "total": len(_training_data),
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
         "schema_version": "v1.9",
-        "source": "bundled (data/training/training_episodes.json)",
-        "description": (
-            "Each example has 'input' (episode payload) and 'outcome' (actual deltas). "
-            "Train your model to predict outcome from input. "
-            "See docs/miner_quickstart.md for scoring details."
-        ),
     }
 
 
 @router.get("/training/summary")
-async def get_training_summary():
+async def get_training_summary(
+    miner: MinerIdentity = Depends(verify_miner),
+):
     """Get summary stats about available training data."""
     action_types: dict[str, int] = {}
     with_t7 = 0

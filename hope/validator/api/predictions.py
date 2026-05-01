@@ -1,46 +1,65 @@
 """Prediction endpoints — miners submit predictions here.
 
-Security (per Tensora review):
-- Submission window is enforced (closed after deadline)
-- Rate limited per miner hotkey
-- Predictions must be signed (TODO: full signature verification)
+Security:
+- Submission window enforced (closed after deadline)
+- Rate limited per miner by total prediction count
+- Predictions deduplicated per (miner, episode_id) — last wins
+- Batch size capped to prevent DoS
+- Quantile values bounded to [-100, 100]
+- Predictions must be signed (auth.py enforces)
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from hope.protocol.prediction import Prediction, HorizonPrediction, QuantilePrediction
 from hope.validator.api.auth import MinerIdentity, verify_miner
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
-# Rate limiting: max submissions per miner per epoch
-# Per Tensora: "Why would a miner need to call any endpoint more than 5/epoch?"
-RATE_LIMIT_PER_EPOCH = 5
-_submission_count: dict[str, int] = defaultdict(int)
+# Rate limiting: max total predictions per miner per epoch
+MAX_PREDICTIONS_PER_MINER = 500  # ~2x headroom for 200 episodes + resubmissions
+MAX_BATCH_SIZE = 250  # Max predictions per single request
+
+_prediction_count: dict[str, int] = defaultdict(int)
 _current_epoch_id: str = ""
 
+# Quantile value bounds — percentage deltas outside this range are rejected
+QUANTILE_MIN = -100.0
+QUANTILE_MAX = 100.0
 
-def _check_rate_limit(hotkey: str, epoch_id: str):
-    """Enforce rate limit per miner per epoch."""
+
+def _check_rate_limit(hotkey: str, epoch_id: str, batch_size: int):
+    """Enforce rate limit by total prediction count per miner per epoch."""
     global _current_epoch_id
 
-    # Reset counters on new epoch
     if epoch_id != _current_epoch_id:
-        _submission_count.clear()
+        _prediction_count.clear()
         _current_epoch_id = epoch_id
 
-    if _submission_count[hotkey] >= RATE_LIMIT_PER_EPOCH:
+    current = _prediction_count[hotkey]
+    if current + batch_size > MAX_PREDICTIONS_PER_MINER:
         raise HTTPException(
             status_code=429,
-            detail=f"Rate limit exceeded ({RATE_LIMIT_PER_EPOCH} submissions per epoch)",
+            detail=f"Rate limit exceeded ({MAX_PREDICTIONS_PER_MINER} predictions per epoch, "
+                   f"you have {current}, tried to add {batch_size})",
         )
-    _submission_count[hotkey] += 1
+
+
+def _validate_quantile_bounds(value: float, field_name: str):
+    """Reject extreme quantile values."""
+    if value < QUANTILE_MIN or value > QUANTILE_MAX:
+        raise ValueError(f"{field_name} must be between {QUANTILE_MIN} and {QUANTILE_MAX}, got {value}")
 
 
 class PredictionSubmission(BaseModel):
@@ -51,9 +70,16 @@ class PredictionSubmission(BaseModel):
 
 
 class BatchPredictionSubmission(BaseModel):
-    """Batch of predictions from a miner."""
+    """Batch of predictions from a miner. Capped at MAX_BATCH_SIZE."""
 
     predictions: list[PredictionSubmission]
+
+    @field_validator("predictions")
+    @classmethod
+    def check_batch_size(cls, v):
+        if len(v) > MAX_BATCH_SIZE:
+            raise ValueError(f"Batch too large: {len(v)} predictions, max {MAX_BATCH_SIZE}")
+        return v
 
 
 @router.post("/{epoch_id}/predictions")
@@ -67,8 +93,10 @@ async def submit_predictions(
 
     Enforces:
     - Submission window (rejects after deadline)
-    - Rate limiting per miner
-    - Prediction validation (quantile ordering, ranges)
+    - Rate limiting by total prediction count
+    - Batch size cap
+    - Quantile value bounds
+    - Deduplication: last prediction per episode wins
     """
     state = request.app.state.validator
     current_epoch = state.get("current_epoch_id")
@@ -76,9 +104,8 @@ async def submit_predictions(
     if epoch_id != current_epoch:
         raise HTTPException(status_code=404, detail=f"Epoch {epoch_id} not found")
 
-    # Check submission window is open
-    # LiveState computes this dynamically; plain dicts default to True for testing
-    submission_open = state.get("submission_open", True)
+    # C8: Default to closed, require explicit True
+    submission_open = state.get("submission_open", False)
     if not submission_open:
         raise HTTPException(
             status_code=403,
@@ -92,17 +119,17 @@ async def submit_predictions(
         if datetime.now(timezone.utc) > deadline:
             raise HTTPException(status_code=403, detail="Prediction deadline has passed")
 
-    # Rate limit (5 submissions per epoch per miner)
-    _check_rate_limit(miner.hotkey, epoch_id)
+    # C4: Rate limit by prediction count, not request count
+    _check_rate_limit(miner.hotkey, epoch_id, len(submission.predictions))
 
     # Get valid episode IDs
     episodes = state.get("episodes", [])
     valid_ids = {ep.episode_metadata.episode_id for ep in episodes}
 
-    # Get predictions dict
+    # C1: Predictions stored as dict keyed by (hotkey, episode_id) — last wins
     predictions = state.get("predictions", {})
     if miner.hotkey not in predictions:
-        predictions[miner.hotkey] = []
+        predictions[miner.hotkey] = {}
 
     accepted = 0
     rejected = 0
@@ -119,6 +146,13 @@ async def submit_predictions(
             for h_key, h_data in sub.horizons.items():
                 if h_key not in ("7", "14"):
                     continue
+
+                # C10: Validate quantile bounds
+                for metric in ("cost_delta_pct", "conversions_delta_pct", "efficiency_delta_pct"):
+                    q_data = h_data[metric]
+                    for q_field in ("p10", "p50", "p90"):
+                        _validate_quantile_bounds(q_data[q_field], f"{metric}.{q_field}")
+
                 horizons[h_key] = HorizonPrediction(
                     cost_delta_pct=QuantilePrediction(**h_data["cost_delta_pct"]),
                     conversions_delta_pct=QuantilePrediction(**h_data["conversions_delta_pct"]),
@@ -139,12 +173,26 @@ async def submit_predictions(
                 horizons=horizons,
             )
 
-            predictions[miner.hotkey].append(prediction)
+            # C1: Deduplicate — last prediction per episode wins
+            predictions[miner.hotkey][sub.episode_id] = prediction
             accepted += 1
 
+        except (ValueError, KeyError) as e:
+            rejected += 1
+            errors.append(f"{sub.episode_id}: {str(e)[:100]}")
         except Exception as e:
             rejected += 1
             errors.append(f"{sub.episode_id}: {str(e)[:100]}")
+
+    # Update rate limit counter
+    _prediction_count[miner.hotkey] += accepted
+
+    # Compute prediction hash for receipt
+    miner_preds = predictions.get(miner.hotkey, {})
+    pred_summary = {eid: p.submitted_at.isoformat() for eid, p in miner_preds.items()}
+    receipt_hash = hashlib.sha256(
+        json.dumps(pred_summary, sort_keys=True).encode()
+    ).hexdigest()
 
     return {
         "epoch_id": epoch_id,
@@ -152,5 +200,6 @@ async def submit_predictions(
         "accepted": accepted,
         "rejected": rejected,
         "errors": errors if errors else None,
-        "total_predictions": len(predictions.get(miner.hotkey, [])),
+        "total_episodes_covered": len(miner_preds),
+        "receipt_hash": receipt_hash,
     }

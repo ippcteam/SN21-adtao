@@ -10,7 +10,7 @@ Orchestrates the complete validator lifecycle:
 7. Set weights on-chain
 8. Reveal outcomes
 
-HTTP-only architecture per Tensora recommendation — Synapses are not used.
+HTTP-only architecture — Synapses are not used.
 Miners discover epochs and interact entirely via the validator's HTTP API.
 """
 
@@ -107,9 +107,9 @@ class ValidatorRunner:
     async def run_epoch(self, release_key: str) -> dict:
         """Start an epoch — fetch episodes ONLY, defer outcomes until after deadline.
 
-        Per Tensora review: outcomes must NOT be fetched until after the
-        submission window closes. This prevents validators from seeing
-        answers while miners are predicting.
+        Outcomes must NOT be fetched until after the submission window
+        closes. This prevents validators from seeing answers while miners
+        are predicting.
         """
         logger.info(f"Starting epoch for release {release_key}")
         self._release_key = release_key
@@ -208,7 +208,15 @@ class ValidatorRunner:
         state = self.epoch_manager.get_validator_state()
         app = create_app(state)
 
-        config = uvicorn.Config(app, host=self.host, port=self.port, log_level="info")
+        config = uvicorn.Config(
+            app,
+            host=self.host,
+            port=self.port,
+            log_level="info",
+            limit_concurrency=100,
+            limit_max_requests=10000,
+            timeout_keep_alive=5,
+        )
         server = uvicorn.Server(config)
 
         self._server_thread = threading.Thread(target=server.run, daemon=True)
@@ -267,9 +275,10 @@ def main():
     """CLI entry point for the validator."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="HOPE SN21 Validator")
-    parser.add_argument("--release", type=str, default="WR-2026-W18-PUB-E1",
-                        help="Release key to process")
+    parser = argparse.ArgumentParser(description="AdTAO SN21 Validator")
+    parser.add_argument("--release", type=str,
+                        default=os.environ.get("RELEASE_KEY", ""),
+                        help="Release key to process (or set RELEASE_KEY env var)")
     parser.add_argument("--api-key", type=str,
                         default=os.environ.get("HOPE_API_KEY", ""),
                         help="HOPE API key (or set HOPE_API_KEY env var)")

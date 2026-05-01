@@ -63,7 +63,7 @@ CALIBRATION_LOW_RES_REDUCTION = 0.50
 # Directional accuracy
 DIRECTIONAL_NEAR_ZERO_THRESHOLD = 1.0
 
-# Epoch timing — Rob's weekly cadence:
+# Epoch timing — weekly cadence:
 #   Mining open:    Monday 12:00 noon EST (17:00 UTC) → Sunday 23:59 EST (Monday 04:59 UTC)
 #   Validation:     Monday 00:00 EST (05:00 UTC) → Monday 12:00 noon EST (17:00 UTC)
 #   Total mining:   ~6.5 days
@@ -76,8 +76,7 @@ SCORING_CLOSE_HOUR_UTC = 17   # Monday noon EST = 17:00 UTC (next epoch starts)
 PREDICTION_DEADLINE_HOURS = 156  # ~6.5 days (Mon 17:00 UTC → next Mon 05:00 UTC)
 
 # Burn rate — percentage of emissions assigned to UID 0 (subnet owner)
-# Start high (95%) to deter exploiters, decrease in 5% chunks as testing progresses
-# Per Tensora: "start with 95% burn on mainnet, lower as good miners show up"
+# Start high (95%) to deter exploiters, decrease as the system proves stable
 DEFAULT_BURN_FRACTION = 0.95
 
 # HOPE Data API — must be set via environment variables

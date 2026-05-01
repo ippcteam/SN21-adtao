@@ -2,18 +2,22 @@
 
 Miners authenticate by:
 1. Providing their hotkey address in X-Miner-Hotkey header
-2. Signing a nonce with their private key (X-Miner-Signature header)
-3. The validator verifies the signature against the hotkey's public key
+2. Providing a numeric nonce (unix timestamp) in X-Miner-Nonce header
+3. Signing SHA256(hotkey:nonce:METHOD:path:body_hash) with their hotkey private key
+4. Sending the signature in X-Miner-Signature header
 
-This ensures miners can't impersonate each other by spoofing hotkey headers.
-Per Tensora review: "Miners need to sign the prediction to ensure it's actually theirs."
+The signature binds to the full request — method, path, and body — preventing
+replay attacks across endpoints. Nonces are tracked to prevent replay within
+the expiry window.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 
 from fastapi import Header, HTTPException, Request
@@ -23,6 +27,23 @@ logger = logging.getLogger(__name__)
 # Nonce expiry — signatures older than this are rejected
 NONCE_EXPIRY_SECONDS = 300  # 5 minutes
 
+# Max tracked nonces (bounded to prevent memory leak)
+_MAX_SEEN_NONCES = 50_000
+
+# Seen nonces: (hotkey, nonce) -> timestamp. Prevents replay within expiry window.
+_seen_nonces: OrderedDict[tuple[str, str], float] = OrderedDict()
+
+# Require substrateinterface at import time — fail fast if missing
+try:
+    from substrateinterface import Keypair
+    _HAS_CRYPTO = True
+except ImportError:
+    _HAS_CRYPTO = False
+    logger.critical(
+        "substrateinterface not installed — signature verification DISABLED. "
+        "Install with: pip install substrate-interface"
+    )
+
 
 @dataclass
 class MinerIdentity:
@@ -30,29 +51,46 @@ class MinerIdentity:
 
     hotkey: str
     uid: int | None = None
-    verified: bool = False  # True if signature was cryptographically verified
+    verified: bool = False
 
 
-def _verify_signature(hotkey: str, nonce: str, signature: str) -> bool:
+def _evict_expired_nonces() -> None:
+    """Remove expired nonces from the seen set."""
+    now = time.time()
+    cutoff = now - NONCE_EXPIRY_SECONDS - 10  # small buffer
+    while _seen_nonces:
+        key, ts = next(iter(_seen_nonces.items()))
+        if ts < cutoff:
+            _seen_nonces.pop(key)
+        else:
+            break
+
+
+def _verify_signature(
+    hotkey: str,
+    nonce: str,
+    signature: str,
+    method: str,
+    path: str,
+    body_hash: str,
+) -> bool:
     """Verify an ed25519 signature from a Bittensor hotkey.
 
-    The miner signs: SHA256(hotkey + nonce)
-    The validator verifies using the hotkey's public key.
+    The miner signs: SHA256(hotkey:nonce:METHOD:path:body_hash)
+    This binds the signature to the exact request, preventing replay.
     """
-    try:
-        from substrateinterface import Keypair
-
-        # Reconstruct the message that was signed
-        message = hashlib.sha256(f"{hotkey}:{nonce}".encode()).hexdigest()
-
-        # Verify signature against the hotkey (ss58 address)
-        keypair = Keypair(ss58_address=hotkey)
-        is_valid = keypair.verify(message.encode(), bytes.fromhex(signature))
-        return is_valid
-
-    except ImportError:
-        logger.debug("substrateinterface not installed — skipping signature verification")
+    if not _HAS_CRYPTO:
         return False
+
+    try:
+        # Reconstruct the message that was signed (bound to full request)
+        message = hashlib.sha256(
+            f"{hotkey}:{nonce}:{method}:{path}:{body_hash}".encode()
+        ).hexdigest()
+
+        keypair = Keypair(ss58_address=hotkey)
+        return keypair.verify(message.encode(), bytes.fromhex(signature))
+
     except Exception as e:
         logger.warning(f"Signature verification failed for {hotkey[:16]}...: {e}")
         return False
@@ -66,13 +104,11 @@ async def verify_miner(
 ) -> MinerIdentity:
     """FastAPI dependency that verifies the miner's identity.
 
-    Authentication levels:
-    1. Hotkey only (no signature) — accepted but marked unverified
-    2. Hotkey + nonce + signature — cryptographically verified
+    Authentication is always required. Miners MUST sign requests.
+    REQUIRE_SIGNATURES can be set to "false" ONLY for local development/testing.
 
-    Configurable via REQUIRE_SIGNATURES env var:
-    - "false" (default for testnet): unsigned requests accepted
-    - "true" (for mainnet): unsigned requests rejected with 401
+    The signature covers the full request: method, path, and body hash.
+    Nonces are tracked to prevent replay attacks.
     """
     if not x_miner_hotkey:
         raise HTTPException(status_code=401, detail="Missing X-Miner-Hotkey header")
@@ -81,41 +117,79 @@ async def verify_miner(
     validator_state = request.app.state.validator
     registered_miners = validator_state.get("registered_miners", set())
 
-    uid = None
-    if registered_miners and x_miner_hotkey not in registered_miners:
+    # Fail closed: if metagraph not synced, reject all requests
+    if not registered_miners:
+        raise HTTPException(
+            status_code=503,
+            detail="Validator not ready — metagraph not synced",
+        )
+
+    if x_miner_hotkey not in registered_miners:
         raise HTTPException(
             status_code=403,
             detail=f"Hotkey {x_miner_hotkey[:16]}... not registered on subnet",
         )
 
-    # Check if signatures are required (mainnet enforcement)
-    import os
-    require_sigs = os.environ.get("REQUIRE_SIGNATURES", "false").lower() == "true"
+    # Look up UID
+    uid_map = validator_state.get("uid_map", {})
+    uid = uid_map.get(x_miner_hotkey)
 
-    # Verify signature if provided
-    verified = False
-    if x_miner_nonce and x_miner_signature:
-        # Check nonce freshness
-        try:
-            nonce_time = float(x_miner_nonce)
-            if abs(time.time() - nonce_time) > NONCE_EXPIRY_SECONDS:
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"Nonce expired (must be within {NONCE_EXPIRY_SECONDS}s)",
-                )
-        except ValueError:
-            pass  # Non-timestamp nonce — skip expiry check
+    # Check if signatures are required (default: true for production safety)
+    require_sigs = os.environ.get("REQUIRE_SIGNATURES", "true").lower() != "false"
 
-        verified = _verify_signature(x_miner_hotkey, x_miner_nonce, x_miner_signature)
-        if not verified:
-            if require_sigs:
-                raise HTTPException(status_code=401, detail="Invalid signature")
-            logger.warning(f"Invalid signature from {x_miner_hotkey[:16]}... — accepting without verification")
-    elif require_sigs:
-        # No signature provided but signatures are required
+    if not x_miner_nonce or not x_miner_signature:
+        if require_sigs:
+            raise HTTPException(
+                status_code=401,
+                detail="Signature required. Include X-Miner-Nonce and X-Miner-Signature headers.",
+            )
+        # Dev mode only — no signature, marked unverified
+        logger.warning(f"Unsigned request from {x_miner_hotkey[:16]}... (REQUIRE_SIGNATURES=false)")
+        return MinerIdentity(hotkey=x_miner_hotkey, uid=uid, verified=False)
+
+    # --- Signature provided: validate fully ---
+
+    # B3: Reject non-numeric nonces
+    try:
+        nonce_time = float(x_miner_nonce)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Nonce must be a numeric timestamp")
+
+    # Check nonce freshness
+    if abs(time.time() - nonce_time) > NONCE_EXPIRY_SECONDS:
         raise HTTPException(
             status_code=401,
-            detail="Signature required. Include X-Miner-Nonce and X-Miner-Signature headers.",
+            detail=f"Nonce expired (must be within {NONCE_EXPIRY_SECONDS}s)",
         )
 
-    return MinerIdentity(hotkey=x_miner_hotkey, uid=uid, verified=verified)
+    # B2: Reject replayed nonces
+    nonce_key = (x_miner_hotkey, x_miner_nonce)
+    if nonce_key in _seen_nonces:
+        raise HTTPException(status_code=401, detail="Nonce already used")
+
+    # B1: Compute body hash and verify signature bound to full request
+    body = await request.body()
+    body_hash = hashlib.sha256(body).hexdigest() if body else hashlib.sha256(b"").hexdigest()
+
+    verified = _verify_signature(
+        hotkey=x_miner_hotkey,
+        nonce=x_miner_nonce,
+        signature=x_miner_signature,
+        method=request.method,
+        path=request.url.path,
+        body_hash=body_hash,
+    )
+
+    if not verified:
+        # B5: Fail closed — if a signature is provided it MUST validate
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    # Track nonce as used (after successful verification)
+    _seen_nonces[nonce_key] = time.time()
+    if len(_seen_nonces) > _MAX_SEEN_NONCES:
+        _evict_expired_nonces()
+    # Hard cap if eviction didn't free enough
+    while len(_seen_nonces) > _MAX_SEEN_NONCES:
+        _seen_nonces.popitem(last=False)
+
+    return MinerIdentity(hotkey=x_miner_hotkey, uid=uid, verified=True)

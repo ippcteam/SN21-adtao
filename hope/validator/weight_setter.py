@@ -9,7 +9,7 @@ Burn rate explained:
 - This reduces miner emissions proportionally
 - High burn (95%) at launch = low miner incentive = fewer exploiters
 - Lower burn gradually as the system proves stable
-- Implemented per Tensora guidance (not a protocol parameter)
+- Implemented as a subnet-level parameter (not a protocol parameter)
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # EMA smoothing factor — how much previous weights influence new weights
 EMA_ALPHA = 0.1
 
-# Default burn rate for launch (95% per Tensora recommendation)
+# Default burn rate for launch (95%)
 DEFAULT_BURN_FRACTION = 0.95
 
 

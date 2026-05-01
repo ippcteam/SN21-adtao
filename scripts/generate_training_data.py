@@ -107,7 +107,8 @@ async def generate(release_key: str, output_dir: str, api_key: str):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Generate training data for miners")
-    parser.add_argument("--release", type=str, default="WR-2026-W18-PUB-E1")
+    parser.add_argument("--release", type=str, default=os.environ.get("RELEASE_KEY", ""),
+                        help="Release key (or set RELEASE_KEY env var)")
     parser.add_argument("--output", type=str, default="data/training")
     parser.add_argument("--api-key", type=str, default=os.environ.get("HOPE_API_KEY", ""))
     args = parser.parse_args()

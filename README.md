@@ -64,7 +64,7 @@ hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY
 hope-miner --validator-url https://validator.adtao.io --hotkey YOUR_HOTKEY --continuous
 
 # Check your score after an epoch
-python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
+python scripts/score_predictions.py --release CURRENT_RELEASE_KEY --run-baseline
 ```
 
 **Validator URL:** `https://validator.adtao.io`
@@ -80,7 +80,7 @@ Read the full guide: [Miner Quickstart](docs/miner_quickstart.md) · [Miner econ
 pip install -e .
 
 # Run validator
-hope-validator --release WR-2026-W18-PUB-E1 --port 8080
+hope-validator --release CURRENT_RELEASE_KEY --port 8080
 ```
 
 Read the setup guide: [Validator Setup](docs/validator_setup.md)
@@ -198,7 +198,7 @@ scores = scorer.score_epoch(predictions, episodes, outcomes)
 
 ## Data Source
 
-Episodes are generated from real Google Ads management data by the [HOPE/AdTAO platform](https://hope.ppcrebel.com). The data pipeline:
+Episodes are generated from real Google Ads management data by the AdTAO platform. The data pipeline:
 
 - **4,312 accounts** normalised into governance registry
 - **572 episode candidates** classified from changelog events

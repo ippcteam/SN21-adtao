@@ -3,7 +3,7 @@
 States:
   IDLE → PREPARING → DISTRIBUTING → COLLECTING → CLOSED → SCORING → REVEALING → COMPLETE
 
-Key security property (per Tensora review):
+Key security property:
   Outcomes are NOT fetched until AFTER the submission deadline closes.
   This prevents validators from seeing answers before miners submit.
 
@@ -35,6 +35,13 @@ from hope.protocol.outcomes import Outcome
 from hope.protocol.prediction import Prediction
 from hope.scoring.scorer import EpochScorer, MinerScore
 from hope.scoring.weights import ScoringWeights
+from hope.validator.integrity import (
+    EpisodeCommitment,
+    PredictionMerkleTree,
+    compute_episode_commitment,
+    build_prediction_merkle_tree,
+    compute_scoring_hash,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +68,12 @@ class EpochContext:
     predictions: dict[str, list[Prediction]] = field(default_factory=dict)
     scores: dict[str, MinerScore] = field(default_factory=dict)
 
-    # Commitment
+    # Integrity proofs
+    episode_commitment: Optional[EpisodeCommitment] = None  # Published before distribution
+    prediction_merkle: Optional[PredictionMerkleTree] = None  # Published before scoring
+    scoring_hash: str = ""  # Deterministic hash of scoring output
+
+    # Legacy commitment (for verification endpoint)
     salt: str = ""
     commitment_hash: str = ""
     merkle_root: str = ""
@@ -107,7 +119,7 @@ class EpochManager:
     # -- State transitions --
 
     def _compute_deadline(self, now: datetime) -> datetime:
-        """Compute the next mining close time based on Rob's cadence.
+        """Compute the next mining close time based on the weekly cadence.
 
         Mining closes: Sunday midnight EST = Monday 05:00 UTC
         If we're past this week's close, target next week's.
@@ -129,7 +141,7 @@ class EpochManager:
         only after the submission deadline closes. This prevents the
         validator from seeing answers before miners submit.
 
-        Cadence (per Rob):
+        Cadence:
           Mining:    Monday noon EST (17:00 UTC) → Sunday midnight EST (Mon 05:00 UTC)
           Scoring:   Monday 05:00 UTC → Monday 17:00 UTC
         """
@@ -150,13 +162,21 @@ class EpochManager:
             deadline=deadline.isoformat(),
         )
 
+        # A6: Compute episode commitment BEFORE distributing to miners
+        ctx.episode_commitment = compute_episode_commitment(
+            episodes=ctx.episodes,
+            epoch_id=ctx.epoch_id,
+            timestamp=now.isoformat(),
+        )
+
         ctx.state = EpochState.DISTRIBUTING
         self.current = ctx
 
         logger.info(
             f"Epoch {ctx.epoch_id} prepared: {len(ctx.episodes)} episodes, "
             f"outcomes=DEFERRED (fetched after deadline), "
-            f"deadline={ctx.deadline}"
+            f"deadline={ctx.deadline}, "
+            f"episode_hash={ctx.episode_commitment.episode_hash[:16]}..."
         )
 
         return ctx
@@ -191,7 +211,17 @@ class EpochManager:
         if self.current.state != EpochState.CLOSED:
             raise ValueError(f"Cannot score — submissions not closed (state={self.current.state})")
 
-        # Load outcomes NOW
+        # A4: Build prediction Merkle tree BEFORE fetching outcomes
+        # This proves predictions were locked before validator saw answers
+        self.current.prediction_merkle = build_prediction_merkle_tree(
+            self.current.predictions,
+        )
+        logger.info(
+            f"Prediction Merkle tree built: {self.current.prediction_merkle.leaf_count} leaves, "
+            f"root={self.current.prediction_merkle.root[:16]}..."
+        )
+
+        # Load outcomes NOW (after predictions are locked)
         self.current.outcomes = outcomes
         self.current.outcomes_fetched_at = datetime.now(timezone.utc).isoformat()
         logger.info(
@@ -199,7 +229,7 @@ class EpochManager:
             f"fetched at {self.current.outcomes_fetched_at}"
         )
 
-        # Compute commitment (over outcomes that were just loaded)
+        # Compute commitment (over outcomes + predictions Merkle root)
         self.current.salt = secrets.token_hex(32)
         self.current.commitment_hash = self._compute_commitment(self.current)
         self.current.merkle_root = self._compute_merkle_root(self.current)
@@ -219,10 +249,12 @@ class EpochManager:
         )
 
         self.current.scored_at = datetime.now(timezone.utc).isoformat()
+        self.current.scoring_hash = compute_scoring_hash(self.current.scores)
 
         logger.info(
             f"Scoring complete: {len(self.current.scores)} miners scored. "
-            f"Top score: {max((s.final_score for s in self.current.scores.values()), default=0):.4f}"
+            f"Top score: {max((s.final_score for s in self.current.scores.values()), default=0):.4f}, "
+            f"scoring_hash={self.current.scoring_hash[:16]}..."
         )
 
         return self.current.scores
@@ -243,6 +275,11 @@ class EpochManager:
             "outcome_count": len(self.current.outcomes),
             "outcomes_fetched_at": self.current.outcomes_fetched_at,
             "submissions_closed_at": self.current.closed_at,
+            # Integrity proofs
+            "episode_hash": self.current.episode_commitment.episode_hash if self.current.episode_commitment else None,
+            "prediction_merkle_root": self.current.prediction_merkle.root if self.current.prediction_merkle else None,
+            "prediction_count": self.current.prediction_merkle.leaf_count if self.current.prediction_merkle else 0,
+            "scoring_hash": self.current.scoring_hash,
         }
 
         logger.info(f"Epoch {self.current.epoch_id} revealed")
@@ -278,13 +315,19 @@ class EpochManager:
     # -- Commitment helpers --
 
     def _compute_commitment(self, ctx: EpochContext) -> str:
-        """Compute SHA256 commitment hash over outcomes + salt + weights."""
+        """Compute SHA256 commitment hash over all integrity data.
+
+        Includes: episode_hash + prediction_merkle_root + outcomes + salt + weights
+        This binds all components together — any tampering invalidates the commitment.
+        """
+        episode_hash = ctx.episode_commitment.episode_hash if ctx.episode_commitment else ""
+        pred_root = ctx.prediction_merkle.root if ctx.prediction_merkle else ""
         outcomes_json = json.dumps(
             [o.model_dump(mode="json") for o in ctx.outcomes],
             sort_keys=True, default=str,
         )
         weights_json = ctx.weights.to_commitment_json()
-        payload = f"{outcomes_json}{ctx.salt}{weights_json}"
+        payload = f"{episode_hash}{pred_root}{outcomes_json}{ctx.salt}{weights_json}"
         return hashlib.sha256(payload.encode()).hexdigest()
 
     def _compute_merkle_root(self, ctx: EpochContext) -> str:
@@ -351,6 +394,14 @@ class LiveState(dict):
             return self._mgr.is_submission_open()
         if key == "registered_miners":
             return self._mgr.registered_miners
+        if key == "episode_commitment":
+            if not ctx.episode_commitment:
+                return default
+            return {
+                "episode_hash": ctx.episode_commitment.episode_hash,
+                "episode_count": ctx.episode_commitment.episode_count,
+                "committed_at": ctx.episode_commitment.committed_at,
+            }
         if key == "commitment":
             if not ctx.commitment_hash:
                 return default
@@ -359,6 +410,9 @@ class LiveState(dict):
                 "merkle_root": ctx.merkle_root,
                 "committed_at": ctx.committed_at,
                 "episode_count": len(ctx.episodes),
+                "episode_hash": ctx.episode_commitment.episode_hash if ctx.episode_commitment else None,
+                "prediction_merkle_root": ctx.prediction_merkle.root if ctx.prediction_merkle else None,
+                "prediction_count": ctx.prediction_merkle.leaf_count if ctx.prediction_merkle else 0,
             }
         if key == "reveal":
             if not ctx.revealed_at:
@@ -386,7 +440,8 @@ class LiveState(dict):
     def __contains__(self, key):
         return key in ("current_epoch_id", "episodes", "predictions", "outcomes",
                        "deadline", "submission_open", "commitment", "reveal",
-                       "miner_scores", "registered_miners")
+                       "miner_scores", "registered_miners", "episode_commitment",
+                       "uid_map")
 
     def __setitem__(self, key, value):
         ctx = self._mgr.current

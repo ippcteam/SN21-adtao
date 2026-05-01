@@ -1,5 +1,6 @@
 """Tests for the validator HTTP API."""
 
+import os
 
 from fastapi.testclient import TestClient
 
@@ -8,6 +9,10 @@ from hope.protocol.episode import (
     PreWindow, CampaignTimeSeries, AccountAggregates, BundleSummary,
 )
 from hope.validator.api.server import create_app
+
+
+# Unit tests run without real wallets — disable signature requirement
+os.environ["REQUIRE_SIGNATURES"] = "false"
 
 
 def _make_episode(episode_id: str = "ep_test_001") -> Episode:
@@ -44,6 +49,9 @@ def _state_with_episodes():
         "current_epoch_id": "test-epoch-1",
         "episodes": [_make_episode("ep_001"), _make_episode("ep_002")],
         "deadline": "2099-12-31T23:59:59+00:00",
+        "submission_open": True,
+        # Auth requires registered_miners to be non-empty
+        "registered_miners": {"miner123", "miner_abc"},
     }
 
 
@@ -54,6 +62,27 @@ class TestHealthEndpoint:
         resp = client.get("/health")
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
+
+
+class TestAuthEnforcement:
+    def test_no_registered_miners_returns_503(self):
+        """B6: Empty metagraph = reject all requests."""
+        app = create_app({"current_epoch_id": "test", "episodes": []})
+        client = TestClient(app)
+        resp = client.get(
+            "/v1/epochs/test/episodes",
+            headers={"X-Miner-Hotkey": "miner123"},
+        )
+        assert resp.status_code == 503
+
+    def test_unregistered_miner_returns_403(self):
+        app = create_app(_state_with_episodes())
+        client = TestClient(app)
+        resp = client.get(
+            "/v1/epochs/test-epoch-1/episodes",
+            headers={"X-Miner-Hotkey": "unknown_miner"},
+        )
+        assert resp.status_code == 403
 
 
 class TestEpisodeEndpoints:

@@ -1,12 +1,14 @@
 """Prediction Client — HTTP client for submitting signed predictions to the validator.
 
-Per Tensora review: miners must sign predictions to prove hotkey ownership.
-The signature is: sign(SHA256(hotkey + nonce)) using the hotkey's private key.
+Miners must sign every request. The signature covers the full request:
+  sign(SHA256(hotkey:nonce:METHOD:path:body_hash))
+This prevents replay attacks and ensures the validator cannot tamper with submissions.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import time
 
@@ -22,18 +24,28 @@ class PredictionClient:
 
     def __init__(self, hotkey: str, wallet=None, timeout: float = 60.0):
         self.hotkey = hotkey
-        self.wallet = wallet  # Bittensor wallet for signing (optional)
+        self.wallet = wallet  # Bittensor wallet for signing
         self.timeout = timeout
 
-    def _headers(self) -> dict[str, str]:
-        """Build auth headers with optional signature."""
+    def _sign_request(
+        self,
+        method: str,
+        path: str,
+        body: bytes,
+    ) -> dict[str, str]:
+        """Build auth headers with request-bound signature.
+
+        Signature covers: SHA256(hotkey:nonce:METHOD:path:body_hash)
+        """
         headers = {"X-Miner-Hotkey": self.hotkey}
 
-        # Sign if wallet is available
         if self.wallet:
             try:
                 nonce = str(time.time())
-                message = hashlib.sha256(f"{self.hotkey}:{nonce}".encode()).hexdigest()
+                body_hash = hashlib.sha256(body).hexdigest()
+                message = hashlib.sha256(
+                    f"{self.hotkey}:{nonce}:{method}:{path}:{body_hash}".encode()
+                ).hexdigest()
                 signature = self.wallet.hotkey.sign(message.encode()).hex()
                 headers["X-Miner-Nonce"] = nonce
                 headers["X-Miner-Signature"] = signature
@@ -46,7 +58,8 @@ class PredictionClient:
         self, api_endpoint: str, epoch_id: str, predictions: list[Prediction]
     ) -> dict:
         """Submit a batch of signed predictions for an epoch."""
-        url = f"{api_endpoint}/v1/epochs/{epoch_id}/predictions"
+        path = f"/v1/epochs/{epoch_id}/predictions"
+        url = f"{api_endpoint}{path}"
 
         payload = {
             "predictions": [
@@ -67,8 +80,14 @@ class PredictionClient:
             ]
         }
 
+        body = json.dumps(payload, sort_keys=True).encode()
+        headers = self._sign_request("POST", path, body)
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(url, json=payload, headers=self._headers())
+            resp = await client.post(url, content=body, headers={
+                **headers,
+                "Content-Type": "application/json",
+            })
             resp.raise_for_status()
             result = resp.json()
 

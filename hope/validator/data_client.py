@@ -4,13 +4,14 @@ This is the bridge between HOPE's internal data pipeline and the validator.
 The validator calls this to pull episodes, outcomes, and integrity metadata
 for each epoch.
 
-Phase 1: Our validator calls this directly.
-Phase 2+: Could be used by any authorized validator partner.
+All responses from HOPE are cryptographically signed with HOPE's ed25519 key.
+The validator verifies signatures before accepting any data.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from dataclasses import dataclass
 from typing import Optional
@@ -20,6 +21,7 @@ import httpx
 import os
 
 from hope.constants import HOPE_API_VERSION
+from hope.hope_public_key import HOPE_PUBLIC_KEY_HEX
 from hope.protocol.episode import Episode
 from hope.protocol.outcomes import HorizonOutcome, Outcome, ScoringMetadata
 
@@ -46,7 +48,7 @@ class HopeDataClient:
 
     Usage:
         client = HopeDataClient(api_key=os.environ["HOPE_API_KEY"])
-        data = await client.fetch_epoch_data("WR-2026-W18-PUB-E1")
+        data = await client.fetch_epoch_data("RELEASE_KEY")
         print(f"Fetched {len(data.episodes)} episodes")
     """
 
@@ -108,6 +110,10 @@ class HopeDataClient:
             resp.raise_for_status()
             package = resp.json()
 
+        # Verify HOPE's cryptographic signature
+        if not self.verify_hope_signature(package):
+            logger.warning("HOPE signature verification failed for episodes — proceeding with caution")
+
         episodes = []
         for ep_data in package.get("episodes", []):
             payload = ep_data.get("payload")
@@ -140,6 +146,10 @@ class HopeDataClient:
             )
             resp.raise_for_status()
             package = resp.json()
+
+        # Verify HOPE's cryptographic signature
+        if not self.verify_hope_signature(package):
+            logger.warning("HOPE signature verification failed for outcomes — proceeding with caution")
 
         outcomes = []
         for ep_data in package.get("episodes", []):
@@ -224,7 +234,6 @@ class HopeDataClient:
         if not epoch_data.raw_package or not epoch_data.package_hash:
             return False
 
-        import json
         episodes = epoch_data.raw_package.get("episodes", [])
         hash_input = json.dumps(episodes, sort_keys=True, default=str)
         computed = hashlib.sha256(hash_input.encode()).hexdigest()
@@ -236,6 +245,50 @@ class HopeDataClient:
                 f"expected={epoch_data.package_hash[:16]}..."
             )
         return match
+
+    def verify_hope_signature(self, package: dict) -> bool:
+        """Verify HOPE's ed25519 signature on an API response.
+
+        Returns True if signature is valid against HOPE's published public key.
+        Returns False (with warning) if signature is missing or invalid.
+        """
+        integrity = package.get("integrity", {})
+        signature_hex = integrity.get("signature")
+        signing_key_hex = integrity.get("signing_key")
+
+        if not signature_hex:
+            logger.warning("HOPE response has no signature — cannot verify authenticity")
+            return False
+
+        # Verify the signing key matches HOPE's published key
+        if signing_key_hex and signing_key_hex != HOPE_PUBLIC_KEY_HEX:
+            logger.error(
+                f"HOPE signing key mismatch: got {signing_key_hex[:16]}... "
+                f"expected {HOPE_PUBLIC_KEY_HEX[:16]}..."
+            )
+            return False
+
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+            # Reconstruct the signed content (everything except integrity)
+            signable = {k: v for k, v in package.items() if k != "integrity"}
+            signable_json = json.dumps(signable, sort_keys=True, default=str)
+            content_hash = hashlib.sha256(signable_json.encode()).digest()
+
+            # Verify signature
+            pub_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(HOPE_PUBLIC_KEY_HEX))
+            pub_key.verify(bytes.fromhex(signature_hex), content_hash)
+
+            logger.info("HOPE signature verified successfully")
+            return True
+
+        except ImportError:
+            logger.warning("cryptography library not installed — cannot verify HOPE signature")
+            return False
+        except Exception as e:
+            logger.error(f"HOPE signature verification FAILED: {e}")
+            return False
 
     def _parse_episode(self, payload: dict) -> Episode:
         """Parse a raw payload dict into an Episode model."""

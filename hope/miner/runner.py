@@ -5,7 +5,7 @@ Handles the complete miner lifecycle:
 2. Run prediction model on each episode
 3. Submit predictions back to validator
 
-HTTP-only architecture per Tensora recommendation — no Synapses.
+HTTP-only architecture — no Synapses.
 Miners discover epochs via the validator's /health endpoint and
 interact entirely over HTTP.
 """
