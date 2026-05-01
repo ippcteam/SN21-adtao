@@ -12,6 +12,8 @@ dependencies = [
     "fastapi>=0.100",
     "uvicorn>=0.23",
     "httpx>=0.24",
+    "substrate-interface>=1.7",
+    "cryptography>=41.0",
 ]
 
 [project.optional-dependencies]

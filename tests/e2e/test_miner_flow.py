@@ -183,7 +183,13 @@ class TestMinerE2EFlow:
         assert data["accepted"] == 10
         assert data["rejected"] == 0
         assert data["total_episodes_covered"] == 10
-        assert "receipt_hash" in data
+        # Each accepted prediction gets a content-binding receipt
+        assert "receipts" in data
+        assert len(data["receipts"]) == 10
+        for receipt in data["receipts"]:
+            assert "prediction_hash" in receipt
+            assert "receipt_hash" in receipt
+            assert "episode_id" in receipt
 
     def test_06_duplicate_overwrites_not_duplicates(self, app_and_client):
         """Step 6: Resubmitting for same episode overwrites — no duplication."""

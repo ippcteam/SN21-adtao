@@ -11,8 +11,6 @@ Security:
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -22,6 +20,7 @@ from pydantic import BaseModel, field_validator
 
 from hope.protocol.prediction import Prediction, HorizonPrediction, QuantilePrediction
 from hope.validator.api.auth import MinerIdentity, verify_miner
+from hope.validator.integrity import compute_prediction_hash, create_prediction_receipt
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +133,7 @@ async def submit_predictions(
     accepted = 0
     rejected = 0
     errors = []
+    accepted_receipts = []
 
     for sub in submission.predictions:
         if sub.episode_id not in valid_ids:
@@ -175,7 +175,32 @@ async def submit_predictions(
 
             # C1: Deduplicate — last prediction per episode wins
             predictions[miner.hotkey][sub.episode_id] = prediction
+
+            # Create content-binding receipt for this prediction
+            pred_hash = compute_prediction_hash(prediction.model_dump(mode="json"))
+            receipt = create_prediction_receipt(
+                miner_hotkey=miner.hotkey,
+                episode_id=sub.episode_id,
+                prediction_hash=pred_hash,
+                received_at=prediction.submitted_at.isoformat(),
+            )
+
+            # Store receipts for later verification by miners
+            prediction_receipts = state.get("prediction_receipts", {})
+            if miner.hotkey not in prediction_receipts:
+                prediction_receipts[miner.hotkey] = {}
+            prediction_receipts[miner.hotkey][sub.episode_id] = {
+                "prediction_hash": receipt.prediction_hash,
+                "receipt_hash": receipt.receipt_hash,
+                "received_at": receipt.received_at,
+            }
+
             accepted += 1
+            accepted_receipts.append({
+                "episode_id": sub.episode_id,
+                "prediction_hash": pred_hash,
+                "receipt_hash": receipt.receipt_hash,
+            })
 
         except (ValueError, KeyError) as e:
             rejected += 1
@@ -187,12 +212,7 @@ async def submit_predictions(
     # Update rate limit counter
     _prediction_count[miner.hotkey] += accepted
 
-    # Compute prediction hash for receipt
     miner_preds = predictions.get(miner.hotkey, {})
-    pred_summary = {eid: p.submitted_at.isoformat() for eid, p in miner_preds.items()}
-    receipt_hash = hashlib.sha256(
-        json.dumps(pred_summary, sort_keys=True).encode()
-    ).hexdigest()
 
     return {
         "epoch_id": epoch_id,
@@ -201,5 +221,5 @@ async def submit_predictions(
         "rejected": rejected,
         "errors": errors if errors else None,
         "total_episodes_covered": len(miner_preds),
-        "receipt_hash": receipt_hash,
+        "receipts": accepted_receipts if accepted_receipts else None,
     }

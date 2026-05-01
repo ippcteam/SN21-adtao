@@ -110,12 +110,16 @@ class HopeDataClient:
             resp.raise_for_status()
             package = resp.json()
 
-        # Verify HOPE's cryptographic signature — reject unsigned/tampered data
-        if not self.verify_hope_signature(package):
-            raise ValueError(
-                "HOPE signature verification failed for episodes. "
-                "Data may be tampered with — refusing to use unverified episodes."
-            )
+        # Verify HOPE's cryptographic signature
+        sig_valid = self.verify_hope_signature(package)
+        require_sig = os.environ.get("REQUIRE_HOPE_SIGNATURE", "true").lower() != "false"
+        if not sig_valid:
+            if require_sig:
+                raise ValueError(
+                    "HOPE signature verification failed for episodes. "
+                    "Data may be tampered with — refusing to use unverified episodes."
+                )
+            logger.warning("HOPE signature not verified for episodes — REQUIRE_HOPE_SIGNATURE=false allows this")
 
         episodes = []
         for ep_data in package.get("episodes", []):
@@ -150,12 +154,16 @@ class HopeDataClient:
             resp.raise_for_status()
             package = resp.json()
 
-        # Verify HOPE's cryptographic signature — reject unsigned/tampered data
-        if not self.verify_hope_signature(package):
-            raise ValueError(
-                "HOPE signature verification failed for outcomes. "
-                "Data may be tampered with — refusing to use unverified outcomes."
-            )
+        # Verify HOPE's cryptographic signature
+        sig_valid = self.verify_hope_signature(package)
+        require_sig = os.environ.get("REQUIRE_HOPE_SIGNATURE", "true").lower() != "false"
+        if not sig_valid:
+            if require_sig:
+                raise ValueError(
+                    "HOPE signature verification failed for outcomes. "
+                    "Data may be tampered with — refusing to use unverified outcomes."
+                )
+            logger.warning("HOPE signature not verified for outcomes — REQUIRE_HOPE_SIGNATURE=false allows this")
 
         outcomes = []
         for ep_data in package.get("episodes", []):

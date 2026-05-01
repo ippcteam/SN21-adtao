@@ -66,6 +66,7 @@ class EpochContext:
     episodes: list[Episode] = field(default_factory=list)
     outcomes: list[Outcome] = field(default_factory=list)  # Empty until SCORING phase
     predictions: dict[str, list[Prediction]] = field(default_factory=dict)
+    prediction_receipts: dict[str, dict] = field(default_factory=dict)  # hotkey -> {episode_id -> receipt}
     scores: dict[str, MinerScore] = field(default_factory=dict)
 
     # Integrity proofs
@@ -353,11 +354,21 @@ class EpochManager:
 
         return leaves[0]
 
-    def verify_commitment(self, revealed_outcomes_json: str, salt: str, weights_json: str) -> bool:
-        """Verify that revealed data matches the commitment hash."""
+    def verify_commitment(
+        self,
+        episode_hash: str,
+        prediction_merkle_root: str,
+        revealed_outcomes_json: str,
+        salt: str,
+        weights_json: str,
+    ) -> bool:
+        """Verify that revealed data matches the commitment hash.
+
+        Must match _compute_commitment(): SHA256(episode_hash + pred_root + outcomes + salt + weights)
+        """
         if not self.current:
             return False
-        payload = f"{revealed_outcomes_json}{salt}{weights_json}"
+        payload = f"{episode_hash}{prediction_merkle_root}{revealed_outcomes_json}{salt}{weights_json}"
         computed = hashlib.sha256(payload.encode()).hexdigest()
         return computed == self.current.commitment_hash
 
@@ -435,13 +446,15 @@ class LiveState(dict):
             }
         if key == "miner_scores":
             return ctx.scores if ctx.scores else default
+        if key == "prediction_receipts":
+            return ctx.prediction_receipts
         return default
 
     def __contains__(self, key):
         return key in ("current_epoch_id", "episodes", "predictions", "outcomes",
                        "deadline", "submission_open", "commitment", "reveal",
                        "miner_scores", "registered_miners", "episode_commitment",
-                       "uid_map")
+                       "uid_map", "prediction_receipts")
 
     def __setitem__(self, key, value):
         ctx = self._mgr.current
