@@ -287,12 +287,16 @@ class EpochManager:
         logger.info(f"Epoch {self.current.epoch_id} revealed")
         return reveal_data
 
+    _MAX_HISTORY = 4  # Keep last N epochs to bound memory
+
     def complete(self) -> None:
         """REVEALING → COMPLETE: Finalize epoch."""
         if not self.current:
             raise ValueError("No active epoch")
         self.current.state = EpochState.COMPLETE
         self.history.append(self.current)
+        if len(self.history) > self._MAX_HISTORY:
+            self.history = self.history[-self._MAX_HISTORY:]
         logger.info(f"Epoch {self.current.epoch_id} complete")
 
     # -- Commitment helpers --
@@ -300,7 +304,7 @@ class EpochManager:
     def _compute_commitment(self, ctx: EpochContext) -> str:
         """Compute SHA256 commitment hash over all integrity data.
 
-        Includes: episode_hash + prediction_merkle_root + outcomes + salt + weights
+        Includes: episode_hash + prediction_merkle_root + outcomes_merkle_root + outcomes + salt + weights
         This binds all components together — any tampering invalidates the commitment.
         """
         episode_hash = ctx.episode_commitment.episode_hash if ctx.episode_commitment else ""
@@ -309,8 +313,9 @@ class EpochManager:
             [o.model_dump(mode="json") for o in ctx.outcomes],
             sort_keys=True, default=str,
         )
+        outcomes_merkle = ctx.merkle_root or ""
         weights_json = ctx.weights.to_commitment_json()
-        payload = f"{episode_hash}{pred_root}{outcomes_json}{ctx.salt}{weights_json}"
+        payload = f"{episode_hash}{pred_root}{outcomes_merkle}{outcomes_json}{ctx.salt}{weights_json}"
         return hashlib.sha256(payload.encode()).hexdigest()
 
     def _compute_merkle_root(self, ctx: EpochContext) -> str:
@@ -340,17 +345,19 @@ class EpochManager:
         self,
         episode_hash: str,
         prediction_merkle_root: str,
+        outcomes_merkle_root: str,
         revealed_outcomes_json: str,
         salt: str,
         weights_json: str,
     ) -> bool:
         """Verify that revealed data matches the commitment hash.
 
-        Must match _compute_commitment(): SHA256(episode_hash + pred_root + outcomes + salt + weights)
+        Must match _compute_commitment():
+        SHA256(episode_hash + pred_root + outcomes_merkle + outcomes_json + salt + weights)
         """
         if not self.current:
             return False
-        payload = f"{episode_hash}{prediction_merkle_root}{revealed_outcomes_json}{salt}{weights_json}"
+        payload = f"{episode_hash}{prediction_merkle_root}{outcomes_merkle_root}{revealed_outcomes_json}{salt}{weights_json}"
         computed = hashlib.sha256(payload.encode()).hexdigest()
         return computed == self.current.commitment_hash
 
@@ -421,7 +428,12 @@ class LiveState(dict):
                     mid: {
                         "raw_score": s.raw_score,
                         "skill_score": s.skill_score,
+                        "null_penalty": s.null_penalty,
+                        "coverage_penalty": s.coverage_penalty,
                         "final_score": s.final_score,
+                        "episodes_scored": s.episodes_scored,
+                        "episodes_total": s.episodes_total,
+                        "coverage_fraction": s.coverage_fraction,
                     }
                     for mid, s in ctx.scores.items()
                 },

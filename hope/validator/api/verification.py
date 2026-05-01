@@ -55,7 +55,7 @@ async def get_verification(epoch_id: str, request: Request):
         "submissions_closed_at": reveal.get("submissions_closed_at"),
         "verification_instructions": (
             "To verify the commitment: compute "
-            "SHA256(episode_hash + prediction_merkle_root + outcomes_json + salt + weights_json) "
+            "SHA256(episode_hash + prediction_merkle_root + merkle_root + outcomes_json + salt + weights_json) "
             "where outcomes_json = json.dumps(outcomes, sort_keys=True, default=str). "
             "The result must match commitment_hash. "
             "To verify your score: re-run the scoring algorithm (hope/scoring/) "

@@ -206,9 +206,6 @@ async def submit_predictions(
                 "receipt_hash": receipt.receipt_hash,
             })
 
-        except (ValueError, KeyError) as e:
-            rejected += 1
-            errors.append(f"{sub.episode_id}: {str(e)[:100]}")
         except Exception as e:
             rejected += 1
             errors.append(f"{sub.episode_id}: {str(e)[:100]}")

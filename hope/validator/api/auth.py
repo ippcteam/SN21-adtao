@@ -176,7 +176,7 @@ async def verify_miner(
         nonce=x_miner_nonce,
         signature=x_miner_signature,
         method=request.method,
-        path=str(request.url.path) + ("?" + str(request.url.query) if request.url.query else ""),
+        path=request.url.path,
         body_hash=body_hash,
     )
 

@@ -313,6 +313,12 @@ class HopeDataClient:
         t7 = None
         t14 = None
 
+        # Determine goal metric to pick the right efficiency key
+        goal = payload.get("account_state", {}).get("goal", {})
+        goal_type = goal.get("type", "CPA").upper()
+        # Map goal type to the HOPE outcome field for efficiency delta
+        efficiency_key = "roas_delta_pct" if goal_type == "ROAS" else "cpa_delta_pct"
+
         if voo and voo.get("outcomes"):
             raw_outcomes = voo["outcomes"]
 
@@ -321,7 +327,7 @@ class HopeDataClient:
                 t7 = HorizonOutcome(
                     cost_delta_pct=t7_data.get("cost_delta_pct", 0.0) or 0.0,
                     conversions_delta_pct=t7_data.get("conversions_delta_pct", 0.0) or 0.0,
-                    efficiency_delta_pct=t7_data.get("cpa_delta_pct", 0.0) or 0.0,
+                    efficiency_delta_pct=t7_data.get(efficiency_key, 0.0) or 0.0,
                     goal_miss=int(t7_data.get("goal_miss", 0) or 0),
                 )
 
@@ -330,13 +336,11 @@ class HopeDataClient:
                 t14 = HorizonOutcome(
                     cost_delta_pct=t14_data.get("cost_delta_pct", 0.0) or 0.0,
                     conversions_delta_pct=t14_data.get("conversions_delta_pct", 0.0) or 0.0,
-                    efficiency_delta_pct=t14_data.get("cpa_delta_pct", 0.0) or 0.0,
+                    efficiency_delta_pct=t14_data.get(efficiency_key, 0.0) or 0.0,
                     goal_miss=int(t14_data.get("goal_miss", 0) or 0),
                 )
 
-        # Determine scoring metadata from episode payload
         em = payload.get("episode_metadata", {})
-        goal = payload.get("account_state", {}).get("goal", {})
 
         return Outcome(
             episode_id=episode_id,

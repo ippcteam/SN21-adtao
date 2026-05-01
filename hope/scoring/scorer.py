@@ -129,22 +129,30 @@ class EpochScorer:
         total_scorable = sum(1 for eid in episode_map if eid in outcome_map)
 
         scored_episodes: list[EpisodeScore] = []
+        pred_by_eid = {p.episode_id: p for p in pred_list}
+
+        # Score over ALL scorable episodes — skipped episodes contribute zero
+        # to numerator but still count in denominator. This makes cherry-picking
+        # strictly worse than full coverage at equal per-episode quality.
         weighted_sum = 0.0
         weight_sum = 0.0
 
-        for pred in pred_list:
-            episode = episode_map.get(pred.episode_id)
-            outcome = outcome_map.get(pred.episode_id)
+        for eid, episode in episode_map.items():
+            outcome = outcome_map.get(eid)
+            if not outcome:
+                continue
 
-            if not episode or not outcome:
+            ep_weight = self._compute_episode_weight(episode)
+            weight_sum += ep_weight
+
+            pred = pred_by_eid.get(eid)
+            if not pred:
+                # Skipped episode: zero score but weight still counts
                 continue
 
             ep_score = self.episode_scorer.score_episode(pred, outcome, episode)
-            ep_weight = self._compute_episode_weight(episode)
-
             scored_episodes.append(ep_score)
             weighted_sum += ep_score.weighted_total * ep_weight
-            weight_sum += ep_weight
 
         raw_score = weighted_sum / weight_sum if weight_sum > 0 else 0.0
 

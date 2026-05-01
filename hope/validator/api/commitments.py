@@ -72,7 +72,7 @@ async def get_commitment(epoch_id: str, request: Request):
         "episode_count": commitment.get("episode_count"),
         "algorithm": "sha256",
         "how_to_verify": (
-            "Compute SHA256(episode_hash + prediction_merkle_root + outcomes_json + salt + weights_json) "
+            "Compute SHA256(episode_hash + prediction_merkle_root + merkle_root + outcomes_json + salt + weights_json) "
             "using the values from /verification. Must match commitment_hash."
         ),
     }

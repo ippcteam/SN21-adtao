@@ -9,7 +9,7 @@ All endpoints (except /health) require hotkey signature authentication.
 
 DDoS protection:
 - Request body size limit (1MB)
-- IP-based rate limiting (60 req/min global, 10 req/min on POST)
+- IP-based rate limiting (120 req/min global, 20 req/min on POST)
 - Connection limits configured in uvicorn
 """
 
