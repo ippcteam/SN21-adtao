@@ -231,10 +231,10 @@ class EpochManager:
             f"fetched at {self.current.outcomes_fetched_at}"
         )
 
-        # Compute commitment (over outcomes + predictions Merkle root)
+        # Compute all components BEFORE commitment hash
         self.current.salt = secrets.token_hex(32)
-        self.current.commitment_hash = self._compute_commitment(self.current)
         self.current.merkle_root = self._compute_merkle_root(self.current)
+        self.current.commitment_hash = self._compute_commitment(self.current)
         self.current.committed_at = datetime.now(timezone.utc).isoformat()
 
         # Score
