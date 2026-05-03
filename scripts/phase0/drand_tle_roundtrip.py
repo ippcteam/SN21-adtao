@@ -1,19 +1,16 @@
-"""Phase 0 — Drand quicknet TLE round-trip diagnostic.
+"""Phase 0 — Drand quicknet TLE round-trip diagnostic (LEGACY).
 
-Verifies that:
-1. The `timelock` PyPI library encrypts to drand quicknet (chain hash, public key match).
-2. After waiting for the target round, we can fetch the round signature from drand.
-3. The signature decrypts our ciphertext back to the original plaintext.
+Phase 0 Q34 superseded this: the `timelock` PyPI package only publishes
+dev wheels (`timelock 0.0.1.dev0`) and won't install in CI on Linux/x86_64
+or macOS arm64. SN21 uses `bittensor_drand` (already a transitive dep of
+`bittensor`) for all TLE encryption — see
+`hope/commitment/on_chain.py:submit_timelock_commit`.
+
+This script is preserved for reference only. It will skip on systems
+without the `timelock` package (the common case) instead of failing.
 
 Run:
     python scripts/phase0/drand_tle_roundtrip.py
-
-Requires `timelock>=0.0.3` and network access to api.drand.sh.
-
-This is a *diagnostic* — it doesn't touch subtensor. The purpose is to confirm
-the TLE primitive works as documented before we wire it into Layer 9.B/9.C.
-
-Output: prints PASS/FAIL and timing stats. Does not write to disk.
 """
 
 from __future__ import annotations
@@ -24,10 +21,11 @@ import time
 from urllib.request import urlopen
 
 try:
-    from timelock import Timelock
+    from timelock import Timelock  # type: ignore[import-not-found]
 except ImportError:
-    print("ERROR: pip install 'timelock>=0.0.3'")
-    sys.exit(1)
+    print("SKIPPED: 'timelock' PyPI package not installed (Phase 0 Q34: "
+          "bittensor_drand replaces it; see hope/commitment/on_chain.py).")
+    sys.exit(0)
 
 from hope.commitment.drand_lib import (
     QUICKNET_CHAIN_HASH,

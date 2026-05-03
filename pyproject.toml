@@ -15,8 +15,11 @@ dependencies = [
     "substrate-interface>=1.7",
     "cryptography>=41.0",
     "cbor2>=5.6.0",
-    "timelock>=0.0.3",
     "prometheus-client>=0.19",
+    # `bittensor_drand` (pulled in transitively by bittensor) provides the
+    # general-purpose TLE primitives we need. Phase 0 Q34 confirmed the
+    # `timelock` PyPI package only ships dev wheels (0.0.1.dev0) and is
+    # not needed — bittensor_drand.encrypt(bytes, n_blocks) covers it.
 ]
 
 [project.optional-dependencies]
