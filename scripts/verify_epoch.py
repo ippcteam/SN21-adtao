@@ -312,31 +312,26 @@ def fetch_chain_view(
         ChainView populated from chain. Raises RuntimeError if the validator's
         9.C.1 / 9.C.2 reveals are not present (not yet auto-decrypted).
     """
-    revealed_val = subtensor.get_revealed_commitment_by_hotkey(
-        netuid=netuid, hotkey_ss58=validator_hotkey_ss58
-    ) or ()
+    # Substrate-direct readback bypasses the SDK's UTF-8 mangling of
+    # binary payloads. Each RevealedEntry has a full SCALE-encoded Data
+    # variant in payload_bytes; we strip the leading 1-2 byte variant tag
+    # heuristically (TimelockEncrypted auto-decrypts re-wrap as Raw{N}-like).
+    from hope.commitment.chain_reader import (
+        read_commitment_of, read_revealed_commitments,
+    )
+
+    revealed_val = read_revealed_commitments(subtensor, netuid, validator_hotkey_ss58)
 
     pre_blob: Optional[bytes] = None
     post_blob: Optional[bytes] = None
-    # Reveals come back as ((block, hex_or_bytes), ...) ordered oldest-first.
-    # The validator commits 9.C.1 BEFORE 9.C.2, so the older reveal is 9.C.1.
-    plaintexts: list[bytes] = []
-    for entry in revealed_val:
-        if len(entry) != 2:
-            continue
-        _block, payload = entry
-        if isinstance(payload, str):
-            payload = bytes.fromhex(payload[2:] if payload.startswith("0x") else payload)
-        elif isinstance(payload, (bytes, bytearray)):
-            payload = bytes(payload)
-        else:
-            continue
-        plaintexts.append(payload)
+    plaintexts: list[bytes] = [_strip_data_variant_prefix(e.payload_bytes) for e in revealed_val]
 
     if len(plaintexts) < 2:
         raise RuntimeError(
             f"validator {validator_hotkey_ss58[:16]}... has fewer than 2 revealed "
-            f"commitments at netuid {netuid}; expected 9.C.1 + 9.C.2"
+            f"commitments at netuid {netuid}; expected 9.C.1 + 9.C.2. "
+            f"Auto-decrypt may not have fired yet (chain pulls drand pulses on a "
+            f"schedule). If the reveal_round is past, try again in a few minutes."
         )
     pre_blob = plaintexts[-2]
     post_blob = plaintexts[-1]
@@ -348,47 +343,32 @@ def fetch_chain_view(
         except Exception:
             logger.warning("could not decode miner SS58 %s; skipping", miner_ss58)
             continue
-        revealed = subtensor.get_revealed_commitment_by_hotkey(
-            netuid=netuid, hotkey_ss58=miner_ss58
-        ) or ()
+        revealed = read_revealed_commitments(subtensor, netuid, miner_ss58)
         revealed_k: Optional[bytes] = None
         chain_block: Optional[int] = None
         for entry in revealed:
-            if len(entry) != 2:
-                continue
-            block, payload = entry
-            if isinstance(payload, str):
-                pb = bytes.fromhex(payload[2:] if payload.startswith("0x") else payload)
-            elif isinstance(payload, (bytes, bytearray)):
-                pb = bytes(payload)
-            else:
-                continue
-            # The auto-decrypted K is exactly 32 bytes; if the latest reveal
-            # is something else (e.g., a previous epoch's pre-scoring blob),
-            # ignore it.
-            if len(pb) == 32:
-                revealed_k = pb
-                chain_block = int(block)
+            payload_bytes = _strip_data_variant_prefix(entry.payload_bytes)
+            # The auto-decrypted K is exactly 32 bytes.
+            if len(payload_bytes) == 32:
+                revealed_k = payload_bytes
+                chain_block = entry.block_number
 
-        # Sha256(ct) commit + self_archive_url from `get_commitment`. The
-        # chain returns the LATEST `Sha256` and the latest `Raw{N}` separately;
-        # we read the latter via the same API (it returns whichever Data
-        # variant was last written, hex-encoded for Raw).
-        latest = subtensor.get_commitment(netuid=netuid, uid=i)
+        # Read latest CommitmentOf for sha256(ct) + self_archive_url. The
+        # chain stores ONE non-TLE entry per (netuid, hotkey) — overwritten
+        # by every new commit. For Phase D production we'd want an archive
+        # node + block-pinned reads; for now we take whatever's latest.
         sha256_ct: Optional[bytes] = None
         url: Optional[str] = None
-        if latest is not None:
-            try:
-                # If the latest is hex of 32 bytes, treat as Sha256 commit.
-                raw = bytes.fromhex(latest[2:] if latest.startswith("0x") else latest)
-                if len(raw) == 32:
-                    sha256_ct = raw
-                else:
-                    # Otherwise treat as Raw{N} URL.
-                    url = raw.decode("utf-8", errors="replace")
-            except ValueError:
-                # Fallback: treat as already-decoded UTF-8 URL string.
-                url = latest
+        fields = read_commitment_of(subtensor, netuid, miner_ss58)
+        if fields:
+            for f in fields:
+                if f.variant == "Sha256" and len(f.bytes_) == 32:
+                    sha256_ct = f.bytes_
+                elif f.variant.startswith("Raw"):
+                    try:
+                        url = f.bytes_.decode("utf-8")
+                    except UnicodeDecodeError:
+                        pass
 
         miner_states[miner_pk] = ChainMinerState(
             miner_uid=i,
@@ -404,6 +384,46 @@ def fetch_chain_view(
         miner_states=miner_states,
         timing=timing,
     )
+
+
+def _strip_data_variant_prefix(payload: bytes) -> bytes:
+    """Heuristic strip of the leading 1-2 byte SCALE Data enum variant tag.
+
+    Auto-decrypted TLE plaintexts come back wrapped in some Data variant
+    (typically `Raw{N}` for ≤128 bytes or `BigRaw` for larger). The caller
+    wrote raw plaintext bytes; the chain re-wrapped them on auto-decrypt.
+
+    We attempt to detect and strip the variant prefix:
+      - Variant byte 1..129  → Raw0..Raw128: strip 1 byte (no length).
+      - Variant byte ~130    → Sha256: strip 1 byte (32 bytes follow).
+      - Variant byte > 129 + length-prefixed body: strip 1 variant byte +
+        compact-encoded length (1-4 bytes per SCALE).
+
+    If the payload starts with a recognizable application prefix
+    (`b"\\xa9"` for CBOR 9-element map, `b"sn21-..."`, etc.), we return
+    the payload as-is. This is best-effort heuristics — Phase H may
+    replace this with full SCALE-aware decoding.
+    """
+    if len(payload) < 2:
+        return payload
+    v = payload[0]
+    # Raw0..Raw128: variant 1..129, NO length byte.
+    if 1 <= v <= 129:
+        # The Raw{N} variant tag implies length = v - 1. If the remaining
+        # bytes are exactly that length, strip the tag.
+        expected_len = v - 1
+        if len(payload) - 1 == expected_len:
+            return payload[1:]
+    # Some chain encodings carry the variant + a 1-byte compact length.
+    # Try stripping 2 bytes if that gives a plausible CBOR / JSON prefix.
+    if len(payload) >= 2:
+        candidate = payload[2:]
+        if candidate[:1] in (b"\xa0", b"\xa1", b"\xa2", b"\xa3", b"\xa4",
+                             b"\xa5", b"\xa6", b"\xa7", b"\xa8", b"\xa9",
+                             b"\xaa", b"\xab", b"\xac", b"\xad"):
+            # CBOR map 0..13 entries — looks like our 9.C.1/9.C.2 plaintext.
+            return candidate
+    return payload
 
 
 def _ss58_to_raw_ed25519(ss58_address: str) -> bytes:

@@ -124,8 +124,28 @@ def commit_weights_layer_9c3(
             if extrinsic_hash and not extrinsic_hash.startswith("0x"):
                 extrinsic_hash = "0x" + extrinsic_hash
 
-    if success and block_number is not None:
-        block_hash = _resolve_block_hash(subtensor, block_number)
+    if success:
+        # Primary path: extract from receipt.
+        if block_number is not None:
+            block_hash = _resolve_block_hash(subtensor, block_number)
+        # Fallback path: when the SDK doesn't populate extrinsic_receipt
+        # (Bittensor 10.2.1 + commit-reveal v4 sometimes returns None even
+        # on success), use the current block's hash as the binding target.
+        # This is conservative — the chain finality protects within ~6
+        # blocks, and 9.C.2's block_hash is published in a TLE'd commit
+        # that can't be back-edited. A few blocks of slack is acceptable.
+        if block_hash is None:
+            try:
+                current = subtensor.get_current_block()
+                block_hash = _resolve_block_hash(subtensor, current)
+                if block_hash is not None:
+                    block_number = current
+                    logger.warning(
+                        "9.C.3 receipt was empty; using current block %d as binding "
+                        "fallback", current,
+                    )
+            except (AttributeError, Exception) as e:
+                logger.warning("9.C.3 fallback block_hash lookup failed: %s", e)
 
     logger.info(
         "9.C.3 weights commit netuid=%d uids=%d success=%s block=%s",

@@ -211,9 +211,16 @@ def cmd_register(args) -> int:
 
 
 def cmd_verify_reg(args) -> int:
-    """Read the on-chain Raw{N} commit for an SS58 and verify it."""
+    """Read the on-chain Raw{N} commit for an SS58 and verify it.
+
+    Goes directly to substrate (Commitments::CommitmentOf) to avoid the
+    Bittensor SDK's lossy UTF-8 decode of binary payloads.
+    """
+    from hope.commitment.chain_reader import read_commitment_of
     from hope.commitment.registration import (
-        parse_registration_payload, verify_registration,
+        REG_V1_PREFIX,
+        parse_registration_payload,
+        verify_registration,
     )
     try:
         import bittensor as bt  # type: ignore
@@ -222,28 +229,40 @@ def cmd_verify_reg(args) -> int:
         return 2
 
     st = bt.Subtensor(network=args.network)
-    metagraph = st.metagraph(netuid=args.netuid)
-    if args.hotkey_ss58 not in metagraph.hotkeys:
-        print(f"ERROR: {args.hotkey_ss58} not registered on netuid {args.netuid}",
-              file=sys.stderr)
-        return 4
-    uid = metagraph.hotkeys.index(args.hotkey_ss58)
-    raw = st.get_commitment(netuid=args.netuid, uid=uid)
-    if not raw:
-        print("no commitment present")
+    fields = read_commitment_of(st, args.netuid, args.hotkey_ss58)
+    if fields is None:
+        print(f"no commitment present at (netuid={args.netuid}, "
+              f"hotkey={args.hotkey_ss58[:16]}...)")
         return 5
-    if isinstance(raw, str):
-        payload = bytes.fromhex(raw[2:] if raw.startswith("0x") else raw)
-    else:
-        payload = bytes(raw)
+    if not fields:
+        print("commitment present but has no fields (unexpected)")
+        return 5
+
+    # Find a field whose bytes start with the registration prefix.
+    payload: bytes | None = None
+    matched_variant: str | None = None
+    for f in fields:
+        if f.bytes_.startswith(REG_V1_PREFIX):
+            payload = f.bytes_
+            matched_variant = f.variant
+            break
+
+    if payload is None:
+        print(f"latest commitment has {len(fields)} field(s) but none look like a "
+              f"registration payload (no '{REG_V1_PREFIX.decode()}' prefix):")
+        for f in fields:
+            print(f"  variant={f.variant} bytes={f.bytes_[:32].hex()}...")
+        return 6
 
     parsed = parse_registration_payload(payload)
     if parsed is None:
-        print("payload is NOT a registration payload (wrong prefix or length)")
+        print(f"payload from variant {matched_variant} is NOT a valid registration"
+              " (wrong length after prefix)")
         return 6
     ss58_pubkey = _ss58_to_raw_pubkey(args.hotkey_ss58)
     role = parsed.role
     sig_ok = verify_registration(parsed, ss58_pubkey=ss58_pubkey, expected_role=role)
+    print(f"variant:     {matched_variant}")
     print(f"role:        {role.value} ({role.name})")
     print(f"ed25519 pk:  {parsed.ed25519_pk.hex()}")
     print(f"sig valid:   {sig_ok}")

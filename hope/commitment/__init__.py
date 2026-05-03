@@ -113,6 +113,12 @@ from hope.commitment.registration import (
     submit_registration_commit,
     verify_registration,
 )
+from hope.commitment.chain_reader import (
+    RawCommitField,
+    RevealedEntry,
+    read_commitment_of,
+    read_revealed_commitments,
+)
 from hope.commitment.episode_artifacts import (
     EPISODE_BUNDLE_VERSION,
     PerEpisodeEntry,
@@ -216,6 +222,11 @@ __all__ = [
     "attempt_from_fetch_result",
     "build_retry_log_blob",
     "compute_retry_log_sha256",
+    # chain_reader (substrate-direct readback bypassing SDK UTF-8 mangling)
+    "RawCommitField",
+    "RevealedEntry",
+    "read_commitment_of",
+    "read_revealed_commitments",
     # registration
     "REG_V1_PREFIX",
     "RegistrationPayload",
