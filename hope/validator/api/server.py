@@ -165,6 +165,18 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
     # Store shared state on the app
     app.state.validator = state
 
+    # Root: friendly 200 for health probes hitting `/`. The actual API
+    # endpoints live under `/v1/*` and `/health`.
+    @app.get("/")
+    async def root():
+        return {
+            "service": "adtao-sn21-validator",
+            "endpoints": {
+                "health": "/health",
+                "api": "/v1/epochs/{epoch_id}/...",
+            },
+        }
+
     # Health check (no auth, exempt from IP rate limiting)
     @app.get("/health")
     async def health():
