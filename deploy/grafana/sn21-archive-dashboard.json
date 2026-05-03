@@ -1,0 +1,173 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "SN21 Archive Server — uploads, fetches, sha mismatches, latency.",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Uploads (last 5m)",
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum(increase(sn21_archive_requests_total{method=\"POST\"}[5m]))",
+          "legendFormat": "POST",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+    },
+    {
+      "type": "stat",
+      "title": "Fetches (last 5m)",
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum(increase(sn21_archive_requests_total{method=\"GET\"}[5m]))",
+          "legendFormat": "GET",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}
+    },
+    {
+      "type": "stat",
+      "title": "SHA mismatches (last 1h) — should be 0",
+      "id": 3,
+      "targets": [
+        {
+          "expr": "increase(sn21_archive_sha_mismatch_total[1h])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 1}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0}
+    },
+    {
+      "type": "stat",
+      "title": "5xx rate (last 5m)",
+      "id": 4,
+      "targets": [
+        {
+          "expr": "sum(rate(sn21_archive_requests_total{status_group=\"5xx\"}[5m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.01},
+              {"color": "red", "value": 0.1}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Request rate by outcome",
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum by (method, outcome) (rate(sn21_archive_requests_total[1m]))",
+          "legendFormat": "{{method}} / {{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+    },
+    {
+      "type": "timeseries",
+      "title": "Request latency (p50, p95, p99)",
+      "id": 6,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, method) (rate(sn21_archive_request_seconds_bucket[1m])))",
+          "legendFormat": "p50 {{method}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, method) (rate(sn21_archive_request_seconds_bucket[1m])))",
+          "legendFormat": "p95 {{method}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, method) (rate(sn21_archive_request_seconds_bucket[1m])))",
+          "legendFormat": "p99 {{method}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+    },
+    {
+      "type": "timeseries",
+      "title": "Upload body size distribution (bytes)",
+      "id": 7,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(sn21_archive_request_bytes_bucket{method=\"POST\"}[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(sn21_archive_request_bytes_bucket{method=\"POST\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
+    },
+    {
+      "type": "timeseries",
+      "title": "Stored objects per minute",
+      "id": 8,
+      "targets": [
+        {
+          "expr": "sum(rate(sn21_archive_store_objects_total[1m]))",
+          "legendFormat": "put_new",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["sn21", "archive"],
+  "templating": {"list": []},
+  "time": {"from": "now-3h", "to": "now"},
+  "timepicker": {"refresh_intervals": ["10s", "30s", "1m", "5m"]},
+  "timezone": "browser",
+  "title": "SN21 Archive",
+  "uid": "sn21-archive",
+  "version": 1,
+  "weekStart": ""
+}

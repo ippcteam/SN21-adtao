@@ -303,6 +303,21 @@ def main():
                         help="Epoch duration in seconds (default: 3600)")
     parser.add_argument("--burn", type=float, default=0.95,
                         help="Burn rate 0.0-1.0 (default: 0.95 = 95%% to UID 0)")
+    parser.add_argument("--mode", choices=["http", "onchain"], default="http",
+                        help="Scoring path (http=legacy, onchain=Layers 9.B–9.C)")
+    parser.add_argument("--archive-tier-1", action="append", default=[],
+                        help="Tier-1 archive base URL (chain mode; repeat for multi)")
+    parser.add_argument("--archive-tier-2", action="append", default=[],
+                        help="Tier-2 archive base URL (chain mode; repeat for multi)")
+    parser.add_argument("--blocks-until-pre-reveal", type=int, default=300,
+                        help="9.C.1 reveal delay (chain mode; default 300 blocks ≈ 1h)")
+    parser.add_argument("--blocks-until-post-reveal", type=int, default=600,
+                        help="9.C.2 reveal delay (chain mode; default 600 blocks ≈ 2h)")
+    parser.add_argument("--blocks-until-weights-reveal", type=int, default=360,
+                        help="9.C.3 weights reveal delay (chain mode; default 360 blocks)")
+    parser.add_argument("--ed25519-key-file", default=None,
+                        help="Path to ed25519 PEM private key for inner_sig (chain mode); "
+                             "if omitted and the wallet hotkey is ed25519, that key is used")
 
     args = parser.parse_args()
 
@@ -314,6 +329,24 @@ def main():
         wallet_hotkey=args.wallet_hotkey, no_chain=args.no_chain,
         burn_fraction=args.burn,
     )
+
+    if args.mode == "onchain":
+        runner.init_bittensor()
+        if not args.archive_tier_2:
+            parser.error("--mode onchain requires at least one --archive-tier-2 URL")
+        outcome = _run_validator_onchain_cli(args, runner)
+        print("\nOn-chain epoch outcome:")
+        print(f"  ok: {outcome.ok}")
+        print(f"  aborted_reason: {outcome.aborted_reason}")
+        if outcome.pre_scoring_commit:
+            print(f"  9.C.1 block: {outcome.pre_scoring_commit.block_number}")
+        if outcome.weights_commit:
+            print(f"  9.C.3 block: {outcome.weights_commit.block_number}")
+        if outcome.post_scoring_commit:
+            print(f"  9.C.2 block: {outcome.post_scoring_commit.block_number}")
+        if outcome.retry_log_commit:
+            print(f"  9.C.6 block: {outcome.retry_log_commit.block_number}")
+        return
 
     if args.continuous:
         runner.run_continuous(args.release, args.epoch_duration)
@@ -342,6 +375,143 @@ def main():
                     time.sleep(1)
             except KeyboardInterrupt:
                 print("\nShutting down.")
+
+
+def _run_validator_onchain_cli(args, runner):
+    """Bridge from CLI flags to `run_epoch_scoring`.
+
+    Stitches together the chain reads, archive endpoints, ground-truth
+    aggregation from HOPE's reveal blob, and scorer adapter.
+    """
+    import os as _os
+    import time as _time
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from hope.commitment.archives import ArchiveClient, ArchiveEndpoint
+    from hope.commitment.canonical import canonical_cbor_loads
+    from hope.commitment.drand_lib import drand_round_at
+    from hope.commitment.scoreability import TimingBounds
+    from hope.scoring.onchain_adapter import (
+        aggregate_outcomes_to_truth,
+        compute_scoring_inputs_hash,
+        make_scorer,
+    )
+    from hope.validator.onchain_runner import (
+        MinerOnChainInputs,
+        run_epoch_scoring,
+    )
+
+    if not args.release:
+        raise SystemExit("--release required in chain mode")
+
+    if args.ed25519_key_file:
+        with open(args.ed25519_key_file, "rb") as f:
+            sk = serialization.load_pem_private_key(f.read(), password=None)
+        if not isinstance(sk, Ed25519PrivateKey):
+            raise SystemExit(f"{args.ed25519_key_file} not an ed25519 private key")
+    else:
+        # Defer to the helper used by the miner runner.
+        from hope.miner.runner import _derive_ed25519_from_wallet
+        sk = _derive_ed25519_from_wallet(runner.wallet)
+    val_pk = sk.public_key().public_bytes_raw()
+
+    # Read on-chain miner state via the live verifier helper.
+    from scripts import verify_epoch as ve  # type: ignore
+
+    miner_ss58s = list(runner.metagraph.hotkeys) if runner.metagraph else []
+    timing = TimingBounds(
+        epoch_open_round=0,
+        miner_deadline_round=2**63 - 1,
+        chain_window_min_block=0,
+        chain_window_max_block=2**63 - 1,
+    )
+    chain_view = ve.fetch_chain_view(
+        subtensor=runner.subtensor,
+        netuid=runner.netuid,
+        epoch_id=args.release,
+        validator_hotkey_ss58=runner.wallet.hotkey.ss58_address,
+        miner_hotkey_ss58_list=miner_ss58s,
+        timing=timing,
+    )
+
+    miner_inputs: list[MinerOnChainInputs] = []
+    for miner_pk, ms in chain_view.miner_states.items():
+        miner_inputs.append(MinerOnChainInputs(
+            miner_uid=ms.miner_uid,
+            miner_hotkey=miner_pk,
+            revealed_k=ms.timelock_k_revealed,
+            sha256_ct_commit=ms.sha256_ct_commit,
+            self_archive_url=ms.self_archive_url,
+            chain_block_at_k_commit=ms.chain_block_at_k_commit,
+            k_reveal_round=0,
+        ))
+
+    # Fetch outcomes via the existing HTTP path; aggregate to per-horizon truth.
+    import asyncio as _asyncio
+    outcomes = _asyncio.run(runner.hope_client.fetch_outcomes_only(args.release))
+    horizon_outcomes = []
+    for o in outcomes:
+        horizon_dict = {}
+        if getattr(o, "t7", None):
+            horizon_dict["7"] = o.t7.model_dump() if hasattr(o.t7, "model_dump") else dict(o.t7.__dict__)
+        if getattr(o, "t14", None):
+            horizon_dict["14"] = o.t14.model_dump() if hasattr(o.t14, "model_dump") else dict(o.t14.__dict__)
+        horizon_outcomes.append(horizon_dict)
+    truth_by_horizon = aggregate_outcomes_to_truth(horizon_outcomes)
+
+    # Pre-decode plaintexts from miner_inputs for scoring_inputs_hash. We
+    # decode here; run_epoch_scoring will rerun read_miner_for_epoch with the
+    # SAME inputs so the resulting plaintexts match by construction.
+    plaintexts_for_hash: dict[bytes, dict] = {}
+    for inp in miner_inputs:
+        if inp.revealed_k and inp.sha256_ct_commit:
+            try:
+                # We don't have AES_ct here yet — caller will fetch during the
+                # run. The scoring_inputs_hash binds to the FINAL plaintexts,
+                # but for the upfront hash we use a simplification: hash the
+                # chain commits + truth. Phase E swaps in real plaintexts.
+                plaintexts_for_hash[inp.miner_hotkey] = {
+                    "k_block": inp.chain_block_at_k_commit,
+                    "sha256_ct": inp.sha256_ct_commit,
+                }
+            except Exception:
+                continue
+    scoring_inputs_hash = compute_scoring_inputs_hash(
+        epoch_id=args.release,
+        plaintexts=plaintexts_for_hash,
+        truth_by_horizon=truth_by_horizon,
+    )
+
+    archive_endpoints: list[ArchiveEndpoint] = []
+    for url in args.archive_tier_1:
+        archive_endpoints.append(ArchiveEndpoint(tier=1, base_url=url, name="tier-1"))
+    for url in args.archive_tier_2:
+        archive_endpoints.append(ArchiveEndpoint(tier=2, base_url=url, name="tier-2"))
+
+    scorer = make_scorer(truth_by_horizon)
+    submitted_round = drand_round_at(int(_time.time()))
+    return run_epoch_scoring(
+        subtensor=runner.subtensor,
+        validator_wallet=runner.wallet,
+        netuid=runner.netuid,
+        epoch_id=args.release,
+        epoch_idx=int(_os.environ.get("SN21_EPOCH_IDX", "0")),
+        validator_hotkey=val_pk,
+        validator_signing_key=sk,
+        miner_inputs=miner_inputs,
+        archive_endpoints=archive_endpoints,
+        archive_client=ArchiveClient(),
+        timing=timing,
+        outcomes_release_round=submitted_round - 100,
+        outcomes_fetched_at_round=submitted_round,
+        scoring_inputs_hash=scoring_inputs_hash,
+        scorer=scorer,
+        blocks_until_pre_scoring_reveal=args.blocks_until_pre_reveal,
+        blocks_until_post_scoring_reveal=args.blocks_until_post_reveal,
+        blocks_until_weights_reveal=args.blocks_until_weights_reveal,
+    )
 
 
 if __name__ == "__main__":

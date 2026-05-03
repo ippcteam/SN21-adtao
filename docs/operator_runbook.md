@@ -1,0 +1,381 @@
+# SN21 Operator Runbook
+
+Production cutover playbook for HOPE Foundation operators, primary
+validators, shadow validators, and miners. Covers deployment, key
+management, registration, epoch operations, and incident response.
+
+This document is the authoritative source for "how do I run this?" Architecture context lives in `verifiable_scoring_architecture.md` (gitignored draft) — the runbook only references it.
+
+---
+
+## 1. Roles
+
+| Role | Hotkey + ed25519 Bundle | Chain Slots Used |
+|---|---|---|
+| HOPE outcome signer | 1 SS58 + 1 ed25519 (role=outcome_signer) | 9.A.1, 9.A.2 |
+| Primary validator | 1 SS58 + 1 ed25519 (role=validator) | 9.C.1, 9.C.2, 9.C.3, optional 9.C.6 |
+| Shadow validator (HOPE-operated) | 1 SS58 + 1 ed25519 (role=validator) | Same slots as primary, different hotkey |
+| Miner | 1 SS58 + 1 ed25519 (role=miner) | 9.B (3 commits per epoch) |
+
+Each role is a separate Bittensor wallet + a separate ed25519 PEM file.
+Backup the PEM files offline (cold storage) — loss = forced re-registration.
+
+---
+
+## 2. First-time setup
+
+### 2.1 Install
+
+```bash
+git clone <hope-sn21-repo>
+cd hope-sn21
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+```
+
+### 2.2 Generate ed25519 keys (per role)
+
+```bash
+mkdir -p ~/.sn21/keys
+python scripts/sn21_keys.py generate \
+    --role miner \
+    --output ~/.sn21/keys/miner-ed25519.pem
+python scripts/sn21_keys.py sign-test \
+    --key ~/.sn21/keys/miner-ed25519.pem      # round-trip self-test
+python scripts/sn21_keys.py show \
+    --key ~/.sn21/keys/miner-ed25519.pem      # prints 32-byte pubkey hex
+```
+
+PEM files are written with mode 0600. Back up the PEM file to offline
+storage (encrypted USB / hardware wallet vault). Production hotkey
+operations do not need the PEM unless you re-register the binding.
+
+### 2.3 Register the hotkey ↔ ed25519 binding on chain
+
+```bash
+python scripts/sn21_keys.py register \
+    --role miner \
+    --netuid 21 --network finney \
+    --wallet-name my-miner --wallet-hotkey default \
+    --key ~/.sn21/keys/miner-ed25519.pem
+```
+
+Cost: 1 `Raw{109}` extrinsic against MaxSpace (~609 bytes including
+overhead per §18.2 of the architecture doc).
+
+Verify from any third party:
+
+```bash
+python scripts/sn21_keys.py verify-reg \
+    --netuid 21 --network finney \
+    --hotkey-ss58 5...miner...ss58
+```
+
+Expected output: `sig valid: True`. If False, the binding is malformed
+or the SS58 is bound to a different ed25519 key than the one you have.
+
+---
+
+## 3. HOPE outcome signer — daily epoch routine
+
+For each scheduled epoch (recommended cadence ≥ 4.5 hours per §18.2.4):
+
+### 3.1 At T=0 (epoch open)
+
+```bash
+# Build the release_commit and submit 9.A.1.
+# (Production HOPE infrastructure; this is the API surface.)
+python -m hope.hope_outcomes.release_commit \
+    --epoch-id EPOCH-2026-W18-MON \
+    --episodes-file episodes.json \
+    --signing-key ~/.sn21/keys/outcome-signer-ed25519.pem \
+    --wallet-name hope-outcome-signer
+```
+
+Logs the on-chain extrinsic hash + the BLAKE2b-256 digest of the
+release_commit plaintext. Serve the plaintext at
+`https://outcomes.hope.io/release/{epoch_id}` AFTER the chain commit
+finalizes (CL-9 commit-then-serve gate).
+
+### 3.2 At T=deadline (miner deadline + δ)
+
+```bash
+python -m hope.hope_outcomes.reveal_blob \
+    --epoch-id EPOCH-2026-W18-MON \
+    --release-commit-plaintext-sha256 <hex from 3.1> \
+    --measured-outcomes outcomes.json \
+    --signing-key ~/.sn21/keys/outcome-signer-ed25519.pem \
+    --wallet-name hope-outcome-signer
+```
+
+Submits 9.A.2 — the SHA-256 of the reveal blob. After finalization,
+serve the reveal blob at `https://outcomes.hope.io/reveal/{epoch_id}`.
+
+---
+
+## 4. Primary validator — daily epoch routine
+
+### 4.1 Continuous mode
+
+```bash
+python -m hope.validator.runner \
+    --mode onchain \
+    --network finney --netuid 21 \
+    --wallet-name hope-primary --wallet-hotkey default \
+    --ed25519-key-file ~/.sn21/keys/validator-ed25519.pem \
+    --archive-tier-2 https://archive.hope.io \
+    --archive-tier-2 https://archive.hope-eu.io \
+    --release ${RELEASE_KEY}
+```
+
+Per epoch, the runner emits:
+- 9.C.1 pre-scoring state (TLE, ~980 B chain cost)
+- 9.C.3 weights via `commit_timelocked_weights` (separate pallet)
+- 9.C.2 post-scoring artifacts (TLE, ~980 B)
+- 9.C.6 retry log (only if any miner excluded for `plaintext_unavailable`; ~532 B)
+
+Per-epoch validator MaxSpace usage: ~1,960 B without retry log, ~2,492 B
+with. Comfortably within 3,100 B per 4.2-hour window.
+
+### 4.2 Single epoch (manual)
+
+```bash
+python -m hope.validator.runner \
+    --mode onchain \
+    --score-now \
+    --release EPOCH-2026-W18-MON \
+    --network finney --netuid 21 \
+    --wallet-name hope-primary --wallet-hotkey default \
+    --ed25519-key-file ~/.sn21/keys/validator-ed25519.pem \
+    --archive-tier-2 https://archive.hope.io
+```
+
+Returns an `EpochScoringOutcome`. Check `outcome.ok` and the four chain
+commit blocks/hashes.
+
+---
+
+## 5. Shadow validator (HOPE-operated)
+
+Identical to §4 but with the shadow's hotkey + ed25519 key:
+
+```bash
+python -m hope.hope_shadow_validator.runner \
+    --network finney --netuid 21 \
+    --wallet-name hope-shadow --wallet-hotkey default \
+    --ed25519-key-file ~/.sn21/keys/shadow-ed25519.pem \
+    --archive-tier-2 https://archive.hope.io \
+    --release ${RELEASE_KEY}
+```
+
+The shadow MUST run independent code from the primary at the operational
+level (different hotkey, different host, ideally different cloud
+provider). The architecture's SH-5 defense relies on the shadow signing
+its own inner_sig.
+
+---
+
+## 6. Miner — daily epoch routine
+
+```bash
+python -m hope.miner.runner \
+    --mode onchain \
+    --epoch ${EPOCH_ID} \
+    --validator-url https://validator.adtao.io \
+    --network test --netuid 21 \
+    --wallet-name my-miner --wallet-hotkey default \
+    --ed25519-key-file ~/.sn21/keys/miner-ed25519.pem \
+    --archive-tier-2 https://archive.hope.io \
+    --archive-tier-3 https://my-miner.example/archive \
+    --blocks-until-reveal 300
+```
+
+Per epoch, the miner emits:
+- TimelockEncrypted K (~1,110 B)
+- Sha256(AES_ct) (~532 B)
+- Raw{N} URL (~532 B)
+
+Per-epoch miner MaxSpace usage: ~2,174 B. Fits one 4.2-hour window per
+epoch.
+
+The Tier-3 self-archive at `--archive-tier-3` MUST be running and
+reachable for AT LEAST the next epoch (validators fetch AES_ct after the
+miner's K reveals). Use `deploy/archive_server/` to spin one up.
+
+---
+
+## 7. Archive server — deployment
+
+See `deploy/archive_server/README.md` for full instructions. Quick path:
+
+```bash
+cd deploy/archive_server
+docker compose up -d                                 # Tier-2/Tier-3
+curl -s http://localhost:8080/healthz                # liveness
+```
+
+For Tier-2 (HOPE shadow), set `SN21_ARCHIVE_REQUIRE_SIGNED=true` so
+miners must sign uploads with their hotkey (`X-Miner-Hotkey` +
+`X-Miner-Signature` headers). For Tier-3 self, leave it `false`.
+
+Retention sweep (cron):
+
+```bash
+# Tier-2: 90 days
+find /var/lib/sn21-archive -mindepth 1 -maxdepth 1 -type d -mtime +90 -exec rm -rf {} +
+```
+
+---
+
+## 8. Public verification
+
+Anyone (auditor, advertiser, third party) verifies an epoch:
+
+```bash
+python scripts/verify_epoch.py \
+    --epoch-id EPOCH-2026-W18-MON \
+    --validator-hotkey 5...primary...ss58 \
+    --netuid 21 --network finney \
+    --tier-2-base https://archive.hope.io \
+    --output json
+```
+
+Expected output (JSON): `"ok": true`. A `false` outcome implies the
+validator and the verifier diverge on either the IMT roots or the
+inner_sig — open an incident ticket immediately.
+
+---
+
+## 9. Incident response
+
+### 9.1 `SpaceLimitExceeded`
+
+Symptom: a chain extrinsic returns
+`Subtensor returned: SpaceLimitExceeded(Module)`.
+
+Diagnosis: the (netuid, hotkey) burned its 3,100 B MaxSpace within a
+4.2-hour rolling window.
+
+Action:
+1. Stop submitting from that hotkey for ≥ 4.5 hours.
+2. Inspect recent commits — if a 9.C.6 retry log was emitted unnecessarily,
+   tune the `require_tier_2` flag in the miner runner.
+3. If you operate multiple hotkeys, route the next epoch to one with
+   headroom.
+
+### 9.2 Archive fetch fails for a miner
+
+Symptom: validator emits 9.C.6 retry log; miner is excluded with
+`plaintext_unavailable`.
+
+Diagnosis: AES_ct not available at any tier. Check:
+- Tier-2 (HOPE) — `curl -fI https://archive.hope.io/healthz`
+- Tier-3 (miner self) — URL listed in chain commit
+
+Action:
+1. Page the miner if Tier-3 is down.
+2. Confirm Tier-2 retention hasn't aged out the bytes.
+3. If neither tier has the bytes, the miner missed the upload — they
+   are excluded for this epoch by design.
+
+### 9.3 drand pulse outage
+
+Symptom: `bittensor_drand.encrypt(...)` fails or weights commits hang.
+
+Diagnosis: drand quicknet feed is down. The chain auto-decrypt path
+depends on it.
+
+Action:
+1. Check `https://api.drand.sh/52db9ba.../public/latest`.
+2. If outage > 5 min, halt epoch submissions; resume when drand recovers.
+3. If outage > 24h, follow `docs/verifiable_scoring_architecture.md` §10.1
+   "drand outage" governance fallback.
+
+### 9.4 Hotkey ↔ ed25519 binding lost
+
+Symptom: `verify_reg` returns `sig valid: False` or the ed25519 PEM is
+lost.
+
+Action:
+1. If PEM still exists but on-chain binding is wrong — re-run
+   `sn21_keys.py register`. Old binding is overwritten by the latest
+   `Raw{N}` commit.
+2. If PEM is lost — generate a NEW key, register the new binding. The
+   old binding is invalidated as soon as the new commit lands. Existing
+   in-flight commits using the old key remain verifiable until their
+   reveal_round; new commits MUST use the new key.
+
+### 9.5 Validator and shadow disagree
+
+Symptom: `verify_epoch.py` returns `miner_commits_match: false` OR
+`final_score_match: false` for one validator vs the other.
+
+Diagnosis: deterministic divergence. One of the validators has a bug,
+ran stale code, or is malicious.
+
+Action:
+1. Re-run `verify_epoch.py` against BOTH validator hotkeys.
+2. If primary mismatches, shadow's view is canonical (architectural
+   defense — Yuma stake-weighted median clips the dishonest actor).
+3. Open an incident; escalate to the dispute path if the divergence
+   persists across multiple epochs.
+
+---
+
+## 10. Key rotation
+
+Quarterly rotation recommended for the HOPE outcome signer key (highest
+trust). Procedure:
+
+```bash
+# Generate new key
+python scripts/sn21_keys.py generate \
+    --role outcome_signer \
+    --output ~/.sn21/keys/outcome-signer-ed25519-2026Q3.pem
+
+# Register binding (overwrites old binding for this hotkey)
+python scripts/sn21_keys.py register \
+    --role outcome_signer --netuid 21 --network finney \
+    --wallet-name hope-outcome-signer \
+    --key ~/.sn21/keys/outcome-signer-ed25519-2026Q3.pem
+```
+
+The old key remains verifiable for any in-flight commits until their
+reveal_round. New commits MUST use the new key. Archive the old PEM
+offline; do NOT delete (needed for retroactive auditing).
+
+Validator + miner key rotation: same procedure, but coordinate timing
+with operations to avoid mid-epoch rotation.
+
+---
+
+## 11. Daily on-call checklist
+
+- [ ] All hotkey balances > 1 testnet/mainnet TAO (registration burn buffer).
+- [ ] All MaxSpace headroom > 1,000 B (no recent SpaceLimitExceeded).
+- [ ] Tier-2 archive `/healthz` returns 200.
+- [ ] `verify_epoch.py` against last finalized epoch returns `ok: true`
+  for primary AND shadow.
+- [ ] HOPE outcome signer commits both 9.A.1 AND 9.A.2 within 1 tempo
+  of the deadline.
+- [ ] Validator runner logs show `EpochScoringOutcome.ok=True`.
+- [ ] Shadow validator `miner_commits_root` MATCHES primary's (paste
+  both into a side-by-side check; structurally identical).
+
+---
+
+## 12. Mainnet pre-launch checklist
+
+Before flipping `--network test` → `--network finney`:
+
+- [ ] All probes from §18 of the architecture doc rerun on mainnet
+  (Q11 + Q13 specifically — testnet hyperparams may differ).
+- [ ] Mainnet hotkey registration on netuid 21 (burn cost paid).
+- [ ] All 4 ed25519 keys (HOPE / primary / shadow / first miner) bound
+  on-chain via `sn21_keys.py register --network finney`.
+- [ ] Tier-2 archive deployed at production URL with TLS, retention,
+  monitoring, on-call paging.
+- [ ] One full mainnet epoch dry-run: submit, score, weights commit,
+  verify. NO LIVE EMISSIONS until this returns `ok: true`.
+- [ ] Operator runbook reviewed by the on-call team.
+- [ ] Dispute path tested end-to-end.
