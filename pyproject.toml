@@ -12,7 +12,6 @@ dependencies = [
     "fastapi>=0.100",
     "uvicorn>=0.23",
     "httpx>=0.24",
-    "substrate-interface>=1.7",
     "cryptography>=41.0",
     "cbor2>=5.6.0",
     "prometheus-client>=0.19",
@@ -20,6 +19,13 @@ dependencies = [
     # general-purpose TLE primitives we need. Phase 0 Q34 confirmed the
     # `timelock` PyPI package only ships dev wheels (0.0.1.dev0) and is
     # not needed — bittensor_drand.encrypt(bytes, n_blocks) covers it.
+    #
+    # NOTE: `substrate-interface` is intentionally NOT a direct dep.
+    # bittensor>=10 pulls in `async_substrate_interface` + `cyscale`,
+    # which conflict with the older `scalecodec` namespace that
+    # `substrate-interface` requires. We use `subtensor.substrate.query`
+    # (which is async_substrate_interface under the hood) and
+    # `bittensor_wallet.Keypair` for SS58 decoding.
 ]
 
 [project.optional-dependencies]

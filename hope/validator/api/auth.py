@@ -33,16 +33,23 @@ _MAX_SEEN_NONCES = 50_000
 # Seen nonces: (hotkey, nonce) -> timestamp. Prevents replay within expiry window.
 _seen_nonces: OrderedDict[tuple[str, str], float] = OrderedDict()
 
-# Require substrateinterface at import time — fail fast if missing
+# Keypair source: bittensor_wallet (modern, ships with bittensor>=10) is
+# preferred. Fall back to substrateinterface for older deployments. If
+# neither is available, signature verification is disabled and the
+# validator fails closed (see verify_signature).
 try:
-    from substrateinterface import Keypair
+    from bittensor_wallet.bittensor_wallet import Keypair
     _HAS_CRYPTO = True
 except ImportError:
-    _HAS_CRYPTO = False
-    logger.critical(
-        "substrateinterface not installed — signature verification DISABLED. "
-        "Install with: pip install substrate-interface"
-    )
+    try:
+        from substrateinterface import Keypair  # type: ignore
+        _HAS_CRYPTO = True
+    except ImportError:
+        _HAS_CRYPTO = False
+        logger.critical(
+            "Neither bittensor_wallet nor substrateinterface available — "
+            "signature verification DISABLED."
+        )
 
 
 @dataclass
