@@ -14,7 +14,6 @@ from hope.commitment.prediction_payload import (
     ALLOWED_HORIZONS,
     PROBABILITY_SCALE,
     PREDICTION_PAYLOAD_VERSION,
-    QUANTILE_SCALE,
     build_horizon_entry,
     build_prediction_plaintext,
     decrypt_prediction,

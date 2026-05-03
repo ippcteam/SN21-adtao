@@ -8,7 +8,6 @@ from typing import Optional
 import pytest
 
 from hope.validator.weights_commit import (
-    WeightsCommitResult,
     commit_weights_layer_9c3,
     estimate_weights_reveal_round,
 )

@@ -33,7 +33,6 @@ from hope.commitment.on_chain import (
     submit_post_scoring_artifacts_layer_9c2,
     submit_pre_scoring_state_layer_9c1,
     submit_retry_log_attestation_layer_9c6,
-    submit_sha256_commit,
 )
 from hope.commitment.retry_log import (
     RetryLogAttempt,
@@ -51,7 +50,6 @@ from hope.commitment.scoring_state import (
     build_pre_scoring_state,
 )
 from hope.validator.onchain_reader import (
-    ChainCommits9B,
     MinerReadResult,
     assemble_chain_commits,
     read_miner_for_epoch,

@@ -390,7 +390,6 @@ def _run_validator_onchain_cli(args, runner):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     from hope.commitment.archives import ArchiveClient, ArchiveEndpoint
-    from hope.commitment.canonical import canonical_cbor_loads
     from hope.commitment.drand_lib import drand_round_at
     from hope.commitment.scoreability import TimingBounds
     from hope.scoring.onchain_adapter import (

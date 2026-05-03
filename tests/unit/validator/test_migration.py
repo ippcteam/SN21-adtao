@@ -172,7 +172,6 @@ class TestEndToEndDualMode:
     """
 
     def test_scoring_runs_against_synthesized_inputs(self, four_miners):
-        from hope.commitment.archives import ArchiveClient
         from hope.validator.onchain_runner import run_epoch_scoring
 
         http_preds = {

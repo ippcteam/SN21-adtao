@@ -158,37 +158,44 @@ def build_app(
         body_len = 0
         try:
             if "/" in epoch_id or ".." in epoch_id:
-                outcome = "other"; status_code = 400
+                outcome = "other"
+                status_code = 400
                 raise HTTPException(status_code=400, detail="invalid epoch_id")
             if "/" in miner_identity or ".." in miner_identity:
-                outcome = "other"; status_code = 400
+                outcome = "other"
+                status_code = 400
                 raise HTTPException(status_code=400, detail="invalid miner_identity")
             if len(sha256_hex) != 64:
-                outcome = "other"; status_code = 400
+                outcome = "other"
+                status_code = 400
                 raise HTTPException(status_code=400, detail="sha256_hex must be 64 hex chars")
             try:
                 expected_digest = bytes.fromhex(sha256_hex.lower())
             except ValueError:
-                outcome = "other"; status_code = 400
+                outcome = "other"
+                status_code = 400
                 raise HTTPException(status_code=400, detail="sha256_hex is not valid hex")
 
             body = await request.body()
             body_len = len(body)
             if body_len > max_body_bytes:
-                outcome = "body_too_large"; status_code = 413
+                outcome = "body_too_large"
+                status_code = 413
                 raise HTTPException(
                     status_code=413,
                     detail=f"body too large: {len(body)} > {max_body_bytes}",
                 )
             actual = hashlib.sha256(body).digest()
             if actual != expected_digest:
-                outcome = "sha_mismatch"; status_code = 400
+                outcome = "sha_mismatch"
+                status_code = 400
                 metrics["sha_mismatch_total"].inc()
                 raise HTTPException(status_code=400, detail="body sha256 does not match path")
 
             if require_signed_uploads:
                 if not x_miner_hotkey or not x_miner_signature:
-                    outcome = "auth_fail"; status_code = 401
+                    outcome = "auth_fail"
+                    status_code = 401
                     raise HTTPException(
                         status_code=401,
                         detail="X-Miner-Hotkey + X-Miner-Signature required",
@@ -199,10 +206,12 @@ def build_app(
                     epoch_id=epoch_id,
                     sha256_hex=sha256_hex.lower(),
                 ):
-                    outcome = "auth_fail"; status_code = 401
+                    outcome = "auth_fail"
+                    status_code = 401
                     raise HTTPException(status_code=401, detail="signature verification failed")
                 if miner_identity != x_miner_hotkey:
-                    outcome = "auth_fail"; status_code = 403
+                    outcome = "auth_fail"
+                    status_code = 403
                     raise HTTPException(
                         status_code=403,
                         detail="miner_identity must equal X-Miner-Hotkey for Tier-2",
@@ -241,18 +250,22 @@ def build_app(
         status_code = 200
         try:
             if "/" in epoch_id or ".." in epoch_id:
-                outcome = "other"; status_code = 400
+                outcome = "other"
+                status_code = 400
                 raise HTTPException(status_code=400, detail="invalid epoch_id")
             if "/" in miner_identity or ".." in miner_identity:
-                outcome = "other"; status_code = 400
+                outcome = "other"
+                status_code = 400
                 raise HTTPException(status_code=400, detail="invalid miner_identity")
             if len(sha256_hex) != 64:
-                outcome = "other"; status_code = 400
+                outcome = "other"
+                status_code = 400
                 raise HTTPException(status_code=400, detail="sha256_hex must be 64 hex chars")
             try:
                 expected_digest = bytes.fromhex(sha256_hex.lower())
             except ValueError:
-                outcome = "other"; status_code = 400
+                outcome = "other"
+                status_code = 400
                 raise HTTPException(status_code=400, detail="sha256_hex is not valid hex")
 
             body = store.get(
@@ -261,7 +274,8 @@ def build_app(
                 sha256=expected_digest,
             )
             if body is None:
-                outcome = "not_found"; status_code = 404
+                outcome = "not_found"
+                status_code = 404
                 raise HTTPException(status_code=404, detail="not found")
             return Response(content=body, media_type="application/octet-stream")
         finally:

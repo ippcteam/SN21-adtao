@@ -52,7 +52,6 @@ ed25519 (works only when the hotkey was created with `crypto_type=Ed25519`).
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional

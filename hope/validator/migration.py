@@ -48,9 +48,7 @@ from typing import Iterable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from hope.commitment.archives import ArchiveClient, ArchiveEndpoint
 from hope.commitment.prediction_payload import (
-    build_horizon_entry,
     build_prediction_plaintext,
     encrypt_prediction,
 )

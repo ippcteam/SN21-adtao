@@ -7,7 +7,6 @@ import hashlib
 import pytest
 
 from hope.commitment.imt import (
-    DEFAULT_DEPTH,
     IMTLeaf,
     imt_leaf_hash,
     imt_node_hash,
@@ -153,7 +152,6 @@ class TestInclusionProof:
         proof = imt_proof_inclusion(leaves, _key(3))
 
         # Tamper with the leaf value
-        from dataclasses import replace
         from hope.commitment.imt import InclusionProof
 
         bad_leaf = IMTLeaf(key=proof.leaf.key, value=b"\xff" * 32, next_key=proof.leaf.next_key)
@@ -250,7 +248,7 @@ class TestRealWorldScenario:
         # An unregistered hotkey should have a valid non-inclusion proof
         unregistered = hashlib.blake2b(b"unregistered-miner", digest_size=32).digest()
         # Make sure it's not actually in the tree
-        if any(l.key == unregistered for l in leaves):
+        if any(leaf.key == unregistered for leaf in leaves):
             pytest.skip("unlikely hash collision")
         try:
             proof = imt_proof_non_inclusion(leaves, unregistered)

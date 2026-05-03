@@ -24,7 +24,6 @@ from hope.commitment.prediction_payload import (
 )
 from hope.commitment.scoreability import TimingBounds
 from hope.validator.onchain_runner import (
-    EpochScoringOutcome,
     MinerOnChainInputs,
     run_epoch_scoring,
 )

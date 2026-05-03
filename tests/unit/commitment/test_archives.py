@@ -13,7 +13,6 @@ import pytest
 from hope.commitment.archives import (
     ArchiveClient,
     ArchiveEndpoint,
-    DEFAULT_MAX_AES_CT_BYTES,
 )
 
 

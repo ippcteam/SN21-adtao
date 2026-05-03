@@ -72,11 +72,8 @@ from hope.commitment.imt import (
 from hope.commitment.inner_sig import add_inner_sig, verify_inner_sig
 from hope.commitment.prediction_payload import (
     ALLOWED_HORIZONS,
-    PROBABILITY_SCALE,
-    QUANTILE_SCALE,
     _is_valid_epoch_id,
     _scale_probability,
-    _scale_quantile,
     _validate_quantile_triple,
 )
 

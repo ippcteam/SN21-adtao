@@ -125,7 +125,7 @@ def imt_root(leaves: list[IMTLeaf], depth: int = DEFAULT_DEPTH) -> bytes:
     Leaves MUST be pre-sorted by key and have correct next_key pointers; this
     function does not normalize them. Use `make_leaves_with_pointers` first.
     """
-    leaf_hashes = [imt_leaf_hash(l) for l in leaves]
+    leaf_hashes = [imt_leaf_hash(leaf) for leaf in leaves]
     levels = _build_tree_levels(leaf_hashes, depth)
     return levels[depth][0]
 
@@ -164,12 +164,12 @@ def imt_proof_inclusion(
 
     Raises KeyError if target_key is not in leaves.
     """
-    leaf_idx = next((i for i, l in enumerate(leaves) if l.key == target_key), None)
+    leaf_idx = next((i for i, leaf in enumerate(leaves) if leaf.key == target_key), None)
     if leaf_idx is None:
         raise KeyError(f"target_key {target_key.hex()} not in tree")
 
     target_leaf = leaves[leaf_idx]
-    leaf_hashes = [imt_leaf_hash(l) for l in leaves]
+    leaf_hashes = [imt_leaf_hash(leaf) for leaf in leaves]
     levels = _build_tree_levels(leaf_hashes, depth)
 
     siblings: list[bytes] = []
@@ -213,11 +213,11 @@ def imt_proof_non_inclusion(
     Witness: a leaf whose `key < target_key < next_key`. Raises KeyError if
     target_key is actually in the tree (use inclusion proof instead).
     """
-    if any(l.key == target_key for l in leaves):
+    if any(leaf.key == target_key for leaf in leaves):
         raise KeyError(f"target_key {target_key.hex()} IS in tree; use inclusion proof")
 
     bracket = next(
-        (l for l in leaves if l.key < target_key < l.next_key),
+        (leaf for leaf in leaves if leaf.key < target_key < leaf.next_key),
         None,
     )
     if bracket is None:

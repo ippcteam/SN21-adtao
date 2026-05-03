@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from hope.commitment.canonical import (
     aes_gcm_aad,

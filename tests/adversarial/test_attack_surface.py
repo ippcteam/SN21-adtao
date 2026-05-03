@@ -29,7 +29,6 @@ from dataclasses import replace
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from hope.commitment.archives import ArchiveEndpoint, FetchAggregate, FetchResult
 from hope.commitment.canonical import canonical_cbor_dumps, canonical_cbor_loads
 from hope.commitment.episode_artifacts import (
     PerEpisodeEntry,
@@ -43,14 +42,10 @@ from hope.commitment.inner_sig import verify_inner_sig
 from hope.commitment.prediction_payload import (
     build_horizon_entry,
     build_prediction_plaintext,
-    decrypt_prediction,
     encrypt_prediction,
-    verify_prediction_inner_sig,
 )
 from hope.commitment.registration import (
     REG_V1_PREFIX,
-    RegistrationRole,
-    build_registration_payload,
     parse_registration_payload,
     verify_registration,
 )

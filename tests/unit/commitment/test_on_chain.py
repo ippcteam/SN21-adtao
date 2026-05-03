@@ -14,7 +14,6 @@ from hope.commitment.on_chain import (
     DEFAULT_REVEAL_SAFETY_ROUNDS,
     MAX_TLE_PLAINTEXT_BYTES,
     CommitResult,
-    RevealedCommit,
     compute_blake2b_256,
     compute_sha256,
     read_revealed_commitments,
@@ -198,7 +197,7 @@ class TestLayerSpecificHelpers:
     def test_layer_9a1_release_commit(self, mock_publish):
         mock_publish.return_value = _make_mock_response()
         digest = b"\xa1" * 32
-        result = submit_release_commit_layer_9a1(
+        submit_release_commit_layer_9a1(
             subtensor=MagicMock(),
             hope_outcome_signer_wallet=MagicMock(),
             netuid=466,

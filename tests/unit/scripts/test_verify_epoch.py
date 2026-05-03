@@ -14,7 +14,6 @@ import hashlib
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -23,7 +22,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 
 from hope.commitment.archives import ArchiveEndpoint, FetchAggregate, FetchResult
-from hope.commitment.canonical import canonical_cbor_loads
 from hope.commitment.prediction_payload import (
     build_horizon_entry,
     build_prediction_plaintext,
@@ -35,8 +33,6 @@ from hope.commitment.scoring_state import (
     ScoredMinerRecord,
     build_post_scoring_artifacts,
     build_pre_scoring_state,
-    compute_final_score_root,
-    compute_miner_commits_root,
 )
 
 import verify_epoch as ve
@@ -94,7 +90,6 @@ def epoch_setup():
         chain_window_min_block=7000000, chain_window_max_block=7100000,
     )
 
-    miners = []
     archive = InMemArchive()
     miner_states: dict[bytes, ve.ChainMinerState] = {}
     miner_commit_records: list[MinerCommitRecord] = []

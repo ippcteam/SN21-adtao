@@ -10,7 +10,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from hope.commitment.on_chain import RAW_FIELD_MAX_BYTES
 from hope.commitment.registration import (
     REG_V1_PREFIX,
-    RegistrationPayload,
     RegistrationRole,
     build_registration_payload,
     parse_registration_payload,

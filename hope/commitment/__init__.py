@@ -44,7 +44,9 @@ from hope.commitment.on_chain import (
     RevealedCommit,
     compute_blake2b_256,
     compute_sha256,
-    read_revealed_commitments,
+    # Note: `read_revealed_commitments` from on_chain (SDK-based) is
+    # superseded by chain_reader.read_revealed_commitments (substrate-direct,
+    # binary-safe). The chain_reader version is the canonical export below.
     submit_layer_9b_multi_field,
     submit_miner_prediction_layer_9b,
     submit_outcome_reveal_hash_layer_9a2,
@@ -170,7 +172,6 @@ __all__ = [
     "RevealedCommit",
     "compute_blake2b_256",
     "compute_sha256",
-    "read_revealed_commitments",
     "submit_layer_9b_multi_field",
     "submit_miner_prediction_layer_9b",
     "submit_outcome_reveal_hash_layer_9a2",

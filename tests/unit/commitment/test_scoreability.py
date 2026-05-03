@@ -8,7 +8,6 @@ from dataclasses import replace
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from hope.commitment.canonical import canonical_cbor_dumps
 from hope.commitment.prediction_payload import (
     build_horizon_entry,
     build_prediction_plaintext,
@@ -196,7 +195,6 @@ class TestHorizonShape:
 
     def _wrap(self, plain, sk, pk, sha_or_setup, setup, epoch_id="EPOCH-A"):
         """Re-encrypt a (possibly mutated) plaintext into a fresh AES_ct."""
-        from hope.commitment.canonical import canonical_cbor_dumps
         # sign and re-encrypt
         plain = self._re_sign_after_corruption(plain, sk)
         enc = encrypt_prediction(plain, epoch_id=epoch_id)

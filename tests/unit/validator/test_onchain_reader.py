@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Optional
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
