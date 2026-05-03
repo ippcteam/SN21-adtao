@@ -229,7 +229,34 @@ find /var/lib/sn21-archive -mindepth 1 -maxdepth 1 -type d -mtime +90 -exec rm -
 
 ## 8. Public verification
 
-Anyone (auditor, advertiser, third party) verifies an epoch:
+Anyone (auditor, advertiser, third party) verifies an epoch.
+
+### 8.1 Archive node requirement
+
+The Bittensor `Commitments::CommitmentOf` storage holds ONE entry per
+`(netuid, hotkey)` and is overwritten by every new commit (Phase H
+finding §19.3). To audit a PAST epoch the verifier MUST use an archive
+node + a block-pinned read:
+
+```bash
+python scripts/verify_epoch.py \
+    --epoch-id EPOCH-2026-W18-MON \
+    --validator-hotkey 5...primary...ss58 \
+    --netuid 21 --network finney \
+    --block-hash 0x<block hash where validator's 9.C.2 commit landed> \
+    --tier-2-base https://archive.hope.io \
+    --output json
+```
+
+The validator publishes the `block_hash` for each of its 9.C.1, 9.C.3,
+9.C.2 commits in its post-scoring artifacts off-chain manifest at
+`https://validator.example.io/epoch/{epoch_id}.json`. Auditors retrieve
+that manifest, then call verify_epoch with the right block_hash.
+
+### 8.2 Real-time verification (chain head)
+
+To verify the LATEST epoch (the one that just finalized), omit
+`--block-hash` and the verifier reads chain head:
 
 ```bash
 python scripts/verify_epoch.py \
@@ -239,6 +266,31 @@ python scripts/verify_epoch.py \
     --tier-2-base https://archive.hope.io \
     --output json
 ```
+
+This works only if NO new commit from the same hotkey has landed
+between the target commit and now. Tighter audit windows (e.g.,
+"verify within 30 min of weights commit") may use chain head; longer
+windows MUST use --block-hash.
+
+### 8.3 Archive node operator setup
+
+Run a Bittensor mainnet archive node:
+
+```bash
+# subtensor archive mode
+docker run -d --name subtensor-archive \
+    -p 9944:9944 \
+    opentensor/subtensor:latest \
+    --base-path /data/subtensor \
+    --chain finney \
+    --pruning archive \
+    --rpc-cors all
+```
+
+Point the verifier at it via `--network ws://localhost:9944` (or
+configure Bittensor to use the local archive endpoint).
+
+### 8.4 Verdict
 
 Expected output (JSON): `"ok": true`. A `false` outcome implies the
 validator and the verifier diverge on either the IMT roots or the

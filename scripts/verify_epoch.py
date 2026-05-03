@@ -277,6 +277,7 @@ def fetch_chain_view(
     validator_hotkey_ss58: str,
     miner_hotkey_ss58_list: list[str],
     timing: TimingBounds,
+    block_hash: Optional[str] = None,
 ) -> ChainView:
     """Read pre/post scoring CBOR + per-miner triples from a live chain.
 
@@ -320,7 +321,9 @@ def fetch_chain_view(
         read_commitment_of, read_revealed_commitments,
     )
 
-    revealed_val = read_revealed_commitments(subtensor, netuid, validator_hotkey_ss58)
+    revealed_val = read_revealed_commitments(
+        subtensor, netuid, validator_hotkey_ss58, block_hash=block_hash,
+    )
 
     pre_blob: Optional[bytes] = None
     post_blob: Optional[bytes] = None
@@ -343,7 +346,9 @@ def fetch_chain_view(
         except Exception:
             logger.warning("could not decode miner SS58 %s; skipping", miner_ss58)
             continue
-        revealed = read_revealed_commitments(subtensor, netuid, miner_ss58)
+        revealed = read_revealed_commitments(
+            subtensor, netuid, miner_ss58, block_hash=block_hash,
+        )
         revealed_k: Optional[bytes] = None
         chain_block: Optional[int] = None
         for entry in revealed:
@@ -359,7 +364,9 @@ def fetch_chain_view(
         # node + block-pinned reads; for now we take whatever's latest.
         sha256_ct: Optional[bytes] = None
         url: Optional[str] = None
-        fields = read_commitment_of(subtensor, netuid, miner_ss58)
+        fields = read_commitment_of(
+            subtensor, netuid, miner_ss58, block_hash=block_hash,
+        )
         if fields:
             for f in fields:
                 if f.variant == "Sha256" and len(f.bytes_) == 32:
@@ -476,6 +483,13 @@ def _build_argparser() -> argparse.ArgumentParser:
         help="Tier-3 (miner self-archive) base URL; usually read from chain instead",
     )
     p.add_argument(
+        "--block-hash", default=None,
+        help="Block hash (0x-prefixed hex) for an archive-pinned read. The "
+             "chain's CommitmentOf storage is single-slot per (netuid, hotkey); "
+             "to audit a past epoch, supply the block_hash where the validator's "
+             "9.C.2 commit landed. Without --block-hash, reads chain head only.",
+    )
+    p.add_argument(
         "--output", choices=["text", "json"], default="text",
         help="Verdict output format",
     )
@@ -512,6 +526,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         validator_hotkey_ss58=args.validator_hotkey,
         miner_hotkey_ss58_list=miner_ss58s,
         timing=timing,
+        block_hash=args.block_hash,
     )
 
     endpoints: list[ArchiveEndpoint] = []
