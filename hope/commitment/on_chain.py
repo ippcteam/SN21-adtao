@@ -36,13 +36,28 @@ from bittensor.core.extrinsics.serving import publish_metadata_extrinsic
 RAW_FIELD_MAX_BYTES = 128
 
 
-# Empirical TLE overhead measured on testnet 2026-05-03.
-# This is conservative; varies slightly by payload entropy.
-_TLE_OVERHEAD_BYTES = 256  # round up from observed 254
-
-# Maximum plaintext we can safely fit in a TimelockEncrypted field on chain.
-# Derived: chain limit (1024) - measured overhead (256).
-MAX_TLE_PLAINTEXT_BYTES = 1024 - _TLE_OVERHEAD_BYTES  # 768
+# Empirical TLE overhead measured on testnet 2026-05-04.
+# Phase H-4 confirmed the chain ONLY auto-decrypts TLE'd commits produced
+# by `bittensor_drand.get_encrypted_commitment(data: str, ...)` — NOT
+# `bittensor_drand.encrypt(data: bytes, ...)`. Both the SDK helper
+# `subtensor.set_reveal_commitment(data, blocks_until_reveal)` and our
+# `submit_timelock_commit` below use the former.
+#
+# `get_encrypted_commitment` takes a STRING. To carry binary plaintext
+# (CBOR), we hex-encode: 1 byte → 2 hex chars. The chain stores the
+# auto-decrypted plaintext as `<scale_compact_length><utf8_bytes>` —
+# the reader strips the prefix + hex-decodes back to bytes.
+#
+# Effective budget:
+#   chain ciphertext cap (TimelockEncrypted) ≈ 1024 bytes
+#   TLE wrapper overhead                     ≈ 240 bytes
+#   ⇒ usable hex-encoded payload             ≈ 784 chars
+#   ⇒ raw binary plaintext                   ≈ 392 bytes
+#
+# Plus a SCALE compact length prefix (1-2 bytes) added by the chain.
+# Conservative cap: 380 bytes raw plaintext.
+_TLE_OVERHEAD_BYTES = 240
+MAX_TLE_PLAINTEXT_BYTES = 380  # raw bytes; hex-encoded becomes 760 chars
 
 # Default safety margin for timelock reveal: how many drand rounds beyond the
 # nominal target round to wait. Mitigates pulse-publication latency.
@@ -131,8 +146,18 @@ def submit_timelock_commit(
     Used by Layers 9.B (miner predictions: AES key K only), 9.C.1 (pre-scoring
     state), and 9.C.2 (post-scoring artifacts).
 
+    The chain auto-decrypts ONLY commits produced by
+    `bittensor_drand.get_encrypted_commitment(data: str, ...)` — a different
+    C function from `bittensor_drand.encrypt(data: bytes, ...)`. We hex-encode
+    binary plaintext to a string and call the right helper.
+
+    The chain stores the auto-decrypted plaintext as
+    `<SCALE_compact_length_prefix><utf8_bytes>`. Readers strip the prefix
+    and hex-decode the payload back to bytes (see chain_reader).
+
     Args:
-        plaintext: Binary CBOR-encoded payload. Must be ≤ MAX_TLE_PLAINTEXT_BYTES.
+        plaintext: Binary CBOR-encoded payload. Must be ≤ MAX_TLE_PLAINTEXT_BYTES
+            (380 bytes; hex-encoded form fits in chain's ~1024B TLE cap).
         blocks_until_reveal: Number of chain blocks from now until the chain
             auto-decrypts. Translated internally to a drand round number.
         block_time_secs: Average block time (default 12s for subtensor).
@@ -150,8 +175,10 @@ def submit_timelock_commit(
             f"Trim the payload or split across multiple commits."
         )
 
-    encrypted, reveal_round = bittensor_drand.encrypt(
-        plaintext, blocks_until_reveal, block_time_secs
+    # Hex-encode bytes → string for `get_encrypted_commitment`.
+    plaintext_str = plaintext.hex()
+    encrypted, reveal_round = bittensor_drand.get_encrypted_commitment(
+        plaintext_str, blocks_until_reveal, block_time_secs
     )
 
     response = publish_metadata_extrinsic(

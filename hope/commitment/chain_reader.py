@@ -281,6 +281,75 @@ def _block_number_for_hash(subtensor, block_hash: str) -> int:
     return 0
 
 
+def decode_revealed_tle_plaintext(payload_bytes: bytes) -> bytes:
+    """Decode a `RevealedCommitments` entry's payload back to original bytes.
+
+    The chain's auto-decrypt path for TLE commits (committed via
+    `bittensor_drand.get_encrypted_commitment(data: str, ...)`) stores the
+    decrypted output as:
+
+        <SCALE_compact_length_prefix> || <utf8_bytes_of_hex_string>
+
+    Where `utf8_bytes_of_hex_string` is `original_plaintext.hex().encode()`.
+
+    This helper:
+      1. Decodes the SCALE compact-encoded length prefix (1, 2, or 4 bytes).
+      2. Slices the payload to that length.
+      3. Interprets the slice as ASCII hex and decodes back to raw bytes.
+
+    Returns the original `plaintext: bytes` that was passed to
+    `hope.commitment.on_chain.submit_timelock_commit`.
+
+    Raises:
+        ValueError: malformed input (bad SCALE prefix, non-hex payload).
+    """
+    if not payload_bytes:
+        raise ValueError("empty payload")
+
+    # SCALE compact integer: bottom 2 bits of first byte indicate the mode.
+    #   0b00: 1-byte mode, length = (b0 >> 2)
+    #   0b01: 2-byte mode (LE), length = (u16 >> 2)
+    #   0b10: 4-byte mode (LE), length = (u32 >> 2)
+    #   0b11: BigInt mode (length-prefixed bytes, then LE u(8*N))
+    b0 = payload_bytes[0]
+    mode = b0 & 0b11
+    if mode == 0b00:
+        length = b0 >> 2
+        body_offset = 1
+    elif mode == 0b01:
+        if len(payload_bytes) < 2:
+            raise ValueError("SCALE compact prefix truncated (mode 1)")
+        u16 = int.from_bytes(payload_bytes[:2], "little", signed=False)
+        length = u16 >> 2
+        body_offset = 2
+    elif mode == 0b10:
+        if len(payload_bytes) < 4:
+            raise ValueError("SCALE compact prefix truncated (mode 2)")
+        u32 = int.from_bytes(payload_bytes[:4], "little", signed=False)
+        length = u32 >> 2
+        body_offset = 4
+    else:
+        # BigInt mode: rare for our payload sizes (<2^30 bytes). Not supported.
+        raise ValueError("SCALE compact BigInt mode not supported")
+
+    body = payload_bytes[body_offset : body_offset + length]
+    if len(body) < length:
+        raise ValueError(
+            f"SCALE prefix claims length {length} but only "
+            f"{len(body)} bytes available"
+        )
+
+    # The body is the hex string we wrote — decode back to bytes.
+    try:
+        hex_str = body.decode("ascii")
+    except UnicodeDecodeError as e:
+        raise ValueError(f"payload body not ASCII hex: {e}") from e
+    try:
+        return bytes.fromhex(hex_str)
+    except ValueError as e:
+        raise ValueError(f"payload body not valid hex: {e}") from e
+
+
 def strip_scale_data_variant_prefix(payload: bytes) -> bytes:
     """Strip the leading Data enum variant tag + length from a SCALE-encoded payload.
 

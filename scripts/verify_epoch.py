@@ -314,10 +314,11 @@ def fetch_chain_view(
         9.C.1 / 9.C.2 reveals are not present (not yet auto-decrypted).
     """
     # Substrate-direct readback bypasses the SDK's UTF-8 mangling of
-    # binary payloads. Each RevealedEntry has a full SCALE-encoded Data
-    # variant in payload_bytes; we strip the leading 1-2 byte variant tag
-    # heuristically (TimelockEncrypted auto-decrypts re-wrap as Raw{N}-like).
+    # binary payloads. Each RevealedEntry has a SCALE-prefixed hex-encoded
+    # plaintext (Phase H-4 finding) — `decode_revealed_tle_plaintext`
+    # strips the prefix and hex-decodes back to original bytes.
     from hope.commitment.chain_reader import (
+        decode_revealed_tle_plaintext,
         read_commitment_of, read_revealed_commitments,
     )
 
@@ -327,7 +328,16 @@ def fetch_chain_view(
 
     pre_blob: Optional[bytes] = None
     post_blob: Optional[bytes] = None
-    plaintexts: list[bytes] = [_strip_data_variant_prefix(e.payload_bytes) for e in revealed_val]
+    plaintexts: list[bytes] = []
+    for entry in revealed_val:
+        try:
+            plaintexts.append(decode_revealed_tle_plaintext(entry.payload_bytes))
+        except ValueError as e:
+            logger.warning(
+                "could not decode revealed entry at block %d: %s",
+                entry.block_number, e,
+            )
+            continue
 
     if len(plaintexts) < 2:
         raise RuntimeError(
@@ -352,7 +362,10 @@ def fetch_chain_view(
         revealed_k: Optional[bytes] = None
         chain_block: Optional[int] = None
         for entry in revealed:
-            payload_bytes = _strip_data_variant_prefix(entry.payload_bytes)
+            try:
+                payload_bytes = decode_revealed_tle_plaintext(entry.payload_bytes)
+            except ValueError:
+                continue
             # The auto-decrypted K is exactly 32 bytes.
             if len(payload_bytes) == 32:
                 revealed_k = payload_bytes

@@ -43,8 +43,10 @@ def _make_mock_response(success: bool = True, message: str = "Success", block: i
 
 class TestConstants:
     def test_max_tle_plaintext_bytes(self):
-        # 1024 chain limit - 256 TLE overhead = 768
-        assert MAX_TLE_PLAINTEXT_BYTES == 768
+        # Phase H-6: switched to bittensor_drand.get_encrypted_commitment(str)
+        # which the chain runtime can auto-decrypt. Hex-encoding doubles the
+        # binary plaintext size; effective budget is ~380 raw bytes.
+        assert MAX_TLE_PLAINTEXT_BYTES == 380
 
     def test_default_reveal_safety_rounds(self):
         assert DEFAULT_REVEAL_SAFETY_ROUNDS == 20
@@ -129,7 +131,7 @@ class TestSubmitTimelockCommit:
     @patch("hope.commitment.on_chain.publish_metadata_extrinsic")
     @patch("hope.commitment.on_chain.bittensor_drand")
     def test_calls_drand_encrypt_then_publish(self, mock_drand, mock_publish):
-        mock_drand.encrypt.return_value = (b"encrypted_blob", 28326276)
+        mock_drand.get_encrypted_commitment.return_value = (b"encrypted_blob", 28326276)
         mock_publish.return_value = _make_mock_response()
 
         plaintext = b"hello world" * 10
@@ -141,7 +143,7 @@ class TestSubmitTimelockCommit:
             blocks_until_reveal=20,
         )
 
-        mock_drand.encrypt.assert_called_once_with(plaintext, 20, 12.0)
+        mock_drand.get_encrypted_commitment.assert_called_once_with(plaintext.hex(), 20, 12.0)
         kwargs = mock_publish.call_args.kwargs
         assert kwargs["data_type"] == "TimelockEncrypted"
         assert kwargs["data"] == {"encrypted": b"encrypted_blob", "reveal_round": 28326276}
@@ -150,7 +152,7 @@ class TestSubmitTimelockCommit:
     @patch("hope.commitment.on_chain.publish_metadata_extrinsic")
     @patch("hope.commitment.on_chain.bittensor_drand")
     def test_at_max_plaintext_size_succeeds(self, mock_drand, mock_publish):
-        mock_drand.encrypt.return_value = (b"x" * 1000, 99)
+        mock_drand.get_encrypted_commitment.return_value = (b"x" * 1000, 99)
         mock_publish.return_value = _make_mock_response()
         plaintext = b"y" * MAX_TLE_PLAINTEXT_BYTES
         result = submit_timelock_commit(
@@ -240,7 +242,7 @@ class TestLayerSpecificHelpers:
     @patch("hope.commitment.on_chain.publish_metadata_extrinsic")
     @patch("hope.commitment.on_chain.bittensor_drand")
     def test_layer_9b_uses_timelock(self, mock_drand, mock_publish):
-        mock_drand.encrypt.return_value = (b"x" * 64, 999)
+        mock_drand.get_encrypted_commitment.return_value = (b"x" * 64, 999)
         mock_publish.return_value = _make_mock_response()
         result = submit_miner_prediction_layer_9b(
             subtensor=MagicMock(),
@@ -255,9 +257,9 @@ class TestLayerSpecificHelpers:
     @patch("hope.commitment.on_chain.publish_metadata_extrinsic")
     @patch("hope.commitment.on_chain.bittensor_drand")
     def test_layer_9c1_pre_scoring(self, mock_drand, mock_publish):
-        mock_drand.encrypt.return_value = (b"x" * 600, 88)
+        mock_drand.get_encrypted_commitment.return_value = (b"x" * 600, 88)
         mock_publish.return_value = _make_mock_response()
-        cbor_bytes = b"\xa1" * 400  # within MAX_TLE_PLAINTEXT_BYTES
+        cbor_bytes = b"\xa1" * 370  # within MAX_TLE_PLAINTEXT_BYTES (380)
         result = submit_pre_scoring_state_layer_9c1(
             subtensor=MagicMock(),
             validator_wallet=MagicMock(),
@@ -271,7 +273,7 @@ class TestLayerSpecificHelpers:
     @patch("hope.commitment.on_chain.publish_metadata_extrinsic")
     @patch("hope.commitment.on_chain.bittensor_drand")
     def test_layer_9c2_post_scoring(self, mock_drand, mock_publish):
-        mock_drand.encrypt.return_value = (b"x" * 200, 88)
+        mock_drand.get_encrypted_commitment.return_value = (b"x" * 200, 88)
         mock_publish.return_value = _make_mock_response()
         result = submit_post_scoring_artifacts_layer_9c2(
             subtensor=MagicMock(),
@@ -307,21 +309,51 @@ class TestLayerSpecificHelpers:
 
 
 class TestBudgetSizing:
-    """Verify our 9.C.1 plaintext budget fits MAX_TLE_PLAINTEXT_BYTES."""
+    """Verify our 9.C.1 plaintext budget fits MAX_TLE_PLAINTEXT_BYTES.
 
-    def test_v07_revised_9c1_budget_fits(self):
-        """Per phase 0 findings 2026-05-03, revised 9.C.1 budget: ~492 bytes binary CBOR."""
-        # All hashes (10 × 32 bytes) + ints (4 × 8) + sig + headers + CBOR overhead
-        estimated_bytes = (
-            48        # header (v + epoch_id)
-            + 32 * 7  # 7 different hash fields
-            + 8 * 4   # 4 integer fields
-            + 32      # validator_hotkey
-            + 64      # inner_sig
-            + 80      # CBOR overhead
+    Phase H-6 revised the budget: chain auto-decrypt accepts only TLE'd
+    `get_encrypted_commitment(str)` payloads, which require us to hex-encode
+    binary CBOR. Effective raw plaintext budget ≈ 380 bytes.
+    """
+
+    def test_real_9c1_pre_scoring_fits_budget(self):
+        """Build a representative 9.C.1 plaintext + measure actual size."""
+        import os
+
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        from hope.commitment.scoring_state import (
+            ExcludedMinerRecord,
+            MinerCommitRecord,
+            build_pre_scoring_state,
         )
-        # Total ≈ 472 bytes; fits in 768
-        assert estimated_bytes < MAX_TLE_PLAINTEXT_BYTES, (
-            f"9.C.1 budget {estimated_bytes} exceeds MAX_TLE_PLAINTEXT_BYTES={MAX_TLE_PLAINTEXT_BYTES}; "
-            f"trim fields or split commit"
+
+        sk = Ed25519PrivateKey.generate()
+        val_pk = sk.public_key().public_bytes_raw()
+        # Realistic miner population: 50 miners + 5 exclusions
+        miners = [
+            MinerCommitRecord(
+                miner_hotkey=os.urandom(32), k_block=7038900 + i,
+                k_round=12345700 + i, sha256_ct=os.urandom(32),
+            )
+            for i in range(50)
+        ]
+        excluded = [
+            ExcludedMinerRecord(
+                miner_hotkey=os.urandom(32), miner_uid=i,
+                reason="inner_sig.fail",
+            )
+            for i in range(5)
+        ]
+        blob = build_pre_scoring_state(
+            validator_hotkey=val_pk, validator_signing_key=sk,
+            epoch_id="EPOCH-X-2026", epoch_idx=42,
+            outcomes_release_round=12345600,
+            outcomes_fetched_at_round=12345650,
+            miner_commits=miners, excluded_miners=excluded,
+        )
+        assert len(blob) <= MAX_TLE_PLAINTEXT_BYTES, (
+            f"9.C.1 plaintext {len(blob)}B exceeds "
+            f"MAX_TLE_PLAINTEXT_BYTES={MAX_TLE_PLAINTEXT_BYTES}; "
+            "trim fields or split commit"
         )
