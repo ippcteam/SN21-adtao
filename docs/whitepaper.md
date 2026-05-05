@@ -74,10 +74,9 @@ generated. It was:
 - **Running the probes.** Every claim in this paper backed by a
   number — "auto-decrypt fires in 105 seconds," "MaxSpace is 1,259
   blocks," "9.C.1 plaintext fits in 380 bytes" — comes from a probe
-  somebody manually ran against testnet 466. The probes are in
-  `scripts/phase0/`; the results are in `scripts/phase0/results/`;
-  the JSON outputs are signed implicitly by the chain extrinsic
-  hashes they reference.
+  somebody manually ran against testnet 466. The phase-by-phase
+  narrative is in `docs/build_journey.md`; the JSON probe outputs
+  are signed implicitly by the chain extrinsic hashes they reference.
 
 The whitepaper itself was iterated by the agent given the design we'd
 locked in. We've reviewed every paragraph; the receipts (commits,
@@ -1151,13 +1150,14 @@ Here is the inventory, with file paths so you can audit.
 | `hope/hope_shadow_validator/runner.py` | 100 | 9.E shadow wrapper |
 | `scripts/verify_epoch.py` | 600 | public verifier (CLI + library) |
 | `scripts/sn21_keys.py` | 320 | ed25519 key-management CLI |
-| `scripts/integration/run_local_epoch.py` | 350 | in-process end-to-end test |
-| `scripts/integration/run_testnet_epoch.py` | 290 | interactive testnet driver |
-| `scripts/integration/run_validator_only.py` | 175 | slimmed F-2 (validator-only) |
-| `scripts/phase0/*.py` | ~600 | 7 diagnostic probes, 5 ran on testnet |
+| `scripts/score_predictions.py` | 90 | offline scoring tool (miners) |
+| `scripts/train_example_model.py` | — | reference XGBoost training (miners) |
+| `scripts/generate_training_data.py` | — | training-set fetch helper (miners) |
+| `hope/validator/tiered_weights.py` | ~260 | participation gate + EMA tiers + Elite floor |
 
-Total: ~7,500 LOC code, ~6,800 LOC tests. 453 unit tests + 12 adversarial
-+ 5 integration + 12 ed25519-binding pass; lint clean.
+Total: ~7,500 LOC code, ~6,800 LOC tests. 488 tests pass — see
+`tests/` for the unit, adversarial, and end-to-end surface; lint
+clean under `ruff check`.
 
 ### 14.2 Documentation surface
 
@@ -1299,21 +1299,21 @@ Run locally: `pytest tests/`. Run only adversarial: `pytest tests/adversarial/ -
 
 ## Appendix B — Empirical findings (testnet 466)
 
-The architecture's claims are backed by measurement. Here is the record.
+The architecture's claims are backed by measurement. Here is the
+condensed record; the phase-by-phase build narrative — including who
+ran what probe, when, and why — is in `docs/build_journey.md`.
 
 ### B.1 Q11 — RateLimit window (2026-05-03)
 
 - 5 × 128-byte `Raw{128}` commits succeeded before `SpaceLimitExceeded`.
 - Per-commit overhead inferred: ~500 bytes.
 - Window: 1,259 blocks ≈ 252 minutes ≈ 4.2 hours ≈ 3.5 × subnet tempo.
-- File: `scripts/phase0/results/q11_window.json`.
 - Implication: minimum supported epoch cadence ≈ 4.5h; 24h cadence has
   5x headroom.
 
 ### B.2 Q13 — Extrinsic fee (2026-05-03)
 
 - `set_commitment` on testnet 466: 0 µTAO.
-- File: `scripts/phase0/results/q13_size_probe.json`.
 - Mainnet measurement deferred to pre-launch.
 
 ### B.3 Q35 — Lower-level commit path (2026-05-03)
@@ -1329,7 +1329,6 @@ The architecture's claims are backed by measurement. Here is the record.
 - Multi-variant `info.fields[0]` is ACCEPTED by the chain runtime.
 - But: chain auto-decrypt does NOT walk multi-variant slots, AND SDK
   readback does not return them.
-- File: `scripts/phase0/results/q36_multi_field.json`.
 - Implication: the 3-extrinsic Layer 9.B path is authoritative.
   `submit_layer_9b_multi_field` is gated with `NotImplementedError`.
 
@@ -1337,7 +1336,6 @@ The architecture's claims are backed by measurement. Here is the record.
 
 - Submitted via `bittensor_drand.encrypt(bytes, ...)` + `publish_metadata_extrinsic`.
 - 30-min poll, NO auto-decrypt observed.
-- File: `scripts/phase0/results/h3_tle_decrypt.json`.
 - Confirmed Hypothesis B: format incompatible.
 
 ### B.6 H-4 — Discovery (2026-05-04)

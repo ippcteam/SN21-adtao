@@ -1,4 +1,4 @@
-"""Public verifier for SN21 verifiable scoring (Phase B Layer 9 protocol).
+"""Public verifier for SN21 verifiable scoring.
 
 Given an epoch_id and a target validator hotkey, this script:
 
@@ -10,6 +10,9 @@ Given an epoch_id and a target validator hotkey, this script:
      own scorer and asserts equality with the chain-anchored root.
   4. Builds an independent `miner_commits_root` from the chain reads and
      asserts equality with the chain-anchored root from 9.C.1.
+  5. Cross-checks the actual on-chain weights at
+     `weights_commit_block_hash` against weights re-derived from the score
+     table; surfaces any mismatched UIDs.
 
 If any equality check fails, the script exits non-zero with a structured
 diff between the chain claim and the verifier's view. Any third party
@@ -23,16 +26,12 @@ Usage:
         --validator-hotkey 5GxVLdpRGZN... \\
         --netuid 21 \\
         --network finney \\
-        --tier-2-base https://archive.example.io
+        --tier-2-base https://archive.example.io \\
+        --truth-file path/to/truth.json
 
 This is an OFFLINE verification — it does NOT submit any extrinsic. It
 needs read-only access to a Bittensor node + reachability to the archive
 tiers it queries.
-
-In Phase B this is intentionally a scaffold: the chain-read functions and
-the per-miner score-recompute logic are integration points that need real
-Bittensor SDK calls + the project's scoring module wired up. The structure
-here pins the algorithm and CLI surface so a third party can audit it.
 """
 
 from __future__ import annotations
@@ -44,7 +43,6 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from hope.commitment.archives import ArchiveClient, ArchiveEndpoint
 from hope.commitment.canonical import canonical_cbor_loads
@@ -56,6 +54,7 @@ from hope.commitment.scoring_state import (
     compute_final_score_root,
     compute_miner_commits_root,
 )
+from hope.scoring.onchain_adapter import HorizonTruth
 from hope.validator.onchain_reader import (
     assemble_chain_commits,
     read_miner_for_epoch,
@@ -224,7 +223,6 @@ def verify_epoch(
         # miner_commits_root covers EVERY miner whose K + Sha256 commits
         # landed in-window, regardless of whether scoring accepted them.
         if ms.timelock_k_revealed is not None and ms.sha256_ct_commit is not None:
-            from hope.commitment.drand_lib import drand_round_at  # type: ignore
 
             derived_commits.append(MinerCommitRecord(
                 miner_hotkey=miner_hotkey,
@@ -559,7 +557,7 @@ def make_live_scorer(truth_by_horizon: dict[str, "HorizonTruth"]):
 def _load_truth_file(path: str) -> dict[str, "HorizonTruth"]:
     """Decode a JSON truth file produced from the 9.A.2 reveal blob.
 
-    Schema (single object, sample at scripts/integration/recorded_epoch.json):
+    Schema (single object, sample at tests/fixtures/recorded_epoch/recorded_epoch.json):
 
         {
           "truth_by_horizon": {
@@ -574,8 +572,6 @@ def _load_truth_file(path: str) -> dict[str, "HorizonTruth"]:
     ``HorizonTruth``. The conversion from float reveal-blob fields is done
     by the operator's offline tooling so we keep the verifier deterministic.
     """
-    from hope.scoring.onchain_adapter import HorizonTruth
-
     with open(path, "r", encoding="utf-8") as f:
         payload = json.load(f)
 
@@ -632,7 +628,7 @@ def _build_argparser() -> argparse.ArgumentParser:
              "miner scores end-to-end (the production scoring path). When "
              "omitted, score recomputation is skipped and the verifier only "
              "checks chain integrity (IMT roots + inner_sig + weights "
-             "binding). See scripts/integration/recorded_epoch.json for the "
+             "binding). See tests/fixtures/recorded_epoch/recorded_epoch.json for the "
              "schema.",
     )
     p.add_argument(
@@ -705,7 +701,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "will return zero for every miner; final_score_match will "
             "fail unless the chain artifact also reflects an all-zero "
             "scoring run. Pass a JSON truth file (see "
-            "scripts/integration/recorded_epoch.json for the schema).",
+            "tests/fixtures/recorded_epoch/recorded_epoch.json for the schema).",
             file=sys.stderr,
         )
 

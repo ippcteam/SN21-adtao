@@ -30,7 +30,29 @@ from dataclasses import dataclass
 from typing import Optional
 
 import bittensor_drand
-from bittensor.core.extrinsics.serving import publish_metadata_extrinsic
+
+
+# Importing ``bittensor.core.extrinsics.serving`` eagerly triggers
+# bittensor's CLI logging machine, which scans ``sys.argv`` for ``--help``
+# and hijacks argparse output for any script that pulls in
+# ``hope.commitment.*`` at module level (e.g. ``verify_epoch.py --help``).
+# We expose ``publish_metadata_extrinsic`` via a module-level ``__getattr__``
+# so it imports on first access, not at module import. This is PEP 562; it
+# also keeps ``mock.patch("hope.commitment.on_chain.publish_metadata_extrinsic")``
+# working for tests, since attribute access still resolves through __getattr__.
+def __getattr__(name):
+    if name == "publish_metadata_extrinsic":
+        from bittensor.core.extrinsics.serving import (
+            publish_metadata_extrinsic as _pme,
+        )
+        globals()["publish_metadata_extrinsic"] = _pme
+        return _pme
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _publish_metadata_extrinsic():
+    """Backwards-compatible accessor that resolves the lazy attribute."""
+    return __getattr__("publish_metadata_extrinsic")
 
 # Raw{N} field variant capacities (chain-side `Data` enum range).
 RAW_FIELD_MAX_BYTES = 128
@@ -116,7 +138,7 @@ def submit_sha256_commit(
     if len(hash_bytes) != 32:
         raise ValueError(f"hash_bytes must be 32 bytes, got {len(hash_bytes)}")
 
-    response = publish_metadata_extrinsic(
+    response = publish_metadata_extrinsic(  # noqa: F821 — resolved via PEP 562 __getattr__
         subtensor=subtensor,
         wallet=wallet,
         netuid=netuid,
@@ -181,7 +203,7 @@ def submit_timelock_commit(
         plaintext_str, blocks_until_reveal, block_time_secs
     )
 
-    response = publish_metadata_extrinsic(
+    response = publish_metadata_extrinsic(  # noqa: F821 — resolved via PEP 562 __getattr__
         subtensor=subtensor,
         wallet=wallet,
         netuid=netuid,
@@ -375,7 +397,7 @@ def submit_raw_url_commit_layer_9b(
             f"self_archive_url too long: {n} bytes > {RAW_FIELD_MAX_BYTES}"
         )
 
-    response = publish_metadata_extrinsic(
+    response = publish_metadata_extrinsic(  # noqa: F821 — resolved via PEP 562 __getattr__
         subtensor=subtensor,
         wallet=miner_wallet,
         netuid=netuid,

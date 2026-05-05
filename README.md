@@ -1,195 +1,91 @@
-# TAO Discovery — Impact Prediction Subnet (SN21)
+# SN21 — Impact Prediction Subnet
 
-Predict the impact of Google Ads interventions on campaign performance. Miners receive structured episodes describing account state and actions taken, then predict what happens to cost, conversions, and efficiency over 7 and 14 days.
+**Verifiable prediction markets for Google Ads campaign outcomes,
+running on Bittensor.**
 
-**Subnet:** SN21 on Bittensor
-**Schema:** v1.9 (Phase 1 — Search campaigns, campaign-level actions)
-**Status:** Pre-launch (targeting May 2026)
+> Anyone can submit a prediction. Anyone can verify it was scored
+> honestly. The chain is the source of truth.
 
----
-
-## How It Works
-
-```
-Data Platform                    Validator                      Miners
-─────────────                    ─────────                      ──────
-Google Ads data ──┐
-                  │
-Campaign metrics ─┤
-                  ├──→ Weekly challenge    ──→ Commit outcome   ──→ Announce epoch
-Changelog events ─┤      package                hash on-chain       to miners
-                  │
-Archetype data ───┘                             ──→ Serve episodes via HTTP
-                                                         │
-                                                    Miners fetch episodes
-                                                    Run prediction models
-                                                    Submit predictions
-                                                         │
-                                                ←── Score predictions
-                                                    Reveal outcomes
-                                                    Set weights on-chain
-```
-
-**Episodes** are structured prediction challenges: 60 days of campaign performance history, the actions taken, account context, and environmental signals. Miners predict what happens next.
-
-**Scoring** uses four components: quantile accuracy (50%), calibration (20%), directional correctness (15%), and goal accuracy (15%). Miners output P10/P50/P90 distributions — rewarded for calibrated uncertainty, not just point accuracy.
-
-**Verification** is cryptographic: the validator commits to outcomes before distributing episodes. After scoring, outcomes are revealed and anyone can verify the commitment matches.
-
-### Specifications (economics & roadmap)
-
-- **[Miner economics (short)](docs/MINER_ECONOMICS.md)** — gates, tiers, multipliers, how this repo fits  
-- **[SN21 Reward Mechanism](docs/SN21_REWARD_MECHANISM.md)** — emissions, tiers, reviews, emergency rules  
-- **[SN21 Epoch Structure](docs/SN21_EPOCH_STRUCTURE.md)** — phases, campaign types, consolidation, announcements  
+| | |
+|---|---|
+| **Subnet** | SN21 (Bittensor mainnet `finney`, netuid **21**) |
+| **Testnet** | netuid **466** on `test` |
+| **Status** | Pre-mainnet — testnet validation complete |
+| **License** | MIT |
 
 ---
 
-## Quick Start
+## Read this first
 
-### For Miners
+* **What it is:** [whitepaper](docs/whitepaper.md) — design, trust
+  model, two cryptographic guarantees, adversarial defence matrix.
+* **How it was built:** [build journey](docs/build_journey.md) —
+  phase-by-phase narrative with the receipts.
+* **Are you a miner?** [miner quickstart](docs/miner_quickstart.md) —
+  install, register, train, predict, verify.
+* **What you earn:** [miner economics](docs/MINER_ECONOMICS.md) (short)
+  · [reward mechanism](docs/SN21_REWARD_MECHANISM.md) (full spec) ·
+  [epoch structure](docs/SN21_EPOCH_STRUCTURE.md) (phases, horizons,
+  consolidation).
 
-```bash
-# Install
-git clone <repo-url>
-cd tao-discovery
-pip install -e ".[miner]"
-
-# Train on historical data first (recommended)
-python scripts/train_example_model.py --data-file data/training/training_episodes.json
-
-# Run miner (auto-discovers current epoch from validator)
-hope-miner --wallet-name my_miner --validator-url <validator-url>
-
-# Or run continuously (polls for new epochs)
-hope-miner --wallet-name my_miner --validator-url <validator-url> --continuous
-
-# Check your score after an epoch
-python scripts/score_predictions.py --release CURRENT_RELEASE_KEY --run-baseline
-```
-
-**Validator URL:** provided at registration.
-
-**Training data:** 10 episodes with known outcomes are bundled in `data/training/`. Use these to build a model before predicting on live epochs.
-
-Read the full guide: [Miner Quickstart](docs/miner_quickstart.md) · [Miner economics](docs/MINER_ECONOMICS.md)
-
-### For Validators
-
-```bash
-# Install
-pip install -e .
-
-# Run validator
-hope-validator --release CURRENT_RELEASE_KEY --port 8080
-```
-
-Read the setup guide: [Validator Setup](docs/validator_setup.md)
-
-See also: [Miner economics](docs/MINER_ECONOMICS.md) · [Epoch structure](docs/SN21_EPOCH_STRUCTURE.md)
+If you only read one doc, read the
+[whitepaper](docs/whitepaper.md). Its launch-status table is the
+canonical record of what ships at launch versus what is roadmap.
 
 ---
 
-## Repository Structure
+## What you predict
 
-```
-tao-discovery/
-├── hope/
-│   ├── protocol/           # Pydantic models — Episode, Prediction, Outcome
-│   │   ├── episode.py      # v1.9 episode schema (miner input)
-│   │   ├── prediction.py   # P10/P50/P90 quantile predictions (miner output)
-│   │   ├── outcomes.py     # Ground truth (validator-only)
-│   │   └── synapse.py      # Bittensor Synapse definitions
-│   │
-│   ├── scoring/            # Scoring library (pure Python, no Bittensor dep)
-│   │   ├── components/     # 4 scoring components
-│   │   │   ├── quantile_accuracy.py   # Pinball loss + CRPS (50%)
-│   │   │   ├── calibration.py         # Interval score (20%)
-│   │   │   ├── directional.py         # Sign match (15%)
-│   │   │   └── goal_accuracy.py       # Brier score (15%)
-│   │   ├── episode_scorer.py   # Score one episode across horizons
-│   │   ├── scorer.py           # EpochScorer — score all miners
-│   │   ├── null_penalty.py     # Near-zero prediction penalty
-│   │   ├── skill_score.py      # Compare vs predict-zero baseline
-│   │   └── weights.py          # Configurable scoring weights
-│   │
-│   ├── validator/          # Validator implementation
-│   │   ├── api/            # FastAPI server for miners
-│   │   │   ├── server.py       # App factory
-│   │   │   ├── episodes.py     # Episode fetch endpoints
-│   │   │   ├── predictions.py  # Prediction submit endpoint
-│   │   │   ├── commitments.py  # Commitment proof endpoint
-│   │   │   └── verification.py # Post-scoring reveal
-│   │   ├── data_client.py      # Fetches data from the data API
-│   │   ├── epoch_manager.py    # Epoch lifecycle state machine
-│   │   └── runner.py           # Validator entry point
-│   │
-│   └── miner/              # Miner SDK
-│       ├── prediction_engine.py    # Abstract base class
-│       ├── episode_client.py       # HTTP client to fetch episodes
-│       ├── prediction_client.py    # HTTP client to submit predictions
-│       ├── runner.py               # Miner entry point
-│       └── models/
-│           └── baseline.py         # Reference baseline model
-│
-├── docs/
-│   ├── MINER_ECONOMICS.md       # Gates, tiers, multipliers (summary)
-│   ├── SN21_REWARD_MECHANISM.md # Emissions & governance spec
-│   ├── SN21_EPOCH_STRUCTURE.md  # Phases & epoch roadmap
-│   ├── miner_quickstart.md      # Tutorial & scoring detail
-│   └── validator_setup.md      # Validator deployment
-│
-├── scripts/
-│   └── score_predictions.py    # Offline scoring tool
-│
-└── tests/
-    ├── unit/                   # 50 unit tests
-    └── integration/            # 7 integration tests (live API)
-```
+You receive an **episode** — a structured snapshot of a Google Ads
+account at a moment in time:
 
----
-
-## Episode Format (v1.9)
-
-Each episode contains:
-
-| Section | Description | Size |
-|---------|-------------|------|
+| Section | What's in it | Size |
+|---|---|---|
 | `episode_metadata` | ID, schema version, resolution, horizons | ~0.5 KB |
-| `account_state` | Customer hash, goal, spend bucket, optional TRUST enrichment | ~1 KB |
+| `account_state` | Customer hash, goal, spend bucket, optional enrichment | ~1 KB |
 | `date_index` | 60 date strings for the pre-window | ~0.5 KB |
 | `pre_window` | 60-day campaign time series + account aggregates | ~8 KB |
-| `action_bundle` | Actions with type, magnitude, blast radius, risk | ~2 KB |
+| `action_bundle` | The action(s) being applied: type, magnitude, blast radius, risk | ~2 KB |
 | `campaign_metadata` | Campaign type, bid strategy, status | ~0.3 KB |
 
-Total: ~12-15 KB per episode.
+Total: ~12–15 KB per episode.
 
-### Action Types (Phase 1)
+You output **probabilistic distributions** (P10/P50/P90), not point
+estimates. You're rewarded for calibrated uncertainty.
 
-The launch action enum is defined in `hope/constants.py:LAUNCH_ACTION_TYPES`. All four are supported:
+### Phase 1 action types
 
-| Type | Description | Predictability |
-|------|-------------|---------------|
+Defined in `hope/constants.py:LAUNCH_ACTION_TYPES`:
+
+| Type | What it means | Signal strength |
+|---|---|---|
 | `BUDGET_CHANGE` | Daily budget increased/decreased | High — magnitude gives expected % |
-| `BID_STRATEGY_CHANGE` | Bidding strategy switched | Medium — 7-14 day learning period |
+| `BID_STRATEGY_CHANGE` | Bidding strategy switched | Medium — 7–14 day learning period |
 | `TARGET_VALUE_CHANGE` | tCPA/tROAS target adjusted | Medium — known target delta |
-| `CAMPAIGN_PAUSE` | Campaign paused | Deterministic — cost/conv = -100% |
+| `CAMPAIGN_PAUSE` | Campaign paused | Deterministic — cost/conv ≈ −100% |
 
 Campaign re-enable / resume actions are deferred to a future phase.
 
 ---
 
-## Scoring
+## How scoring works
 
-| Component | Weight | What It Measures |
-|-----------|--------|-----------------|
-| Quantile Accuracy | 50% | Pinball loss on P10/P50/P90 vs actual |
+Four components combine into one micro-units score per miner per epoch:
+
+| Component | Weight | What it measures |
+|---|---|---|
+| Quantile Accuracy | 50% | Pinball loss / CRPS on P10/P50/P90 vs actual |
 | Calibration | 20% | Interval coverage with convex width penalty |
-| Directional | 15% | Did you predict the right direction? |
-| Goal Accuracy | 15% | Brier score on goal miss probability |
+| Directional | 15% | Sign match on the primary goal metric |
+| Goal Accuracy | 15% | Brier score on goal-miss probability |
 
-Plus **null penalty** (up to 60% reduction for near-zero predictions) and **skill score** (must beat the predict-zero baseline).
+On top:
+* **Null penalty** — up to 60% reduction for near-zero predictions.
+* **Skill score** — must beat the conditional-prior baseline (or the
+  predict-zero fall-through). Below baseline → zero emission for the
+  epoch.
 
-The scoring library has zero Bittensor dependency:
+The scoring library is pure-Python, no Bittensor dependency:
 
 ```python
 from hope.scoring import EpochScorer
@@ -199,34 +95,143 @@ scores = scorer.score_epoch(predictions, episodes, outcomes)
 
 ---
 
-## Data Source
+## How emissions work (launch)
 
-Episodes are generated from real Google Ads management data. The data pipeline:
+The validator runs the production reward path implemented in
+[`hope/validator/tiered_weights.py`](hope/validator/tiered_weights.py):
 
-- **4,312 accounts** normalised into governance registry
-- **572 episode candidates** classified from changelog events
-- **65,000+** campaign-day rows with daily metrics
-- **Permanent bucket assignment** — 60% public training, 25% hidden external, 15% hidden internal
-- **Contamination guard** — hidden data never leaks into public releases
+1. **Participation gate** — beat the baseline, ≥ 80% epoch coverage,
+   per-bucket coverage thresholds.
+2. **Four-epoch EMA tier placement** (alpha = 0.5).
+3. **Tier bands:** Elite (top 20%) 60% / Competitive (next 40%) 30%
+   / Participating (bottom 40%) 10%.
+4. **Elite quality floor** — top 20% must clear baseline + 1·sigma to
+   form Elite; otherwise 60% pool redistributes 30:10 to
+   Competitive:Participating.
+5. **Burn fraction** — 95% to UID 0 at launch (high to deter
+   exploiters; reduced as the system proves stable).
 
-Weekly releases delivered via authenticated API with SHA-256 integrity hash.
+Full spec in [SN21_REWARD_MECHANISM.md](docs/SN21_REWARD_MECHANISM.md).
 
 ---
 
-## Phase 1 Scope
+## Quick start (miners)
 
-Phase 1 (launch) is deliberately narrow:
+```bash
+# Clone + install
+git clone <repo-url>
+cd tao-discovery
+pip install -e ".[miner]"
 
-- **Search campaigns only** (PMax, Shopping, Display deferred to Phase 2)
-- **Campaign-level actions only** (ad group, keyword deferred to Phase 1 Epoch 3)
-- **7-day and 14-day horizons** (28-day deferred)
-- **60-day pre-window** (not 90)
-- **TRUST enrichment optional** — episodes tagged `baseline` or `trust_enriched`
+# Train on the bundled training set (10 episodes, known outcomes)
+python scripts/train_example_model.py --data-file data/training/training_episodes.json
 
-This scope matches the Bittensor epoch structure's Phase 1 Epoch 1 definition and gives miners the cleanest possible signal on day one.
+# Run a miner against the live validator (auto-discovers the current epoch)
+hope-miner --wallet-name my_miner --validator-url <validator-url>
+
+# Or run continuously
+hope-miner --wallet-name my_miner --validator-url <validator-url> --continuous
+
+# Score yourself offline (same scoring the validator runs)
+python scripts/score_predictions.py --release CURRENT_RELEASE_KEY --run-baseline
+
+# Verify any past epoch independently — anyone can run this
+python scripts/verify_epoch.py \
+    --epoch-id <release-key> \
+    --validator-hotkey <ss58> \
+    --tier-2-base <archive-url> \
+    --truth-file path/to/truth.json
+```
+
+Full guide: [miner quickstart](docs/miner_quickstart.md).
+
+---
+
+## What's in this repo
+
+```
+tao-discovery/
+├── docs/
+│   ├── whitepaper.md                Design + trust model + adversarial matrix
+│   ├── build_journey.md             Phase-by-phase build narrative (A–H + design wave)
+│   ├── miner_quickstart.md          Miner onboarding tutorial
+│   ├── validator_setup.md           How to run a validator
+│   ├── operator_runbook.md          Operator playbook (running primary + shadow)
+│   ├── MINER_ECONOMICS.md           Gates, tiers, multipliers (short)
+│   ├── SN21_REWARD_MECHANISM.md     Full reward spec
+│   ├── SN21_EPOCH_STRUCTURE.md      Phases, horizons, consolidation
+│   └── proposals/q26_*.md           Upstream Bittensor RFC for chain-side anchor
+│
+├── hope/
+│   ├── protocol/                    Episode / Prediction / Outcome models
+│   ├── commitment/                  Cryptographic primitives (CBOR, IMT, ed25519, drand TLE, archive client, scoreability)
+│   ├── scoring/                     Pure-Python scoring library (4 components + skill score + null penalty + per-episode scorer)
+│   ├── miner/                       Miner SDK + runner + reference baseline model
+│   ├── validator/                   Validator runner, scoring orchestration, tiered weight allocator, FastAPI server
+│   ├── archive_server/              FastAPI archive (Tier-2/Tier-3 storage)
+│   ├── hope_outcomes/               Outcome signer (release_commit + reveal_blob)
+│   └── hope_shadow_validator/       Shadow validator (independent scoring)
+│
+├── scripts/
+│   ├── verify_epoch.py              Public verifier — anyone can audit any epoch
+│   ├── score_predictions.py         Offline scoring tool (miners)
+│   ├── train_example_model.py       Reference XGBoost training (miners)
+│   ├── generate_training_data.py    Pull a release into training format
+│   └── sn21_keys.py                 ed25519 key-management CLI (miners + validators)
+│
+├── data/training/                   10 episodes with known outcomes
+├── deploy/archive_server/           Docker / systemd archive deployment
+├── deploy/grafana/                  Sample observability dashboard
+└── tests/                           488 tests: unit, adversarial, e2e, fixtures
+```
+
+---
+
+## Verifying any epoch (anyone)
+
+The chain is the source of truth. Anyone can audit any epoch
+end-to-end:
+
+1. Read the validator's 9.C.1 + 9.C.2 commits from chain.
+2. Verify `inner_sig` against the validator's chain hotkey.
+3. Re-derive every miner's score from raw chain commits + archived
+   ciphertexts using the same scoring code the validator runs.
+4. Compare your IMT roots against the chain-anchored ones.
+5. Cross-check the actual chain weights at
+   `weights_commit_block_hash` against weights re-derived from the
+   score table.
+
+```bash
+python scripts/verify_epoch.py \
+    --epoch-id WR-2026-W18-PUB-E1 \
+    --validator-hotkey 5GxVLdpRGZN... \
+    --tier-2-base https://archive.example.io \
+    --block-hash 0x<the block where 9.C.2 landed>
+```
+
+Match → validator is honest. Mismatch → exactly one of {validator,
+verifier} has a bug or is malicious; the divergence is publicly
+auditable.
+
+---
+
+## Tests
+
+```bash
+# Full suite (488 tests)
+pytest tests/
+
+# Just adversarial scenarios
+pytest tests/adversarial/ -v
+
+# Lint
+ruff check hope/ scripts/ tests/
+```
+
+Pinned by `pyproject.toml`. CI runs the same on push to `main`.
 
 ---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

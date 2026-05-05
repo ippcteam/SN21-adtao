@@ -7,7 +7,6 @@ single mechanic so a regression in one area doesn't mask others.
 
 from __future__ import annotations
 
-import pytest
 
 from hope.validator.tiered_weights import (
     MinerEpochInputs,
@@ -130,10 +129,10 @@ def test_elite_empty_redistributes_to_competitive_and_participating():
 
 def test_ema_smooths_across_epochs():
     alloc = TieredAllocator()
-    # First epoch: hk1 scores 0.9
+    # First epoch: hk1 scores 0.9 (high). The history record for hk1
+    # keeps that score for next epoch's EMA calculation.
     epoch_1 = [_miner(f"hk{i}", raw=0.6) for i in range(20)] + [_miner("hk1", raw=0.9)]
-    res1 = alloc.allocate(epoch_1)
-    weight_after_1 = res1.weights.get("hk1", 0.0)
+    alloc.allocate(epoch_1)
 
     # Second epoch: hk1 drops to 0.6 (matches the rest)
     epoch_2 = [_miner(f"hk{i}", raw=0.6) for i in range(20)] + [_miner("hk1", raw=0.6)]

@@ -124,8 +124,6 @@ def test_bundle_sha_mismatch_signals_tamper():
     anchored bundle SHA in the plaintext lets the verifier reject it."""
     sk, pk = _make_signing_key()
     entries = _make_entries()
-    encoded = [build_per_episode_entry(e) for e in entries]
-    root = compute_episodes_imt_root(encoded)
     bundle = build_per_episode_bundle(
         epoch_id="WR-2026-W18-PUB-E1",
         miner_hotkey=pk,

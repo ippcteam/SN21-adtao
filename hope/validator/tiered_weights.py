@@ -199,13 +199,11 @@ class TieredAllocator:
         n_elite_candidates = max(1, int(round(n * 0.20)))
         n_competitive = max(1, int(round(n * 0.40)))
 
-        # Elite quality floor: top 20% by EMA must clear baseline + k*sigma.
-        ema_values = [ema for _, ema in ordered]
-        sigma = _stdev(ema_values)
-        # Per the reward doc, the floor uses the baseline value of qualifying
-        # miners' (raw - baseline). We approximate as: floor = mean_baseline +
-        # k * sigma_of_(raw - baseline). When sigma is zero (all identical)
-        # the floor collapses to baseline.
+        # Elite quality floor: per the reward doc, the floor uses the
+        # baseline value of qualifying miners' (raw - baseline). We
+        # approximate as: floor = mean_baseline + k * sigma_of_(raw -
+        # baseline). When sigma is zero (all identical) the floor
+        # collapses to baseline.
         deltas = [m.raw_score - m.baseline_score for m, _ in ordered]
         delta_sigma = _stdev(deltas)
         baseline_avg = sum(m.baseline_score for m, _ in ordered) / len(ordered)
