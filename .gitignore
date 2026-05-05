@@ -33,3 +33,4 @@ scripts/phase0/results/
 
 # Operator-local secrets record (paths + pubkeys; PEMs live in ~/.sn21/keys/)
 docs/local_keys.md
+.coverage

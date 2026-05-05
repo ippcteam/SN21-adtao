@@ -646,6 +646,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"  epoch_id={args.epoch_id}", file=sys.stderr)
     print(f"  netuid={args.netuid} network={args.network}", file=sys.stderr)
 
+    # Validate the validator hotkey early so a typo produces a clean error
+    # rather than a noisy ValueError from inside the SCALE codec.
+    try:
+        _ = _ss58_to_raw_ed25519(args.validator_hotkey)
+    except Exception as e:
+        print(
+            f"ERROR: --validator-hotkey is not a valid SS58 address ({e}). "
+            "Pass the validator's mainnet SS58, e.g. '5GxVLdpRGZN...'.",
+            file=sys.stderr,
+        )
+        return 2
+
     try:
         import bittensor as bt  # type: ignore
     except ImportError:

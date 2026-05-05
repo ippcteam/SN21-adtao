@@ -38,7 +38,7 @@ class ValidatorRunner:
         self,
         hope_api_key: str = "",
         hope_api_url: str = "",
-        host: str = "0.0.0.0",
+        host: str = "0.0.0.0",  # noqa: S104 — validator HTTP server is intentionally bound to all interfaces; operators front it with a TLS reverse proxy
         port: int = 8080,
         # Bittensor config
         network: str = "test",
@@ -463,20 +463,18 @@ def _run_validator_onchain_cli(args, runner):
     # Pre-decode plaintexts from miner_inputs for scoring_inputs_hash. We
     # decode here; run_epoch_scoring will rerun read_miner_for_epoch with the
     # SAME inputs so the resulting plaintexts match by construction.
-    plaintexts_for_hash: dict[bytes, dict] = {}
-    for inp in miner_inputs:
-        if inp.revealed_k and inp.sha256_ct_commit:
-            try:
-                # We don't have AES_ct here yet — caller will fetch during the
-                # run. The scoring_inputs_hash binds to the FINAL plaintexts,
-                # but for the upfront hash we use a simplification: hash the
-                # chain commits + truth. Phase E swaps in real plaintexts.
-                plaintexts_for_hash[inp.miner_hotkey] = {
-                    "k_block": inp.chain_block_at_k_commit,
-                    "sha256_ct": inp.sha256_ct_commit,
-                }
-            except Exception:
-                continue
+    # We don't have AES_ct here yet — caller will fetch during the run. The
+    # scoring_inputs_hash binds to the FINAL plaintexts, but for the upfront
+    # hash we use a simplification: hash the chain commits + truth. Phase E
+    # swaps in real plaintexts.
+    plaintexts_for_hash: dict[bytes, dict] = {
+        inp.miner_hotkey: {
+            "k_block": inp.chain_block_at_k_commit,
+            "sha256_ct": inp.sha256_ct_commit,
+        }
+        for inp in miner_inputs
+        if inp.revealed_k and inp.sha256_ct_commit
+    }
     scoring_inputs_hash = compute_scoring_inputs_hash(
         epoch_id=args.release,
         plaintexts=plaintexts_for_hash,

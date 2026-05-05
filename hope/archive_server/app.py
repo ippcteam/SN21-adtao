@@ -171,10 +171,10 @@ def build_app(
                 raise HTTPException(status_code=400, detail="sha256_hex must be 64 hex chars")
             try:
                 expected_digest = bytes.fromhex(sha256_hex.lower())
-            except ValueError:
+            except ValueError as e:
                 outcome = "other"
                 status_code = 400
-                raise HTTPException(status_code=400, detail="sha256_hex is not valid hex")
+                raise HTTPException(status_code=400, detail="sha256_hex is not valid hex") from e
 
             body = await request.body()
             body_len = len(body)
@@ -263,10 +263,10 @@ def build_app(
                 raise HTTPException(status_code=400, detail="sha256_hex must be 64 hex chars")
             try:
                 expected_digest = bytes.fromhex(sha256_hex.lower())
-            except ValueError:
+            except ValueError as e:
                 outcome = "other"
                 status_code = 400
-                raise HTTPException(status_code=400, detail="sha256_hex is not valid hex")
+                raise HTTPException(status_code=400, detail="sha256_hex is not valid hex") from e
 
             body = store.get(
                 epoch_id=epoch_id,

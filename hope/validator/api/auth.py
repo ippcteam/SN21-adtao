@@ -159,8 +159,8 @@ async def verify_miner(
     # B3: Reject non-numeric nonces
     try:
         nonce_time = float(x_miner_nonce)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Nonce must be a numeric timestamp")
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail="Nonce must be a numeric timestamp") from e
 
     # Check nonce freshness
     if abs(time.time() - nonce_time) > NONCE_EXPIRY_SECONDS:
