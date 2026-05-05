@@ -27,72 +27,66 @@ authoritative read on what is shipping at launch versus what is
 described as the target architecture.
 
 **Conventions used below:**
-- *Launch* = behavior available the day mainnet opens.
-- *Migration* = behavior currently scaffolded; will land before launch.
+- *Launch* = behaviour available the day mainnet opens.
 - *Roadmap* = explicitly future, marked as such.
 
 ---
 
 ## 0. How this was built
 
-This document describes a protocol built between 2026-04-30 and
-2026-05-04 — five days of intense work — with significant authoring
-assistance from an AI coding agent. We are disclosing this up front
-for two reasons.
+This protocol was built between 2026-04-30 and 2026-05-04 — five days
+of intense work — with significant authoring help from an AI coding
+agent. We are saying this up front for two reasons.
 
-First, anyone reading the codebase will see the agent's fingerprints
-(the agent wrote large amounts of the test scaffolding and the
-docstrings verbatim). Pretending otherwise would be insulting to
-readers who can just open the commit history and see.
+First, anyone reading the codebase will see the agent's fingerprints.
+The agent wrote large parts of the test scaffolding and many of the
+docstrings. Pretending otherwise would be insulting to readers who can
+just open the commit history.
 
 Second, the work that mattered most was NOT the code the agent
 generated. It was:
 
 - **Choosing what to build.** The original SN21 design had validators
-  grading their own homework. The architecture in this paper is what
-  came out of choosing, in successive iterations, which trust
-  assumptions to remove and what cryptographic primitives to use to
-  remove them. The agent did not pick those primitives; it composed
-  them once we'd chosen.
+  grading their own homework. We re-did the design from scratch. We
+  picked which trust assumptions to remove, then picked the
+  cryptographic primitives to remove them. The agent did not pick
+  those primitives. It composed them once we had chosen.
 
 - **Hitting the chain and finding the wall.** Phase 0 surfaced four
-  empirical surprises that would have invalidated a paper-only
-  architecture: drand library wheel mismatch (Q34), commit fee on
-  testnet (Q13), MaxSpace per-window byte cap (Q11), and most
-  importantly the chain auto-decrypt format bug (H-3 → H-6). Each one
-  required reading the chain runtime source, hypothesizing why our code
-  failed, and testing the hypothesis on real testnet. This is the work
-  that's hardest to outsource and easiest to spot in retrospect.
+  empirical surprises that would have broken a paper-only design:
+  drand library wheel mismatch (Q34), testnet commit fee (Q13),
+  MaxSpace per-window byte cap (Q11), and most importantly the chain
+  auto-decrypt format bug (H-3 → H-6). Each one needed someone to read
+  the chain runtime source, guess why our code failed, and test the
+  guess on real testnet. This is the part that is hardest to outsource
+  and easiest to spot in hindsight.
 
 - **Deciding what to NOT build.** The architecture is sophisticated.
-  We used that sophistication budget on the bindings that matter
-  (inner_sig, AAD, IMT roots, three-tier archives) and rejected
-  complexity that didn't pay (multi-field commit, decoy submissions,
-  zk-proofs of scoring). The "what we deliberately defer" section
-  (§13) is the artifact of that judgment.
+  We spent that sophistication budget on the bindings that matter:
+  `inner_sig`, AAD, IMT roots, three-tier archives. We rejected
+  complexity that didn't pay: multi-field commit, decoy submissions,
+  zk-proofs of scoring. Section §13 is the record of that judgment.
 
-- **Running the probes.** Every claim in this paper backed by a
-  number — "auto-decrypt fires in 105 seconds," "MaxSpace is 1,259
-  blocks," "9.C.1 plaintext fits in 380 bytes" — comes from a probe
-  somebody manually ran against testnet 466. The phase-by-phase
-  narrative is in `docs/build_journey.md`; the JSON probe outputs
-  are signed implicitly by the chain extrinsic hashes they reference.
+- **Running the probes.** Every numeric claim in this paper —
+  "auto-decrypt fires in 105 seconds," "MaxSpace is 1,259 blocks,"
+  "9.C.1 plaintext fits in 380 bytes" — comes from a probe somebody
+  ran by hand on testnet 466. The phase-by-phase narrative is in
+  `docs/build_journey.md`. The JSON probe outputs are signed by the
+  chain extrinsic hashes they reference.
 
-The whitepaper itself was iterated by the agent given the design we'd
-locked in. We've reviewed every paragraph; the receipts (commits,
-probe outputs, test files) are linked at every claim.
+The whitepaper itself was iterated by the agent on top of the design
+we had already locked in. We reviewed every paragraph. The receipts
+(commits, probe outputs, test files) are linked at every claim.
 
-If the question is "do you understand this solution?" — Section 4
-walks through an epoch end-to-end, Section 7's worked example shows
-which defense fires for which attack, Section 12 documents the
-edge cases we built around, and Appendix B records the empirical
-checks.
+If the question is "do you understand this solution?" — §4 walks
+through an epoch end-to-end. §7 shows which defence fires for which
+attack. §12 documents the edge cases we built around. Appendix B
+records the empirical checks.
 
 If the question is "could you rebuild this without the agent?" —
-slower, yes. The agent's role was the keyboard; the architecture
-decisions came from human judgment, and the empirical validation
-came from running real chain extrinsics that no agent could
-autonomously authorize.
+slower, yes. The agent's role was the keyboard. The architecture
+decisions came from human judgment. The empirical validation came from
+running real chain extrinsics that no agent could authorize on its own.
 
 ---
 
@@ -272,15 +266,24 @@ Three characters: **Hannah** the outcome signer, **Miner Mike** the
 prediction model operator, **Validator Vera** the scoring honest party.
 A fourth, **Adversary Adam**, will join in §10.
 
+> Reminder from §1.3: the 7-day and 14-day windows have already played
+> out by the time the epoch opens. Hannah already knows what happened.
+> What the protocol prevents is Hannah re-measuring the outcomes after
+> she sees the predictions.
+
 ### T = 0 — Episodes go out
 
-Hannah builds the epoch's episodes from real Google Ads data. She picks
-182 campaigns. For each, she records a question — "what will the
-cost-per-conversion be 7 days from now?" — and the inputs the miners
-will see.
+Hannah builds the epoch from real Google Ads data. She picks 182
+campaigns from a past anchor date — say the action she wants miners to
+predict happened on `T = 2026-04-01`. The 60-day pre-window covers
+`[2026-01-31, 2026-03-31]`. The 7-day and 14-day outcomes (the answers)
+cover `[2026-04-02, 2026-04-15]`. All of those windows are in the past.
+The data is sitting in her measurement system right now.
 
-She does NOT yet measure the outcomes. Outcomes don't exist yet; the
-7-day window starts when the epoch opens.
+For each campaign she records a question — "what will the
+cost-per-conversion be 7 days from now?" — and the inputs the miners
+will see. She does NOT publish the outcomes yet. They exist; they just
+stay sealed on her side until reveal.
 
 She then constructs a `release_commit`: a small CBOR map containing the
 epoch ID, the round of drand at which the epoch opens, the hash of each
@@ -295,9 +298,15 @@ even quietly add an extra campaign. The hash on chain is the witness.
 
 ### T = 0 → deadline — Miners predict
 
-Miner Mike runs his prediction model. He generates P10/P50/P90 quantile
-forecasts for each (campaign × horizon) — say, P50 cost goes down 3.7%
-over 7 days, with the P10/P90 band at -8.5% to +1.2%.
+Miner Mike runs his prediction model on the inputs Hannah published.
+He generates P10/P50/P90 quantile forecasts for each
+(campaign × horizon) — say, P50 cost goes down 3.7% over 7 days, with
+the P10/P90 band at −8.5% to +1.2%.
+
+Mike has no way to know the real outcome. The pre-window is public,
+but the 7-day and 14-day deltas are sealed inside Hannah's system; the
+only on-chain reference to them right now is the `release_commit`
+hash, which doesn't reveal them.
 
 To submit, Mike does five things:
 
@@ -321,17 +330,22 @@ mean: nobody can produce a different prediction with valid signatures
 except Mike. Even if Vera is malicious, even if she controls the
 archives, she can't forge Mike's signed CBOR.
 
-### T = deadline + δ — Outcomes measured
+### T = deadline + δ — Outcomes revealed
 
-The 7-day window has now passed. Hannah measures the actual outcomes —
-cost change, conversion change, did the goal miss — and packages them
-into a `reveal_blob` JSON. She signs the blob, then submits a
-`Sha256(reveal_blob)` commit on chain. After that commit finalizes,
-the blob goes to her HTTPS endpoint.
+The submission deadline has now passed. Hannah takes the outcomes she
+already had on her side — cost change, conversion change, did the goal
+miss — and packages them into a `reveal_blob` JSON. She signs the
+blob, then submits a `Sha256(reveal_blob)` commit on chain. After that
+commit finalizes, the blob goes to her HTTPS endpoint.
 
 The order matters. If Hannah served the blob before the chain commit,
 she could serve different blobs to different validators. The chain
 commit ensures that whatever blob anyone sees, it is the SAME blob.
+
+What the chain commit at T=0 (`release_commit`) and the chain commit
+at deadline (`reveal_blob_hash`) together enforce is: the outcomes
+revealed at the deadline are bound to the rules pinned at T=0, with
+no opportunity for Hannah to re-pick or re-measure between the two.
 
 ### T = deadline + δ + ε — Validator scores
 
@@ -442,90 +456,102 @@ that package and a unit test in `tests/unit/commitment/`.
 
 ### 6.1 Canonical CBOR
 
-We use [RFC 8949 §4.2.1] canonical CBOR for every byte that gets
-hashed or signed. Canonical means: definite-length items, sorted
-keys, smallest-form integers, no indefinite-length anything. The
-`cbor2.dumps(..., canonical=True)` library call already does this.
+We use [RFC 8949 §4.2.1] canonical CBOR for every byte we hash or
+sign. "Canonical" means there is one and only one way to encode any
+given map: definite-length items, sorted keys, smallest-form integers,
+no indefinite-length anything. The `cbor2.dumps(..., canonical=True)`
+library call gives us that for free.
 
-The point: two implementations encoding the same map produce
-byte-identical output. So when we hash the encoded bytes, both
-implementations get the same hash. Without canonicalization, two
-implementations could produce different hashes for "the same" map and
-the protocol would silently break.
+Why this matters: two different implementations encoding the same map
+produce byte-identical output. When we hash the bytes, both sides get
+the same hash. Without this rule, two implementations could produce
+different hashes for "the same" map, and the protocol would silently
+break.
 
 ### 6.2 AES-GCM with epoch-bound AAD
 
-Each miner generates a fresh 32-byte K per epoch. They encrypt their
-prediction CBOR with K under AES-256-GCM. The AAD is the literal
-string `b"sn21-prediction-v1:" + epoch_id`.
+Each miner generates a fresh 32-byte AES key K per epoch. They encrypt
+their prediction CBOR with K under AES-256-GCM. The AAD (Associated
+Authenticated Data) is the literal byte string
+`b"sn21-prediction-v1:" + epoch_id`.
 
-Why AAD? Without it, AES-GCM gives confidentiality and integrity of the
-ciphertext but doesn't bind the ciphertext to a context. A malicious
-validator with a copy of K could try to play it under a different
-epoch_id. With AAD, the chain enforces "this ciphertext only decrypts
-under THAT epoch."
+Why bother with AAD? Without it, AES-GCM gives confidentiality and
+integrity of the ciphertext, but the ciphertext is not bound to any
+context. A malicious validator with a copy of K could try to play it
+under a different epoch ID. With AAD, the decrypt simply fails unless
+the verifier supplies the same epoch ID that was used at encrypt time.
+The chain commit pins which epoch ID is the right one.
 
 ### 6.3 ed25519 inner_sig
 
-Both miners and validators carry an ed25519 keypair, separate from
-their Bittensor SS58 hotkey. The public key is registered on chain
-once (a 109-byte `Raw{N}` commit binding hotkey ↔ ed25519_pk).
-Subsequent prediction / scoring commits sign their content with the
-ed25519 key.
+Every miner and every validator owns an ed25519 keypair, separate from
+their Bittensor SS58 hotkey. They register their public key on chain
+once — a 109-byte `Raw{N}` commit that binds the hotkey to the
+ed25519 public key. After that, every prediction or scoring commit
+they make is signed with their ed25519 private key.
 
-The inner_sig is computed over `blake2b_256(canonical_cbor(plaintext
-sans inner_sig))`. The trick: the plaintext carries the public key
-inside it AND the chain storage account is the writer's hotkey.
-Verifying inner_sig means checking BOTH that the signature is valid
-for the public key AND that the public key matches the chain-anchored
-binding.
+The inner_sig is computed over
+`blake2b_256(canonical_cbor(plaintext minus inner_sig))`. The clever
+part is that the plaintext carries the public key inside itself, AND
+the chain storage slot is owned by the writer's hotkey. Verifying the
+inner_sig means checking two things:
+
+1. The signature is valid against the public key in the plaintext.
+2. The public key in the plaintext matches the one bound to the chain
+   account that wrote this slot.
 
 This kills the rubber-stamp attack. A second validator can copy a
-primary's plaintext bytes into its own storage slot, but the
-inner_sig in those bytes verifies against the PRIMARY's hotkey, not
-the second's. A verifier comparing the second's chain account against
-the inner_sig's hotkey field finds the inconsistency immediately.
+primary's plaintext bytes into its own storage slot, but the inner_sig
+in those bytes verifies against the **primary's** hotkey, not the
+second's. A verifier comparing the second's chain account against the
+inner_sig's hotkey field spots the mismatch right away.
 
-### 6.4 drand TLE
+### 6.4 drand timelock encryption (TLE)
 
-Drand quicknet is a randomness beacon operated by the League of
-Entropy. Every 3 seconds it publishes a BLS signature for round N. The
-signature for any future round is unknowable until that round.
+Drand quicknet is a randomness beacon run by the League of Entropy.
+Every 3 seconds it publishes a BLS signature for the next round. The
+signature for any future round is unknowable until that round drops.
 
-Drand TLE encrypts a message such that it can only be decrypted with
-the round-N signature. Submit a TLE'd ciphertext at time T; the
-ciphertext is opaque until round-N's signature drops; then anyone can
-decrypt it.
+Drand TLE encrypts a message so it can only be decrypted with the
+round-N signature. Submit a TLE'd ciphertext at time T; it stays
+opaque until round N's signature drops; then anyone can decrypt it.
 
-Subtensor has a built-in feature: when you submit a `TimelockEncrypted`
-commit with a `reveal_round` field, the chain automatically decrypts
-and stores the plaintext after that round fires. We use this for the
-miner's K (which auto-reveals after the miner deadline) and for the
-validator's 9.C.1 / 9.C.2 (which auto-reveal a configurable delay
-later, typically 1-2 hours).
+Subtensor has a built-in feature for this. When you submit a
+`TimelockEncrypted` commit with a `reveal_round` field, the chain
+auto-decrypts the payload after that round fires and stores it back
+on chain. We use this for two things:
 
-A subtle point we learned the hard way, narrated because it's instructive:
+- The miner's AES key K (auto-reveals after the miner deadline).
+- The validator's 9.C.1 and 9.C.2 plaintexts (auto-reveal a
+  configurable delay later, typically 1–2 hours).
 
-We initially used `bittensor_drand.encrypt(bytes, n_blocks, block_time)`.
-It returns `(ciphertext_bytes, reveal_round)`, takes binary input, looks
-like the obvious choice. The chain accepted our `TimelockEncrypted`
-extrinsics with `success=True` returned. We assumed it worked.
+A subtle point we learned the hard way. We tell this story because the
+generalised lesson is worth more than the specific bug.
 
-It didn't. The H-3 probe (2026-05-04) submitted a known 32-byte
-plaintext, polled `RevealedCommitments` for 30 minutes past the
-reveal_round, observed nothing. We had assumed `success=True` meant
-auto-decrypt would fire; in fact the chain runtime silently drops
-ciphertexts whose format it doesn't recognize.
+We started with `bittensor_drand.encrypt(bytes, n_blocks, block_time)`.
+It returns `(ciphertext_bytes, reveal_round)`, takes binary input, and
+looks like the obvious choice. The chain accepted our
+`TimelockEncrypted` extrinsics with `success=True` returned. We
+assumed it worked.
 
-H-4 was diagnosis: read the SDK source, find that `Subtensor.set_reveal_commitment(...)`
-calls a DIFFERENT C function — `bittensor_drand.get_encrypted_commitment(data: str, ...)`
-— and that's what the chain runtime decodes. The two functions look
-identical at the Python signature level; their underlying ciphertext
-formats are not.
+It didn't.
 
-H-6 was the fix: hex-encode binary plaintext to a string, call the
-right C function, halve the budget for plaintext (since hex doubles
-the byte count). We reran the round-trip on testnet:
+The H-3 probe (2026-05-04) submitted a known 32-byte plaintext, then
+polled `RevealedCommitments` for 30 minutes past the reveal_round, and
+observed nothing. We had assumed `success=True` from the chain meant
+the auto-decrypt would fire. In fact the chain runtime silently drops
+ciphertexts whose format it doesn't recognise.
+
+H-4 was the diagnosis. We read the SDK source and found that
+`Subtensor.set_reveal_commitment(...)` calls a DIFFERENT C function:
+`bittensor_drand.get_encrypted_commitment(data: str, ...)`. That is
+what the chain runtime decodes. The two functions look identical at
+the Python signature level; their underlying ciphertext formats are
+not.
+
+H-6 was the fix. Hex-encode the binary plaintext to a string, call the
+right C function, halve the plaintext budget (because hex doubles the
+byte count). We re-ran the round-trip on testnet:
 
 ```
 plaintext (hex):    0xc0ffee64284082626c6ebdf1b074c9afdeadbeef
@@ -534,27 +560,27 @@ auto-decrypt fired: block 7049220, 105 seconds after submission
 decode round-trip:  byte-exact match
 ```
 
-That was the proof. Until we'd run it on real chain, the protocol was
-running on an assumption that turned out to be false. The build
-journey (`docs/build_journey.md`, Phase H) records the H-3 → H-6
-arc; the test suite encodes the fix in
-`tests/unit/commitment/test_on_chain.py`.
+That was the proof. Until we ran it on real chain, the protocol was
+running on an assumption that turned out to be false.
+`docs/build_journey.md` (Phase H) records the H-3 → H-6 arc; the test
+suite encodes the fix in `tests/unit/commitment/test_on_chain.py`.
 
-The lesson generalizes: *"the chain accepted the extrinsic"* is not the
+The general lesson: *"the chain accepted the extrinsic"* is not the
 same as *"the chain processed the extrinsic correctly."* Substrate
-storage is permissive about what gets written; the runtime's
-interpretation is where the work actually happens. Every claim in this
-paper that depends on the chain processing something correctly has
-a probe behind it.
+storage will write almost any bytes you give it; the runtime's
+interpretation of those bytes is where the real work happens. Every
+claim in this paper that depends on the chain processing something
+correctly has a probe behind it.
 
 ### 6.5 Indexed Merkle trees
 
 A standard Merkle tree lets you prove "X is a leaf of this tree." An
-indexed Merkle tree (IMT) goes further: every leaf carries a
+indexed Merkle tree (IMT) goes further. Every leaf carries a
 `(key, value, next_key)` triple, where `next_key` points to the
-next-larger key in sorted order. With this structure you can also prove
-"X is NOT a leaf of this tree" — exhibit a leaf whose key is less than
-X and whose next_key is greater than X.
+next-larger key in sorted order. With that structure you can also
+prove "X is NOT a leaf of this tree" — point at a leaf whose key is
+less than X and whose `next_key` is greater than X. No leaf in between
+means X is not in the tree.
 
 We use IMT roots for two things:
 
