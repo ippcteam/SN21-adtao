@@ -436,9 +436,9 @@ the optional retry log). Both fit in one rate-limit window.
 ## 6. Cryptographic primitives, intuitive depth
 
 This section is the protocol's load-bearing crypto, explained at the
-depth a curious reader can follow. The exact constructions live in
-`docs/verifiable_scoring_architecture.md` §3-§7 (the internal spec)
-with file/line references to the implementation in `hope/commitment/`.
+depth a curious reader can follow. The implementation lives in
+`hope/commitment/`; every claim in this section maps to a function in
+that package and a unit test in `tests/unit/commitment/`.
 
 ### 6.1 Canonical CBOR
 
@@ -535,9 +535,10 @@ decode round-trip:  byte-exact match
 ```
 
 That was the proof. Until we'd run it on real chain, the protocol was
-running on an assumption that turned out to be false. The architecture
-records this as Phase H §20 in the internal spec; the test suite
-encodes the fix in `tests/unit/commitment/test_on_chain.py`.
+running on an assumption that turned out to be false. The build
+journey (`docs/build_journey.md`, Phase H) records the H-3 → H-6
+arc; the test suite encodes the fix in
+`tests/unit/commitment/test_on_chain.py`.
 
 The lesson generalizes: *"the chain accepted the extrinsic"* is not the
 same as *"the chain processed the extrinsic correctly."* Substrate

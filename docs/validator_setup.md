@@ -186,13 +186,18 @@ This proves the validator did not change outcomes after seeing miner predictions
 
 ## 7. Data API
 
-The validator fetches data from the operator's internal API:
+The validator fetches releases from the operator's data API:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /internal/bittensor/v1/releases` | List available releases |
-| `GET /internal/bittensor/v1/releases/{key}/package` | Full challenge package |
-| `GET /internal/bittensor/v1/governance/summary` | Governance stats |
+| `GET {base}/internal/bittensor/v1/releases` | List available releases |
+| `GET {base}/internal/bittensor/v1/releases/{key}/package` | Full challenge package (episodes + outcomes + signatures) |
+| `GET {base}/internal/bittensor/v1/governance/summary` | Governance stats |
+
+`{base}` is the value of the `HOPE_API_URL` environment variable
+provided on validator registration. The path prefix
+(`/internal/bittensor/v1/`) is fixed by the data client at
+`hope/validator/data_client.py`.
 
 **Authentication:** `X-API-Key` header or `?api_key=` query parameter.
 
