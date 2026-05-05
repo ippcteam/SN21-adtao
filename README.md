@@ -165,12 +165,16 @@ Total: ~12-15 KB per episode.
 
 ### Action Types (Phase 1)
 
+The launch action enum is defined in `hope/constants.py:LAUNCH_ACTION_TYPES`. All four are supported:
+
 | Type | Description | Predictability |
 |------|-------------|---------------|
 | `BUDGET_CHANGE` | Daily budget increased/decreased | High — magnitude gives expected % |
 | `BID_STRATEGY_CHANGE` | Bidding strategy switched | Medium — 7-14 day learning period |
+| `TARGET_VALUE_CHANGE` | tCPA/tROAS target adjusted | Medium — known target delta |
 | `CAMPAIGN_PAUSE` | Campaign paused | Deterministic — cost/conv = -100% |
-| `CAMPAIGN_ENABLE` | Campaign re-enabled | Medium — recovery depends on pause duration |
+
+Campaign re-enable / resume actions are deferred to a future phase.
 
 ---
 

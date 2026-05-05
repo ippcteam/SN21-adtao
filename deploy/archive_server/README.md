@@ -70,7 +70,7 @@ container/service listens on plain HTTP. Sample nginx snippet:
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name archive.example.com;
+    server_name archive.example.io;
     ssl_certificate     /etc/ssl/archive/fullchain.pem;
     ssl_certificate_key /etc/ssl/archive/privkey.pem;
 
@@ -114,7 +114,7 @@ python scripts/verify_epoch.py \
     --epoch-id EPOCH-2026-... \
     --validator-hotkey 5GxVLdpRGZN... \
     --netuid 21 --network finney \
-    --tier-2-base https://archive.example.com
+    --tier-2-base https://archive.example.io
 ```
 
 Expected output: `OK: True` plus per-root match details.

@@ -5,7 +5,10 @@ Both layers commit a small canonical-CBOR plaintext over chain via
 
   - Carry `validator_hotkey` (32 raw bytes) and an inner_sig.
   - Be canonically encoded (RFC 8949 §4.2.1).
-  - Fit in `MAX_TLE_PLAINTEXT_BYTES` (768 bytes after TLE overhead).
+  - Fit in `MAX_TLE_PLAINTEXT_BYTES` (380 bytes; halved from the
+    original 768-byte budget after Phase H switched the TLE submit path
+    to `bittensor_drand.get_encrypted_commitment(str)`, which doubles
+    the byte count via hex-encoding).
 
 9.C.1 PRE-SCORING STATE
 -----------------------

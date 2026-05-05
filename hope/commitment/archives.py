@@ -51,7 +51,7 @@ class ArchiveEndpoint:
     """One archive endpoint and its tier identity.
 
     `tier` is 1 / 2 / 3 per the protocol spec; used in retry-log labels and
-    archive-precedence ordering. `base_url` is e.g. ``https://archive.hope.example``
+    archive-precedence ordering. `base_url` is e.g. ``https://archive.example.io``
     (no trailing slash). Path segments are added by the upload/download helpers.
     """
 

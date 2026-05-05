@@ -23,7 +23,7 @@ Usage:
         --validator-hotkey 5GxVLdpRGZN... \\
         --netuid 21 \\
         --network finney \\
-        --tier-2-base https://archive.hope.example
+        --tier-2-base https://archive.example.io
 
 This is an OFFLINE verification — it does NOT submit any extrinsic. It
 needs read-only access to a Bittensor node + reachability to the archive

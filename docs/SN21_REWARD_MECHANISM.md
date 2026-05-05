@@ -40,9 +40,9 @@ SN21 is centrally governed by the subnet operator at launch. Parameter changes a
 
 ## Validator architecture
 
-At launch, SN21 runs validators using this open-source scoring implementation. Any Bittensor validator operator can run a validator by deploying the `tao-discovery` codebase. Validation is open to all participants.
+**At launch, third-party validator registration on SN21 is closed.** The subnet operator runs the primary validator (and a shadow validator on a separate hotkey, separate host) using this codebase. Opening validator registration to additional operators is on the Review 4 agenda.
 
-The subnet operator may introduce an additional validator later (two-validator configuration). **Third-party validators are not supported at launch.** Opening validator registration is on the Review 4 agenda.
+The scoring implementation is open source: anyone can clone `tao-discovery`, run the validator binary against the chain, and reproduce scoring locally. **Running the code locally is open; submitting weights to the chain as a registered SN21 validator is not.** This is a deliberate launch-phase choice — see Review 4.
 
 ### Open-source scoring code
 
@@ -134,13 +134,27 @@ Per-horizon episode score:
 **Directional (15%):** Correct direction of primary goal metric.  
 **Goal (15%):** P50 on the account’s primary goal metric.  
 
-**Horizon aggregation** (by measurement resolution):
+**Horizon aggregation** (by measurement resolution).
+
+**Launch (Phase 1)** uses 7-day and 14-day horizons only:
+
+| Resolution | 7d | 14d |
+| :---- | :---- | :---- |
+| High | 0.40 | 0.60 |
+| Medium | 0.35 | 0.65 |
+| Low | 0.30 | 0.70 |
+
+These weights match `hope/constants.py:HORIZON_WEIGHTS`.
+
+**Future (post-launch)** — when the 28-day horizon is added, the table is expected to evolve toward the schedule below. **These values are roadmap, not launch behavior:**
 
 | Resolution | 7d | 14d | 28d |
 | :---- | :---- | :---- | :---- |
 | High | 0.20 | 0.35 | 0.45 |
 | Medium | 0.15 | 0.30 | 0.55 |
 | Low | 0.00 | 0.20 | 0.80 |
+
+A 28-day horizon addition will be announced ≥4 weeks ahead of activation.
 
 **Epoch score:** episode-weighted mean:  
 `miner_score = Σ(episode_score × episode_weight) / Σ(episode_weight)`  

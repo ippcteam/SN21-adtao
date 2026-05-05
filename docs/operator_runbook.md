@@ -182,7 +182,7 @@ python -m hope.miner.runner \
     --mode onchain \
     --epoch ${EPOCH_ID} \
     --validator-url <validator-url> \
-    --network test --netuid 21 \
+    --network finney --netuid 21 \
     --wallet-name my-miner --wallet-hotkey default \
     --ed25519-key-file ~/.sn21/keys/miner-ed25519.pem \
     --archive-tier-2 https://archive.example.io \
@@ -244,7 +244,7 @@ python scripts/verify_epoch.py \
     --validator-hotkey 5...primary...ss58 \
     --netuid 21 --network finney \
     --block-hash 0x<block hash where validator's 9.C.2 commit landed> \
-    --tier-2-base https://archive.hope.io \
+    --tier-2-base https://archive.example.io \
     --output json
 ```
 
@@ -263,7 +263,7 @@ python scripts/verify_epoch.py \
     --epoch-id EPOCH-2026-W18-MON \
     --validator-hotkey 5...primary...ss58 \
     --netuid 21 --network finney \
-    --tier-2-base https://archive.hope.io \
+    --tier-2-base https://archive.example.io \
     --output json
 ```
 

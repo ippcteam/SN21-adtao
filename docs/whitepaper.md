@@ -7,6 +7,29 @@
 
 ---
 
+## Launch status (read first)
+
+| Item | Status | Where |
+|---|---|---|
+| Mainnet netuid | **21** (Bittensor `finney`) | Subnet registration |
+| Testnet netuid | **466** (Bittensor `test`) | Phase 0 + integration probes |
+| Current phase | Pre-mainnet — testnet validation complete | §14.3 |
+| Validator registration | **Closed at launch.** Operator runs primary + shadow. Opening is on the Review 4 agenda | `docs/SN21_REWARD_MECHANISM.md` |
+| Miner registration | Open on testnet 466 today; mainnet 21 opens when launch announces | `docs/miner_quickstart.md` |
+| Public verifier | **Partial.** `scripts/verify_epoch.py` runs the chain reads + `inner_sig` checks; the placeholder scorer wiring is being replaced by the live scorer | §1 design call |
+| Reward mechanism | Tiered emissions, EMA, Elite floor, conditional-prior gate are **specified** in the reward doc; the production weight path uses simpler score-normalization + 95% burn at launch. Tiers are roadmap | `docs/SN21_REWARD_MECHANISM.md` |
+
+When in doubt about a claim in the rest of this paper, this table is the
+authoritative read on what is shipping at launch versus what is
+described as the target architecture.
+
+**Conventions used below:**
+- *Launch* = behavior available the day mainnet opens.
+- *Migration* = behavior currently scaffolded; will land before launch.
+- *Roadmap* = explicitly future, marked as such.
+
+---
+
 ## 0. How this was built
 
 This document describes a protocol built between 2026-04-30 and
@@ -125,6 +148,58 @@ It is also not a product you buy access to. It is a public protocol.
 Validators run software that reads the chain. Anyone who wants
 predictions can read the chain too. The economics are wholesale; the
 audit surface is retail.
+
+### 1.3 Outcomes are released in arrears (important)
+
+A reasonable reading of "predict the next 7 days" is that miners predict
+some live future and the operator measures it as it happens. **That is
+not how SN21 works.**
+
+Each epoch is built from a fixed historical window of Google Ads data
+that has already finished playing out at the moment the epoch is
+released. Concretely:
+
+- The pre-window (account state, time series, action context) covers
+  days `[T-60, T-1]` for some past anchor date `T`.
+- The action being predicted occurred on day `T`.
+- The 7-day and 14-day outcomes — what we ask miners to predict —
+  cover `[T+1, T+7]` and `[T+1, T+14]`. Those windows are also in the
+  past. The operator already knows what happened.
+
+The miner is predicting a withheld historical outcome, not a live future
+one. From the protocol's point of view this is identical (the miner
+sees only the pre-window and action; outcomes are sealed until reveal),
+but it has three concrete consequences:
+
+1. **Outcomes do not change between release and reveal.** The release
+   package, the reveal blob, the salts, and the baseline values are
+   content-addressed and committed on chain. Nothing is re-measured.
+2. **There is no "live data" trust assumption.** A skeptical
+   participant does not need to trust that the operator is measuring
+   live Google Ads honestly between T+1 and T+14. By the time an epoch
+   opens, T+14 has already happened; the outcome blob exists on the
+   operator's side; what the chain commits is the SHA-256 of bytes
+   that already exist.
+3. **The "commit-then-serve" gate is what enforces fairness.** The
+   reveal blob is published on the operator's HTTPS endpoint **only
+   after** the chain commit (9.A.2) is finalized. Until that block is
+   final, no participant — including the operator — can serve a
+   different blob to anyone without contradicting the on-chain hash.
+
+What stops the operator from re-measuring the outcomes after seeing
+miner predictions and choosing different ground truth? The chain
+commit at T=0 (9.A.1, `release_commit_digest`) pins the EPISODE SET
+and its query hashes. The chain commit at deadline (9.A.2) pins the
+OUTCOME BYTES. Between those two commits the operator publishes
+predictions that are themselves chain-anchored (9.B). Re-measuring
+outcomes after seeing predictions would force the operator to break
+the 9.A.2 hash that has already been committed before the predictions
+were even revealed by the chain auto-decrypt.
+
+The protocol does not prevent the operator from picking arbitrarily
+favorable historical episodes for an epoch. It does prevent the
+operator from rewriting outcomes after seeing predictions, which is
+the trust gap the protocol was built to close.
 
 ---
 
@@ -315,6 +390,15 @@ The verifier:
 Match → the validator is honest, full stop. Mismatch → exactly one of
 {Vera, the verifier} has a bug or is malicious, and the divergence is
 publicly auditable.
+
+> **Status (migration):** Steps 1, 2, 4, 5 are implemented in
+> `scripts/verify_epoch.py` today. Step 3 currently calls a placeholder
+> scorer; wiring it to the live `EpochScorer` used by the production
+> validator is tracked as a pre-launch task. Until that wiring lands,
+> **the verifier confirms that the chain artifacts are internally
+> consistent and signed by the right hotkey, but does NOT yet
+> independently reproduce miner scores end-to-end.** When it does, the
+> test suite includes a recorded-epoch fixture asserting `ok: true`.
 
 ---
 
@@ -739,6 +823,18 @@ Final score is a uint micro-units integer (0 to 1,000,000), committed
 into the IMT in 9.C.2. The validator translates score → uint16 weight
 via simple normalization and submits via `set_weights`.
 
+> **Status (launch vs roadmap).** The score-normalization +
+> 95% burn path is what runs at launch
+> (`hope/validator/weight_setter.py`). The richer reward mechanism
+> in `docs/SN21_REWARD_MECHANISM.md` — participation gate, EMA tier
+> placement, Elite floor, epoch-type multipliers, diversity bonus —
+> is **specified but not yet enforced in the production weight
+> path**. Tiers and gates are roadmap, scheduled across Reviews 1–3
+> after the first operational epochs run. Until then, miners should
+> model expected emissions from the simpler normalization path:
+> `weight ∝ raw final_score`, after the 95% burn allocated to the
+> subnet-owner UID.
+
 ### 11.3 Why this is competitive, not extractive
 
 A naive prediction service charges per-query and skims the spread.
@@ -890,6 +986,16 @@ chain itself binds weights to the scoring artifact — no off-chain check
 needed. We'll submit the proposal to the Subtensor maintainers when the
 on-chain protocol has run cleanly for one operational cycle.
 
+> **Read this carefully.** Earlier sections of this paper describe
+> 9.C.2 as "binding the score table to the weights commit block hash."
+> That is true at the off-chain verifier level (the verifier checks
+> both and rejects mismatches). It is **not** a chain-level
+> cryptographic binding today. A reader looking for "the chain itself
+> rejects a weights commit that doesn't match its scoring artifact"
+> will not find that property until the upstream change above lands.
+> The shadow validator + Yuma median is the operational defense in the
+> interim.
+
 ### 13.2 Per-episode scoring commitments
 
 Phase E added per-episode artifacts: each miner's CBOR bundle of
@@ -902,6 +1008,20 @@ episode. A 100-episode epoch would need 100 chain commits per miner;
 MaxSpace forbids it. Per-episode artifacts live off-chain in archives
 with a chain-anchored root. This is a deliberate trade-off: cheaper
 chain footprint, slightly more off-chain trust.
+
+> **Status (migration → roadmap):** earlier sections describe miners
+> "predicting per-episode" and validators "scoring per-episode." That
+> is the *modeling* level: the miner produces per-episode quantiles
+> and bundles them. At the chain level, the Layer 9.B prediction
+> CBOR currently carries one entry **per horizon for the whole
+> epoch** — see `hope/miner/runner.py` and
+> `hope/scoring/onchain_adapter.py`. The per-episode IMT root path
+> (Phase E) is implemented but not yet on the production submit path
+> at launch. Until it is, the on-chain commit binds an aggregated
+> per-horizon prediction; the per-episode bundle is the off-chain
+> companion. We'll migrate the production path to the per-episode
+> root before mainnet lock-in; until then this is a known migration
+> gap.
 
 ### 13.3 Privacy of predictions
 
