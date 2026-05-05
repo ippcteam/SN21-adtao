@@ -1,9 +1,12 @@
 # SN21 Whitepaper
 
-**Verifiable prediction markets for Google Ads campaign outcomes.**
+### Predict Google Ads outcomes. Earn from accuracy alone.
 
-> Anyone can submit a prediction. Anyone can verify it was scored
-> honestly. The chain is the source of truth.
+Every prediction is sealed on chain before the outcome is knowable.
+Every score is reproducible by anyone with a chain reader.
+No one — including the operator — can rewrite the record after the fact.
+
+Bittensor Subnet 21 · MIT-licensed · Public verifier ships at launch
 
 ---
 
@@ -29,64 +32,6 @@ described as the target architecture.
 **Conventions used below:**
 - *Launch* = behaviour available the day mainnet opens.
 - *Roadmap* = explicitly future, marked as such.
-
----
-
-## 0. How this was built
-
-This protocol was built between 2026-04-30 and 2026-05-04 — five days
-of intense work — with significant authoring help from an AI coding
-agent. We are saying this up front for two reasons.
-
-First, anyone reading the codebase will see the agent's fingerprints.
-The agent wrote large parts of the test scaffolding and many of the
-docstrings. Pretending otherwise would be insulting to readers who can
-just open the commit history.
-
-Second, the work that mattered most was NOT the code the agent
-generated. It was:
-
-- **Choosing what to build.** The original SN21 design had validators
-  grading their own homework. We re-did the design from scratch. We
-  picked which trust assumptions to remove, then picked the
-  cryptographic primitives to remove them. The agent did not pick
-  those primitives. It composed them once we had chosen.
-
-- **Hitting the chain and finding the wall.** Phase 0 surfaced four
-  empirical surprises that would have broken a paper-only design:
-  drand library wheel mismatch (Q34), testnet commit fee (Q13),
-  MaxSpace per-window byte cap (Q11), and most importantly the chain
-  auto-decrypt format bug (H-3 → H-6). Each one needed someone to read
-  the chain runtime source, guess why our code failed, and test the
-  guess on real testnet. This is the part that is hardest to outsource
-  and easiest to spot in hindsight.
-
-- **Deciding what to NOT build.** The architecture is sophisticated.
-  We spent that sophistication budget on the bindings that matter:
-  `inner_sig`, AAD, IMT roots, three-tier archives. We rejected
-  complexity that didn't pay: multi-field commit, decoy submissions,
-  zk-proofs of scoring. Section §13 is the record of that judgment.
-
-- **Running the probes.** Every numeric claim in this paper —
-  "auto-decrypt fires in 105 seconds," "MaxSpace is 1,259 blocks,"
-  "9.C.1 plaintext fits in 380 bytes" — comes from a probe somebody
-  ran by hand on testnet 466. The phase-by-phase narrative is in
-  `docs/build_journey.md`. The JSON probe outputs are signed by the
-  chain extrinsic hashes they reference.
-
-The whitepaper itself was iterated by the agent on top of the design
-we had already locked in. We reviewed every paragraph. The receipts
-(commits, probe outputs, test files) are linked at every claim.
-
-If the question is "do you understand this solution?" — §4 walks
-through an epoch end-to-end. §7 shows which defence fires for which
-attack. §12 documents the edge cases we built around. Appendix B
-records the empirical checks.
-
-If the question is "could you rebuild this without the agent?" —
-slower, yes. The agent's role was the keyboard. The architecture
-decisions came from human judgment. The empirical validation came from
-running real chain extrinsics that no agent could authorize on its own.
 
 ---
 
@@ -449,22 +394,22 @@ the optional retry log). Both fit in one rate-limit window.
 
 ## 6. Cryptographic primitives, intuitive depth
 
-This section is the protocol's load-bearing crypto, explained at the
-depth a curious reader can follow. The implementation lives in
-`hope/commitment/`; every claim in this section maps to a function in
-that package and a unit test in `tests/unit/commitment/`.
+The protocol's load-bearing crypto, explained at the depth a curious
+reader can follow. Implementation lives in `hope/commitment/`; every
+claim here maps to a function in that package and a unit test in
+`tests/unit/commitment/`.
 
 ### 6.1 Canonical CBOR
 
-We use [RFC 8949 §4.2.1] canonical CBOR for every byte we hash or
-sign. "Canonical" means there is one and only one way to encode any
-given map: definite-length items, sorted keys, smallest-form integers,
-no indefinite-length anything. The `cbor2.dumps(..., canonical=True)`
-library call gives us that for free.
+Canonical CBOR is the encoding used for every byte that gets hashed
+or signed. "Canonical" means there is one and only one way to encode
+any given map: definite-length items, sorted keys, smallest-form
+integers, no indefinite-length anything. The `cbor2.dumps(...,
+canonical=True)` library call gives us that for free.
 
-Why this matters: two different implementations encoding the same map
-produce byte-identical output. When we hash the bytes, both sides get
-the same hash. Without this rule, two implementations could produce
+Why it matters: two different implementations encoding the same map
+produce byte-identical output. The hash of those bytes is identical
+on both sides. Without the rule, two implementations could produce
 different hashes for "the same" map, and the protocol would silently
 break.
 
@@ -599,10 +544,10 @@ The IMT root is 32 bytes. Inclusion + non-inclusion proofs are
 
 ## 7. The eight-check scoreability rule
 
-When validator Vera reads a miner's three on-chain commits and the
-archived AES_ct, she runs eight checks before scoring. Failing any
-check means that miner is excluded from the epoch with a discrete
-reason. The checks are:
+Eight checks decide whether a miner's submission is scoreable for an
+epoch. Validator Vera reads each miner's three on-chain commits and
+the archived AES_ct, then runs the checks below in order. Any failure
+excludes that miner from the epoch with a discrete reason.
 
 | # | Name | What it catches |
 |---|---|---|
@@ -699,13 +644,13 @@ publicly.
 ## 9. Validator architecture: primary + shadow
 
 A single validator scoring all miners is a weakness, no matter how
-honest. Validator Vera could be subtly wrong, or compromised, or
-strategically dishonest in a way that's invisible to a single
-verifier checking only her work.
+honest. Validator Vera could be subtly wrong, compromised, or
+strategically dishonest — and a single verifier checking only her
+work cannot tell the difference.
 
-The architecture defends against this via a **shadow validator**, a
-parallel operator-run process running on a separate hotkey, separate
-host, ideally separate cloud provider. The shadow:
+The defence is a **shadow validator**: a parallel operator-run
+process on a separate hotkey, a separate host, ideally a separate
+cloud provider. The shadow:
 
 1. Reads the same chain state Vera reads.
 2. Runs the same scoreability rule.
@@ -867,7 +812,72 @@ via simple normalization and submits via `set_weights`.
 > roadmap (Review 2 / Review 3); the rest of Components 1-2 ships at
 > launch.
 
-### 11.3 Why this is competitive, not extractive
+### 11.3 Worked example — 20 miners, one epoch
+
+Concrete numbers help. Twenty miners submit predictions in one epoch.
+Their raw scores (after the conditional-prior gate has already
+filtered, on a 0.0–1.0 scale) are:
+
+| Group | Count | Raw score | Coverage |
+|---|---|---|---|
+| Top performers | 4 | 0.85 each | 100% |
+| Mid performers | 8 | 0.70 each | 100% |
+| Lower performers | 6 | 0.55 each | 100% |
+| Below baseline | 1 | 0.40 | 100% |
+| Below coverage gate | 1 | 0.80 | 60% |
+
+**Step 1 — Participation gate.** The two miners at the bottom of the
+table fail. The "below baseline" miner does not beat the published
+prior. The "below coverage gate" miner submitted on only 60% of
+episodes (gate is 80%). Both are excluded. **18 miners qualify.**
+
+**Step 2 — EMA tier placement.** With 18 ≥ 15 the tier split is on.
+The four-epoch EMA (alpha = 0.5) is computed for each miner; in this
+example all 18 had the same score in the prior epoch, so the EMA
+matches the current raw score. Sorted by EMA:
+
+- Top 20% → Elite candidates: 4 miners at 0.85 (`round(18 × 0.20) = 4`).
+- Next 40% → Competitive: 7 miners at 0.70 (`round(18 × 0.40) = 7`).
+- Bottom 40% → Participating: the remaining 7 (1 at 0.70, 6 at 0.55).
+
+**Step 3 — Elite quality floor.** The floor is `mean_baseline +
+1·sigma_of_(raw − baseline)`. With baseline 0.50 across all 18 and
+varied raw scores (0.85 / 0.70 / 0.55), `sigma ≈ 0.116` and the floor
+sits at `0.50 + 0.116 = 0.616`. All 4 Elite candidates score 0.85,
+clearly above 0.616 — Elite forms.
+
+**Step 4 — Pool allocation (proportional within tier).**
+
+| Tier | Members | Pool share | Per-miner weight (within tier) |
+|---|---|---|---|
+| Elite | 4 × 0.85 | 60% | `0.60 × (0.85 / 3.40) = 0.150` each |
+| Competitive | 7 × 0.70 | 30% | `0.30 × (0.70 / 4.90) = 0.0429` each |
+| Participating (1×0.70, 6×0.55) | 7 | 10% | proportional to current score |
+
+**Step 5 — Apply burn (95% to UID 0).** Multiply every miner's
+allocation by `(1 − 0.95) = 0.05`, give the rest to UID 0. The Elite
+miners' chain weight becomes `0.150 × 0.05 = 0.0075` of total
+emissions each.
+
+**Concrete TAO numbers.** Suppose this epoch's miner pool is **1,000
+α** (illustrative — actual values are network-determined and follow
+Yuma stake-weighted median across validators). After the 95% burn,
+**50 α** is distributed to the 18 qualifying miners across the three
+tiers:
+
+- Each Elite miner: `50 × 0.60 / 4 = 7.5 α`.
+- Each Competitive miner at 0.70: `50 × 0.30 / 7 ≈ 2.14 α`.
+- The single Participating miner at 0.70 + 6 at 0.55:
+  proportional split of `50 × 0.10 = 5 α`. Working out the
+  shares: top Participating gets `5 × (0.70 / 4.00) = 0.875 α`;
+  each lower Participating gets `5 × (0.55 / 4.00) ≈ 0.6875 α`.
+- The 2 excluded miners: **0**.
+
+The math is in `hope/validator/tiered_weights.py` and pinned by
+`tests/unit/validator/test_tiered_weights.py`. A reader who wants to
+replay the table can run those tests.
+
+### 11.4 Why this is competitive, not extractive
 
 A naive prediction service charges per-query and skims the spread.
 SN21's model is different:
@@ -888,9 +898,8 @@ chain.
 
 ## 12. Edge cases we've thought through
 
-A protocol is only as good as its handling of the cases that don't fit
-the happy path. Here are the ones we've explicitly designed for, with
-the response.
+A protocol is only as good as its handling of the unhappy paths. The
+ones below are designed for, not deferred.
 
 ### 12.1 drand pulse outage
 
@@ -993,8 +1002,8 @@ mechanical: replay the chain, see who's right.
 
 ## 13. What we deliberately defer
 
-A protocol designed in 2026 must be honest about what it doesn't yet
-solve. Here is the list.
+Some properties are roadmap, not launch. The list below is honest
+about which, and why.
 
 ### 13.1 Chain-side weights ↔ scoring binding
 
@@ -1405,16 +1414,27 @@ ran what probe, when, and why — is in `docs/build_journey.md`.
 - Quicknet chain hash: `52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971`.
 - Quicknet genesis: 1692803367 (Unix), 3-second period.
 
-### C.4 Internal documents
+### C.4 Companion documents in this repo
 
-- `docs/verifiable_scoring_architecture.md` — full architecture spec.
-- `docs/operator_runbook.md` — production playbook.
-- `docs/proposals/q26_weights_payload_anchor.md` — upstream RFC.
+- `docs/build_journey.md` — phase-by-phase build narrative.
+- `docs/operator_runbook.md` — production playbook for operators.
+- `docs/proposals/q26_weights_payload_anchor.md` — upstream RFC for
+  the chain-side weights ↔ scoring binding (§13.1).
+- `docs/SN21_REWARD_MECHANISM.md` — full reward spec.
+- `docs/SN21_EPOCH_STRUCTURE.md` — epoch and phase progression.
+- `docs/miner_quickstart.md` — miner onboarding tutorial.
 
 ### C.5 Code
 
-- Architecture commits 5d5a195 → present: every phase landed on `main`.
+- Every phase landed on `main`. Commit history is the audit trail.
 
 ---
 
-*Last updated 2026-05-04, v1.0+G+H. Composed with substantial authoring assistance from an AI coding agent. Engineering decisions, design judgments, and empirical validation are the maintainers'; the paper's prose was iterated through the agent. All claims are linked to source files and commit hashes; readers should verify directly.*
+*Last updated 2026-05-05, v1.0+G+H. The protocol was built between
+2026-04-30 and 2026-05-04 with substantial authoring help from an AI
+coding agent; design choices, empirical validation, and chain-side
+debugging were human work. The phase-by-phase narrative —
+which probe ran when, which assumption broke against real testnet,
+which fix landed where — is in `docs/build_journey.md`. All claims
+in this paper are linked to source files and commit hashes; verify
+directly.*
