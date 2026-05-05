@@ -7,6 +7,74 @@
 
 ---
 
+## 0. How this was built
+
+This document describes a protocol HOPE Foundation built between
+2026-04-30 and 2026-05-04 — five days of intense work — with significant
+authoring assistance from Claude (Anthropic's coding agent). We are
+disclosing this up front for two reasons.
+
+First, anyone reading the codebase will see the agent's fingerprints
+(Claude wrote large amounts of the test scaffolding and the docstrings
+verbatim). Pretending otherwise would be insulting to readers who can
+just open the commit history and see.
+
+Second, the work that mattered most was NOT the code Claude generated.
+It was:
+
+- **Choosing what to build.** Tom asked us, before the weekend, to "go
+  back to the drawing board" — the original SN21 design had validators
+  grading their own homework. The architecture in this paper is what
+  came out of choosing, in successive iterations, which trust
+  assumptions to remove and what cryptographic primitives to use to
+  remove them. Claude did not pick those primitives; Claude composed
+  them once we'd chosen.
+
+- **Hitting the chain and finding the wall.** Phase 0 surfaced four
+  empirical surprises that would have invalidated a paper-only
+  architecture: drand library wheel mismatch (Q34), commit fee on
+  testnet (Q13), MaxSpace per-window byte cap (Q11), and most
+  importantly the chain auto-decrypt format bug (H-3 → H-6). Each one
+  required reading the chain runtime source, hypothesizing why our code
+  failed, and testing the hypothesis on real testnet. This is the work
+  that's hardest to outsource and easiest to spot in retrospect.
+
+- **Deciding what to NOT build.** Tom's earlier review correctly
+  pointed out that the architecture is sophisticated. We used that
+  sophistication budget on the bindings that matter (inner_sig,
+  AAD, IMT roots, three-tier archives) and rejected complexity that
+  didn't pay (multi-field commit, Djinn-style decoy submissions,
+  zk-proofs of scoring). The "what we deliberately defer" section
+  (§13) is the artifact of that judgment.
+
+- **Running the probes.** Every claim in this paper backed by a
+  number — "auto-decrypt fires in 105 seconds," "MaxSpace is 1,259
+  blocks," "9.C.1 plaintext fits in 380 bytes" — comes from a probe
+  somebody manually ran against testnet 466, with the wallet at SS58
+  `5Hoo2cRURm8A36WupNHyBkdby3wyBEpwj7MAgpC9sLnhxJNw`. The probes are
+  in `scripts/phase0/`; the results are in
+  `scripts/phase0/results/`; the JSON outputs are signed implicitly
+  by the chain extrinsic hashes they reference.
+
+The whitepaper itself was iterated by Claude given the design we'd
+locked in. We've reviewed every paragraph; the receipts (commits,
+probe outputs, test files) are linked at every claim.
+
+If the question is "do you understand this solution?" — Section 4
+walks through an epoch end-to-end, Section 7's worked example shows
+which defense fires for which attack, Section 12 documents the
+edge cases we built around, and Appendix B records the empirical
+checks. None of those would survive a coffee-and-whiteboard
+conversation if the team didn't own them.
+
+If the question is "could you rebuild this without Claude?" — slower,
+yes. The agent's role was the keyboard; the architecture decisions
+came from human judgment, and the empirical validation came from
+running real chain extrinsics that no agent could autonomously
+authorize.
+
+---
+
 ## 1. The problem we're solving
 
 Advertisers spend trillions of dollars on Google Ads each year. The
@@ -282,8 +350,10 @@ the optional retry log). Both fit in one rate-limit window.
 
 ## 6. Cryptographic primitives, intuitive depth
 
-You can read this section as English, then re-read it in §11 with the
-exact constructions if you want to rebuild the protocol from scratch.
+This section is the protocol's load-bearing crypto, explained at the
+depth a curious reader can follow. The exact constructions live in
+`docs/verifiable_scoring_architecture.md` §3-§7 (the internal spec)
+with file/line references to the implementation in `hope/commitment/`.
 
 ### 6.1 Canonical CBOR
 
@@ -349,13 +419,47 @@ miner's K (which auto-reveals after the miner deadline) and for the
 validator's 9.C.1 / 9.C.2 (which auto-reveal a configurable delay
 later, typically 1-2 hours).
 
-A subtle point we learned the hard way: the chain auto-decrypts ONLY
-commits produced by the SDK's `bittensor_drand.get_encrypted_commitment(data: str, ...)`
-helper, NOT the lower-level `bittensor_drand.encrypt(bytes, ...)`. The
-former wraps the input as a SCALE-prefixed UTF-8 string; the latter
-produces a different ciphertext format the chain runtime ignores. We
-hex-encode binary plaintext to a string before encryption. (Empirical
-finding: §H-6 in the architecture doc.)
+A subtle point we learned the hard way, narrated because it's instructive:
+
+We initially used `bittensor_drand.encrypt(bytes, n_blocks, block_time)`.
+It returns `(ciphertext_bytes, reveal_round)`, takes binary input, looks
+like the obvious choice. The chain accepted our `TimelockEncrypted`
+extrinsics with `success=True` returned. We assumed it worked.
+
+It didn't. The H-3 probe (2026-05-04) submitted a known 32-byte
+plaintext, polled `RevealedCommitments` for 30 minutes past the
+reveal_round, observed nothing. We had assumed `success=True` meant
+auto-decrypt would fire; in fact the chain runtime silently drops
+ciphertexts whose format it doesn't recognize.
+
+H-4 was diagnosis: read the SDK source, find that `Subtensor.set_reveal_commitment(...)`
+calls a DIFFERENT C function — `bittensor_drand.get_encrypted_commitment(data: str, ...)`
+— and that's what the chain runtime decodes. The two functions look
+identical at the Python signature level; their underlying ciphertext
+formats are not.
+
+H-6 was the fix: hex-encode binary plaintext to a string, call the
+right C function, halve the budget for plaintext (since hex doubles
+the byte count). We reran the round-trip on testnet:
+
+```
+plaintext (hex):    0xc0ffee64284082626c6ebdf1b074c9afdeadbeef
+submit:             success=True reveal_round=28367904
+auto-decrypt fired: block 7049220, 105 seconds after submission
+decode round-trip:  byte-exact match
+```
+
+That was the proof. Until we'd run it on real chain, the protocol was
+running on an assumption that turned out to be false. The architecture
+records this as Phase H §20 in the internal spec; the test suite
+encodes the fix in `tests/unit/commitment/test_on_chain.py`.
+
+The lesson generalizes: *"the chain accepted the extrinsic"* is not the
+same as *"the chain processed the extrinsic correctly."* Substrate
+storage is permissive about what gets written; the runtime's
+interpretation is where the work actually happens. Every claim in this
+paper that depends on the chain processing something correctly has
+a probe behind it.
 
 ### 6.5 Indexed Merkle trees
 
@@ -819,6 +923,63 @@ Phase 0 Q13 measured `set_commitment` extrinsic fees on testnet 466 at
 flip; the operator runbook §12 has the pre-launch checklist that
 includes this measurement.
 
+### 13.5 What we tried first and rejected
+
+A list of design attempts that didn't survive empirical contact with
+the chain. We're including these because they're the most honest
+record of the design process: ideas that looked good on paper, broke
+on real testnet, and forced revisions.
+
+**Multi-field commit (Q36).** The Bittensor `Commitments` pallet
+accepts `info = {"fields": [[Sha256, TimelockEncrypted, Raw]]}` —
+multiple Data variants in one extrinsic. We prototyped this hoping
+to compress all three Layer 9.B miner commits (TLE'd K, Sha256 of
+ciphertext, archive URL) into a single chain submission, saving
+~2 of 3 extrinsic fees per miner per epoch. The Q36 testnet probe
+confirmed: the chain RUNTIME accepts the extrinsic (success=True
+returned), but the auto-decrypt subsystem silently skips
+multi-variant slots, AND the SDK readback methods do not return
+them. The variant exists in the chain types but is unsupported in
+practice. We gated `submit_layer_9b_multi_field` with
+`NotImplementedError` and kept the 3-extrinsic path. Cost: 3× the
+per-extrinsic fee per miner per epoch. Acceptable given the testnet
+fee is 0 µTAO and the mainnet fee should be nominal.
+
+**Burst probe with small payloads (Q11 v1).** The first version of
+the rate-limit probe submitted ~17-byte payloads in a tight loop,
+hoping to trip MaxSpace. It didn't — 21 commits at 17 bytes each
+totalled ~360 bytes, well under the 3,100-byte cap. We re-ran with
+128-byte Raw{128} payloads (Q11 v2) and got the empirical answer
+(252 minutes per window, ~500 bytes per-commit overhead). The
+mistake was assuming MaxSpace was per-call rather than per-byte;
+the corrected probe confirmed it's per-byte.
+
+**Chain auto-decrypt assumption (H-3).** Detailed in §6.4. We
+initially used `bittensor_drand.encrypt(bytes, ...)`. The chain
+silently dropped our commits despite returning success=True. H-3
+diagnosed; H-4 found the right helper; H-6 shipped the fix.
+
+**768-byte plaintext budget (pre-H-6).** Before the H-6 fix, we
+budgeted for ~768 bytes of raw binary plaintext per TLE commit.
+After switching to `get_encrypted_commitment(str)` and hex-encoding,
+the effective budget halved to ~380 bytes. The 9.C.1 / 9.C.2 builders
+fit (real plaintexts measure 364-380 bytes for realistic 50-miner
+epochs), but barely. A larger validator population — say 200 miners —
+would exceed the budget and force splitting commits into multiple
+extrinsics. The architecture records this as a Phase E follow-up.
+
+**SDK readback path (Phase G).** Bittensor SDK 10.2.1's
+`get_revealed_commitment_by_hotkey()` lossily UTF-8 decodes binary
+chain bytes — codepoints >127 mangle into multi-byte sequences. We
+hit this when our 32-byte AES key K came back as garbled string. The
+fix was to drop to `subtensor.substrate.query("Commitments",
+"RevealedCommitments", ...)` directly and convert SCALE int-tuples
+via `bytes(t)`. `hope/commitment/chain_reader.py` is that bypass.
+
+These are not embarrassments; they are the work. Each one is a
+specific decision a human made by reading code, running tests, and
+choosing the next move.
+
 ---
 
 ## 14. What ships in v1.0
@@ -955,17 +1116,25 @@ verifier prove inclusion AND non-inclusion of any single miner; the
 shadow validator whose mere existence makes single-validator
 dishonesty publicly auditable.
 
-We've spent more cycles than expected discovering empirical truths the
+We spent more cycles than expected discovering empirical truths the
 chain hides — the auto-decrypt format bug in Phase H was the most
-expensive — but every discovery tightened the protocol. The result is
-v1.0: a verifiable prediction subnet that runs on testnet, with every
-binding tested against a 12-attack adversarial suite, every scoring
-decision reproducible from chain state, and every commit empirically
-proven to round-trip through real chain auto-decrypt.
+expensive (§6.4 narrates that one) — but every discovery tightened the
+protocol. The result is v1.0: a verifiable prediction subnet that runs
+on testnet, with every binding tested against a 12-attack adversarial
+suite, every scoring decision reproducible from chain state, and every
+commit empirically proven to round-trip through real chain auto-decrypt.
 
 The protocol is not the contribution. The contribution is what the
 protocol replaces: it removes the trust assumption that a vendor will
 honestly grade their own homework.
+
+To the question we opened with — "do we understand this solution?" —
+the only honest answer is the one this paper has tried to give: yes,
+because we made the design choices and we found the bugs and we ran
+the probes; and we used Claude to help compose the result, the way we
+use IDEs and linters and continuous integration. The agent's
+contribution and ours are both visible in the commit history. Tom or
+any reader can audit either independently.
 
 Mainnet next.
 
@@ -1093,4 +1262,4 @@ The architecture's claims are backed by measurement. Here is the record.
 
 ---
 
-*Last updated 2026-05-04, v1.0+G+H. Prepared by the SN21 team for HOPE Foundation.*
+*Last updated 2026-05-04, v1.0+G+H. Authored by HOPE Foundation (Jayesh, with the SN21 team) with substantial composition assistance from Claude (Anthropic). Engineering decisions, design judgments, and empirical validation are HOPE's; the paper's prose was iterated through Claude. All claims are linked to source files and commit hashes; readers should verify directly.*
