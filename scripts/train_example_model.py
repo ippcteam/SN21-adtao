@@ -1,4 +1,4 @@
-"""Example: Train a prediction model on HOPE episodes.
+"""Example: Train a prediction model on the operator episodes.
 
 This script shows a real miner workflow:
 1. Fetch training data (episodes with known outcomes)

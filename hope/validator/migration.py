@@ -92,7 +92,7 @@ def replay_http_predictions_as_chain_inputs(
     """Convert HTTP-collected predictions into chain-shaped inputs.
 
     Args:
-        epoch_id: HOPE release_key.
+        epoch_id: the operator release_key.
         http_predictions: per-miner list of Prediction (per-episode). The
             converter aggregates them into per-horizon CBOR entries via the
             same `MinerRunner._predictions_to_horizon_entries` the chain

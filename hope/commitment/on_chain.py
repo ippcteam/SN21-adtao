@@ -208,7 +208,7 @@ def read_revealed_commitments(
 
     The chain retains the last 10 reveals per (netuid, account) per
     `RevealedCommitments` storage map. Older reveals are pruned and must be
-    archived off-chain by HOPE shadow.
+    archived off-chain by operator shadow.
 
     Args:
         subtensor: Bittensor `Subtensor` instance.
@@ -269,7 +269,7 @@ def submit_release_commit_layer_9a1(
     netuid: int,
     release_commit_digest: bytes,
 ) -> CommitResult:
-    """Layer 9.A.1 — HOPE commits release digest at T=0.
+    """Layer 9.A.1 — the operator commits release digest at T=0.
 
     `release_commit_digest` is the BLAKE2b-256 hash of the canonical CBOR
     encoding of the release_commit map (per protocol spec v1 §1.1).
@@ -293,11 +293,11 @@ def submit_outcome_reveal_hash_layer_9a2(
     netuid: int,
     reveal_blob_sha256: bytes,
 ) -> CommitResult:
-    """Layer 9.A.2 — HOPE commits reveal blob hash post-deadline.
+    """Layer 9.A.2 — the operator commits reveal blob hash post-deadline.
 
     `reveal_blob_sha256` is SHA-256 of the off-chain JSON reveal blob containing
     salts, canonical queries, and measured outcomes (per protocol spec v1 §1.2).
-    Only after this commit is finalized may HOPE serve the blob via HTTPS
+    Only after this commit is finalized may the operator serve the blob via HTTPS
     (commit-then-serve gate, CL-9 in v0.7).
     """
     if len(reveal_blob_sha256) != 32:

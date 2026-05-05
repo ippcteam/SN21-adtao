@@ -159,7 +159,7 @@ def verify_epoch(
     Args:
         chain_view: pre-fetched chain state. The CLI fills this from a real
             Bittensor node; tests fill it with deterministic fakes.
-        epoch_id: HOPE release_key being verified.
+        epoch_id: the operator release_key being verified.
         validator_hotkey: 32-byte hotkey of the validator we're auditing.
         archive_endpoints: ordered list of archive tiers to consult.
         archive_client: shared httpx client, or default.
@@ -303,7 +303,7 @@ def fetch_chain_view(
     Args:
         subtensor: Bittensor `Subtensor` instance.
         netuid: subnet ID.
-        epoch_id: HOPE release_key (used by Bittensor SDK for cache keys).
+        epoch_id: the operator release_key (used by Bittensor SDK for cache keys).
         validator_hotkey_ss58: SS58 of the validator under audit.
         miner_hotkey_ss58_list: list of miner SS58s to read (typically the
             full metagraph at the epoch boundary).
@@ -472,7 +472,7 @@ def _ss58_to_raw_ed25519(ss58_address: str) -> bytes:
 
 def _build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Public SN21 epoch verifier")
-    p.add_argument("--epoch-id", required=True, help="HOPE release_key")
+    p.add_argument("--epoch-id", required=True, help="the operator release_key")
     p.add_argument(
         "--validator-hotkey", required=True,
         help="SS58 of the validator hotkey to audit (mainnet) "
@@ -489,7 +489,7 @@ def _build_argparser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--tier-2-base", action="append", default=[],
-        help="Tier-2 (HOPE shadow) archive base URL; can repeat",
+        help="Tier-2 (operator shadow) archive base URL; can repeat",
     )
     p.add_argument(
         "--tier-3-base", action="append", default=[],

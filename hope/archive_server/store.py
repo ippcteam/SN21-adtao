@@ -1,10 +1,10 @@
-"""Storage backends for archive servers (Tier-2 HOPE shadow, Tier-3 miner self).
+"""Storage backends for archive servers (Tier-2 operator shadow, Tier-3 miner self).
 
 Two implementations:
 
 - InMemoryStore — keeps every uploaded blob in a dict. Use for tests and
   for short-lived Tier-3 self-archives that don't need durability.
-- FilesystemStore — writes to disk under a base directory. Use for HOPE
+- FilesystemStore — writes to disk under a base directory. Use for the operator
   Tier-2 deployments that need 90+ day retention.
 
 Both stores key by the SHA-256 digest of the bytes; the URL path component

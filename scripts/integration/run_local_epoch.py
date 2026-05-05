@@ -4,20 +4,20 @@ Runs ONE complete epoch in-process — no Bittensor node, no external archive,
 no network. Useful for:
 
   - smoke-testing every layer's wiring after a refactor;
-  - giving a human a single command that exercises HOPE → miners → validator →
+  - giving a human a single command that exercises the operator → miners → validator →
     verifier and prints a green/red summary;
   - reproducing exactly-once-and-deterministically in CI before live runs.
 
 Pipeline:
 
-  1. Generate ed25519 keys for: HOPE outcome signer, primary validator,
+  1. Generate ed25519 keys for: outcome signer, primary validator,
      shadow validator, N miners.
-  2. HOPE 9.A.1: build release_commit; pretend-publish (no chain) and remember
+  2. the operator 9.A.1: build release_commit; pretend-publish (no chain) and remember
      digest + plaintext.
   3. Each miner builds + AES-encrypts a Layer 9.B prediction; uploads AES_ct
      to an in-process archive; pretend-submits chain commits (we record the
      state directly into a `MinerOnChainInputs` list).
-  4. HOPE 9.A.2: builds reveal blob with measured outcomes; pretend-publishes.
+  4. the operator 9.A.2: builds reveal blob with measured outcomes; pretend-publishes.
   5. Validator runs `run_epoch_scoring(scorer=...)` with mocked chain helpers
      so it logs what would be committed.
   6. Shadow validator runs the same.

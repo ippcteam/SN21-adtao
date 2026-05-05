@@ -1,4 +1,4 @@
-# HOPE Bittensor Subnet (SN21) — Reward Mechanism
+# Bittensor Subnet (SN21) — Reward Mechanism
 
 | | |
 | :---- | :---- |
@@ -28,7 +28,7 @@ SN21 sits on a Google Ads data surface, but miners are prediction specialists, n
 
 ### Prediction accuracy is the business product
 
-HOPE’s decision engine handles action selection. Miners predict outcomes given account state and action bundles. What miners are scored on matches what HOPE derives value from.
+The operator’s decision engine handles action selection. Miners predict outcomes given account state and action bundles. What miners are scored on matches what the operator derives value from.
 
 ### Simple at launch, refined with evidence
 
@@ -36,17 +36,17 @@ v1 is intentionally simple. Complexity deters miners who need to model returns b
 
 ### Centrally governed at v1, procedurally transparent
 
-SN21 is centrally governed by HOPE at launch. Parameter changes are published with rationale and lead time. Decentralisation is on the Review 4 agenda. Governance is transparent and structured, but centralised until then.
+SN21 is centrally governed by the subnet operator at launch. Parameter changes are published with rationale and lead time. Decentralisation is on the Review 4 agenda. Governance is transparent and structured, but centralised until then.
 
 ## Validator architecture
 
-At launch, SN21 runs validators using the open-source scoring implementation provided by AdTAO. Any Bittensor validator operator can run a validator by deploying the `tao-discovery` codebase. Validation is open to all participants.
+At launch, SN21 runs validators using this open-source scoring implementation. Any Bittensor validator operator can run a validator by deploying the `tao-discovery` codebase. Validation is open to all participants.
 
-HOPE may introduce an additional validator later (two-validator configuration). **Third-party validators are not supported at launch.** Opening validator registration is on the Review 4 agenda.
+The subnet operator may introduce an additional validator later (two-validator configuration). **Third-party validators are not supported at launch.** Opening validator registration is on the Review 4 agenda.
 
 ### Open-source scoring code
 
-Validator and scoring code live in this repository: [github.com/ippcteam/tao-discovery](https://github.com/ippcteam/tao-discovery). The repo includes the scoring implementation, reproducibility paths, and versioned changes announced through the review cadence before taking effect when applicable.
+Validator and scoring code live in this repository. The repo includes the scoring implementation, reproducibility paths, and versioned changes announced through the review cadence before taking effect when applicable.
 
 Miners can run scoring locally to verify behaviour against published inputs where exposed by the deployment.
 
@@ -70,7 +70,7 @@ A miner must meet **all** of the following to earn emissions in an epoch:
 
 **Why conditional prior vs predict-zero:** Predict-zero is too easy with trivial heuristics. The conditional prior forces improvement over a transparent historical average for the action class. Baseline values per episode are published at epoch start.
 
-**Evolution:** The conditional prior is the v1 launch baseline. As HOPE-managed episodes grow, the baseline may shift toward platform system estimates (announced ≥4 weeks in advance).
+**Evolution:** The conditional prior is the v1 launch baseline. As operator-managed episodes grow, the baseline may shift toward platform system estimates (announced ≥4 weeks in advance).
 
 Gates and thresholds are published before each epoch opens.
 
@@ -154,7 +154,7 @@ Before mainnet, scoring is stress-tested with synthetic strategies (null, action
 
 ## Review cadence
 
-Structured review every **four** epochs (roughly four-week blocks). Parameter changes do not apply mid-epoch; they start at the next epoch. Outcomes go to @AdTAO and SN21 Discord when locked.
+Structured review every **four** epochs (roughly four-week blocks). Parameter changes do not apply mid-epoch; they start at the next epoch. Outcomes go to subnet social channels and SN21 Discord when locked.
 
 - **Review 1 — after epoch 4:** Tiers, baseline, Elite floor.  
 - **Review 2 — after epoch 8:** Consolidation multiplier effects; optional calibration multiplier candidate; optional tier boundary smoothing.  
@@ -177,7 +177,7 @@ Illustrative only — alpha/TAO is market- and protocol-determined.
 
 Assume **7,200 α/day** → **50,400 α per week** at subnet level; **41%** to miners → **20,664 α** miner pool for a **1.0×** Search week. With **50** qualifying miners and full Elite (10 / 20 / 20 by tier), tier pools follow 60% / 30% / 10% of 20,664 α (see version 1.1 tables in project history for per-tier averages). If Elite is empty, pools redistribute as in Component 2.
 
-**Alpha → TAO** depends on subnet performance and network dynamics; HOPE does not control conversion.
+**Alpha → TAO** depends on subnet performance and network dynamics; the subnet operator does not control conversion.
 
 **Early-miner note:** New subnets often have cheaper alpha in early epochs; that is a structural market dynamic, not a promise of price appreciation.
 

@@ -1,4 +1,4 @@
-"""Miner Runner — main entry point for AdTAO SN21 miners.
+"""Miner Runner — main entry point for SN21 miners.
 
 Handles the complete miner lifecycle:
 1. Load Bittensor wallet for signing
@@ -13,7 +13,7 @@ Submission paths:
   publishes to the chain plus the Tier-2/Tier-3 archive endpoints.
 
 Use `run_epoch_onchain(...)` or pass `--mode onchain` on the CLI to run the
-verifiable-scoring path. The HTTP path stays available for HOPE's own data
+verifiable-scoring path. The HTTP path stays available for the operator's own data
 ingest until the chain path is the authoritative source.
 """
 
@@ -49,7 +49,7 @@ class MinerRunner:
         model: PredictionEngine | None = None,
         hotkey: str = "",
         wallet=None,
-        validator_url: str = "https://validator.adtao.io",
+        validator_url: str = "http://localhost:8080",
     ):
         self.model = model or BaselineModel()
         self.hotkey = hotkey
@@ -135,7 +135,7 @@ class MinerRunner:
           4. Raw(self_archive_url) → chain.
 
         Args:
-            epoch_id: HOPE release_key.
+            epoch_id: the operator release_key.
             episodes: list of Episode objects; same shape `self.model.predict`
                 accepts. The runner does NOT fetch episodes here — the caller
                 owns episode discovery (HTTP, GraphQL, on-chain `episodes_root`
@@ -271,8 +271,8 @@ def main():
     """CLI entry point for the miner."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="AdTAO SN21 Miner")
-    parser.add_argument("--validator-url", type=str, default="https://validator.adtao.io",
+    parser = argparse.ArgumentParser(description="SN21 Miner")
+    parser.add_argument("--validator-url", type=str, default="http://localhost:8080",
                         help="Validator HTTP API URL")
     parser.add_argument("--wallet-name", type=str, required=True,
                         help="Bittensor wallet name (required for signing)")

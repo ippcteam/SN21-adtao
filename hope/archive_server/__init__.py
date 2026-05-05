@@ -1,4 +1,4 @@
-"""Archive HTTP server for SN21 — Tier-2 (HOPE shadow) and Tier-3 (miner self).
+"""Archive HTTP server for SN21 — Tier-2 (operator shadow) and Tier-3 (miner self).
 
 - store: pluggable storage backends (InMemory, Filesystem).
 - app: FastAPI app factory.

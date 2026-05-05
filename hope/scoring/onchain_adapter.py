@@ -256,7 +256,7 @@ def aggregate_outcomes_to_truth(
     Args:
         outcomes_per_episode: list of `{horizon: {cost_delta_pct: float, ...,
             goal_miss: 0|1}, ...}` dicts (one per episode), as parsed from
-            the HOPE reveal blob.
+            the the operator reveal blob.
 
     Returns:
         Map from horizon → HorizonTruth. Any horizon present in ≥1 episode

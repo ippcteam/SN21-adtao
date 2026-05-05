@@ -1,11 +1,11 @@
-"""Layer 9.A.1 — HOPE release_commit at T=0.
+"""Layer 9.A.1 — the operator release_commit at T=0.
 
-At each epoch boundary T=0, the HOPE outcome signer publishes a
+At each epoch boundary T=0, the outcome signer publishes a
 `release_commit_digest` on chain (Sha256 variant). The digest is the
 BLAKE2b-256 of the canonical-CBOR encoding of the release_commit map.
 
 Purpose: pin the rules of the epoch BEFORE miners see anything that could
-be predicted away. After T=0, the digest is immutable; HOPE cannot retro-
+be predicted away. After T=0, the digest is immutable; the operator cannot retro-
 actively change which episodes are in scope, what their queries are, or
 which horizons get measured.
 
@@ -27,15 +27,15 @@ CBOR layout (canonical, RFC 8949 §4.2.1):
 The `episodes_root` IMT lets miners (and the verifier) prove an episode IS
 or IS NOT in scope: leaf key = episode_id_bytes (left-padded to 32),
 leaf value = blake2b_256(canonical-CBOR of the episode query). After
-release, HOPE serves the full episode list off-chain but ANY divergence
-between served data and `episodes_root` is provably a HOPE fault.
+release, the operator serves the full episode list off-chain but ANY divergence
+between served data and `episodes_root` is provably a the operator fault.
 
 `scoring_metadata_hash` covers the goal_metric, measurement_resolution,
 reliability_weight, baseline_type, etc. — anything that affects how an
-outcome is scored. Locking it at T=0 prevents HOPE from retroactively
+outcome is scored. Locking it at T=0 prevents the operator from retroactively
 relaxing scoring rules to favor specific miners.
 
-The plaintext is committed off-chain via HOPE's HTTPS endpoints AND its
+The plaintext is committed off-chain via the operator's HTTPS endpoints AND its
 SHA-256 / IMT roots are anchored on chain. A third party can fetch the
 plaintext, re-hash, and verify equality.
 """

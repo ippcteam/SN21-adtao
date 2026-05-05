@@ -1,10 +1,10 @@
-"""HOPE Data Client — fetches weekly challenge packages from the HOPE data API.
+"""the operator Data Client — fetches weekly challenge packages from the the operator data API.
 
-This is the bridge between HOPE's internal data pipeline and the validator.
+This is the bridge between the operator's internal data pipeline and the validator.
 The validator calls this to pull episodes, outcomes, and integrity metadata
 for each epoch.
 
-All responses from HOPE are cryptographically signed with HOPE's ed25519 key.
+All responses from the operator are cryptographically signed with the operator's ed25519 key.
 The validator verifies signatures before accepting any data.
 """
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class EpochData:
-    """Complete data for one epoch, fetched from HOPE."""
+    """Complete data for one epoch, fetched from the operator."""
 
     release_key: str
     schema_version: str
@@ -44,7 +44,7 @@ class EpochData:
 
 
 class HopeDataClient:
-    """Fetch weekly challenge packages from HOPE's internal data API.
+    """Fetch weekly challenge packages from the operator's internal data API.
 
     Usage:
         client = HopeDataClient(api_key=os.environ["HOPE_API_KEY"])
@@ -76,7 +76,7 @@ class HopeDataClient:
         return {"X-API-Key": self.api_key}
 
     async def list_releases(self) -> list[dict]:
-        """List available releases from HOPE."""
+        """List available releases from the operator."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(self._url("/releases"), headers=self._headers())
             resp.raise_for_status()
@@ -96,7 +96,7 @@ class HopeDataClient:
     async def fetch_episodes_only(self, release_key: str) -> EpochData:
         """Fetch episodes WITHOUT outcomes — for distribution phase.
 
-        Calls HOPE API without ?include_outcomes=true, so the server
+        Calls data API without ?include_outcomes=true, so the server
         does not return outcome data. Double protection: even if
         outcomes leaked, we strip them client-side too.
         """
@@ -110,16 +110,16 @@ class HopeDataClient:
             resp.raise_for_status()
             package = resp.json()
 
-        # Verify HOPE's cryptographic signature
+        # Verify the operator's cryptographic signature
         sig_valid = self.verify_hope_signature(package)
         require_sig = os.environ.get("REQUIRE_HOPE_SIGNATURE", "true").lower() != "false"
         if not sig_valid:
             if require_sig:
                 raise ValueError(
-                    "HOPE signature verification failed for episodes. "
+                    "the operator signature verification failed for episodes. "
                     "Data may be tampered with — refusing to use unverified episodes."
                 )
-            logger.warning("HOPE signature not verified for episodes — REQUIRE_HOPE_SIGNATURE=false allows this")
+            logger.warning("the operator signature not verified for episodes — REQUIRE_HOPE_SIGNATURE=false allows this")
 
         episodes = []
         for ep_data in package.get("episodes", []):
@@ -142,7 +142,7 @@ class HopeDataClient:
     async def fetch_outcomes_only(self, release_key: str) -> list[Outcome]:
         """Fetch outcomes ONLY — for scoring phase (after deadline).
 
-        Calls HOPE API WITH ?include_outcomes=true. This should only
+        Calls data API WITH ?include_outcomes=true. This should only
         be called AFTER the submission window closes.
         """
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -154,16 +154,16 @@ class HopeDataClient:
             resp.raise_for_status()
             package = resp.json()
 
-        # Verify HOPE's cryptographic signature
+        # Verify the operator's cryptographic signature
         sig_valid = self.verify_hope_signature(package)
         require_sig = os.environ.get("REQUIRE_HOPE_SIGNATURE", "true").lower() != "false"
         if not sig_valid:
             if require_sig:
                 raise ValueError(
-                    "HOPE signature verification failed for outcomes. "
+                    "the operator signature verification failed for outcomes. "
                     "Data may be tampered with — refusing to use unverified outcomes."
                 )
-            logger.warning("HOPE signature not verified for outcomes — REQUIRE_HOPE_SIGNATURE=false allows this")
+            logger.warning("the operator signature not verified for outcomes — REQUIRE_HOPE_SIGNATURE=false allows this")
 
         outcomes = []
         for ep_data in package.get("episodes", []):
@@ -261,9 +261,9 @@ class HopeDataClient:
         return match
 
     def verify_hope_signature(self, package: dict) -> bool:
-        """Verify HOPE's ed25519 signature on an API response.
+        """Verify the operator's ed25519 signature on an API response.
 
-        Returns True if signature is valid against HOPE's published public key.
+        Returns True if signature is valid against the operator's published public key.
         Returns False (with warning) if signature is missing or invalid.
         """
         integrity = package.get("integrity", {})
@@ -271,13 +271,13 @@ class HopeDataClient:
         signing_key_hex = integrity.get("signing_key")
 
         if not signature_hex:
-            logger.warning("HOPE response has no signature — cannot verify authenticity")
+            logger.warning("the operator response has no signature — cannot verify authenticity")
             return False
 
-        # Verify the signing key matches HOPE's published key
+        # Verify the signing key matches the operator's published key
         if signing_key_hex and signing_key_hex != HOPE_PUBLIC_KEY_HEX:
             logger.error(
-                f"HOPE signing key mismatch: got {signing_key_hex[:16]}... "
+                f"the operator signing key mismatch: got {signing_key_hex[:16]}... "
                 f"expected {HOPE_PUBLIC_KEY_HEX[:16]}..."
             )
             return False
@@ -294,14 +294,14 @@ class HopeDataClient:
             pub_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(HOPE_PUBLIC_KEY_HEX))
             pub_key.verify(bytes.fromhex(signature_hex), content_hash)
 
-            logger.info("HOPE signature verified successfully")
+            logger.info("the operator signature verified successfully")
             return True
 
         except ImportError:
-            logger.warning("cryptography library not installed — cannot verify HOPE signature")
+            logger.warning("cryptography library not installed — cannot verify the operator signature")
             return False
         except Exception as e:
-            logger.error(f"HOPE signature verification FAILED: {e}")
+            logger.error(f"the operator signature verification FAILED: {e}")
             return False
 
     def _parse_episode(self, payload: dict) -> Episode:
@@ -316,7 +316,7 @@ class HopeDataClient:
         # Determine goal metric to pick the right efficiency key
         goal = payload.get("account_state", {}).get("goal", {})
         goal_type = goal.get("type", "CPA").upper()
-        # Map goal type to the HOPE outcome field for efficiency delta
+        # Map goal type to the outcome field for efficiency delta
         efficiency_key = "roas_delta_pct" if goal_type == "ROAS" else "cpa_delta_pct"
 
         if voo and voo.get("outcomes"):

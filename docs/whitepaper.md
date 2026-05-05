@@ -9,25 +9,24 @@
 
 ## 0. How this was built
 
-This document describes a protocol HOPE Foundation built between
-2026-04-30 and 2026-05-04 — five days of intense work — with significant
-authoring assistance from Claude (Anthropic's coding agent). We are
-disclosing this up front for two reasons.
+This document describes a protocol built between 2026-04-30 and
+2026-05-04 — five days of intense work — with significant authoring
+assistance from an AI coding agent. We are disclosing this up front
+for two reasons.
 
 First, anyone reading the codebase will see the agent's fingerprints
-(Claude wrote large amounts of the test scaffolding and the docstrings
-verbatim). Pretending otherwise would be insulting to readers who can
-just open the commit history and see.
+(the agent wrote large amounts of the test scaffolding and the
+docstrings verbatim). Pretending otherwise would be insulting to
+readers who can just open the commit history and see.
 
-Second, the work that mattered most was NOT the code Claude generated.
-It was:
+Second, the work that mattered most was NOT the code the agent
+generated. It was:
 
-- **Choosing what to build.** Tom asked us, before the weekend, to "go
-  back to the drawing board" — the original SN21 design had validators
+- **Choosing what to build.** The original SN21 design had validators
   grading their own homework. The architecture in this paper is what
   came out of choosing, in successive iterations, which trust
   assumptions to remove and what cryptographic primitives to use to
-  remove them. Claude did not pick those primitives; Claude composed
+  remove them. The agent did not pick those primitives; it composed
   them once we'd chosen.
 
 - **Hitting the chain and finding the wall.** Phase 0 surfaced four
@@ -39,24 +38,22 @@ It was:
   failed, and testing the hypothesis on real testnet. This is the work
   that's hardest to outsource and easiest to spot in retrospect.
 
-- **Deciding what to NOT build.** Tom's earlier review correctly
-  pointed out that the architecture is sophisticated. We used that
-  sophistication budget on the bindings that matter (inner_sig,
-  AAD, IMT roots, three-tier archives) and rejected complexity that
-  didn't pay (multi-field commit, Djinn-style decoy submissions,
+- **Deciding what to NOT build.** The architecture is sophisticated.
+  We used that sophistication budget on the bindings that matter
+  (inner_sig, AAD, IMT roots, three-tier archives) and rejected
+  complexity that didn't pay (multi-field commit, decoy submissions,
   zk-proofs of scoring). The "what we deliberately defer" section
   (§13) is the artifact of that judgment.
 
 - **Running the probes.** Every claim in this paper backed by a
   number — "auto-decrypt fires in 105 seconds," "MaxSpace is 1,259
   blocks," "9.C.1 plaintext fits in 380 bytes" — comes from a probe
-  somebody manually ran against testnet 466, with the wallet at SS58
-  `5Hoo2cRURm8A36WupNHyBkdby3wyBEpwj7MAgpC9sLnhxJNw`. The probes are
-  in `scripts/phase0/`; the results are in
-  `scripts/phase0/results/`; the JSON outputs are signed implicitly
-  by the chain extrinsic hashes they reference.
+  somebody manually ran against testnet 466. The probes are in
+  `scripts/phase0/`; the results are in `scripts/phase0/results/`;
+  the JSON outputs are signed implicitly by the chain extrinsic
+  hashes they reference.
 
-The whitepaper itself was iterated by Claude given the design we'd
+The whitepaper itself was iterated by the agent given the design we'd
 locked in. We've reviewed every paragraph; the receipts (commits,
 probe outputs, test files) are linked at every claim.
 
@@ -64,14 +61,13 @@ If the question is "do you understand this solution?" — Section 4
 walks through an epoch end-to-end, Section 7's worked example shows
 which defense fires for which attack, Section 12 documents the
 edge cases we built around, and Appendix B records the empirical
-checks. None of those would survive a coffee-and-whiteboard
-conversation if the team didn't own them.
+checks.
 
-If the question is "could you rebuild this without Claude?" — slower,
-yes. The agent's role was the keyboard; the architecture decisions
-came from human judgment, and the empirical validation came from
-running real chain extrinsics that no agent could autonomously
-authorize.
+If the question is "could you rebuild this without the agent?" —
+slower, yes. The agent's role was the keyboard; the architecture
+decisions came from human judgment, and the empirical validation
+came from running real chain extrinsics that no agent could
+autonomously authorize.
 
 ---
 
@@ -153,7 +149,7 @@ When you read a validator's score for a miner, you can prove four
 things mechanically:
 
 1. The validator used the on-chain prediction we already verified.
-2. The validator used the on-chain outcome HOPE published.
+2. The validator used the on-chain outcome the operator published.
 3. The scoring algorithm is the published one — its hash is committed.
 4. Two independent verifiers will reach the same score.
 
@@ -173,11 +169,11 @@ later sections shorter.
 
 | Term | Meaning |
 |---|---|
-| **HOPE** | The Foundation that operates the protocol. Publishes episodes (questions to predict) and outcomes (measured ground truth). |
+| **Operator** | The party that operates the protocol. Publishes episodes (questions to predict) and outcomes (measured ground truth). |
 | **Episode** | A single prediction challenge. "What will the cost-per-conversion of this campaign be over the next 7 days?" |
 | **Epoch** | A batch of episodes released together. Typically 4-24 hours from open to deadline. |
 | **Miner** | A Bittensor neuron that predicts outcomes. Anonymous, registered by hotkey. |
-| **Validator** | A Bittensor neuron that scores predictions and submits weights. Currently HOPE runs the primary; a shadow runs in parallel. |
+| **Validator** | A Bittensor neuron that scores predictions and submits weights. The operator runs the primary; a shadow runs in parallel. |
 | **Prediction** | The miner's answer for one episode and one horizon: P10/P50/P90 quantiles + goal-miss probability + instability risk. |
 | **Outcome** | What actually happened: cost delta, conversion delta, efficiency delta, did the goal miss. |
 | **Commit-reveal** | A two-step protocol: post a hash now, post the bytes that hash to it later. Standard cryptographic pattern. |
@@ -185,7 +181,7 @@ later sections shorter.
 | **drand quicknet** | The League of Entropy's randomness beacon. Emits a signature every 3 seconds; signatures are the keys for TLE decryption. |
 | **IMT (indexed Merkle tree)** | A sorted Merkle tree with low/high pointers. Supports both inclusion AND non-inclusion proofs cheaply. |
 | **AAD (associated data)** | Extra bytes mixed into AES-GCM encryption. Binds ciphertext to a context (here: epoch_id) so it can't be replayed elsewhere. |
-| **Shadow validator** | A second validator HOPE runs that scores independently. Its commits are diffed against the primary's; mismatches are publicly auditable. |
+| **Shadow validator** | A second validator the operator runs that scores independently. Its commits are diffed against the primary's; mismatches are publicly auditable. |
 | **MaxSpace** | A subtensor rate limit: ~3,100 bytes of commits per (netuid, hotkey) per ~4-hour window. |
 | **Tempo** | A subnet's epoch length in chain blocks. Testnet 466 = 360 blocks ≈ 72 minutes. |
 
@@ -195,7 +191,7 @@ We will introduce one more term — `inner_sig` — when we get to it.
 
 ## 4. How an epoch runs (narrative)
 
-Three characters: **HOPE-Hannah** the outcome signer, **Miner Mike** the
+Three characters: **Hannah** the outcome signer, **Miner Mike** the
 prediction model operator, **Validator Vera** the scoring honest party.
 A fourth, **Adversary Adam**, will join in §10.
 
@@ -234,8 +230,8 @@ To submit, Mike does five things:
 3. Generates a fresh 32-byte AES key K. Encrypts the CBOR with K
    under AES-GCM, mixing the epoch ID into the AAD so the ciphertext
    only decrypts under THAT epoch.
-4. Uploads the AES ciphertext to two archive endpoints — HOPE's
-   long-retention server and his own.
+4. Uploads the AES ciphertext to two archive endpoints — the
+   operator's long-retention server and his own.
 5. Submits THREE commits on chain from his miner hotkey:
    - **TimelockEncrypted(K)** — the AES key, encrypted with drand TLE
      to a future round (typically deadline + 100 rounds = ~5 minutes).
@@ -299,13 +295,13 @@ second validator's hotkey — the rubber-stamp attack falls flat.
 
 ### Anyone can verify
 
-Now a third party — an advertiser, an auditor, Tom — runs:
+Now a third party — an advertiser, an auditor — runs:
 
 ```bash
 python scripts/verify_epoch.py \
     --epoch-id WR-2026-W18-PUB-E1 \
     --validator-hotkey 5GutpW22DLSvG9uM3vUEobGyGqck8ioctbGry8m3Wm2nkHKj \
-    --tier-2-base https://archive.hope.io \
+    --tier-2-base https://archive.example.io \
     --block-hash 0x<the block where Vera's 9.C.2 landed>
 ```
 
@@ -329,8 +325,8 @@ exhaustive list.
 
 | # | Layer | Who | What | Variant | Purpose |
 |---|---|---|---|---|---|
-| 1 | 9.A.1 | HOPE | release_commit_digest | Sha256 | Pin epoch rules at T=0 |
-| 2 | 9.A.2 | HOPE | reveal_blob_sha256 | Sha256 | Pin measured outcomes at T=deadline+δ |
+| 1 | 9.A.1 | Operator | release_commit_digest | Sha256 | Pin epoch rules at T=0 |
+| 2 | 9.A.2 | Operator | reveal_blob_sha256 | Sha256 | Pin measured outcomes at T=deadline+δ |
 | 3 | 9.B.K | Miner | TimelockEncrypted(K) | TimelockEncrypted | The miner's AES key, auto-decrypted by chain at reveal_round |
 | 4 | 9.B.s | Miner | Sha256(AES_ct) | Sha256 | Bind off-chain ciphertext to chain |
 | 5 | 9.B.u | Miner | self_archive_url | Raw{N} | Tier-3 archive location |
@@ -558,7 +554,7 @@ off chain, in a three-tier archive system.
 | Tier | Operator | Path | Retention | Purpose |
 |---|---|---|---|---|
 | 1 | Each validator | `archive.{validator_url}` | Until 9.C.2 reveals + 7 days | Fast local cache for scoring |
-| 2 | HOPE Foundation | `archive.hope.io` | ≥ 90 days | Long retention; geographically replicated |
+| 2 | Subnet operator | `archive.example.io` | ≥ 90 days | Long retention; geographically replicated |
 | 3 | Each miner | URL declared in chain commit | Best-effort | Fallback if Tier-1/2 lose bytes |
 
 A validator looking up Mike's AES_ct at scoring time tries Tier-1
@@ -575,11 +571,12 @@ blob's SHA on chain. A verifier rerunning the audit can reproduce the
 same fall-through and confirm the exclusion was honest.
 
 The point of three tiers is fault tolerance under any 1-of-3 outage,
-not theatrical redundancy. If HOPE's archive server goes down, miners
-who self-archive still get scored. If a miner fails to self-archive,
-HOPE's tier covers them. If both fail simultaneously for the SAME
-miner in the SAME epoch, that miner's prediction can't be retrieved
-and the protocol records the failure publicly.
+not theatrical redundancy. If the operator's archive server goes down,
+miners who self-archive still get scored. If a miner fails to
+self-archive, the operator's tier covers them. If both fail
+simultaneously for the SAME miner in the SAME epoch, that miner's
+prediction can't be retrieved and the protocol records the failure
+publicly.
 
 ---
 
@@ -591,7 +588,7 @@ strategically dishonest in a way that's invisible to a single
 verifier checking only her work.
 
 The architecture defends against this via a **shadow validator**, a
-parallel HOPE-operated process running on a separate hotkey, separate
+parallel operator-run process running on a separate hotkey, separate
 host, ideally separate cloud provider. The shadow:
 
 1. Reads the same chain state Vera reads.
@@ -649,13 +646,13 @@ def test_shadow_using_primary_plaintext_fails_under_shadow_slot():
 
 ### 9.2 What the shadow doesn't fix
 
-The shadow is an operational defense, not a cryptographic one. If
-HOPE controls both primary and shadow, HOPE can collude with itself.
-The architecture mitigates this with three layers:
+The shadow is an operational defense, not a cryptographic one. If a
+single operator controls both primary and shadow, that operator can
+collude with itself. The architecture mitigates this with three layers:
 
-1. **Phase 1 (current)**: HOPE primary + HOPE shadow, hosted
+1. **Phase 1 (current)**: operator primary + operator shadow, hosted
    separately, ideally with audit-trail separation.
-2. **Phase 2**: HOPE primary + INDEPENDENT third-party shadow (a
+2. **Phase 2**: operator primary + INDEPENDENT third-party shadow (a
    contracted audit firm or a validator-as-a-service operator) with a
    different operator key.
 3. **Phase 3+**: External validators register on netuid 21
@@ -664,9 +661,9 @@ The architecture mitigates this with three layers:
 
 The shadow buys us cryptographic-level defenses against
 single-validator dishonesty. It does NOT buy us protection against
-HOPE-as-an-organization being dishonest. That requires Phase 3's
-external validators or, ultimately, an upstream chain runtime change
-(see §13).
+the operator-as-an-organization being dishonest. That requires Phase
+3's external validators or, ultimately, an upstream chain runtime
+change (see §13).
 
 ---
 
@@ -693,11 +690,11 @@ contains 12 scenarios; 11 fire correctly, 1 is a structural proof.)
 
 Every test is reproducible in 5 seconds: `pytest tests/adversarial/ -v`.
 
-We cannot stop a determined HOPE-as-an-entity from being dishonest; we
-can only make dishonesty publicly auditable and economically painful
-(via Yuma stake-weighted clipping). The 12 tests cover the
-cryptographic surface. The economic and operational defenses live in
-the next section.
+We cannot stop a determined operator-as-an-entity from being
+dishonest; we can only make dishonesty publicly auditable and
+economically painful (via Yuma stake-weighted clipping). The 12 tests
+cover the cryptographic surface. The economic and operational
+defenses live in the next section.
 
 ---
 
@@ -716,7 +713,7 @@ chain, not invented by us.
   median: each miner's effective weight is the median of all
   validators' weights, weighted by validator stake.
 - Emissions are split:
-  - 18% to the subnet creator (HOPE).
+  - 18% to the subnet creator.
   - 41% to validators (in proportion to their stake).
   - 41% to miners (in proportion to their consensus weight).
 
@@ -776,19 +773,19 @@ the verifier can't read them.
 
 **Response:**
 - For outages < 5 min: chain catches up automatically. No action.
-- For outages 5 min – 24h: HOPE publishes a `Sha256` commit with payload
-  `b"v1.0:epoch-skipped-drand-outage"`, miners are excused, the epoch is
-  void.
-- For outages > 24h: HOPE governance issues a `Sha256` with
-  `b"v1.0:emergency-fallback-instructions"` pointing to a manual recovery
-  procedure.
+- For outages 5 min – 24h: the operator publishes a `Sha256` commit
+  with payload `b"v1.0:epoch-skipped-drand-outage"`, miners are
+  excused, the epoch is void.
+- For outages > 24h: governance issues a `Sha256` with
+  `b"v1.0:emergency-fallback-instructions"` pointing to a manual
+  recovery procedure.
 
 The protocol degrades visibly. Validators don't silently use stale
 data; they explicitly skip the epoch.
 
 ### 12.2 Archive loss
 
-If both Tier-2 (HOPE) and Tier-3 (miner self) lose a specific miner's
+If both Tier-2 (operator) and Tier-3 (miner self) lose a specific miner's
 AES_ct between submission and scoring time, the validator can't
 retrieve the bytes and excludes the miner with `plaintext_unavailable`.
 The 9.C.6 retry log records the attempts, which a verifier can
@@ -858,8 +855,8 @@ shouldn't have received credit for, the dispute path is:
    output. Either the validator's IMT root mismatches the verifier's
    recomputation, or an inner_sig fails. Both cases are public faults.
 4. Advertisers with sufficient stake can publish their dispute via a
-   `Sha256` commit from a HOPE-issued advertiser hotkey, anchoring the
-   complaint into chain history.
+   `Sha256` commit from an operator-issued advertiser hotkey,
+   anchoring the complaint into chain history.
 
 This is not arbitration. There is no judge. The dispute path is purely
 mechanical: replay the chain, see who's right.
@@ -910,7 +907,7 @@ chain footprint, slightly more off-chain trust.
 
 A miner's predictions become public after the chain auto-decrypts K
 and verifiers fetch the AES_ct. There is no privacy mechanism for
-"ship a prediction nobody else can ever see, including HOPE."
+"ship a prediction nobody else can ever see, including the operator."
 
 This is by design. Auditing requires plaintext access. A miner who
 wants their model's outputs private should not participate in a
@@ -1049,8 +1046,7 @@ What we've actually run on chain:
 - 1 H-4 verification probe via `set_reveal_commitment` (PASS — found the fix).
 - 1 H-6 end-to-end round-trip (PASS — submit → auto-decrypt → decode in 105s).
 
-Validator running live at `validator.adtao.io` (chain mode flip pending
-operator decision).
+Validator running live (chain mode flip pending operator decision).
 
 ---
 
@@ -1059,8 +1055,8 @@ operator decision).
 The protocol is generic over "predict some future quantity that has
 verifiable ground truth." Google Ads is the v1 target because:
 
-- HOPE has authoritative measurement infrastructure (we ARE the
-  authoritative oracle for our own customers' campaigns).
+- The operator has authoritative measurement infrastructure (the
+  authoritative oracle for participating customers' campaigns).
 - The data is dense, daily, and has natural prediction horizons (7d, 14d).
 - The questions are commercially valuable (advertisers pay real money
   for accurate forecasts).
@@ -1073,7 +1069,7 @@ generalizes to:
 Meta, TikTok, LinkedIn — same protocol, different episode schema.
 Adapters live in `hope/protocol/episode.py` and the scoring weights in
 `hope/scoring/weights.py`. A new platform is a new schema + a new
-HOPE-equivalent oracle.
+authoritative oracle.
 
 ### 15.2 Other data domains with a similar shape
 
@@ -1084,7 +1080,7 @@ Anything where:
 - Quantile predictions (P10/P50/P90) are valuable.
 
 E-commerce demand forecasting fits. Supply chain logistics fit. Crop
-yield forecasting fits. Each requires a HOPE-equivalent oracle; the
+yield forecasting fits. Each requires an authoritative oracle; the
 protocol is otherwise unchanged.
 
 ### 15.3 Protocol-level upgrades
@@ -1097,8 +1093,8 @@ protocol is otherwise unchanged.
   validator; their TAO emission would aggregate. Requires Bittensor
   multi-subnet weight protocols, currently exploratory.
 - **External validator participation**: Phase 3 of the architecture
-  opens validator slots to non-HOPE operators. The operator runbook is
-  designed to make this a pure runtime operation — no special HOPE
+  opens validator slots to third-party operators. The operator runbook
+  is designed to make this a pure runtime operation — no special
   privileges required.
 
 ---
@@ -1131,10 +1127,10 @@ honestly grade their own homework.
 To the question we opened with — "do we understand this solution?" —
 the only honest answer is the one this paper has tried to give: yes,
 because we made the design choices and we found the bugs and we ran
-the probes; and we used Claude to help compose the result, the way we
-use IDEs and linters and continuous integration. The agent's
-contribution and ours are both visible in the commit history. Tom or
-any reader can audit either independently.
+the probes; and we used an AI coding agent to help compose the
+result, the way we use IDEs and linters and continuous integration.
+The agent's contribution and ours are both visible in the commit
+history. Any reader can audit either independently.
 
 Mainnet next.
 
@@ -1256,10 +1252,8 @@ The architecture's claims are backed by measurement. Here is the record.
 
 ### C.5 Code
 
-- Public repository: <https://github.com/ippcteam/tao-discovery>.
-- Validator deployment: <https://validator.adtao.io>.
 - Architecture commits 5d5a195 → present: every phase landed on `main`.
 
 ---
 
-*Last updated 2026-05-04, v1.0+G+H. Authored by HOPE Foundation (Jayesh, with the SN21 team) with substantial composition assistance from Claude (Anthropic). Engineering decisions, design judgments, and empirical validation are HOPE's; the paper's prose was iterated through Claude. All claims are linked to source files and commit hashes; readers should verify directly.*
+*Last updated 2026-05-04, v1.0+G+H. Composed with substantial authoring assistance from an AI coding agent. Engineering decisions, design judgments, and empirical validation are the maintainers'; the paper's prose was iterated through the agent. All claims are linked to source files and commit hashes; readers should verify directly.*

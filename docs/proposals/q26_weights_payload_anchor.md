@@ -1,6 +1,6 @@
 # Proposal: Add a 32-byte anchor field to `WeightsTlockPayload`
 
-**Authors:** HOPE Foundation (SN21)
+**Authors:** SN21 maintainers
 **Status:** Draft for Bittensor Subtensor RFC
 **Target:** `pallets/subtensor` runtime — `WeightsTlockPayload` struct
 **Issue tracking:** SN21 architecture Q26 / T-20b residual gap
@@ -26,7 +26,7 @@ runtime logic — and is purely opt-in for subnets that don't need it.
 
 ## 2. Problem
 
-A subnet protocol like SN21 (HOPE verifiable-scoring architecture) wants
+A subnet protocol like SN21 (verifiable-scoring architecture) wants
 the following property:
 
 > The weights a validator commits MUST be the deterministic output of a
@@ -53,8 +53,8 @@ A malicious validator could:
 The chain has no way to distinguish A from A' because the weights
 payload doesn't reference the artifact at all.
 
-The architecture currently mitigates this operationally — a HOPE-run
-shadow validator independently computes scoring and submits a parallel
+The architecture currently mitigates this operationally — an
+operator-run shadow validator independently computes scoring and submits a parallel
 9.C.2/9.C.3 pair, and Yuma's stake-weighted median clips the dishonest
 actor when stake is balanced. This works but is operational not
 cryptographic, and degrades gracefully (not catastrophically) only when

@@ -95,7 +95,7 @@ def read_miner_for_epoch(
         archive_endpoints: ordered list to try; Tier-1, Tier-2, Tier-3.
             Caller can include the miner's Tier-3 self_archive_url ONLY after
             verifying chain_commits.self_archive_url matches the endpoint URL.
-        epoch_id: HOPE release_key for this epoch (drives AAD).
+        epoch_id: the operator release_key for this epoch (drives AAD).
         timing: protocol-allowed window for submitted_round and chain block.
         miner_uid: subnet UID for archive paths and logging.
         miner_identity_for_archive: SS58 of the miner hotkey (used in archive

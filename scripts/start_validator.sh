@@ -11,8 +11,8 @@
 #   BT_NETWORK         — test or finney
 #   PORT               — HTTP port (default: 8080)
 #   BURN_FRACTION      — burn rate (default: 0.95)
-#   HOPE_API_KEY       — HOPE data API key
-#   HOPE_API_URL       — HOPE data API base URL
+#   HOPE_API_KEY       — data API key
+#   HOPE_API_URL       — data API base URL
 
 set -e
 

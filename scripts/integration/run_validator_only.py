@@ -5,13 +5,13 @@ Runs ONLY the validator-side Layer 9.C extrinsics:
   - 9.C.3 weights commit (commit_timelocked_weights, separate pallet)
   - 9.C.2 post-scoring artifacts (TLE)
 
-Skips HOPE 9.A.1/9.A.2 + miner 9.B because the testnet wallet has only
+Skips the operator 9.A.1/9.A.2 + miner 9.B because the testnet wallet has only
 ONE hotkey (UID 0 on netuid 466) and MaxSpace is 3,100 B per RateLimit
 window per (netuid, account). Running all 8 extrinsics from one hotkey
 would exceed the cap. The slimmed run uses ~1,960 B + the 9.C.3 weights
 extrinsic which goes through a different pallet.
 
-Deferred: HOPE outcome commit-reveal + miner 9.B will be exercised on
+Deferred: outcome commit-reveal + miner 9.B will be exercised on
 mainnet (or in a multi-wallet testnet rerun) where each role has its
 own hotkey.
 

@@ -1,6 +1,6 @@
 """Generate training dataset for miners.
 
-Pulls episodes + outcomes from HOPE API and packages them as a
+Pulls episodes + outcomes from data API and packages them as a
 downloadable training set. Miners use this to train models before
 predicting on live epochs.
 
@@ -30,7 +30,7 @@ async def generate(release_key: str, output_dir: str, api_key: str):
     """Fetch episodes + outcomes and save as training data."""
     client = HopeDataClient(api_key=api_key)
 
-    print(f"Fetching {release_key} from HOPE API...")
+    print(f"Fetching {release_key} from data API...")
     data = await client.fetch_epoch_data(release_key)
     print(f"  Episodes: {data.episode_count}")
 

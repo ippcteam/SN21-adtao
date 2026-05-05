@@ -1,6 +1,6 @@
-"""Layer 9.E — HOPE Shadow Validator.
+"""Layer 9.E — the operator Shadow Validator.
 
-The HOPE Foundation runs an independent validator that:
+The the maintainers runs an independent validator that:
 
   1. Reads the SAME on-chain miner commits any other validator sees.
   2. Runs the SAME scoreability rule + scoring algorithm.
@@ -74,7 +74,7 @@ def run_shadow_epoch(
     blocks_until_post_scoring_reveal: int,
     blocks_until_weights_reveal: int,
 ) -> EpochScoringOutcome:
-    """Run one epoch as the HOPE shadow validator.
+    """Run one epoch as the operator shadow validator.
 
     The signature is the SAME as `run_epoch_scoring(...)` — there's nothing
     structurally different from a primary validator's run. The only behavioural
@@ -89,7 +89,7 @@ def run_shadow_epoch(
     comparing roots across slots.
 
     Args:
-        shadow_wallet: HOPE's Bittensor `Wallet` (different from primary).
+        shadow_wallet: the operator's Bittensor `Wallet` (different from primary).
         shadow_hotkey: 32-byte raw ed25519 public key of the shadow validator.
         shadow_signing_key: ed25519 private key matching `shadow_hotkey`.
         (other args identical to `run_epoch_scoring`)

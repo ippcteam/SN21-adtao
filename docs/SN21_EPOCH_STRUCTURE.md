@@ -1,4 +1,4 @@
-# HOPE Bittensor Subnet (SN21) — Epoch Structure
+# Bittensor Subnet (SN21) — Epoch Structure
 
 | | |
 | :---- | :---- |
@@ -37,7 +37,7 @@ Consolidation epochs activate when there are at least two active campaign types 
 
 ### Phase flexibility
 
-The number of weekly epochs within a phase is indicative. HOPE may extend a phase when episode volume, miner pool readiness, or infrastructure warrant it. Compression is possible but rare. Two commitments are firm:
+The number of weekly epochs within a phase is indicative. The operator may extend a phase when episode volume, miner pool readiness, or infrastructure warrant it. Compression is possible but rare. Two commitments are firm:
 
 - Every phase has a minimum of two weekly epochs before it can be consolidated or succeeded.  
 - Any phase change is announced at least two weeks before activation.  
@@ -91,7 +91,7 @@ Video/Display is slightly discounted because measurement noise reduces informati
 
 ### Scoring baseline
 
-At launch, many episodes come from accounts not managed through the HOPE decision engine. Where no platform system estimate exists, **episode-level** comparison uses the **conditional prior** and related rules in [SN21_REWARD_MECHANISM.md](./SN21_REWARD_MECHANISM.md). The platform system-estimate baseline will be introduced progressively as HOPE-managed episodes grow as a share of the pool.
+At launch, many episodes come from accounts not managed through the operator's decision engine. Where no platform system estimate exists, **episode-level** comparison uses the **conditional prior** and related rules in [SN21_REWARD_MECHANISM.md](./SN21_REWARD_MECHANISM.md). The platform system-estimate baseline will be introduced progressively as operator-managed episodes grow as a share of the pool.
 
 ## Episode difficulty spectrum
 
@@ -165,7 +165,7 @@ Lowest volume, weakest measurement; directional accuracy dominates. Specialist c
 | Ongoing | Specialist | Action-type focus | Indicative |
 | Quarterly | Championship | Max complexity, highest emissions | Indicative |
 
-Indicative epochs may be added if HOPE extends a phase. Each epoch is exactly one week; payout at the end of every epoch.
+Indicative epochs may be added if the operator extends a phase. Each epoch is exactly one week; payout at the end of every epoch.
 
 ## Epoch announcement protocol
 
@@ -173,7 +173,7 @@ Each new phase and each consolidation epoch is announced at least two weeks befo
 
 Announcements are published on:
 
-- @AdTAO (X/Twitter) — technical framing and prep  
+- Subnet social channels — technical framing and prep  
 - SN21 Discord `#announcements` — full detail including episode mix and emission weights  
 - Miner quickstart — updated before new episode types go live  
 

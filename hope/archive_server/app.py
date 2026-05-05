@@ -1,4 +1,4 @@
-"""FastAPI app for SN21 archive servers (Tier-2 HOPE shadow + Tier-3 miner self).
+"""FastAPI app for SN21 archive servers (Tier-2 operator shadow + Tier-3 miner self).
 
 Endpoints:
 
@@ -25,7 +25,7 @@ hundred bytes; the cap is purely DoS hardening.
 Auth model:
   - When `require_signed_uploads=False` (default Tier-3 miner self):
     open POST. Anyone can upload, but a digest mismatch gets 400.
-  - When `require_signed_uploads=True` (Tier-2 HOPE shadow):
+  - When `require_signed_uploads=True` (Tier-2 operator shadow):
     POST must include X-Miner-Hotkey (SS58 of the miner) and
     X-Miner-Signature = ed25519_sign(digest, miner_hotkey_privkey)
     where digest = SHA-256(b"sn21-archive-v1:" + epoch_id_utf8 +
@@ -123,7 +123,7 @@ def build_app(
         max_body_bytes: per-request body cap.
         require_signed_uploads: when True, POSTs must carry a valid
             X-Miner-Hotkey + X-Miner-Signature pair binding the upload to
-            the named miner. Tier-2 (HOPE shadow) sets this; Tier-3 self
+            the named miner. Tier-2 (operator shadow) sets this; Tier-3 self
             archives typically leave it False.
 
     Returns:

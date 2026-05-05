@@ -152,8 +152,8 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
         logger.info("Validator HTTP API shutting down")
 
     app = FastAPI(
-        title="AdTAO SN21 Validator",
-        description="Validator HTTP API for the AdTAO Impact Prediction Subnet",
+        title="SN21 Validator",
+        description="Validator HTTP API for the Impact Prediction Subnet",
         version="0.1.0",
         lifespan=lifespan,
     )
@@ -170,7 +170,7 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
     @app.get("/")
     async def root():
         return {
-            "service": "adtao-sn21-validator",
+            "service": "sn21-validator",
             "endpoints": {
                 "health": "/health",
                 "api": "/v1/epochs/{epoch_id}/...",
@@ -189,7 +189,7 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
         )
         return {
             "status": "ok",
-            "service": "adtao-sn21-validator",
+            "service": "sn21-validator",
             "current_epoch": epoch_id,
             "episodes_loaded": episode_count,
             "predictions_received": predictions_count,

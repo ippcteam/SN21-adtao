@@ -5,10 +5,10 @@ Ensures every link in the chain is verifiable:
 1. Episode commitment: SHA256 of episode bundle, published before miners see data
 2. Prediction receipts: Miner signs prediction, validator returns signed receipt
 3. Prediction Merkle tree: Root published BEFORE outcomes are fetched
-4. Outcome verification: HOPE signs outcomes, validator verifies signature
+4. Outcome verification: the operator signs outcomes, validator verifies signature
 5. Scoring commitment: Deterministic scoring output hash
 
-The principle: an external observer with no trust in HOPE, the validator,
+The principle: an external observer with no trust in the operator, the validator,
 or any miner can independently verify correctness at every step.
 """
 

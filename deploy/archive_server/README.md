@@ -7,7 +7,7 @@ SHA-256 matches.
 
 | Tier | Operator | Auth model | Retention |
 |---|---|---|---|
-| Tier-2 (HOPE shadow) | HOPE Foundation | `require_signed_uploads=true` | ≥ 90 days |
+| Tier-2 (operator shadow) | Subnet operator | `require_signed_uploads=true` | ≥ 90 days |
 | Tier-3 (miner self) | each miner | `require_signed_uploads=false` (typical) | best-effort |
 
 ## Run with Docker Compose
@@ -70,9 +70,9 @@ container/service listens on plain HTTP. Sample nginx snippet:
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name archive.hope.example;
-    ssl_certificate     /etc/ssl/hope/fullchain.pem;
-    ssl_certificate_key /etc/ssl/hope/privkey.pem;
+    server_name archive.example.com;
+    ssl_certificate     /etc/ssl/archive/fullchain.pem;
+    ssl_certificate_key /etc/ssl/archive/privkey.pem;
 
     client_max_body_size 4m;
 
@@ -114,7 +114,7 @@ python scripts/verify_epoch.py \
     --epoch-id EPOCH-2026-... \
     --validator-hotkey 5GxVLdpRGZN... \
     --netuid 21 --network finney \
-    --tier-2-base https://archive.hope.example
+    --tier-2-base https://archive.example.com
 ```
 
 Expected output: `OK: True` plus per-root match details.

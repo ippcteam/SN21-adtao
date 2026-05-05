@@ -1,6 +1,6 @@
-"""Layer 9.A.2 — HOPE outcome reveal blob (post-deadline).
+"""Layer 9.A.2 — outcome reveal blob (post-deadline).
 
-After the miner deadline passes, HOPE measures actual outcomes and publishes
+After the miner deadline passes, the operator measures actual outcomes and publishes
 a JSON reveal blob containing:
 
   - `release_commit_plaintext_sha256`: anchors back to the 9.A.1 commit.
@@ -10,14 +10,14 @@ a JSON reveal blob containing:
 
 The blob's SHA-256 is committed on chain via
 `submit_outcome_reveal_hash_layer_9a2`. ONLY AFTER that commit is finalized
-does HOPE serve the blob via HTTPS — the commit-then-serve gate (CL-9 in
-v0.7) prevents HOPE from selectively serving different blobs to different
+does the operator serve the blob via HTTPS — the commit-then-serve gate (CL-9 in
+v0.7) prevents the operator from selectively serving different blobs to different
 validators.
 
 A third party verifies as follows:
   1. Read 9.A.1 release_commit_digest from chain.
   2. Read 9.A.2 reveal_blob_sha256 from chain (must be a later block).
-  3. Fetch reveal blob via HOPE HTTPS.
+  3. Fetch reveal blob via the operator HTTPS.
   4. SHA-256 the bytes; compare to chain-anchored hash.
   5. BLAKE2b-256 the embedded release_commit_plaintext; compare to 9.A.1 chain hash.
   6. Re-sign + verify outcome_signer's inner_sig against

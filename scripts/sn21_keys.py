@@ -1,6 +1,6 @@
 """SN21 ed25519 key-management CLI.
 
-Miners, validators, and the HOPE outcome signer each need a 32-byte ed25519
+Miners, validators, and the outcome signer each need a 32-byte ed25519
 signing key for the protocol's `inner_sig` (Layer 9.A.1 / 9.B / 9.C.1 / 9.C.2).
 
 Bittensor SS58 hotkeys are typically sr25519. SN21 cannot reuse them

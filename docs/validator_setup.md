@@ -1,6 +1,6 @@
 # Validator Setup Guide
 
-**For:** Running the HOPE SN21 validator
+**For:** Running the SN21 validator
 **Prerequisite:** Python 3.10+, Bittensor wallet (for testnet/mainnet)
 
 ---
@@ -8,7 +8,7 @@
 ## 1. Installation
 
 ```bash
-git clone https://github.com/ippcteam/tao-discovery.git
+git clone <repo-url>
 cd tao-discovery
 pip install -e .
 ```
@@ -17,14 +17,14 @@ pip install -e .
 
 ## 2. Quick Start (Local Testing)
 
-Run a single epoch against the live HOPE data API:
+Run a single epoch against the live data API:
 
 ```bash
 hope-validator --release WR-2026-W18-PUB-E1 --port 8080 --score-now
 ```
 
 This will:
-1. Fetch 101 episodes from the HOPE API
+1. Fetch 101 episodes from the data API
 2. Compute commitment hash
 3. Score immediately (no miner interaction)
 4. Print results
@@ -48,9 +48,9 @@ hope-validator --release WR-2026-W18-PUB-E1 --port 8080
 ```
 
 This starts the FastAPI server and waits for miners to connect. The validator:
-- Fetches episodes from HOPE API
+- Fetches episodes from the data API
 - Commits outcome hash before distributing
-- Serves episodes at `https://validator.adtao.io/v1/epochs/{epoch_id}/episodes`
+- Serves episodes at `<validator-url>/v1/epochs/{epoch_id}/episodes`
 - Accepts predictions at `POST /v1/epochs/{epoch_id}/predictions`
 
 ### Tell miners your endpoint
@@ -58,7 +58,7 @@ This starts the FastAPI server and waits for miners to connect. The validator:
 Miners connect with:
 
 ```bash
-hope-miner --validator-url https://validator.adtao.io --epoch WR-2026-W18-PUB-E1
+hope-miner --validator-url <validator-url> --epoch WR-2026-W18-PUB-E1
 ```
 
 ### Score after deadline
@@ -144,7 +144,7 @@ IDLE → PREPARING → COMMITTED → DISTRIBUTING → COLLECTING → SCORING →
 
 | State | What Happens |
 |-------|-------------|
-| **PREPARING** | Fetch episodes + outcomes from HOPE API, verify package hash |
+| **PREPARING** | Fetch episodes + outcomes from the data API, verify package hash |
 | **COMMITTED** | Compute SHA-256 hash of outcomes + salt + weights |
 | **DISTRIBUTING** | Start serving episodes to miners via HTTP |
 | **COLLECTING** | Accept predictions until deadline (48 hours default) |
@@ -184,9 +184,9 @@ This proves the validator did not change outcomes after seeing miner predictions
 
 ---
 
-## 7. HOPE Data API
+## 7. Data API
 
-The validator fetches data from HOPE's internal API:
+The validator fetches data from the operator's internal API:
 
 | Endpoint | Purpose |
 |----------|---------|
@@ -251,8 +251,8 @@ Weights must sum to 1.0 and stay within published ranges.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HOPE_API_KEY` | *(required)* | HOPE data API key — provided on validator registration |
-| `HOPE_API_URL` | *(required)* | HOPE data API base URL — provided on validator registration |
+| `HOPE_API_KEY` | *(required)* | data API key — provided on validator registration |
+| `HOPE_API_URL` | *(required)* | data API base URL — provided on validator registration |
 | `VALIDATOR_PORT` | `8080` | HTTP API port |
 | `PREDICTION_DEADLINE_HOURS` | `48` | Hours miners have to submit |
 
@@ -261,7 +261,7 @@ Weights must sum to 1.0 and stay within published ranges.
 ```
 hope-validator
   --release KEY          Release key to process (e.g., WR-2026-W18-PUB-E1)
-  --api-key KEY          HOPE API key
+  --api-key KEY          data API key
   --port PORT            API server port (default: 8080)
   --score-now            Score immediately without waiting for miners
 ```
@@ -274,7 +274,7 @@ hope-validator
 
 - Python 3.10-3.12
 - 2GB RAM minimum (episodes are ~15KB each, 300 episodes = ~4.5MB)
-- Stable internet for HOPE API access
+- Stable internet for data API access
 - Open port for miner HTTP connections
 
 ### Recommended setup
@@ -291,7 +291,7 @@ tail -f validator.log
 ### Weekly epoch cycle
 
 Each Monday:
-1. A new release is available from HOPE (e.g., `WR-2026-W19-PUB-E1`)
+1. A new release is available from the operator (e.g., `WR-2026-W19-PUB-E1`)
 2. Restart the validator with the new release key
 3. Miners have 48 hours to submit predictions
 4. Trigger scoring after deadline
@@ -306,5 +306,5 @@ Each Monday:
 | `Package hash verification failed` | Network issue — retry fetch |
 | `Epoch not found` (404 from miners) | Miner using wrong epoch_id |
 | `Prediction deadline has passed` | Miner submitted too late |
-| `No valid tokens` from HOPE API | Check API key |
+| `No valid tokens` from data API | Check API key |
 | Low miner scores | Expected for baseline model — miners should build better models |

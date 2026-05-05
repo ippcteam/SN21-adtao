@@ -1,4 +1,4 @@
-"""Protocol models for HOPE SN21 — episode, prediction, and outcome schemas."""
+"""Protocol models for the operator SN21 — episode, prediction, and outcome schemas."""
 
 from hope.protocol.episode import Episode, AccountState, ActionBundle, PreWindow
 from hope.protocol.prediction import Prediction, HorizonPrediction, QuantilePrediction

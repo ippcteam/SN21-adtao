@@ -52,7 +52,7 @@ def load_from_files(episodes_path: str, predictions_path: str, outcomes_path: st
 
 
 async def load_from_release(release_key: str, api_key: str = "", api_url: str | None = None):
-    """Fetch episodes and outcomes from the live HOPE API."""
+    """Fetch episodes and outcomes from the live data API."""
     from hope.validator.data_client import HopeDataClient
 
     kwargs = {"api_key": api_key}
@@ -81,15 +81,15 @@ def run_baseline(episodes: list[Episode]) -> dict[str, list[Prediction]]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="HOPE SN21 Offline Scoring Tool")
-    parser.add_argument("--release", type=str, help="Release key to fetch from HOPE API")
+    parser = argparse.ArgumentParser(description="the operator SN21 Offline Scoring Tool")
+    parser.add_argument("--release", type=str, help="Release key to fetch from data API")
     parser.add_argument("--episodes", type=str, help="Path to episodes JSON file")
     parser.add_argument("--predictions", type=str, help="Path to predictions JSON file")
     parser.add_argument("--outcomes", type=str, help="Path to outcomes JSON file")
     parser.add_argument("--run-baseline", action="store_true", help="Run baseline model and score it")
     parser.add_argument("--api-key", type=str, default=os.environ.get("HOPE_API_KEY", ""),
-                        help="HOPE API key (or set HOPE_API_KEY env var)")
-    parser.add_argument("--api-url", type=str, default=None, help="Override HOPE API base URL")
+                        help="data API key (or set HOPE_API_KEY env var)")
+    parser.add_argument("--api-url", type=str, default=None, help="Override data API base URL")
     parser.add_argument("--verbose", action="store_true", help="Show per-episode scores")
     args = parser.parse_args()
 
@@ -100,7 +100,7 @@ def main():
 
     # Load data
     if args.release:
-        print(f"Fetching data from HOPE API for {args.release}...")
+        print(f"Fetching data from data API for {args.release}...")
         loop = asyncio.new_event_loop()
         episodes, outcomes = loop.run_until_complete(
             load_from_release(args.release, args.api_key, args.api_url)

@@ -40,7 +40,7 @@ def aes_gcm_aad(epoch_id: str) -> bytes:
     AAD = b"sn21-prediction-v1:{epoch_id}" as exact UTF-8 bytes.
 
     The epoch_id binding prevents cross-epoch ciphertext replay (T-16 fix).
-    HOPE's release_key format is constrained to [A-Z0-9-]{1,80}, so no
+    the operator's release_key format is constrained to [A-Z0-9-]{1,80}, so no
     special-character ambiguity is possible.
     """
     return f"{_AAD_PREFIX_PREDICTION}:{epoch_id}".encode("utf-8")

@@ -8,10 +8,10 @@ Key security property:
   This prevents validators from seeing answers before miners submit.
 
 Phase separation:
-  1. PREPARING: fetch episodes ONLY (no outcomes) from HOPE API
+  1. PREPARING: fetch episodes ONLY (no outcomes) from data API
   2. DISTRIBUTING → COLLECTING: miners submit predictions
   3. CLOSED: submission deadline passed, no more predictions accepted
-  4. SCORING: NOW fetch outcomes from HOPE API, score predictions
+  4. SCORING: NOW fetch outcomes from data API, score predictions
   5. REVEALING: publish outcomes for verification
 """
 

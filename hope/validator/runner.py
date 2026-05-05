@@ -1,8 +1,8 @@
-"""Validator Runner — main entry point for the HOPE SN21 validator.
+"""Validator Runner — main entry point for the the operator SN21 validator.
 
 Orchestrates the complete validator lifecycle:
 1. Initialize Bittensor wallet, subtensor, metagraph
-2. Fetch epoch data from HOPE API
+2. Fetch epoch data from data API
 3. Compute commitment hash
 4. Start FastAPI server for miner interaction (HTTP only — no Synapses)
 5. Collect predictions until deadline
@@ -43,7 +43,7 @@ class ValidatorRunner:
         # Bittensor config
         network: str = "test",
         netuid: int = 0,
-        wallet_name: str = "adtao_validator",
+        wallet_name: str = "sn21_validator",
         wallet_hotkey: str = "default",
         no_chain: bool = False,
         burn_fraction: float = 0.95,
@@ -122,7 +122,7 @@ class ValidatorRunner:
             logger.info(f"Registered miners from metagraph: {len(registered)}")
 
         # Fetch episodes ONLY — outcomes are NOT fetched here
-        logger.info("Fetching episodes ONLY from HOPE API (outcomes NOT fetched)...")
+        logger.info("Fetching episodes ONLY from data API (outcomes NOT fetched)...")
         episodes_data = await self.hope_client.fetch_episodes_only(release_key)
 
         ctx = self.epoch_manager.prepare_episodes_only(
@@ -151,7 +151,7 @@ class ValidatorRunner:
 
         Phase separation enforced:
         1. Close submission window
-        2. NOW fetch outcomes from HOPE API (provably after deadline)
+        2. NOW fetch outcomes from data API (provably after deadline)
         3. Score predictions against outcomes
         4. Set weights on-chain
         5. Reveal for verification
@@ -276,20 +276,20 @@ def main():
     """CLI entry point for the validator."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="AdTAO SN21 Validator")
+    parser = argparse.ArgumentParser(description="SN21 Validator")
     parser.add_argument("--release", type=str,
                         default=os.environ.get("RELEASE_KEY", ""),
                         help="Release key to process (or set RELEASE_KEY env var)")
     parser.add_argument("--api-key", type=str,
                         default=os.environ.get("HOPE_API_KEY", ""),
-                        help="HOPE API key (or set HOPE_API_KEY env var)")
+                        help="data API key (or set HOPE_API_KEY env var)")
     parser.add_argument("--port", type=int, default=8080, help="API server port")
     parser.add_argument("--network", type=str, default="test",
                         choices=["test", "finney", "local"], help="Bittensor network")
     parser.add_argument("--netuid", type=int,
                         default=int(os.environ.get("NETUID", "21")),
                         help="Subnet netuid (or set NETUID env var)")
-    parser.add_argument("--wallet-name", type=str, default="adtao_validator",
+    parser.add_argument("--wallet-name", type=str, default="sn21_validator",
                         help="Wallet name")
     parser.add_argument("--wallet-hotkey", type=str, default="default",
                         help="Wallet hotkey")
@@ -381,7 +381,7 @@ def _run_validator_onchain_cli(args, runner):
     """Bridge from CLI flags to `run_epoch_scoring`.
 
     Stitches together the chain reads, archive endpoints, ground-truth
-    aggregation from HOPE's reveal blob, and scorer adapter.
+    aggregation from the operator's reveal blob, and scorer adapter.
     """
     import os as _os
     import time as _time

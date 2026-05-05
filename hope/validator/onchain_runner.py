@@ -140,7 +140,7 @@ def run_epoch_scoring(
             `scripts/verify_epoch.py` so the verifier and the validator
             agree by construction.
         outcomes_release_round / outcomes_fetched_at_round: drand round at
-            which HOPE released outcomes (9.A.2) and when the validator
+            which the operator released outcomes (9.A.2) and when the validator
             fetched them. Both bind into 9.C.1.
         scoring_inputs_hash: 32-byte SHA-256 over the canonical-CBOR
             encoding of the validator's scoring inputs (predictions +

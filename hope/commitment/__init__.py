@@ -6,7 +6,7 @@ This package implements Phase A foundation modules per the protocol spec:
 - inner_sig: 4-step ed25519 inner-signature procedure for validator commits (CL-9)
 - drand_lib: drand quicknet TLE round computation + encryption helpers
 
-Used by Layer 9.A (HOPE outcome commit-reveal), 9.B (miner predictions),
+Used by Layer 9.A (outcome commit-reveal), 9.B (miner predictions),
 9.C (validator scoring commits), and the public verifier.
 """
 

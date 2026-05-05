@@ -158,7 +158,7 @@ def build_prediction_plaintext(
     """Build the full prediction plaintext dict and attach inner_sig.
 
     Args:
-        epoch_id: HOPE release_key, must match [A-Z0-9-]{1,80}.
+        epoch_id: the operator release_key, must match [A-Z0-9-]{1,80}.
         miner_hotkey: 32-byte raw ed25519 public key matching miner_signing_key.
         submitted_round: drand round at submission time (binds replay).
         horizons: list of dicts as produced by `build_horizon_entry`.
@@ -319,7 +319,7 @@ def verify_prediction_inner_sig(
 
 
 def _is_valid_epoch_id(s: str) -> bool:
-    """epoch_id must match [A-Z0-9-]{1,80} per HOPE release_key constraint."""
+    """epoch_id must match [A-Z0-9-]{1,80} per the operator release_key constraint."""
     if not isinstance(s, str) or not (1 <= len(s) <= 80):
         return False
     return all(("A" <= c <= "Z") or ("0" <= c <= "9") or c == "-" for c in s)

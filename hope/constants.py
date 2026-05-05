@@ -1,4 +1,4 @@
-"""Subnet-wide constants for AdTAO SN21."""
+"""Subnet-wide constants for SN21."""
 
 # Subnet registration
 SUBNET_NETUID = 21
@@ -78,5 +78,5 @@ PREDICTION_DEADLINE_HOURS = 156  # ~6.5 days (Mon 17:00 UTC → next Mon 05:00 U
 # Start high (95%) to deter exploiters, decrease as the system proves stable
 DEFAULT_BURN_FRACTION = 0.95
 
-# HOPE Data API
+# Data API
 HOPE_API_VERSION = "v1"

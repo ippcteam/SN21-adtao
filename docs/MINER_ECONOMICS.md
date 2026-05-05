@@ -5,7 +5,7 @@ Short reference for how emissions relate to your behaviour. **Authoritative deta
 ## Cadence
 
 - **Epoch length:** 7 days; **payout** at epoch end.  
-- **Phase / epoch type** (Search → PMax → …) follows the epoch structure doc; some counts are *indicative*; **announcements** (X @AdTAO, Discord `#announcements`) run **≥2 weeks** before phase/consolidation changes (championships: **4 weeks**).  
+- **Phase / epoch type** (Search → PMax → …) follows the epoch structure doc; some counts are *indicative*; **announcements** (subnet social channels, Discord `#announcements`) run **≥2 weeks** before phase/consolidation changes (championships: **4 weeks**).  
 - **Implementation:** On-chain weight timing and exact UTC cutovers follow Bittensor tempo — see team announcements when live; not all chain detail is in this repo.  
 
 ## How you get paid (v1 design)

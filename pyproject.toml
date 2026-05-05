@@ -1,7 +1,7 @@
 [project]
 name = "hope-sn21"
 version = "0.1.0"
-description = "HOPE Impact Prediction Subnet for Bittensor (SN21)"
+description = "Impact Prediction Subnet for Bittensor (SN21)"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10,<3.13"

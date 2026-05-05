@@ -1,8 +1,8 @@
 # SN21 Operator Runbook
 
-Production cutover playbook for HOPE Foundation operators, primary
-validators, shadow validators, and miners. Covers deployment, key
-management, registration, epoch operations, and incident response.
+Production cutover playbook for subnet operators, primary validators,
+shadow validators, and miners. Covers deployment, key management,
+registration, epoch operations, and incident response.
 
 This document is the authoritative source for "how do I run this?" Architecture context lives in `verifiable_scoring_architecture.md` (gitignored draft) — the runbook only references it.
 
@@ -12,9 +12,9 @@ This document is the authoritative source for "how do I run this?" Architecture 
 
 | Role | Hotkey + ed25519 Bundle | Chain Slots Used |
 |---|---|---|
-| HOPE outcome signer | 1 SS58 + 1 ed25519 (role=outcome_signer) | 9.A.1, 9.A.2 |
+| Outcome signer | 1 SS58 + 1 ed25519 (role=outcome_signer) | 9.A.1, 9.A.2 |
 | Primary validator | 1 SS58 + 1 ed25519 (role=validator) | 9.C.1, 9.C.2, 9.C.3, optional 9.C.6 |
-| Shadow validator (HOPE-operated) | 1 SS58 + 1 ed25519 (role=validator) | Same slots as primary, different hotkey |
+| Shadow validator (operator-run) | 1 SS58 + 1 ed25519 (role=validator) | Same slots as primary, different hotkey |
 | Miner | 1 SS58 + 1 ed25519 (role=miner) | 9.B (3 commits per epoch) |
 
 Each role is a separate Bittensor wallet + a separate ed25519 PEM file.
@@ -27,8 +27,8 @@ Backup the PEM files offline (cold storage) — loss = forced re-registration.
 ### 2.1 Install
 
 ```bash
-git clone <hope-sn21-repo>
-cd hope-sn21
+git clone <repo-url>
+cd tao-discovery
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
@@ -76,7 +76,7 @@ or the SS58 is bound to a different ed25519 key than the one you have.
 
 ---
 
-## 3. HOPE outcome signer — daily epoch routine
+## 3. Outcome signer — daily epoch routine
 
 For each scheduled epoch (recommended cadence ≥ 4.5 hours per §18.2.4):
 
@@ -84,18 +84,18 @@ For each scheduled epoch (recommended cadence ≥ 4.5 hours per §18.2.4):
 
 ```bash
 # Build the release_commit and submit 9.A.1.
-# (Production HOPE infrastructure; this is the API surface.)
+# (Operator infrastructure; this is the API surface.)
 python -m hope.hope_outcomes.release_commit \
     --epoch-id EPOCH-2026-W18-MON \
     --episodes-file episodes.json \
     --signing-key ~/.sn21/keys/outcome-signer-ed25519.pem \
-    --wallet-name hope-outcome-signer
+    --wallet-name outcome-signer
 ```
 
 Logs the on-chain extrinsic hash + the BLAKE2b-256 digest of the
 release_commit plaintext. Serve the plaintext at
-`https://outcomes.hope.io/release/{epoch_id}` AFTER the chain commit
-finalizes (CL-9 commit-then-serve gate).
+`https://outcomes.example.io/release/{epoch_id}` AFTER the chain
+commit finalizes (CL-9 commit-then-serve gate).
 
 ### 3.2 At T=deadline (miner deadline + δ)
 
@@ -105,11 +105,11 @@ python -m hope.hope_outcomes.reveal_blob \
     --release-commit-plaintext-sha256 <hex from 3.1> \
     --measured-outcomes outcomes.json \
     --signing-key ~/.sn21/keys/outcome-signer-ed25519.pem \
-    --wallet-name hope-outcome-signer
+    --wallet-name outcome-signer
 ```
 
 Submits 9.A.2 — the SHA-256 of the reveal blob. After finalization,
-serve the reveal blob at `https://outcomes.hope.io/reveal/{epoch_id}`.
+serve the reveal blob at `https://outcomes.example.io/reveal/{epoch_id}`.
 
 ---
 
@@ -121,10 +121,10 @@ serve the reveal blob at `https://outcomes.hope.io/reveal/{epoch_id}`.
 python -m hope.validator.runner \
     --mode onchain \
     --network finney --netuid 21 \
-    --wallet-name hope-primary --wallet-hotkey default \
+    --wallet-name primary-validator --wallet-hotkey default \
     --ed25519-key-file ~/.sn21/keys/validator-ed25519.pem \
-    --archive-tier-2 https://archive.hope.io \
-    --archive-tier-2 https://archive.hope-eu.io \
+    --archive-tier-2 https://archive.example.io \
+    --archive-tier-2 https://archive-eu.example.io \
     --release ${RELEASE_KEY}
 ```
 
@@ -145,9 +145,9 @@ python -m hope.validator.runner \
     --score-now \
     --release EPOCH-2026-W18-MON \
     --network finney --netuid 21 \
-    --wallet-name hope-primary --wallet-hotkey default \
+    --wallet-name primary-validator --wallet-hotkey default \
     --ed25519-key-file ~/.sn21/keys/validator-ed25519.pem \
-    --archive-tier-2 https://archive.hope.io
+    --archive-tier-2 https://archive.example.io
 ```
 
 Returns an `EpochScoringOutcome`. Check `outcome.ok` and the four chain
@@ -155,16 +155,16 @@ commit blocks/hashes.
 
 ---
 
-## 5. Shadow validator (HOPE-operated)
+## 5. Shadow validator (operator-run)
 
 Identical to §4 but with the shadow's hotkey + ed25519 key:
 
 ```bash
 python -m hope.hope_shadow_validator.runner \
     --network finney --netuid 21 \
-    --wallet-name hope-shadow --wallet-hotkey default \
+    --wallet-name shadow-validator --wallet-hotkey default \
     --ed25519-key-file ~/.sn21/keys/shadow-ed25519.pem \
-    --archive-tier-2 https://archive.hope.io \
+    --archive-tier-2 https://archive.example.io \
     --release ${RELEASE_KEY}
 ```
 
@@ -181,11 +181,11 @@ its own inner_sig.
 python -m hope.miner.runner \
     --mode onchain \
     --epoch ${EPOCH_ID} \
-    --validator-url https://validator.adtao.io \
+    --validator-url <validator-url> \
     --network test --netuid 21 \
     --wallet-name my-miner --wallet-hotkey default \
     --ed25519-key-file ~/.sn21/keys/miner-ed25519.pem \
-    --archive-tier-2 https://archive.hope.io \
+    --archive-tier-2 https://archive.example.io \
     --archive-tier-3 https://my-miner.example/archive \
     --blocks-until-reveal 300
 ```
@@ -214,7 +214,7 @@ docker compose up -d                                 # Tier-2/Tier-3
 curl -s http://localhost:8080/healthz                # liveness
 ```
 
-For Tier-2 (HOPE shadow), set `SN21_ARCHIVE_REQUIRE_SIGNED=true` so
+For Tier-2 (operator shadow), set `SN21_ARCHIVE_REQUIRE_SIGNED=true` so
 miners must sign uploads with their hotkey (`X-Miner-Hotkey` +
 `X-Miner-Signature` headers). For Tier-3 self, leave it `false`.
 
@@ -321,7 +321,7 @@ Symptom: validator emits 9.C.6 retry log; miner is excluded with
 `plaintext_unavailable`.
 
 Diagnosis: AES_ct not available at any tier. Check:
-- Tier-2 (HOPE) — `curl -fI https://archive.hope.io/healthz`
+- Tier-2 (operator) — `curl -fI https://archive.example.io/healthz`
 - Tier-3 (miner self) — URL listed in chain commit
 
 Action:
@@ -376,7 +376,7 @@ Action:
 
 ## 10. Key rotation
 
-Quarterly rotation recommended for the HOPE outcome signer key (highest
+Quarterly rotation recommended for the outcome signer key (highest
 trust). Procedure:
 
 ```bash
@@ -388,7 +388,7 @@ python scripts/sn21_keys.py generate \
 # Register binding (overwrites old binding for this hotkey)
 python scripts/sn21_keys.py register \
     --role outcome_signer --netuid 21 --network finney \
-    --wallet-name hope-outcome-signer \
+    --wallet-name outcome-signer \
     --key ~/.sn21/keys/outcome-signer-ed25519-2026Q3.pem
 ```
 
@@ -408,7 +408,7 @@ with operations to avoid mid-epoch rotation.
 - [ ] Tier-2 archive `/healthz` returns 200.
 - [ ] `verify_epoch.py` against last finalized epoch returns `ok: true`
   for primary AND shadow.
-- [ ] HOPE outcome signer commits both 9.A.1 AND 9.A.2 within 1 tempo
+- [ ] Outcome signer commits both 9.A.1 AND 9.A.2 within 1 tempo
   of the deadline.
 - [ ] Validator runner logs show `EpochScoringOutcome.ok=True`.
 - [ ] Shadow validator `miner_commits_root` MATCHES primary's (paste
@@ -423,7 +423,7 @@ Before flipping `--network test` → `--network finney`:
 - [ ] All probes from §18 of the architecture doc rerun on mainnet
   (Q11 + Q13 specifically — testnet hyperparams may differ).
 - [ ] Mainnet hotkey registration on netuid 21 (burn cost paid).
-- [ ] All 4 ed25519 keys (HOPE / primary / shadow / first miner) bound
+- [ ] All 4 ed25519 keys (outcome signer / primary / shadow / first miner) bound
   on-chain via `sn21_keys.py register --network finney`.
 - [ ] Tier-2 archive deployed at production URL with TLS, retention,
   monitoring, on-call paging.

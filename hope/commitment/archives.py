@@ -10,8 +10,8 @@ and publishes AES_ct off chain to **three independent archive tiers**:
                       hotkey signature (via auth header) to bind upload to UID.
       Retrieval: open GET via path `/archive/{epoch_id}/{miner_uid}`.
 
-  Tier-2 — HOPE shadow archive
-      Operator: HOPE Foundation; durable, geographically replicated.
+  Tier-2 — operator shadow archive
+      Operator: the maintainers; durable, geographically replicated.
       Lifetime: 90 days minimum (Tier-1 may roll faster).
       Retrieval: open GET via path `/archive/{epoch_id}/{miner_hotkey_ss58}`.
 

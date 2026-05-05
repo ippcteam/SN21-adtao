@@ -90,7 +90,7 @@ def submit_miner_epoch(
         subtensor: Bittensor `Subtensor` for chain extrinsics.
         miner_wallet: Bittensor `Wallet` whose hotkey signs commits.
         netuid: subnet ID.
-        epoch_id: HOPE release_key, [A-Z0-9-]{1,80}.
+        epoch_id: the operator release_key, [A-Z0-9-]{1,80}.
         miner_hotkey: 32-byte raw ed25519 public key (must match wallet hotkey
             and `miner_signing_key`).
         miner_signing_key: ed25519 private key for inner_sig.

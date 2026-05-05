@@ -1,4 +1,4 @@
-"""HOPE outcome signer — Layer 9.A commit-reveal modules.
+"""outcome signer — Layer 9.A commit-reveal modules.
 
 - release_commit: T=0 release_commit_digest builder.
 - reveal_blob: post-deadline reveal blob with chain-anchored SHA-256.

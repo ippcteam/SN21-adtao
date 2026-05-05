@@ -7,7 +7,7 @@ Reads config from env:
   SN21_ARCHIVE_REQUIRE_SIGNED    (true | false; default true for Tier-2)
   SN21_ARCHIVE_MAX_BODY_BYTES    (default 1048576 = 1 MiB)
 
-Tier-2 deployments (HOPE shadow) MUST keep require_signed=true so a holder
+Tier-2 deployments (operator shadow) MUST keep require_signed=true so a holder
 of one hotkey cannot fill another's slot. Tier-3 self-archives may flip it
 to false if the operator is comfortable accepting unauth uploads (the chain
 SHA-256 commit is still the integrity anchor).

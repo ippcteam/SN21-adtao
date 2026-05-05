@@ -1,4 +1,4 @@
-# TAO Discovery — HOPE Impact Prediction Subnet (SN21)
+# TAO Discovery — Impact Prediction Subnet (SN21)
 
 Predict the impact of Google Ads interventions on campaign performance. Miners receive structured episodes describing account state and actions taken, then predict what happens to cost, conversions, and efficiency over 7 and 14 days.
 
@@ -11,7 +11,7 @@ Predict the impact of Google Ads interventions on campaign performance. Miners r
 ## How It Works
 
 ```
-HOPE Platform                    Validator                      Miners
+Data Platform                    Validator                      Miners
 ─────────────                    ─────────                      ──────
 Google Ads data ──┐
                   │
@@ -50,7 +50,7 @@ Archetype data ───┘                             ──→ Serve episodes
 
 ```bash
 # Install
-git clone https://github.com/ippcteam/tao-discovery.git
+git clone <repo-url>
 cd tao-discovery
 pip install -e ".[miner]"
 
@@ -58,16 +58,16 @@ pip install -e ".[miner]"
 python scripts/train_example_model.py --data-file data/training/training_episodes.json
 
 # Run miner (auto-discovers current epoch from validator)
-hope-miner --wallet-name my_miner --validator-url https://validator.adtao.io
+hope-miner --wallet-name my_miner --validator-url <validator-url>
 
 # Or run continuously (polls for new epochs)
-hope-miner --wallet-name my_miner --validator-url https://validator.adtao.io --continuous
+hope-miner --wallet-name my_miner --validator-url <validator-url> --continuous
 
 # Check your score after an epoch
 python scripts/score_predictions.py --release CURRENT_RELEASE_KEY --run-baseline
 ```
 
-**Validator URL:** `https://validator.adtao.io`
+**Validator URL:** provided at registration.
 
 **Training data:** 10 episodes with known outcomes are bundled in `data/training/`. Use these to build a model before predicting on live epochs.
 
@@ -119,7 +119,7 @@ tao-discovery/
 │   │   │   ├── predictions.py  # Prediction submit endpoint
 │   │   │   ├── commitments.py  # Commitment proof endpoint
 │   │   │   └── verification.py # Post-scoring reveal
-│   │   ├── data_client.py      # Fetches data from HOPE API
+│   │   ├── data_client.py      # Fetches data from the data API
 │   │   ├── epoch_manager.py    # Epoch lifecycle state machine
 │   │   └── runner.py           # Validator entry point
 │   │
@@ -197,7 +197,7 @@ scores = scorer.score_epoch(predictions, episodes, outcomes)
 
 ## Data Source
 
-Episodes are generated from real Google Ads management data by the AdTAO platform. The data pipeline:
+Episodes are generated from real Google Ads management data. The data pipeline:
 
 - **4,312 accounts** normalised into governance registry
 - **572 episode candidates** classified from changelog events

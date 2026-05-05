@@ -7,10 +7,10 @@ gate to confirm every wiring point works against a live chain.
 Pipeline (each step is a y/N confirmation unless `--yes` is passed):
 
   STEP 0  pre-flight: read wallet, balance, metagraph, MaxSpace headroom
-  STEP 1  HOPE 9.A.1 release_commit (Sha256 chain commit, 1 extrinsic)
+  STEP 1  the operator 9.A.1 release_commit (Sha256 chain commit, 1 extrinsic)
   STEP 2  miner 9.B prediction (3 extrinsics: TLE K + Sha256 + Raw URL)
   STEP 3  archive upload (HTTP, no chain) — pushes AES_ct to a local archive
-  STEP 4  HOPE 9.A.2 reveal blob (Sha256 chain commit, 1 extrinsic)
+  STEP 4  the operator 9.A.2 reveal blob (Sha256 chain commit, 1 extrinsic)
   STEP 5  validator 9.C.1 + 9.C.3 + 9.C.2 (3 extrinsics)
   STEP 6  wait for K reveal (~5 min by default)
   STEP 7  fetch chain view + verify_epoch — confirms verifier reproduces
@@ -18,7 +18,7 @@ Pipeline (each step is a y/N confirmation unless `--yes` is passed):
 
 Total chain footprint per run: 8 extrinsics (testnet fee = 0). MaxSpace
 consumption per role:
-  - HOPE outcome signer: 2 × Sha256 ≈ 1,064 B
+  - outcome signer: 2 × Sha256 ≈ 1,064 B
   - Miner:               1 TLE + 1 Sha256 + 1 Raw{N} ≈ 2,174 B
   - Validator:           2 TLE + 1 weights ≈ 1,960 B (no 9.C.6 retry log)
 
@@ -31,7 +31,7 @@ Pre-requisites:
     (UID 0 — that's the operator wallet from earlier sessions).
   - For multi-role testing, additional wallets registered separately. This
     script's DEFAULT mode reuses the SAME hotkey for all three roles
-    (HOPE / miner / validator) since this is testnet sanity, not Yuma
+    (the operator / miner / validator) since this is testnet sanity, not Yuma
     consensus exercise. Pass --separate-roles to use distinct wallets.
   - ed25519 keys generated via `scripts/sn21_keys.py generate`.
 
@@ -119,7 +119,7 @@ class StepResult:
 def main() -> int:
     parser = argparse.ArgumentParser(description="F-2 testnet single-epoch driver")
     parser.add_argument("--epoch-id", required=True,
-                        help="HOPE release_key, [A-Z0-9-]{1,80}")
+                        help="the operator release_key, [A-Z0-9-]{1,80}")
     parser.add_argument("--wallet-name", default="sn21-testnet-1")
     parser.add_argument("--wallet-hotkey", default="validator")
     parser.add_argument("--netuid", type=int, default=466)

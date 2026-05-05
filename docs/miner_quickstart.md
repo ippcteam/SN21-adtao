@@ -1,6 +1,6 @@
-# HOPE Impact Prediction Subnet (SN21) — Miner Quickstart
+# Impact Prediction Subnet (SN21) — Miner Quickstart
 
-**For:** Miners joining the HOPE Impact Prediction Subnet on Bittensor
+**For:** Miners joining the Impact Prediction Subnet on Bittensor
 **Subnet:** SN21 (testnet netuid: 466)
 **Schema:** v1.9 (Phase 1 Epoch 1 — Search campaigns, campaign-level actions)
 **Horizons:** 7-day and 14-day predictions
@@ -22,7 +22,7 @@ You output **probabilistic distributions** (P10/P50/P90), not point estimates. Y
 ### Step 1: Install
 
 ```bash
-git clone https://github.com/ippcteam/tao-discovery.git
+git clone <repo-url>
 cd tao-discovery
 pip install -e ".[miner]"
 ```
@@ -78,16 +78,16 @@ Use these to train: given input features → predict outcome deltas.
 
 ```bash
 # Connect to the validator and submit predictions
-hope-miner --wallet-name my_miner --validator-url https://validator.adtao.io
+hope-miner --wallet-name my_miner --validator-url <validator-url>
 
 # Or specify an epoch explicitly
-hope-miner --wallet-name my_miner --validator-url https://validator.adtao.io --epoch WR-2026-W18-PUB-E1
+hope-miner --wallet-name my_miner --validator-url <validator-url> --epoch WR-2026-W18-PUB-E1
 
 # Or run continuously (polls validator for new epochs every 30s)
-hope-miner --wallet-name my_miner --validator-url https://validator.adtao.io --continuous
+hope-miner --wallet-name my_miner --validator-url <validator-url> --continuous
 ```
 
-**Validator URL:** `https://validator.adtao.io` — this is the official AdTAO validator.
+**Validator URL:** provided by the operator at registration.
 
 If no `--epoch` is provided, the miner auto-discovers the current epoch from the validator's `/health` endpoint.
 
@@ -97,13 +97,13 @@ After an epoch is scored, check your results:
 
 ```bash
 # Check scores via the validator API
-curl https://validator.adtao.io/v1/epochs/WR-2026-W18-PUB-E1/scores
+curl <validator-url>/v1/epochs/WR-2026-W18-PUB-E1/scores
 
 # Or score yourself offline (exact same scoring the validator uses)
 python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
 
 # Verify the validator didn't cheat (commitment verification)
-curl https://validator.adtao.io/v1/epochs/WR-2026-W18-PUB-E1/verification
+curl <validator-url>/v1/epochs/WR-2026-W18-PUB-E1/verification
 ```
 
 The `/scores` endpoint shows your raw score, null penalty, and final score. The `/verification` endpoint reveals outcomes + salt so you can independently verify the commitment hash.
@@ -525,7 +525,7 @@ All interaction with the validator is via HTTP:
 
 **Authentication:** Set the `X-Miner-Hotkey` header to your Bittensor hotkey address.
 
-**Validator URL:** `https://validator.adtao.io`
+**Validator URL:** provided at registration.
 
 ---
 
