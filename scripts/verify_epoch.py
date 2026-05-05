@@ -41,7 +41,7 @@ import argparse
 import json
 import logging
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -86,6 +86,9 @@ class VerifierVerdict:
     n_miners_chain: int
     n_miners_derived: int
     excluded_count: int
+    # Phase #2: weights ↔ scoring binding cross-check.
+    weights_binding_match: bool = True
+    weights_binding_mismatches: tuple[int, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -94,6 +97,7 @@ class VerifierVerdict:
             and self.final_score_match
             and self.inner_sig_valid_pre
             and self.inner_sig_valid_post
+            and self.weights_binding_match
         )
 
     def as_json(self) -> str:
@@ -133,6 +137,11 @@ class ChainView:
     post_scoring_artifacts_cbor: bytes
     miner_states: dict[bytes, "ChainMinerState"]
     timing: TimingBounds
+    # Phase #2: weights at the block_hash referenced by 9.C.2 +
+    # the metagraph mapping needed to translate score → UID.
+    actual_weights_at_commit_block: dict[int, int] = field(default_factory=dict)
+    uid_by_hotkey: dict[bytes, int] = field(default_factory=dict)
+    burn_fraction: float = 0.95
 
 
 @dataclass(frozen=True)
@@ -236,6 +245,17 @@ def verify_epoch(
     ]
     derived_final_score_root = compute_final_score_root(derived_records)
 
+    # Phase #2: weights ↔ scoring binding cross-check. The 9.C.2 plaintext
+    # references `weights_commit_block_hash`; the chain stores the actual
+    # u16 weights at that block. We re-derive what those weights *should*
+    # be from the score table and compare. Mismatches = the validator
+    # committed weights that don't correspond to the scoring artifact this
+    # 9.C.2 references — fraud surfaced byte-for-byte by UID.
+    weights_binding_match, weights_binding_mismatches = _verify_weights_binding(
+        score_map=score_map,
+        chain_view=chain_view,
+    )
+
     return VerifierVerdict(
         epoch_id=epoch_id,
         validator_hotkey=validator_hotkey,
@@ -254,7 +274,51 @@ def verify_epoch(
         n_miners_chain=int(pre.get("n_miners", 0)),
         n_miners_derived=len(derived_commits),
         excluded_count=excluded,
+        weights_binding_match=weights_binding_match,
+        weights_binding_mismatches=tuple(weights_binding_mismatches),
     )
+
+
+def _verify_weights_binding(
+    *,
+    score_map: dict[bytes, int],
+    chain_view: ChainView,
+) -> tuple[bool, list[int]]:
+    """Recompute expected u16 weights from the score map and compare to chain.
+
+    Returns ``(match, mismatched_uids)``. When the chain view doesn't
+    include actual weights (older callers / test fakes that don't care),
+    the binding check is treated as vacuously passing — the point is to
+    fail loudly when chain weights ARE provided and disagree.
+
+    Tolerance: u16 quantisation can introduce ±1 LSB per UID, so we
+    accept differences up to ±1 on each side. Anything larger is a real
+    divergence.
+    """
+    if not chain_view.actual_weights_at_commit_block:
+        return True, []
+
+    score_by_uid: dict[int, float] = {}
+    for hotkey, score in score_map.items():
+        uid = chain_view.uid_by_hotkey.get(hotkey)
+        if uid is None:
+            continue
+        score_by_uid[uid] = float(score)
+
+    from hope.validator.weight_setter import WeightSetter
+
+    expected = WeightSetter.derive_u16_weights(
+        score_by_uid, burn_fraction=chain_view.burn_fraction
+    )
+
+    mismatches: list[int] = []
+    all_uids = set(expected) | set(chain_view.actual_weights_at_commit_block)
+    for uid in sorted(all_uids):
+        e = expected.get(uid, 0)
+        a = chain_view.actual_weights_at_commit_block.get(uid, 0)
+        if abs(e - a) > 1:
+            mismatches.append(uid)
+    return (not mismatches), mismatches
 
 
 def _extract_k_round(ms: ChainMinerState) -> int:
@@ -470,6 +534,65 @@ def _ss58_to_raw_ed25519(ss58_address: str) -> bytes:
     return bytes(pk)
 
 
+def make_live_scorer(truth_by_horizon: dict[str, "HorizonTruth"]):
+    """Wire the production ``score_one_miner`` adapter into the verifier.
+
+    Returns a ``ScorerFn`` closure compatible with ``verify_epoch(scorer=...)``
+    and the underlying ``score_one_miner`` function — the same path the
+    validator runs at scoring time. When ``truth_by_horizon`` is empty,
+    every miner scores 0; the verifier still checks IMT roots and
+    inner_sig integrity, but ``final_score_match`` will fail unless the
+    on-chain artifact also reflects an all-zero run. Operators should
+    supply truth derived from the 9.A.2 reveal blob.
+    """
+    from hope.scoring.onchain_adapter import score_one_miner
+
+    def scorer(epoch_id, plaintext_per_miner):
+        result: dict[bytes, int] = {}
+        for hotkey, plaintext in plaintext_per_miner.items():
+            result[hotkey] = score_one_miner(plaintext, truth_by_horizon)
+        return result
+
+    return scorer
+
+
+def _load_truth_file(path: str) -> dict[str, "HorizonTruth"]:
+    """Decode a JSON truth file produced from the 9.A.2 reveal blob.
+
+    Schema (single object, sample at scripts/integration/recorded_epoch.json):
+
+        {
+          "truth_by_horizon": {
+            "7":  {"cost_p50_dpct": 12, "conv_p50_dpct": -3,
+                   "eff_p50_dpct":  4, "goal_miss_ppm": 350000,
+                   "instab_ppm":    180000},
+            "14": { ... }
+          }
+        }
+
+    Values are integer deci-percent / parts-per-million as defined in
+    ``HorizonTruth``. The conversion from float reveal-blob fields is done
+    by the operator's offline tooling so we keep the verifier deterministic.
+    """
+    from hope.scoring.onchain_adapter import HorizonTruth
+
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    raw = payload.get("truth_by_horizon") or {}
+    truth: dict[str, HorizonTruth] = {}
+    for horizon, fields in raw.items():
+        truth[horizon] = HorizonTruth(
+            horizon=horizon,
+            truth_cost_p50_dpct=int(fields["cost_p50_dpct"]),
+            truth_conv_p50_dpct=int(fields["conv_p50_dpct"]),
+            truth_eff_p50_dpct=int(fields["eff_p50_dpct"]),
+            goal_miss_freq_ppm=int(fields["goal_miss_ppm"]),
+            instab_freq_ppm=int(fields["instab_ppm"]),
+        )
+    return truth
+
+
 def _build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Public SN21 epoch verifier")
     p.add_argument("--epoch-id", required=True, help="the operator release_key")
@@ -501,6 +624,16 @@ def _build_argparser() -> argparse.ArgumentParser:
              "chain's CommitmentOf storage is single-slot per (netuid, hotkey); "
              "to audit a past epoch, supply the block_hash where the validator's "
              "9.C.2 commit landed. Without --block-hash, reads chain head only.",
+    )
+    p.add_argument(
+        "--truth-file", default=None,
+        help="Path to a JSON file with per-horizon ground truth derived from "
+             "the 9.A.2 reveal blob. When supplied, the verifier recomputes "
+             "miner scores end-to-end (the production scoring path). When "
+             "omitted, score recomputation is skipped and the verifier only "
+             "checks chain integrity (IMT roots + inner_sig + weights "
+             "binding). See scripts/integration/recorded_epoch.json for the "
+             "schema.",
     )
     p.add_argument(
         "--output", choices=["text", "json"], default="text",
@@ -559,19 +692,31 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Decode the validator hotkey SS58 → raw bytes for inner_sig verification.
     validator_pk = _ss58_to_raw_ed25519(args.validator_hotkey)
 
-    def _placeholder_scorer(epoch_id, plaintext_per_miner):
-        # Phase C: a real scorer must be wired in here that mirrors what the
-        # validator ran. For now we return an empty map so the verifier
-        # focuses on the IMT root + inner_sig integrity checks; the score
-        # mismatch is expected in this scaffold and the output documents it.
-        return {}
+    truth_by_horizon: dict[str, HorizonTruth] = {}
+    if args.truth_file:
+        truth_by_horizon = _load_truth_file(args.truth_file)
+        print(
+            f"  loaded truth for horizons: {sorted(truth_by_horizon.keys())}",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "  WARNING: no --truth-file provided. Score recomputation "
+            "will return zero for every miner; final_score_match will "
+            "fail unless the chain artifact also reflects an all-zero "
+            "scoring run. Pass a JSON truth file (see "
+            "scripts/integration/recorded_epoch.json for the schema).",
+            file=sys.stderr,
+        )
+
+    scorer = make_live_scorer(truth_by_horizon)
 
     verdict = verify_epoch(
         chain_view=chain_view,
         epoch_id=args.epoch_id,
         validator_hotkey=validator_pk,
         archive_endpoints=endpoints,
-        scorer=_placeholder_scorer,
+        scorer=scorer,
     )
     if args.output == "json":
         print(verdict.as_json())

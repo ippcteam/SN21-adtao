@@ -4,6 +4,21 @@ After scoring an epoch, converts miner scores to normalized weights,
 applies burn rate (weight to UID 0), and publishes to the Bittensor
 network via subtensor.set_weights().
 
+Two allocation paths are supported:
+
+* **Simple normalization (default).** Linear normalize raw scores,
+  apply EMA smoothing across consecutive epochs, then apply burn.
+  This is the launch fallback path that runs whether or not the
+  tiered reward mechanism is wired in.
+* **Tiered allocation.** When ``tiered_allocator`` is supplied,
+  per-miner inputs (raw_score + baseline + coverage + per-bucket
+  coverage) are passed to the
+  :class:`hope.validator.tiered_weights.TieredAllocator` which
+  applies the participation gate, four-epoch EMA tier placement,
+  Elite/Competitive/Participating pool shares, and Elite-floor
+  redistribution from the reward spec. Burn is applied on top of the
+  tier weights.
+
 Burn rate explained:
 - Burn assigns a fraction of total weight to UID 0 (the validator/subnet owner)
 - This reduces miner emissions proportionally
@@ -15,6 +30,13 @@ Burn rate explained:
 from __future__ import annotations
 
 import logging
+from typing import Optional
+
+from hope.validator.tiered_weights import (
+    MinerEpochInputs,
+    TierAllocationResult,
+    TieredAllocator,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -29,10 +51,15 @@ DEFAULT_BURN_FRACTION = 0.95
 class WeightSetter:
     """Compute normalized weights from miner scores and set on-chain."""
 
-    def __init__(self, burn_fraction: float = DEFAULT_BURN_FRACTION):
+    def __init__(
+        self,
+        burn_fraction: float = DEFAULT_BURN_FRACTION,
+        tiered_allocator: Optional[TieredAllocator] = None,
+    ):
         self.burn_fraction = burn_fraction
         self.previous_weights: dict[int, float] = {}
         self._hotkey_at_uid: dict[int, str] = {}
+        self.tiered_allocator = tiered_allocator
 
     def apply_burn(self, weights: dict[int, float]) -> dict[int, float]:
         """Apply burn rate by assigning burn_fraction of weight to UID 0."""
@@ -129,6 +156,93 @@ class WeightSetter:
         )
 
         return final_uids, final_weights
+
+    @staticmethod
+    def derive_u16_weights(
+        scored: dict[int, float],
+        burn_fraction: float,
+    ) -> dict[int, int]:
+        """Map a UID → score map to UID → u16 weight, with burn applied.
+
+        The 9.C.2 verifier mirrors the on-chain weights commit by recomputing
+        this mapping from the scoring artifact's score table. ``scored``
+        carries pre-normalisation raw or post-tier scores; the result is the
+        u16 quantisation Subtensor stores.
+        """
+        if not scored:
+            return {0: 65_535}
+        miner_total = sum(max(s, 0.0) for s in scored.values())
+        if miner_total <= 0 or burn_fraction >= 1.0:
+            return {0: 65_535}
+
+        miner_share = 1.0 - burn_fraction
+        normalised: dict[int, float] = {0: burn_fraction}
+        for uid, score in scored.items():
+            if uid == 0 or score <= 0:
+                continue
+            normalised[uid] = miner_share * (score / miner_total)
+
+        u16: dict[int, int] = {}
+        for uid, w in normalised.items():
+            value = int(round(w * 65_535))
+            if value > 0:
+                u16[uid] = min(65_535, value)
+        return u16
+
+    def allocate_tiered(
+        self,
+        miner_inputs: list[MinerEpochInputs],
+        uid_map: dict[str, int],
+    ) -> tuple[list[int], list[float], TierAllocationResult]:
+        """Run the tiered allocation path and apply burn.
+
+        Returns ``(uids, weights, allocation_result)``. ``allocation_result``
+        carries the tier breakdown so callers can log which miners landed
+        where and emit the excluded-miners list for the 9.C.1 commit.
+        """
+        if self.tiered_allocator is None:
+            raise ValueError(
+                "WeightSetter has no tiered_allocator configured; "
+                "instantiate with TieredAllocator() to use this path"
+            )
+
+        result = self.tiered_allocator.allocate(miner_inputs)
+
+        if not result.weights:
+            logger.warning(
+                "Tiered allocator returned no qualifying miners "
+                "(excluded=%d) — assigning full weight to burn UID",
+                len(result.excluded),
+            )
+            return [0], [1.0], result
+
+        pre_burn: dict[int, float] = {}
+        for hotkey, weight in result.weights.items():
+            uid = uid_map.get(hotkey)
+            if uid is None:
+                logger.warning("Hotkey %s... not in metagraph; skipping", hotkey[:16])
+                continue
+            pre_burn[uid] = pre_burn.get(uid, 0.0) + weight
+            self._hotkey_at_uid[uid] = hotkey
+
+        if not pre_burn:
+            return [0], [1.0], result
+
+        post_burn = self.apply_burn(pre_burn)
+        final_uids = sorted(post_burn.keys())
+        final_weights = [float(post_burn[uid]) for uid in final_uids]
+
+        logger.info(
+            "Tiered weights: elite=%d competitive=%d participating=%d excluded=%d "
+            "burn=%.0f%% (UID 0=%.4f)",
+            len(result.elite),
+            len(result.competitive),
+            len(result.participating),
+            len(result.excluded),
+            self.burn_fraction * 100,
+            post_burn.get(0, 0.0),
+        )
+        return final_uids, final_weights, result
 
     async def set_weights(
         self,

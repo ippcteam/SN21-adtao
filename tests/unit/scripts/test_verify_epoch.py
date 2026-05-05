@@ -218,6 +218,85 @@ class TestVerifyEpoch:
         assert not verdict.inner_sig_valid_post
 
 
+class TestWeightsBinding:
+    """Phase #2: verifier rejects a 9.C.2 paired with weights from a different
+    scoring artifact (operational defense for the chain-side anchor that's
+    proposed in q26)."""
+
+    def test_matching_weights_pass(self, epoch_setup):
+        chain_view = epoch_setup["chain_view"]
+        # Build the expected u16 weights from the score table the validator
+        # committed (constant 500_000 for all 8 miners). Burn 95% goes to UID 0.
+        from hope.validator.weight_setter import WeightSetter
+
+        score_by_uid = {
+            ms.miner_uid: 500_000.0
+            for hk, ms in chain_view.miner_states.items()
+        }
+        expected = WeightSetter.derive_u16_weights(score_by_uid, burn_fraction=0.95)
+        chain_view = ve.ChainView(
+            pre_scoring_state_cbor=chain_view.pre_scoring_state_cbor,
+            post_scoring_artifacts_cbor=chain_view.post_scoring_artifacts_cbor,
+            miner_states=chain_view.miner_states,
+            timing=chain_view.timing,
+            actual_weights_at_commit_block=expected,
+            uid_by_hotkey={hk: ms.miner_uid for hk, ms in chain_view.miner_states.items()},
+        )
+        verdict = ve.verify_epoch(
+            chain_view=chain_view,
+            epoch_id=epoch_setup["epoch_id"],
+            validator_hotkey=epoch_setup["val_pk"],
+            archive_endpoints=epoch_setup["endpoints"],
+            archive_client=epoch_setup["archive"],
+            scorer=_deterministic_scorer(500_000),
+        )
+        assert verdict.weights_binding_match
+        assert verdict.weights_binding_mismatches == ()
+        assert verdict.ok
+
+    def test_forged_weights_caught(self, epoch_setup):
+        """Validator committed scoring artifact A but published weights from a
+        different artifact A' — the verifier surfaces the mismatched UIDs."""
+        chain_view = epoch_setup["chain_view"]
+        # Forge weights: assign UID 0 the burn share, but redirect ALL miner
+        # share to UID 1 (instead of distributing across all 8).
+        forged_weights = {0: int(0.95 * 65_535), 1: int(0.05 * 65_535)}
+        chain_view = ve.ChainView(
+            pre_scoring_state_cbor=chain_view.pre_scoring_state_cbor,
+            post_scoring_artifacts_cbor=chain_view.post_scoring_artifacts_cbor,
+            miner_states=chain_view.miner_states,
+            timing=chain_view.timing,
+            actual_weights_at_commit_block=forged_weights,
+            uid_by_hotkey={hk: ms.miner_uid for hk, ms in chain_view.miner_states.items()},
+        )
+        verdict = ve.verify_epoch(
+            chain_view=chain_view,
+            epoch_id=epoch_setup["epoch_id"],
+            validator_hotkey=epoch_setup["val_pk"],
+            archive_endpoints=epoch_setup["endpoints"],
+            archive_client=epoch_setup["archive"],
+            scorer=_deterministic_scorer(500_000),
+        )
+        assert not verdict.weights_binding_match
+        assert verdict.weights_binding_mismatches  # at least one UID flagged
+        assert not verdict.ok
+
+    def test_no_chain_weights_provided_passes_vacuously(self, epoch_setup):
+        """When the caller doesn't fetch chain weights, the binding check
+        is treated as vacuously passing — preserves backwards compatibility
+        with verifier callers that haven't been upgraded."""
+        verdict = ve.verify_epoch(
+            chain_view=epoch_setup["chain_view"],
+            epoch_id=epoch_setup["epoch_id"],
+            validator_hotkey=epoch_setup["val_pk"],
+            archive_endpoints=epoch_setup["endpoints"],
+            archive_client=epoch_setup["archive"],
+            scorer=_deterministic_scorer(500_000),
+        )
+        assert verdict.weights_binding_match
+        assert verdict.weights_binding_mismatches == ()
+
+
 class TestVerdictSerialisation:
     def test_json_round_trip(self, epoch_setup):
         verdict = ve.verify_epoch(

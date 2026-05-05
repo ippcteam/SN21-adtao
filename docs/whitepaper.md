@@ -16,8 +16,11 @@
 | Current phase | Pre-mainnet — testnet validation complete | §14.3 |
 | Validator registration | **Closed at launch.** Operator runs primary + shadow. Opening is on the Review 4 agenda | `docs/SN21_REWARD_MECHANISM.md` |
 | Miner registration | Open on testnet 466 today; mainnet 21 opens when launch announces | `docs/miner_quickstart.md` |
-| Public verifier | **Partial.** `scripts/verify_epoch.py` runs the chain reads + `inner_sig` checks; the placeholder scorer wiring is being replaced by the live scorer | §1 design call |
-| Reward mechanism | Tiered emissions, EMA, Elite floor, conditional-prior gate are **specified** in the reward doc; the production weight path uses simpler score-normalization + 95% burn at launch. Tiers are roadmap | `docs/SN21_REWARD_MECHANISM.md` |
+| Public verifier | **Live at launch.** `scripts/verify_epoch.py` runs chain reads, `inner_sig` checks, IMT root recomputation, AND end-to-end score recomputation via the production `score_one_miner` adapter. Pass `--truth-file` (derived from the 9.A.2 reveal blob) for full score reproduction. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/unit/scripts/test_verify_epoch_live_scorer.py` |
+| Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is upstream Bittensor RFC, tracked in `docs/proposals/q26_weights_payload_anchor.md` | §13.1 + adversarial test |
+| Per-episode artifacts | **Live at launch.** Miners that pass `per_episode_entries` to `submit_miner_epoch` ship the bundle to archives, bind its IMT root via `episodes_root` and SHA via `episodes_bundle_sha256`. Aggregate-per-horizon path is preserved for miners that have not yet adopted Phase E | §13.2 |
+| Reward mechanism | **Tiered allocator live at launch.** `TieredAllocator` enforces participation gate, four-epoch EMA tier placement, Elite/Competitive/Participating pool shares, Elite-floor redistribution, and the <15-miner single-pool fallback. Wire it via `WeightSetter(tiered_allocator=TieredAllocator())`; the legacy score-normalization path remains as the documented fallback | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
+| Conditional-prior baseline | **Live at launch.** The release artifact's `scoring_metadata.conditional_prior` per episode plumbs through `ScoringMetadata` and `SkillScoreCalculator.compute_baseline_prediction(...)`. Episodes with no published prior fall through to predict-zero — no crash, no silent gate-zeroing | §11 |
 
 When in doubt about a claim in the rest of this paper, this table is the
 authoritative read on what is shipping at launch versus what is
@@ -391,14 +394,17 @@ Match → the validator is honest, full stop. Mismatch → exactly one of
 {Vera, the verifier} has a bug or is malicious, and the divergence is
 publicly auditable.
 
-> **Status (migration):** Steps 1, 2, 4, 5 are implemented in
-> `scripts/verify_epoch.py` today. Step 3 currently calls a placeholder
-> scorer; wiring it to the live `EpochScorer` used by the production
-> validator is tracked as a pre-launch task. Until that wiring lands,
-> **the verifier confirms that the chain artifacts are internally
-> consistent and signed by the right hotkey, but does NOT yet
-> independently reproduce miner scores end-to-end.** When it does, the
-> test suite includes a recorded-epoch fixture asserting `ok: true`.
+> **Status (launch).** All five steps are live. Step 3 calls
+> `score_one_miner` from `hope.scoring.onchain_adapter` — the same
+> adapter the production validator runs. Pass `--truth-file <path>`
+> built from the 9.A.2 reveal blob and the verifier reproduces miner
+> scores end-to-end. The recorded-epoch fixture in
+> `tests/fixtures/recorded_epoch/` is proved `ok=true` by
+> `tests/unit/scripts/test_verify_epoch_live_scorer.py`, and a
+> regression guard test fails the build if a placeholder scorer is
+> ever reintroduced into `scripts/verify_epoch.py`. The verifier also
+> cross-checks `actual_weights_at_commit_block` against weights
+> re-derived from the score table — see §13.1.
 
 ---
 
@@ -823,17 +829,17 @@ Final score is a uint micro-units integer (0 to 1,000,000), committed
 into the IMT in 9.C.2. The validator translates score → uint16 weight
 via simple normalization and submits via `set_weights`.
 
-> **Status (launch vs roadmap).** The score-normalization +
-> 95% burn path is what runs at launch
-> (`hope/validator/weight_setter.py`). The richer reward mechanism
-> in `docs/SN21_REWARD_MECHANISM.md` — participation gate, EMA tier
-> placement, Elite floor, epoch-type multipliers, diversity bonus —
-> is **specified but not yet enforced in the production weight
-> path**. Tiers and gates are roadmap, scheduled across Reviews 1–3
-> after the first operational epochs run. Until then, miners should
-> model expected emissions from the simpler normalization path:
-> `weight ∝ raw final_score`, after the 95% burn allocated to the
-> subnet-owner UID.
+> **Status (launch).** The tiered allocator is live in
+> `hope/validator/tiered_weights.py:TieredAllocator`. Wire it via
+> `WeightSetter(tiered_allocator=TieredAllocator())` and call
+> `allocate_tiered(...)`; the call enforces all of the participation
+> gate, EMA tier placement, Elite floor + redistribution, and pool
+> shares from the reward spec, then applies burn. The legacy
+> score-normalization path remains as a documented fallback for
+> operators that want to disable tier mechanics during initial
+> epochs. Epoch-type multipliers and the diversity bonus are still
+> roadmap (Review 2 / Review 3); the rest of Components 1-2 ships at
+> launch.
 
 ### 11.3 Why this is competitive, not extractive
 
@@ -988,13 +994,20 @@ on-chain protocol has run cleanly for one operational cycle.
 
 > **Read this carefully.** Earlier sections of this paper describe
 > 9.C.2 as "binding the score table to the weights commit block hash."
-> That is true at the off-chain verifier level (the verifier checks
-> both and rejects mismatches). It is **not** a chain-level
-> cryptographic binding today. A reader looking for "the chain itself
-> rejects a weights commit that doesn't match its scoring artifact"
-> will not find that property until the upstream change above lands.
-> The shadow validator + Yuma median is the operational defense in the
-> interim.
+> That is true at the off-chain verifier level — and at launch the
+> verifier in `scripts/verify_epoch.py` re-derives expected u16
+> weights from the score table via
+> `WeightSetter.derive_u16_weights` and compares them, UID by UID,
+> against the actual weights at `weights_commit_block_hash`.
+> Mismatched UIDs surface in
+> `VerifierVerdict.weights_binding_mismatches`; the adversarial test
+> `test_forged_weights_caught` proves a forged 9.C.2 paired with
+> unrelated chain weights fails verification. **It is still not a
+> chain-level cryptographic binding today.** A reader looking for
+> "the chain itself rejects a weights commit that doesn't match its
+> scoring artifact" will not find that property until the upstream
+> change above lands. The verifier-side cross-check + the shadow
+> validator + Yuma median is the operational defense in the interim.
 
 ### 13.2 Per-episode scoring commitments
 
@@ -1009,19 +1022,22 @@ MaxSpace forbids it. Per-episode artifacts live off-chain in archives
 with a chain-anchored root. This is a deliberate trade-off: cheaper
 chain footprint, slightly more off-chain trust.
 
-> **Status (migration → roadmap):** earlier sections describe miners
-> "predicting per-episode" and validators "scoring per-episode." That
-> is the *modeling* level: the miner produces per-episode quantiles
-> and bundles them. At the chain level, the Layer 9.B prediction
-> CBOR currently carries one entry **per horizon for the whole
-> epoch** — see `hope/miner/runner.py` and
-> `hope/scoring/onchain_adapter.py`. The per-episode IMT root path
-> (Phase E) is implemented but not yet on the production submit path
-> at launch. Until it is, the on-chain commit binds an aggregated
-> per-horizon prediction; the per-episode bundle is the off-chain
-> companion. We'll migrate the production path to the per-episode
-> root before mainnet lock-in; until then this is a known migration
-> gap.
+> **Status (launch).** Phase E ships at launch. Miners that pass
+> `per_episode_entries=...` to
+> `submit_miner_epoch` build the off-chain bundle, upload it to the
+> same archive endpoints alongside `AES_ct`, and the aggregated
+> on-chain plaintext binds:
+> - `episodes_root` — IMT root over per-(episode, horizon) entries.
+> - `episodes_bundle_sha256` — SHA-256 of the bundle bytes.
+>
+> Both fields are inside the inner_sig'd plaintext, so a tampered
+> bundle, a substituted bundle, or a divergent root all fail
+> verification. The verifier scores per-(episode × horizon) via
+> `score_one_miner_per_episode` from
+> `hope.scoring.onchain_adapter`, and the legacy
+> aggregate-per-horizon path is preserved for miners that haven't yet
+> adopted Phase E. Adoption is by configuration, not protocol-version
+> bump.
 
 ### 13.3 Privacy of predictions
 

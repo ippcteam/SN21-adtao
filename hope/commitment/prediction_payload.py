@@ -154,6 +154,7 @@ def build_prediction_plaintext(
     miner_signing_key: Ed25519PrivateKey,
     version: int = PREDICTION_PAYLOAD_VERSION,
     episodes_root: bytes | None = None,
+    episodes_bundle_sha256: bytes | None = None,
 ) -> dict[str, Any]:
     """Build the full prediction plaintext dict and attach inner_sig.
 
@@ -186,6 +187,14 @@ def build_prediction_plaintext(
         raise ValueError(
             f"episodes_root must be 32 bytes, got {len(episodes_root)}"
         )
+    if episodes_bundle_sha256 is not None and len(episodes_bundle_sha256) != 32:
+        raise ValueError(
+            f"episodes_bundle_sha256 must be 32 bytes, got {len(episodes_bundle_sha256)}"
+        )
+    if episodes_bundle_sha256 is not None and episodes_root is None:
+        raise ValueError(
+            "episodes_bundle_sha256 requires episodes_root to be present"
+        )
 
     seen = set()
     for h in horizons:
@@ -203,6 +212,8 @@ def build_prediction_plaintext(
     }
     if episodes_root is not None:
         plaintext["episodes_root"] = episodes_root
+    if episodes_bundle_sha256 is not None:
+        plaintext["episodes_bundle_sha256"] = episodes_bundle_sha256
     return add_inner_sig(plaintext, miner_signing_key, hotkey_field="miner_hotkey")
 
 

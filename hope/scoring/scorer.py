@@ -206,7 +206,11 @@ class EpochScorer:
             if not episode or not outcome:
                 continue
 
-            baseline_pred = self.skill_calc.compute_baseline_prediction(pred.episode_id)
+            baseline_pred = self.skill_calc.compute_baseline_prediction(
+                pred.episode_id,
+                baseline_type=outcome.scoring_metadata.baseline_type,
+                conditional_prior=outcome.scoring_metadata.conditional_prior,
+            )
             ep_score = self.episode_scorer.score_episode(baseline_pred, outcome, episode)
             ep_weight = self._compute_episode_weight(episode)
 

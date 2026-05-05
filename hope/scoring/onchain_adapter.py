@@ -149,6 +149,78 @@ def _probability_score(predicted_ppm: int, observed_ppm: int) -> float:
     return 1.0 - (p - y) ** 2
 
 
+@dataclass(frozen=True)
+class EpisodeTruth:
+    """Per-episode + per-horizon ground truth for Phase E scoring.
+
+    Same units as `HorizonTruth` (deci-percent / ppm) but keyed by
+    ``(episode_id, horizon)`` instead of an aggregate horizon. The
+    validator computes these from the off-chain reveal blob;
+    deterministic, no float noise across implementations.
+    """
+
+    episode_id: str
+    horizon: str
+    truth_cost_p50_dpct: int
+    truth_conv_p50_dpct: int
+    truth_eff_p50_dpct: int
+    goal_miss_ppm: int
+    instab_ppm: int
+
+
+def score_one_miner_per_episode(
+    bundle_entries: list[dict[str, Any]],
+    truth_by_episode: dict[tuple[str, str], EpisodeTruth],
+) -> int:
+    """Score a miner from per-episode bundle entries against per-episode truth.
+
+    Phase E path. ``bundle_entries`` is the list returned in
+    ``parse_per_episode_bundle(...)["entries"]`` (or
+    ``[build_per_episode_entry(e) for e in ...]`` on the miner side).
+    ``truth_by_episode`` is keyed by ``(episode_id, horizon)``.
+
+    Returns:
+        Integer in [0, 1_000_000] (micro-units). Average per-(episode,
+        horizon) score × 1e6, rounded half-to-even. Episodes the miner
+        skipped are scored 0; episodes outside truth are skipped (the
+        validator's scoreability check is the gate, not this function).
+    """
+    if not bundle_entries:
+        return 0
+
+    per_entry_scores: list[float] = []
+    for entry in bundle_entries:
+        ep_id = entry.get("ep")
+        horizon = entry.get("h")
+        if not ep_id or not horizon:
+            continue
+        truth = truth_by_episode.get((ep_id, horizon))
+        if truth is None:
+            continue
+
+        cost_q = entry.get("cost_q") or [0, 0, 0]
+        conv_q = entry.get("conv_q") or [0, 0, 0]
+        eff_q = entry.get("eff_q") or [0, 0, 0]
+        miss_p = int(entry.get("miss_p") or 0)
+        instab_p = int(entry.get("instab_p") or 0)
+
+        q_score = (
+            _quantile_score(cost_q, truth.truth_cost_p50_dpct)
+            + _quantile_score(conv_q, truth.truth_conv_p50_dpct)
+            + _quantile_score(eff_q, truth.truth_eff_p50_dpct)
+        ) / 3.0
+        p_score = (
+            _probability_score(miss_p, truth.goal_miss_ppm)
+            + _probability_score(instab_p, truth.instab_ppm)
+        ) / 2.0
+        per_entry_scores.append(0.7 * q_score + 0.3 * p_score)
+
+    if not per_entry_scores:
+        return 0
+    avg = sum(per_entry_scores) / len(per_entry_scores)
+    return int(round(max(0.0, min(1.0, avg)) * 1_000_000))
+
+
 def score_one_miner(
     plaintext: dict[str, Any],
     truth_by_horizon: dict[str, HorizonTruth],

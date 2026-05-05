@@ -23,7 +23,12 @@ import os
 from hope.constants import HOPE_API_VERSION
 from hope.hope_public_key import HOPE_PUBLIC_KEY_HEX
 from hope.protocol.episode import Episode
-from hope.protocol.outcomes import HorizonOutcome, Outcome, ScoringMetadata
+from hope.protocol.outcomes import (
+    ConditionalPriorBaseline,
+    HorizonOutcome,
+    Outcome,
+    ScoringMetadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -342,6 +347,20 @@ class HopeDataClient:
 
         em = payload.get("episode_metadata", {})
 
+        # Conditional-prior baseline: optional. The release artifact may publish
+        # per-episode (campaign_type, action_type) historical means under
+        # "scoring_metadata.conditional_prior". When absent we fall back to
+        # predict_zero so a missing prior does not zero the participation gate.
+        sm_payload = payload.get("scoring_metadata", {})
+        cp_payload = sm_payload.get("conditional_prior")
+        baseline_type = sm_payload.get("baseline_type")
+        conditional_prior: ConditionalPriorBaseline | None = None
+        if cp_payload:
+            conditional_prior = ConditionalPriorBaseline.model_validate(cp_payload)
+            baseline_type = baseline_type or "conditional_prior"
+        else:
+            baseline_type = baseline_type or "predict_zero"
+
         return Outcome(
             episode_id=episode_id,
             t7=t7,
@@ -350,6 +369,7 @@ class HopeDataClient:
                 goal_metric=goal.get("type", "CPA"),
                 measurement_resolution=em.get("measurement_resolution", "high"),
                 coverage_status=em.get("coverage_status", "baseline"),
-                baseline_type="predict_zero",
+                baseline_type=baseline_type,
+                conditional_prior=conditional_prior,
             ),
         )

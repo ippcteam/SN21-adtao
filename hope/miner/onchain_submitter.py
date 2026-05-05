@@ -33,6 +33,12 @@ from hope.commitment.archives import (
     ArchiveEndpoint,
     UploadResult,
 )
+from hope.commitment.episode_artifacts import (
+    PerEpisodeEntry,
+    build_per_episode_bundle,
+    compute_episodes_imt_root,
+    build_per_episode_entry,
+)
 from hope.commitment.on_chain import (
     CommitResult,
     submit_miner_prediction_layer_9b,
@@ -63,6 +69,8 @@ class MinerSubmissionResult:
     chain_k_commit: Optional[CommitResult] = None
     chain_sha_commit: Optional[CommitResult] = None
     chain_url_commit: Optional[CommitResult] = None
+    bundle_uploads: list[UploadResult] = field(default_factory=list)
+    episodes_root: Optional[bytes] = None
     failure_reason: Optional[str] = None
 
 
@@ -83,6 +91,7 @@ def submit_miner_epoch(
     require_tier_2: bool = True,
     upload_auth_headers: Optional[dict[str, str]] = None,
     miner_identity_for_archive: Optional[str] = None,
+    per_episode_entries: Optional[list[PerEpisodeEntry]] = None,
 ) -> MinerSubmissionResult:
     """Run the full Layer 9.B pipeline for one miner / one epoch.
 
@@ -110,12 +119,34 @@ def submit_miner_epoch(
     Returns:
         MinerSubmissionResult with per-step outcomes.
     """
+    # Phase E: when per-episode entries are supplied, build the off-chain
+    # bundle, compute its IMT root, and bind both the root and the bundle
+    # bytes' SHA-256 inside the aggregated plaintext. The bundle is uploaded
+    # alongside the AES_ct on the same content-addressed archive path so
+    # verifiers can fetch by SHA after K reveals.
+    episodes_root: Optional[bytes] = None
+    bundle_bytes: Optional[bytes] = None
+    bundle_sha256: Optional[bytes] = None
+    if per_episode_entries:
+        encoded_entries = [build_per_episode_entry(e) for e in per_episode_entries]
+        episodes_root = compute_episodes_imt_root(encoded_entries)
+        bundle_bytes = build_per_episode_bundle(
+            epoch_id=epoch_id,
+            miner_hotkey=miner_hotkey,
+            submitted_round=submitted_round,
+            entries=per_episode_entries,
+            miner_signing_key=miner_signing_key,
+        )
+        bundle_sha256 = hashlib.sha256(bundle_bytes).digest()
+
     plaintext = build_prediction_plaintext(
         epoch_id=epoch_id,
         miner_hotkey=miner_hotkey,
         submitted_round=submitted_round,
         horizons=horizons,
         miner_signing_key=miner_signing_key,
+        episodes_root=episodes_root,
+        episodes_bundle_sha256=bundle_sha256,
     )
     encrypted = encrypt_prediction(plaintext, epoch_id=epoch_id)
     sha256_ct = hashlib.sha256(encrypted.aes_ct).digest()
@@ -132,6 +163,16 @@ def submit_miner_epoch(
         aes_ct=encrypted.aes_ct,
         auth_headers=upload_auth_headers,
     )
+
+    bundle_uploads: list[UploadResult] = []
+    if bundle_bytes is not None:
+        bundle_uploads = archive_client.upload_to_all(
+            archive_endpoints,
+            epoch_id=epoch_id,
+            miner_identity=miner_identity_for_archive,
+            aes_ct=bundle_bytes,
+            auth_headers=upload_auth_headers,
+        )
 
     tier_2_ok = any(r.endpoint.tier == 2 and r.ok for r in upload_results)
     if require_tier_2 and not tier_2_ok:
@@ -206,6 +247,8 @@ def submit_miner_epoch(
         chain_k_commit=k_commit,
         chain_sha_commit=sha_commit,
         chain_url_commit=url_commit,
+        bundle_uploads=bundle_uploads,
+        episodes_root=episodes_root,
     )
 
 
