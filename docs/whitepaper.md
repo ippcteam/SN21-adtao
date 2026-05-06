@@ -1160,11 +1160,10 @@ Here is the inventory, with file paths so you can audit.
 | `hope/hope_outcomes/release_commit.py` | 170 | 9.A.1 release_commit |
 | `hope/hope_outcomes/reveal_blob.py` | 200 | 9.A.2 reveal blob |
 | `hope/miner/onchain_submitter.py` | 220 | full 9.B pipeline |
-| `hope/miner/runner.py` | 320 | miner CLI with `--mode {http,onchain}` |
+| `hope/miner/runner.py` | 290 | miner CLI — Layer 9.B on-chain submission |
 | `hope/validator/onchain_reader.py` | 218 | chain reads → scoreability per miner |
 | `hope/validator/onchain_runner.py` | 290 | full 9.C orchestration |
 | `hope/validator/weights_commit.py` | 170 | 9.C.3 wrapper |
-| `hope/validator/migration.py` | 200 | HTTP → on-chain replay tool |
 | `hope/scoring/onchain_adapter.py` | 320 | EpochScorer adapter + CRPS scorer |
 | `hope/archive_server/app.py` | 280 | FastAPI Tier-2/Tier-3 archive |
 | `hope/archive_server/store.py` | 130 | InMemory + Filesystem stores |
