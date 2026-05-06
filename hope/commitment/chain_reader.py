@@ -350,30 +350,23 @@ def decode_revealed_tle_plaintext(payload_bytes: bytes) -> bytes:
         raise ValueError(f"payload body not valid hex: {e}") from e
 
 
-def strip_scale_data_variant_prefix(payload: bytes) -> bytes:
-    """Strip the leading Data enum variant tag + length from a SCALE-encoded payload.
-
-    The chain's `Data` enum encoding for the variants we care about:
-      - `Raw{N}` (variant 1..129): 1-byte variant tag, then N bytes
-        directly (no length byte — the variant index encodes the length).
-      - `Sha256` (variant 130): 1-byte variant tag, then exactly 32 bytes.
-      - `TimelockEncrypted` (variant ~134): 1-byte variant tag, then a
-        `BoundedVec<u8, ...>` which IS length-prefixed.
-
-    For the auto-decrypted output of a TimelockEncrypted commit, the
-    chain stores the DECRYPTED plaintext (often re-wrapped in some
-    variant). The Phase 0 stale entry we observed had a 514-byte payload
-    starting with `0x01 0x08 0x63 ...` — variant 1 (Raw0) + something.
-
-    For a clean read, callers can:
-      1. Try parsing payload[0:] directly (if they wrote raw bytes).
-      2. Try payload[1:] (skip 1 variant byte).
-      3. Try payload[2:] (skip 1 variant + 1 length byte for compact-encoded len).
-      4. Match against a known prefix (e.g., `b"sn21-reg-v1:"`) and slice
-         from the prefix offset.
-
-    This function returns the payload UNCHANGED — it's a documentation
-    landing pad. Specific parsers (e.g., `parse_registration_payload`)
-    handle the variant stripping themselves via prefix detection.
-    """
-    return payload
+# Note on SCALE Data-variant prefix handling.
+#
+# The chain's `Data` enum is SCALE-encoded with a 1-byte variant tag
+# (Raw{N}=1..129, Sha256=130, TimelockEncrypted≈134). For the
+# auto-decrypted output of a TimelockEncrypted commit, the runtime
+# stores the decrypted plaintext as `<scale_compact_length><utf8_bytes>`
+# inside the variant. Callers strip the prefix in one of three ways:
+#
+#   1. Match a known plaintext prefix (e.g. `b"sn21-reg-v1:"`) and
+#      slice from the prefix offset.
+#   2. Skip a fixed offset (1 variant byte, optionally + 1-2 compact
+#      length bytes) when the variant is known up front.
+#   3. Hex-decode after detecting an even-length hex string (the
+#      Phase H TLE round-trip pattern via
+#      `decode_revealed_tle_plaintext` above).
+#
+# We previously exported a `strip_scale_data_variant_prefix` no-op
+# helper as a "documentation landing pad" but no caller used it;
+# specific parsers (parse_registration_payload, decode_revealed_tle_plaintext)
+# handle their own prefix detection inline.

@@ -196,9 +196,12 @@ class MinerRunner:
 
         The Layer 9.B prediction CBOR carries ONE entry per horizon for the
         whole epoch (e.g. P10/P50/P90 over the entire batch's deltas), not
-        per episode. For Phase C we average each episode's quantiles within
-        the horizon as a deterministic placeholder; Phase D will swap in the
-        protocol-specified aggregation (likely portfolio-level).
+        per episode. We average each episode's quantiles within the horizon
+        — a deterministic shape that's verifier-reproducible and matches
+        the launch-default submit path. Miners that want per-(episode,
+        horizon) granularity should pass `per_episode_entries=...` to
+        `submit_miner_epoch(...)` directly (Phase E path); see
+        `hope/commitment/episode_artifacts.py`.
         """
         if not predictions:
             return []

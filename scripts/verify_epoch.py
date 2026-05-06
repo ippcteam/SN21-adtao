@@ -667,9 +667,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     subtensor = bt.Subtensor(network=args.network)
     metagraph = subtensor.metagraph(netuid=args.netuid)
     miner_ss58s = list(metagraph.hotkeys)
+    # The CLI runs in a permissive timing mode by default — accept any
+    # submitted_round / chain_block. Operators who want strict timing
+    # checks pass `--epoch-open-round` / `--epoch-deadline-round` on the
+    # next CLI iteration; the underlying `verify_epoch(...)` library
+    # already supports tight bounds when callers (like the runner) build
+    # `TimingBounds` from the chain-anchored release_commit.
     timing = TimingBounds(
         epoch_open_round=0,
-        miner_deadline_round=2**63 - 1,  # accept anything; placeholder for Phase D
+        miner_deadline_round=2**63 - 1,
         chain_window_min_block=0,
         chain_window_max_block=2**63 - 1,
     )
