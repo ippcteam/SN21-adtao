@@ -1,7 +1,7 @@
 """Layer 9.B miner prediction payload — canonical CBOR + AES-GCM hybrid envelope.
 
 A miner prediction commit splits cleanly across the chain limits:
-  - On chain (TimelockEncrypted, ≤768 plaintext): the 32-byte AES-GCM key K
+  - On chain (TimelockEncrypted, ≤380 plaintext (Phase H, halved from 768)): the 32-byte AES-GCM key K
     plus its drand reveal_round, encrypted to a future round.
   - On chain (Sha256, 32 bytes): SHA-256 of AES_ct (binds chain-side ciphertext
     integrity to a chain-anchored, hotkey-bound storage slot).

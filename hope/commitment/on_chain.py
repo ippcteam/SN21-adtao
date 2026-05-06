@@ -20,7 +20,7 @@ The string-based helpers add hex/utf-8 wrapping that wastes plaintext capacity.
 Empirical measurement (2026-05-03, testnet netuid 466):
 - TLE overhead: 254 bytes (354B plaintext → 610B ciphertext).
 - Max ciphertext per TimelockEncrypted field: 1024 bytes (from chain types.rs).
-- Max plaintext per timelock commit: ~770 bytes (1024 − 254 TLE overhead).
+- Max plaintext per timelock commit: ~380 bytes (Phase H halved this from ~770; raw bytes get hex-encoded for `get_encrypted_commitment`, doubling on-the-wire byte count).
 """
 
 from __future__ import annotations
@@ -499,7 +499,7 @@ def submit_pre_scoring_state_layer_9c1(
     pre_scoring_state map (per protocol spec v1 §3.1) WITH inner_sig already
     computed by `inner_sig.add_inner_sig`.
 
-    Caller must ensure plaintext is within MAX_TLE_PLAINTEXT_BYTES (~770).
+    Caller must ensure plaintext is within MAX_TLE_PLAINTEXT_BYTES (380, set by hex-encoding overhead in Phase H).
     """
     return submit_timelock_commit(
         subtensor=subtensor,

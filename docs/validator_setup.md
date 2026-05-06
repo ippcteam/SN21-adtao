@@ -258,8 +258,15 @@ Weights must sum to 1.0 and stay within published ranges.
 |----------|---------|-------------|
 | `HOPE_API_KEY` | *(required)* | data API key — provided on validator registration |
 | `HOPE_API_URL` | *(required)* | data API base URL — provided on validator registration |
-| `VALIDATOR_PORT` | `8080` | HTTP API port |
-| `PREDICTION_DEADLINE_HOURS` | `48` | Hours miners have to submit |
+| `REQUIRE_SIGNATURES` | `true` | Require signed miner requests (set to `false` only for development) |
+
+The miner submission deadline is **156 hours** (~6.5 days), pinned in
+`hope/constants.py:PREDICTION_DEADLINE_HOURS` to match the weekly
+mining window in `docs/SN21_EPOCH_STRUCTURE.md`. It is not configured
+via env var.
+
+The HTTP port is set via `--port` (default `8080`) on the CLI, not
+via an env var.
 
 ### CLI arguments
 

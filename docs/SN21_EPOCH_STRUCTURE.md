@@ -4,6 +4,7 @@
 | :---- | :---- |
 | **Version** | 1.2 |
 | **Last updated** | 2026-04-17 |
+| **Authoritative for launch** | Yes — phase progression and weekly cadence. |
 | **Companion** | [SN21_REWARD_MECHANISM.md](./SN21_REWARD_MECHANISM.md) |
 
 ## Purpose

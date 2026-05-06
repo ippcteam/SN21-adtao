@@ -4,7 +4,7 @@ Production cutover playbook for subnet operators, primary validators,
 shadow validators, and miners. Covers deployment, key management,
 registration, epoch operations, and incident response.
 
-This document is the authoritative source for "how do I run this?" Architecture context lives in `verifiable_scoring_architecture.md` (gitignored draft) — the runbook only references it.
+This document is the authoritative source for "how do I run this?". Architecture context lives in `docs/whitepaper.md` (the protocol description) and `docs/build_journey.md` (phase-by-phase build narrative).
 
 ---
 
@@ -78,38 +78,88 @@ or the SS58 is bound to a different ed25519 key than the one you have.
 
 ## 3. Outcome signer — daily epoch routine
 
-For each scheduled epoch (recommended cadence ≥ 4.5 hours per §18.2.4):
+For each scheduled epoch (recommended cadence ≥ 4.5 hours):
 
-### 3.1 At T=0 (epoch open)
+The 9.A.1 / 9.A.2 modules expose Python APIs (no `__main__` CLI).
+Operators wrap them in their own production scheduling. Reference
+implementations:
 
-```bash
-# Build the release_commit and submit 9.A.1.
-# (Operator infrastructure; this is the API surface.)
-python -m hope.hope_outcomes.release_commit \
-    --epoch-id EPOCH-2026-W18-MON \
-    --episodes-file episodes.json \
-    --signing-key ~/.sn21/keys/outcome-signer-ed25519.pem \
-    --wallet-name outcome-signer
+### 3.1 At T=0 (epoch open) — submit 9.A.1 release_commit
+
+```python
+import bittensor as bt
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+)
+from cryptography.hazmat.primitives import serialization
+from hope.hope_outcomes.release_commit import (
+    build_release_commit,
+    submit_release_commit_layer_9a1,
+)
+
+with open("~/.sn21/keys/outcome-signer-ed25519.pem", "rb") as f:
+    signing_key = serialization.load_pem_private_key(
+        f.read(), password=None
+    )
+
+# 1. Build the release_commit CBOR (rules + episode hashes + drand round).
+release_blob = build_release_commit(
+    epoch_id="EPOCH-2026-W18-MON",
+    episodes=episodes,                # list of Episode objects
+    drand_round_at_open=current_round,
+    signer_key=signing_key,
+)
+
+# 2. Submit the BLAKE2b-256 digest as 9.A.1 chain commit.
+subtensor = bt.Subtensor(network="finney")
+wallet = bt.Wallet(name="outcome-signer")
+result = submit_release_commit_layer_9a1(
+    subtensor=subtensor,
+    wallet=wallet,
+    netuid=21,
+    release_commit_blob=release_blob,
+)
+print(f"9.A.1 chain block: {result.block_number}")
+print(f"plaintext digest:  {result.message}")  # BLAKE2b-256 hex
 ```
 
-Logs the on-chain extrinsic hash + the BLAKE2b-256 digest of the
-release_commit plaintext. Serve the plaintext at
-`https://outcomes.example.io/release/{epoch_id}` AFTER the chain
-commit finalizes (CL-9 commit-then-serve gate).
+Serve `release_blob` at `https://outcomes.example.io/release/{epoch_id}`
+**only after** `result.block_number` is finalized (CL-9 commit-then-
+serve gate).
 
-### 3.2 At T=deadline (miner deadline + δ)
+### 3.2 At T=deadline (miner deadline + δ) — submit 9.A.2 reveal blob
 
-```bash
-python -m hope.hope_outcomes.reveal_blob \
-    --epoch-id EPOCH-2026-W18-MON \
-    --release-commit-plaintext-sha256 <hex from 3.1> \
-    --measured-outcomes outcomes.json \
-    --signing-key ~/.sn21/keys/outcome-signer-ed25519.pem \
-    --wallet-name outcome-signer
+```python
+from hope.hope_outcomes.reveal_blob import (
+    build_reveal_blob,
+    submit_outcome_reveal_hash_layer_9a2,
+)
+
+# 1. Build the reveal blob (signed measured outcomes).
+reveal_blob = build_reveal_blob(
+    epoch_id="EPOCH-2026-W18-MON",
+    release_commit_sha256=release_commit_sha256,  # from §3.1
+    outcomes=outcomes,                            # list of Outcome objects
+    signer_key=signing_key,
+)
+
+# 2. Submit SHA-256(reveal_blob) on chain.
+result = submit_outcome_reveal_hash_layer_9a2(
+    subtensor=subtensor,
+    wallet=wallet,
+    netuid=21,
+    reveal_blob=reveal_blob,
+)
+print(f"9.A.2 chain block: {result.block_number}")
 ```
 
-Submits 9.A.2 — the SHA-256 of the reveal blob. After finalization,
-serve the reveal blob at `https://outcomes.example.io/reveal/{epoch_id}`.
+Serve `reveal_blob` at `https://outcomes.example.io/reveal/{epoch_id}`
+**only after** the 9.A.2 commit finalizes.
+
+> If you want a single-command CLI for these two operations, the
+> simplest path is to wrap the snippets above in your own
+> `scripts/sign_epoch.py`. The library functions are the contract;
+> the CLI is operator-specific.
 
 ---
 
@@ -340,8 +390,9 @@ depends on it.
 Action:
 1. Check `https://api.drand.sh/52db9ba.../public/latest`.
 2. If outage > 5 min, halt epoch submissions; resume when drand recovers.
-3. If outage > 24h, follow `docs/verifiable_scoring_architecture.md` §10.1
-   "drand outage" governance fallback.
+3. If outage > 24h, governance issues a `Sha256` commit with payload
+   `b"v1.0:emergency-fallback-instructions"` pointing to a manual
+   recovery procedure (whitepaper §12.1).
 
 ### 9.4 Hotkey ↔ ed25519 binding lost
 

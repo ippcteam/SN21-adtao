@@ -68,11 +68,20 @@ python scripts/generate_training_data.py
 python scripts/train_example_model.py --data-file data/training/training_episodes.json
 ```
 
-The training set is also bundled in `data/training/training_episodes.json`. Each example has:
+The training set is bundled in `data/training/training_episodes.json`. Each example has:
 - `input` — the full episode payload (what you receive during a live epoch)
 - `outcome` — the actual t7/t14 deltas (what really happened)
 
-Use these to train: given input features → predict outcome deltas.
+> **Sample data caveat.** This is pre-launch sample data drawn from
+> `WR-2026-W17-PUB-E1`. It contains `BID_STRATEGY_CHANGE` and
+> `CAMPAIGN_ENABLE` actions but **no** `TARGET_VALUE_CHANGE` examples.
+> The launch action enum is the four types in
+> `hope/constants.py:LAUNCH_ACTION_TYPES`
+> (`BUDGET_CHANGE`, `BID_STRATEGY_CHANGE`, `TARGET_VALUE_CHANGE`,
+> `CAMPAIGN_PAUSE`). `CAMPAIGN_ENABLE` will **not** appear in live
+> epochs; `TARGET_VALUE_CHANGE` will. Pull a fresh release with
+> `scripts/generate_training_data.py` once mainnet opens to get
+> launch-enum data.
 
 ### Step 4: Run the miner
 
@@ -278,7 +287,7 @@ A prediction of `cost_delta_pct.p50 = -5.0` means "I expect daily cost to drop 5
 | Both horizons required | `"7"` and `"14"` must be present | Rejected |
 | All three metrics required | cost, conversions, efficiency | Rejected |
 | Probabilities in [0, 1] | goal_miss and instability_risk | Rejected |
-| Minimum interval width | `p90 - p10 >= 0.5` | Penalized |
+| Minimum interval width | `p90 - p10 > 3.0` (per `MIN_INTERVAL_WIDTH` in `hope/constants.py`) | Counted as null per the penalty rule below |
 | No NaN/Inf | All values finite | Rejected |
 
 ### Efficiency Delta
@@ -306,13 +315,29 @@ Averaged across all three metrics (cost, conversions, efficiency).
 
 ### 5.2 Calibration (20% weight)
 
-Does your P10-P90 interval capture the actual outcome, without being too wide?
+Does your P10-P90 interval capture the actual outcome, without being
+too wide? The simplified formula is:
 
 ```
 IS = (p90 - p10)^1.3 + 2.5 * max(p10 - actual, 0) + 2.5 * max(actual - p90, 0)
 ```
 
-The `^1.3` exponent means very wide intervals are penalized super-linearly. But missing the interval (actual outside P10-P90) is penalized 2.5x.
+The implementation in `hope/scoring/components/calibration.py` adds
+two refinements:
+
+1. **Scale-normalisation** — IS is divided by `max(abs(actual), 1.0)`
+   so a wide interval around a small actual outcome doesn't get
+   penalised the same as a wide interval around a large actual.
+2. **Low-resolution episodes** — for `measurement_resolution = "low"`
+   episodes (where the source data is noisier), the calibration
+   weight is reduced via the
+   `CALIBRATION_LOW_RES_REDUCTION = 0.50` constant.
+
+Read `hope/scoring/components/calibration.py` for the exact code; the
+`^1.3` exponent (`CALIBRATION_WIDTH_EXPONENT`) and the `2.5` miss
+multiplier (`CALIBRATION_MISS_MULTIPLIER`) are pinned in
+`hope/constants.py` and unit-tested in
+`tests/unit/scoring/test_scoring_components.py`.
 
 **Sweet spot:** Capture ~80% of actuals with the narrowest possible interval.
 
@@ -336,14 +361,31 @@ Proper scoring rule — the optimal strategy is honest probability reporting.
 
 ### 5.5 Null Penalty
 
-If more than 40% of your predictions have `|p50| < 1.0` for all metrics, a penalty ramps up:
+A prediction counts as **escaping null** for a given episode when AT
+LEAST ONE of its three metrics (cost / conversions / efficiency)
+satisfies BOTH of:
+
+- `|p50| > NEAR_ZERO_THRESHOLD` (signal in the point estimate)
+- `(p90 - p10) > MIN_INTERVAL_WIDTH` (meaningful uncertainty range)
+
+The thresholds are pinned in `hope/constants.py`:
+
+- `NEAR_ZERO_THRESHOLD = 2.0` (deci-percent units, i.e. p50 must move
+  more than ±2% from zero)
+- `MIN_INTERVAL_WIDTH = 3.0`
+
+If more than 40% of your epoch's predictions fail this test (i.e.
+all three metrics are simultaneously near-zero with narrow intervals),
+a penalty ramps up:
 
 ```
 penalty = max(0, (near_zero_fraction - 0.40) / 0.45) * 0.60
 final_score *= (1.0 - penalty)
 ```
 
-At 85%+ near-zero predictions, you lose 60% of your score. Don't predict zero for everything.
+At 85%+ near-null predictions you lose 60% of your score. The exact
+rule lives in `hope/scoring/null_penalty.py` and is unit-tested in
+`tests/unit/scoring/test_scoring_components.py`.
 
 ### 5.6 Horizon Weighting
 
@@ -523,7 +565,26 @@ All interaction with the validator is via HTTP:
 | `GET` | `/v1/epochs/{id}/scores` | None | Per-miner scores (post-scoring) |
 | `GET` | `/v1/epochs/{id}/verification` | None | Revealed outcomes (post-scoring) |
 
-**Authentication:** Set the `X-Miner-Hotkey` header to your Bittensor hotkey address.
+**Authentication.** When `REQUIRE_SIGNATURES=true` on the validator
+(the launch default), every authenticated request must carry three
+headers:
+
+| Header | Value |
+|---|---|
+| `X-Miner-Hotkey` | Bittensor SS58 hotkey of the requesting miner |
+| `X-Miner-Nonce` | Unix timestamp (numeric string), must be within ±NONCE_EXPIRY_SECONDS of validator clock |
+| `X-Miner-Signature` | Hex-encoded sr25519 signature over the canonical signed message |
+
+The canonical signed message is constructed from method + path +
+hotkey + nonce + body-hash, and is implemented in
+`hope/validator/api/auth.py:verify_miner`. The `hope-miner` CLI
+constructs this signature automatically when run with a wallet
+(`--wallet-name`). Custom HTTP clients should mirror that exact
+construction; reading the `verify_miner` function is the source of
+truth.
+
+If `REQUIRE_SIGNATURES=false` (development only), only `X-Miner-Hotkey`
+is required.
 
 **Validator URL:** provided at registration.
 
@@ -547,6 +608,7 @@ All interaction with the validator is via HTTP:
 | Null penalty | Ramps from 40% to 85% near-zero predictions, max 60% penalty |
 | **Weekly cadence** | Mining: Monday noon EST → Sunday midnight EST (6.5 days) |
 | **Scoring window** | Sunday midnight EST → Monday noon EST (12 hours) |
-| Rate limit | 5 submissions per epoch per miner |
+| HTTP rate limit | 500 predictions per epoch per miner (`MAX_PREDICTIONS_PER_MINER` in `hope/validator/api/predictions.py`) |
+| Chain commit limit | ~3,100 bytes per (netuid, hotkey) per ~4-hour MaxSpace window (Bittensor pallet level) |
 | Training data | `data/training/training_episodes.json` (10 examples) |
 | Offline scoring | `python scripts/score_predictions.py --run-baseline` |

@@ -284,11 +284,14 @@ def main():
                         default=os.environ.get("HOPE_API_KEY", ""),
                         help="data API key (or set HOPE_API_KEY env var)")
     parser.add_argument("--port", type=int, default=8080, help="API server port")
-    parser.add_argument("--network", type=str, default="test",
-                        choices=["test", "finney", "local"], help="Bittensor network")
+    parser.add_argument("--network", type=str, default="finney",
+                        choices=["test", "finney", "local"],
+                        help="Bittensor network (default: finney mainnet; "
+                             "use 'test' for testnet, which uses netuid 466)")
     parser.add_argument("--netuid", type=int,
                         default=int(os.environ.get("NETUID", "21")),
-                        help="Subnet netuid (or set NETUID env var)")
+                        help="Subnet netuid (default: 21 mainnet; testnet "
+                             "is netuid 466)")
     parser.add_argument("--wallet-name", type=str, default="sn21_validator",
                         help="Wallet name")
     parser.add_argument("--wallet-hotkey", type=str, default="default",

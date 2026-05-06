@@ -12,6 +12,9 @@ running on Bittensor.**
 | **Testnet** | netuid **466** on `test` |
 | **Status** | Pre-mainnet — testnet validation complete |
 | **License** | MIT |
+| **Repo** | `tao-discovery` |
+| **Python package** | `hope-sn21` (installed via `pip install -e .`) |
+| **CLIs** | `hope-miner`, `hope-validator`, `hope-score` |
 
 ---
 
@@ -95,21 +98,45 @@ scores = scorer.score_epoch(predictions, episodes, outcomes)
 
 ---
 
-## How emissions work (launch)
+## How emissions work
 
-The validator runs the production reward path implemented in
-[`hope/validator/tiered_weights.py`](hope/validator/tiered_weights.py):
+**At launch.** The default `hope-validator` CLI runs simple
+score-normalization with a 95% burn to UID 0:
 
-1. **Participation gate** — beat the baseline, ≥ 80% epoch coverage,
+1. Compute each miner's raw score (the four-component scoring path
+   in `hope/scoring/`).
+2. Normalize to weights summing to 1.0.
+3. Apply 95% burn (UID 0 receives 0.95, miners share 0.05).
+4. Submit weights via `commit_timelocked_weights`.
+
+This deliberately uses a simpler emission mechanism for the first
+operational cycle, while the chain-side scoring + verification
+pipeline is exercised end-to-end on mainnet.
+
+**Available, opt-in.** The full tiered allocator is implemented in
+[`hope/validator/tiered_weights.py`](hope/validator/tiered_weights.py)
+and unit-tested in
+[`tests/unit/validator/test_tiered_weights.py`](tests/unit/validator/test_tiered_weights.py).
+It enforces:
+
+1. Participation gate — beat the baseline, ≥ 80% epoch coverage,
    per-bucket coverage thresholds.
-2. **Four-epoch EMA tier placement** (alpha = 0.5).
-3. **Tier bands:** Elite (top 20%) 60% / Competitive (next 40%) 30%
-   / Participating (bottom 40%) 10%.
-4. **Elite quality floor** — top 20% must clear baseline + 1·sigma to
+2. Four-epoch EMA tier placement (alpha = 0.5).
+3. Tier bands — Elite (top 20%) 60% / Competitive (next 40%) 30% /
+   Participating (bottom 40%) 10%.
+4. Elite quality floor — top 20% must clear baseline + 1·sigma to
    form Elite; otherwise 60% pool redistributes 30:10 to
    Competitive:Participating.
-5. **Burn fraction** — 95% to UID 0 at launch (high to deter
-   exploiters; reduced as the system proves stable).
+
+Operators wire it explicitly:
+
+```python
+WeightSetter(burn_fraction=0.95, tiered_allocator=TieredAllocator())
+```
+
+Tier mechanics are scheduled to become the runner default after
+Review 1, when there is enough operational data to tune gate
+thresholds against real miner behaviour.
 
 Full spec in [SN21_REWARD_MECHANISM.md](docs/SN21_REWARD_MECHANISM.md).
 
@@ -123,10 +150,18 @@ git clone <repo-url>
 cd tao-discovery
 pip install -e ".[miner]"
 
-# Train on the bundled training set (10 episodes, known outcomes)
+# Train on the bundled sample training set (10 episodes, known outcomes).
+# NOTE: this is a pre-launch sample — it includes BID_STRATEGY_CHANGE +
+# CAMPAIGN_ENABLE actions. The launch action enum is BUDGET_CHANGE,
+# BID_STRATEGY_CHANGE, TARGET_VALUE_CHANGE, CAMPAIGN_PAUSE — see
+# `hope/constants.py:LAUNCH_ACTION_TYPES`. CAMPAIGN_ENABLE will not
+# appear in live epochs; TARGET_VALUE_CHANGE will. The fresh release
+# pulled via `scripts/generate_training_data.py` matches the launch enum.
 python scripts/train_example_model.py --data-file data/training/training_episodes.json
 
-# Run a miner against the live validator (auto-discovers the current epoch)
+# Run a miner against the live validator (auto-discovers the current epoch).
+# IMPORTANT: --bt-network defaults to "finney" (mainnet) and --netuid to 21.
+# For testnet, pass --bt-network test --netuid 466 explicitly.
 hope-miner --wallet-name my_miner --validator-url <validator-url>
 
 # Or run continuously
@@ -189,25 +224,40 @@ tao-discovery/
 
 ## Verifying any epoch (anyone)
 
-The chain is the source of truth. Anyone can audit any epoch
-end-to-end:
+The chain is the source of truth. The verifier supports two modes,
+gated by what inputs you provide:
 
-1. Read the validator's 9.C.1 + 9.C.2 commits from chain.
-2. Verify `inner_sig` against the validator's chain hotkey.
-3. Re-derive every miner's score from raw chain commits + archived
-   ciphertexts using the same scoring code the validator runs.
-4. Compare your IMT roots against the chain-anchored ones.
-5. Cross-check the actual chain weights at
-   `weights_commit_block_hash` against weights re-derived from the
-   score table.
+| Mode | What it checks | What you need |
+|---|---|---|
+| **Chain integrity** (default) | `inner_sig` on 9.C.1 + 9.C.2; IMT root reconstruction; weights-binding cross-check at `weights_commit_block_hash`; per-miner scoreability re-derivation | A Bittensor RPC endpoint (archive node for past epochs) + at least one tier-2 / tier-3 archive URL |
+| **Full score recomputation** | All of the above PLUS independent recomputation of every miner's score against ground truth | Same as above PLUS `--truth-file` derived from the 9.A.2 reveal blob — see `tests/fixtures/recorded_epoch/recorded_epoch.json` for the schema |
 
 ```bash
+# Chain-integrity check
 python scripts/verify_epoch.py \
     --epoch-id WR-2026-W18-PUB-E1 \
     --validator-hotkey 5GxVLdpRGZN... \
     --tier-2-base https://archive.example.io \
     --block-hash 0x<the block where 9.C.2 landed>
+
+# Full score recomputation (add --truth-file)
+python scripts/verify_epoch.py \
+    --epoch-id WR-2026-W18-PUB-E1 \
+    --validator-hotkey 5GxVLdpRGZN... \
+    --tier-2-base https://archive.example.io \
+    --block-hash 0x<the block where 9.C.2 landed> \
+    --truth-file truth_2026_W18.json
 ```
+
+Without `--truth-file`, score recomputation returns zero for every
+miner and `final_score_match` will fail by design — the warning is
+printed at startup. Use chain-integrity mode when you don't have the
+reveal blob handy; use full recomputation when you do.
+
+For block-pinned reads of past epochs, the chain RPC must be an
+**archive node**. Standard `finney` RPCs only retain the last ~256
+blocks; older blocks return empty state. See `docs/operator_runbook.md`
+§8.1 for archive-node operator setup.
 
 Match → validator is honest. Mismatch → exactly one of {validator,
 verifier} has a bug or is malicious; the divergence is publicly

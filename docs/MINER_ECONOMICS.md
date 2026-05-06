@@ -12,8 +12,10 @@ Short reference for how emissions relate to your behaviour. **Authoritative deta
 
 1. **Pass the participation gate** (all must hold):  
    - Score **above the conditional prior baseline** (historical mean by action class — values published at epoch start).  
-   - Submit on **≥80%** of episodes.  
-   - Meet **per-bucket** coverage (e.g. ≥60% in each large `(campaign_type × resolution)` bucket).  
+   - Submit on **≥80%** of episodes (`COVERAGE_GATE_FRACTION = 0.80` in `hope/validator/tiered_weights.py`).  
+   - Meet **per-bucket** coverage (≥60% in each large `(campaign_type × resolution)` bucket; ≥3 submissions in small buckets).  
+
+   **Note on two coverage thresholds:** the **scoring** library applies a separate **score-coverage** rule at `MIN_COVERAGE_FRACTION = 0.50` in `hope/scoring/scorer.py` — drop below 50% and your *raw score* is reduced via a quadratic penalty (independent of emissions). The 80% in this list is the **emission-qualification gate** in the tiered allocator. Pass both, or you forfeit emissions.
 
 2. **Epoch type multiplier** scales the week’s “pie” (Search campaign-level = 1.0×; consolidation / championship **higher** — see full table in reward spec).
 

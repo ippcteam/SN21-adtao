@@ -1,14 +1,14 @@
 """Per-episode prediction artifacts (Phase E, Layer 9.B.1).
 
 Phase B/C committed only the aggregated horizon CBOR (one entry per horizon
-across the whole portfolio). That kept the chain plaintext under the 768-byte
+across the whole portfolio). That kept the chain plaintext under the 380-byte (Phase H)
 TLE budget but lost per-episode granularity — the scorer could only judge
 miners on aggregated quantiles, not on which specific episodes they got
 right or wrong.
 
 Phase E adds an OFF-CHAIN per-episode bundle whose IMT root is committed
 on-chain inside the existing aggregated plaintext. The chain still carries
-≤ 768 bytes; the bundle goes to the same Tier-2 / Tier-3 archives, indexed
+≤ 380 bytes (Phase H halved this from 768 after the auto-decrypt format fix; see docs/build_journey.md Phase H); the bundle goes to the same Tier-2 / Tier-3 archives, indexed
 by epoch_id + miner_hotkey. After K reveals, anyone can fetch the bundle,
 verify its root against the on-chain commit, decode per-episode quantiles,
 and run the project's `EpochScorer` on it.

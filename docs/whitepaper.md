@@ -19,10 +19,10 @@ Bittensor Subnet 21 · MIT-licensed · Public verifier ships at launch
 | Current phase | Pre-mainnet — testnet validation complete | §14.3 |
 | Validator registration | **Closed at launch.** Operator runs primary + shadow. Opening is on the Review 4 agenda | `docs/SN21_REWARD_MECHANISM.md` |
 | Miner registration | Open on testnet 466 today; mainnet 21 opens when launch announces | `docs/miner_quickstart.md` |
-| Public verifier | **Live at launch.** `scripts/verify_epoch.py` runs chain reads, `inner_sig` checks, IMT root recomputation, AND end-to-end score recomputation via the production `score_one_miner` adapter. Pass `--truth-file` (derived from the 9.A.2 reveal blob) for full score reproduction. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/unit/scripts/test_verify_epoch_live_scorer.py` |
+| Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/unit/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
 | Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is upstream Bittensor RFC, tracked in `docs/proposals/q26_weights_payload_anchor.md` | §13.1 + adversarial test |
-| Per-episode artifacts | **Live at launch.** Miners that pass `per_episode_entries` to `submit_miner_epoch` ship the bundle to archives, bind its IMT root via `episodes_root` and SHA via `episodes_bundle_sha256`. Aggregate-per-horizon path is preserved for miners that have not yet adopted Phase E | §13.2 |
-| Reward mechanism | **Tiered allocator live at launch.** `TieredAllocator` enforces participation gate, four-epoch EMA tier placement, Elite/Competitive/Participating pool shares, Elite-floor redistribution, and the <15-miner single-pool fallback. Wire it via `WeightSetter(tiered_allocator=TieredAllocator())`; the legacy score-normalization path remains as the documented fallback | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
+| Per-episode artifacts | **Available via configuration.** `submit_miner_epoch(per_episode_entries=...)` builds the bundle, binds `episodes_root` + `episodes_bundle_sha256` in the aggregated plaintext, and uploads to the archives. The default `hope-miner` CLI submits aggregate-per-horizon at launch; per-episode is opt-in for miners that wire it. Default behaviour will move to per-episode after operational-cycle-1 | §13.2 |
+| Reward mechanism | **`TieredAllocator` available, default runner uses simple normalization + burn.** `hope/validator/tiered_weights.py:TieredAllocator` enforces the full participation gate / EMA tier placement / Elite floor / pool shares spec. The default `hope-validator` CLI runs `WeightSetter(burn_fraction=0.95)` + `normalize_scores(...)` at launch. To enable tiers, an operator constructs `WeightSetter(tiered_allocator=TieredAllocator())` and calls `allocate_tiered(...)`. Tier mechanics are scheduled to become the default after Review 1 | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
 | Conditional-prior baseline | **Live at launch.** The release artifact's `scoring_metadata.conditional_prior` per episode plumbs through `ScoringMetadata` and `SkillScoreCalculator.compute_baseline_prediction(...)`. Episodes with no published prior fall through to predict-zero — no crash, no silent gate-zeroing | §11 |
 
 When in doubt about a claim in the rest of this paper, this table is the
@@ -800,17 +800,24 @@ Final score is a uint micro-units integer (0 to 1,000,000), committed
 into the IMT in 9.C.2. The validator translates score → uint16 weight
 via simple normalization and submits via `set_weights`.
 
-> **Status (launch).** The tiered allocator is live in
-> `hope/validator/tiered_weights.py:TieredAllocator`. Wire it via
-> `WeightSetter(tiered_allocator=TieredAllocator())` and call
-> `allocate_tiered(...)`; the call enforces all of the participation
-> gate, EMA tier placement, Elite floor + redistribution, and pool
-> shares from the reward spec, then applies burn. The legacy
-> score-normalization path remains as a documented fallback for
-> operators that want to disable tier mechanics during initial
-> epochs. Epoch-type multipliers and the diversity bonus are still
-> roadmap (Review 2 / Review 3); the rest of Components 1-2 ships at
-> launch.
+> **Status (launch).** The tiered allocator is **available** in
+> `hope/validator/tiered_weights.py:TieredAllocator` and fully unit-
+> tested (`tests/unit/validator/test_tiered_weights.py`), but it is
+> **not the default path in the production validator runner**. The
+> default `hope-validator` CLI constructs
+> `WeightSetter(burn_fraction=0.95)` and calls `normalize_scores(...)`
+> — simple linear normalisation of raw scores + 95% burn. Operators
+> who want tier mechanics on day one wire it explicitly:
+> ```python
+> setter = WeightSetter(burn_fraction=0.95,
+>                       tiered_allocator=TieredAllocator())
+> uids, weights, allocation = setter.allocate_tiered(...)
+> ```
+> Tier mechanics are scheduled to become the runner default after
+> Review 1, when we have enough operational data to tune the gate
+> thresholds and Elite floor against real miner behaviour.
+> Epoch-type multipliers and the diversity bonus are roadmap
+> (Review 2 / Review 3).
 
 ### 11.3 Worked example — 20 miners, one epoch
 
@@ -944,9 +951,15 @@ hours from the same hotkey will hit `SpaceLimitExceeded`.
 and the operator's runbook §9.1 instructs them to wait for the window
 to clear before retrying.
 
-**Architectural mitigation:** the protocol's recommended minimum epoch
-cadence is 4.5 hours — comfortably within the rate-limit window. A
-24-hour cadence (the most common operational choice) has 5x headroom.
+**Architectural mitigation:** SN21's launch epoch cadence is **weekly**
+(see `docs/SN21_EPOCH_STRUCTURE.md` and `docs/MINER_ECONOMICS.md`).
+That is the protocol-level cycle for scoring + payout. The "4.5
+hour" number is something different: it is the chain's **MaxSpace
+rate-limit floor** below which a single hotkey can't reliably commit
+again. As long as miners submit at most once per epoch (weekly), they
+sit comfortably above this floor with ~37× headroom. The 4.5h floor
+matters only for operators who run short experimental epochs — not
+for the launch cadence.
 
 ### 12.4 Validator MaxSpace contention
 
@@ -1057,22 +1070,20 @@ MaxSpace forbids it. Per-episode artifacts live off-chain in archives
 with a chain-anchored root. This is a deliberate trade-off: cheaper
 chain footprint, slightly more off-chain trust.
 
-> **Status (launch).** Phase E ships at launch. Miners that pass
-> `per_episode_entries=...` to
-> `submit_miner_epoch` build the off-chain bundle, upload it to the
-> same archive endpoints alongside `AES_ct`, and the aggregated
-> on-chain plaintext binds:
-> - `episodes_root` — IMT root over per-(episode, horizon) entries.
-> - `episodes_bundle_sha256` — SHA-256 of the bundle bytes.
->
-> Both fields are inside the inner_sig'd plaintext, so a tampered
-> bundle, a substituted bundle, or a divergent root all fail
-> verification. The verifier scores per-(episode × horizon) via
-> `score_one_miner_per_episode` from
-> `hope.scoring.onchain_adapter`, and the legacy
-> aggregate-per-horizon path is preserved for miners that haven't yet
-> adopted Phase E. Adoption is by configuration, not protocol-version
-> bump.
+> **Status (launch).** Phase E primitives are **available** as
+> `submit_miner_epoch(per_episode_entries=...)` —
+> `episodes_root` (IMT root over per-(episode, horizon) entries) and
+> `episodes_bundle_sha256` (SHA-256 of the bundle bytes) get bound
+> inside the inner_sig'd aggregated plaintext, and the verifier
+> scores per-(episode × horizon) via `score_one_miner_per_episode`.
+> However, the default `hope-miner` CLI does **not** pass
+> `per_episode_entries` at launch — it converts predictions into
+> aggregate per-horizon entries via
+> `_predictions_to_horizon_entries(...)` and submits those. Miners
+> that want exact per-episode binding wire their own caller around
+> `submit_miner_epoch(...)`. Default CLI behaviour will switch to
+> per-episode after operational-cycle-1, once the field is exercised
+> end-to-end on mainnet.
 
 ### 13.3 Privacy of predictions
 
@@ -1199,10 +1210,14 @@ clean under `ruff check`.
 
 | Doc | Purpose |
 |---|---|
-| `docs/verifiable_scoring_architecture.md` | Internal architecture spec, v1.0 + Phase G + Phase H. Auditor-facing. (Gitignored.) |
+| `docs/whitepaper.md` | This document. Protocol description, trust model, adversarial matrix. |
+| `docs/build_journey.md` | Phase-by-phase build narrative (Phase 0 calibration → A–H + audit-feedback wave). |
 | `docs/operator_runbook.md` | Operator playbook: setup, daily ops, incidents, rotation, mainnet pre-launch. |
-| `docs/proposals/q26_weights_payload_anchor.md` | Upstream Bittensor RFC for chain-side T-20b binding. |
-| `docs/whitepaper.md` | This document. Human-friendly summary. |
+| `docs/SN21_REWARD_MECHANISM.md` | Full reward spec (gates, tiers, EMA, governance). |
+| `docs/SN21_EPOCH_STRUCTURE.md` | Epoch and phase progression. |
+| `docs/miner_quickstart.md` | Miner onboarding tutorial. |
+| `docs/MINER_ECONOMICS.md` | Short reference for how emissions relate to miner behaviour. |
+| `docs/proposals/q26_weights_payload_anchor.md` | Upstream Bittensor RFC for chain-side weights ↔ scoring binding. |
 | `deploy/archive_server/README.md` | Archive server deployment (Docker / systemd). |
 | `deploy/grafana/README.md` | Sample Grafana dashboard for archive server metrics. |
 
@@ -1310,18 +1325,24 @@ Mainnet next.
 
 ## Appendix A — Test surface
 
+Run `pytest tests/ --collect-only -q | wc -l` for the live count;
+the surface as of v1.0 launch:
+
 ```
-tests/unit/commitment/      258 tests
-tests/unit/miner/             9 tests
-tests/unit/validator/        34 tests
-tests/unit/hope_outcomes/    26 tests
-tests/unit/hope_shadow_validator/   2 tests
-tests/unit/archive_server/   38 tests
-tests/unit/scripts/           5 tests
-tests/unit/scoring/          26 tests
-tests/adversarial/           12 tests  (every claimed defense gets a test)
-─────────────────────────────────────
-Total:                      453 pass, 7 skipped
+tests/unit/commitment/             243 tests
+tests/unit/scoring/                 49 tests
+tests/unit/validator/               43 tests
+tests/unit/                         39 tests
+tests/unit/archive_server/          38 tests
+tests/unit/hope_outcomes/           26 tests
+tests/e2e/                          15 tests
+tests/unit/scripts/                 12 tests
+tests/adversarial/                  12 tests  (every claimed defence has a test)
+tests/unit/miner/                    9 tests
+tests/integration/                   7 tests  (live API; CI runs continue-on-error)
+tests/unit/hope_shadow_validator/    2 tests
+─────────────────────────────────────────────
+Total:                             495 collected, 488 pass, 7 skipped
 ```
 
 Adversarial tests are in `tests/adversarial/test_attack_surface.py`.

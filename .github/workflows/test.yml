@@ -28,10 +28,16 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check hope/ tests/
+        run: ruff check hope/ scripts/ tests/
 
       - name: Unit tests
         run: pytest tests/unit/ -v --tb=short
+
+      - name: Adversarial tests
+        run: pytest tests/adversarial/ -v --tb=short
+
+      - name: End-to-end tests
+        run: pytest tests/e2e/ -v --tb=short
 
       - name: Integration tests (live API)
         run: pytest tests/integration/ -v --tb=short

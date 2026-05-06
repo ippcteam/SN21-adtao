@@ -11,7 +11,36 @@ build/
 *.egg
 .venv/
 venv/
+
+# Environment files — never commit
 .env
+.env.local
+.env.production
+.env.staging
+.envrc
+
+# Cryptographic material — never commit
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+wallet.json
+*.wallet
+
+# ML artifacts (operators may want these locally; not for public repo)
+wandb/
+runs/
+models/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+
+# Generated training data — uncomment if your pipeline overwrites the
+# bundled samples; otherwise leave commented to ship the launch sample set.
+# data/training/
 
 # Internal test files (kept locally, not in public repo)
 tests/unit/test_auth_signatures.py

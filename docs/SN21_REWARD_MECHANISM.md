@@ -4,9 +4,10 @@
 | :---- | :---- |
 | **Version** | 1.2.1 |
 | **Last updated** | 2026-04-27 |
+| **Authoritative for launch** | Yes — gates, tier shape, EMA, governance. |
 | **Companion** | [SN21_EPOCH_STRUCTURE.md](./SN21_EPOCH_STRUCTURE.md) |
 
-**Implementation note:** This repository (`tao-discovery`) contains reference scoring and validator code. Emission math (tiers, gates, EMA) may be rolled out in phases; when in doubt, check release notes and on-chain parameters against this specification.
+**Implementation note:** This document is the authoritative spec for the launch reward mechanism *as designed*. The default `hope-validator` CLI at launch ships a simpler path — score-normalization + 95% burn — while the chain-side scoring pipeline is exercised end-to-end during the first operational cycle. The full tiered allocator is implemented in `hope/validator/tiered_weights.py:TieredAllocator` and unit-tested; operators can opt in immediately via `WeightSetter(tiered_allocator=TieredAllocator())`. The default runner is scheduled to switch to the tiered path after Review 1.
 
 ## Purpose
 
