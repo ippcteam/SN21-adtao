@@ -23,7 +23,7 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
-from substrateinterface import Keypair
+from bittensor_wallet import Keypair
 
 from hope.miner.models.baseline import BaselineModel
 from hope.protocol.episode import (
