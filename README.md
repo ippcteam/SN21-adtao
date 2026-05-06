@@ -9,6 +9,7 @@ Every score is reproducible by anyone with a chain reader.
 No one — including the operator — can rewrite the record after the fact.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://github.com/ippcteam/tao-discovery/actions/workflows/test.yml/badge.svg)](https://github.com/ippcteam/tao-discovery/actions/workflows/test.yml)
 
 ---
 
@@ -21,13 +22,16 @@ Bittensor Subnet 21 · Mainnet `finney` · Testnet `test` (netuid 466)
 
 - [Overview](#overview)
 - [How it works](#how-it-works)
+- [Architecture](#architecture)
 - [What you predict](#what-you-predict)
 - [How scoring works](#how-scoring-works)
 - [How emissions work](#how-emissions-work)
 - [Repository structure](#repository-structure)
-- [Quick start (miners)](#quick-start-miners)
+- [Hardware requirements](#hardware-requirements)
+- [Running a miner](#running-a-miner)
+- [Running a validator](#running-a-validator)
 - [Verifying any epoch](#verifying-any-epoch)
-- [Tests](#tests)
+- [Development](#development)
 - [License](#license)
 
 ---
@@ -44,16 +48,33 @@ Read the [Whitepaper](docs/whitepaper.md) for the full protocol.
 
 ### Two core guarantees
 
-1. **Predictions are bound to the miner that produced them.** Every prediction is signed (`inner_sig`) and committed on chain before the outcome is knowable.
-2. **Scoring is a deterministic function of public state.** Anyone running [`scripts/verify_epoch.py`](scripts/verify_epoch.py) can independently reproduce any validator's scoring decision.
+1. **Predictions are bound to the miner that produced them.** Every prediction is signed (`inner_sig`) and committed on chain via timelock encryption before the outcome is knowable. Late or rewritten predictions are detectable from chain state alone.
+2. **Validator scoring is independently reproducible.** Every input that affects a miner's score is anchored on chain through a Merkle root. [`scripts/verify_epoch.py`](scripts/verify_epoch.py) reads the chain, fetches the off-chain artifacts, re-runs the open-source scoring code, and either confirms or contradicts the validator's claim.
 
 ---
 
 ## How it works
 
+- **Outcome signer** publishes a weekly stream of prediction problems (episodes) drawn from real Google Ads management data and commits the release-package digest on chain at T=0.
 - **Miners** receive structured episodes (account state, action context, 60-day pre-window) and submit P10/P50/P90 distributions per (campaign × horizon). Submissions are AES-GCM encrypted, the AES key is timelock-encrypted to a future drand round, and the ciphertext SHA + key + archive URL are committed on chain.
-- **Validators** read miner commits after the timelock reveals, fetch the encrypted predictions from a three-tier archive, run an 8-check scoreability rule, score against measured outcomes, and submit weights via `commit_timelocked_weights`.
+- **Validators** read miner commits after the timelock reveals, fetch the encrypted predictions from a three-tier archive, run an 8-check scoreability rule, score against measured outcomes, and submit weights via `commit_timelocked_weights`. Pre- and post-scoring artifacts are committed as IMT roots on chain.
+- **A shadow validator** runs the same code on a separate hotkey and commits its own scoring artifacts. Mismatches between primary and shadow are publicly auditable.
 - **Anyone** can re-run the verifier against any past epoch and confirm — or contradict — the validator's scoring.
+
+---
+
+## Architecture
+
+| Component | Location | Trust model |
+|-----------|----------|-------------|
+| Episode + outcome publication | Operator (off chain) → digest on chain | Hash-anchored on chain via 9.A.1 + 9.A.2 |
+| Miner predictions | AES_ct off chain → SHA + TLE'd K + URL on chain | ed25519 inner_sig bound to miner hotkey |
+| Three-tier archive | Tier-1 (validator), Tier-2 (operator), Tier-3 (miner self) | Content-addressed by SHA-256; chain commit is the integrity anchor |
+| Scoring orchestration | Each validator | Open-source `hope/scoring/` and `hope/validator/onchain_runner.py`; reproducible by `scripts/verify_epoch.py` |
+| Pre/post scoring artifacts | On chain via TimelockEncrypted commits | IMT roots; ed25519 inner_sig; chain auto-decrypts |
+| Weights commit | Standard Subtensor `commit_timelocked_weights` | Bittensor v4 commit-reveal |
+| Drand quicknet beacon | External (League of Entropy) | BLS-on-BLS12-381 distributed beacon |
+| Yuma consensus | Subtensor runtime | Standard Bittensor weight aggregation |
 
 ---
 
@@ -137,7 +158,7 @@ tao-discovery/
 │   ├── SN21_EPOCH_STRUCTURE.md   Phases, horizons, consolidation
 │   └── MINER_ECONOMICS.md        Short reference for emissions
 │
-├── hope/
+├── hope/                         Core Python package (`pip install -e .`)
 │   ├── protocol/                 Episode / Prediction / Outcome models
 │   ├── commitment/               Crypto primitives (CBOR, IMT, ed25519, drand TLE, archive client, scoreability)
 │   ├── scoring/                  Pure-Python scoring (4 components + skill score + null penalty + per-episode)
@@ -154,23 +175,54 @@ tao-discovery/
 │   ├── generate_training_data.py Pull a release into training format
 │   └── sn21_keys.py              ed25519 key-management CLI
 │
-├── tests/
+├── tests/                        412 tests
 │   ├── adversarial/              12 attack scenarios with passing defences
 │   ├── e2e/                      Full miner flow against a running validator
-│   ├── commitment/               Crypto primitives
-│   ├── scoring/                  Scoring components + adapter
+│   ├── commitment/               Crypto primitives (243 tests)
+│   ├── scoring/                  Scoring components + adapter (49 tests)
 │   ├── miner/                    Miner runtime
 │   ├── validator/                Validator runtime
 │   └── scripts/                  Public verifier
 │
 ├── data/training/                10 sample episodes with known outcomes
 ├── min_compute.yml               Hardware requirements (miner + validator)
-└── CONTRIBUTING.md               How to file PRs and propose protocol changes
+├── CONTRIBUTING.md               How to file PRs and propose protocol changes
+└── pyproject.toml                Python 3.10+ package config + entry points
 ```
 
 ---
 
-## Quick start (miners)
+## Hardware requirements
+
+Full specs in [`min_compute.yml`](min_compute.yml).
+
+### Miner
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| CPU | 2 cores @ 2.0 GHz | 4 cores @ 3.0 GHz |
+| RAM | 4 GB | 8 GB+ |
+| Disk | 5 GB SSD | 20 GB SSD |
+| GPU | Not required | Optional (larger models) |
+| Network | 100 Mbps down / 20 Mbps up | — |
+
+The reference baseline runs on CPU. GPU only matters if you train a heavier model.
+
+### Validator
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| CPU | 4 cores @ 2.5 GHz | 8 cores @ 3.5 GHz |
+| RAM | 8 GB | 16 GB |
+| Disk | 10 GB SSD | 50 GB SSD |
+| GPU | Not required | — |
+| Network | 100 Mbps down / 20 Mbps up | — |
+
+Validators run scoring orchestration + an HTTP API for miners + a Tier-1 archive cache. CPU bottleneck is `EpochScorer` over all miners' decrypted predictions.
+
+---
+
+## Running a miner
 
 ```bash
 # Clone + install
@@ -178,17 +230,51 @@ git clone <repo-url>
 cd tao-discovery
 pip install -e ".[miner]"
 
+# Generate an ed25519 key (one-time, separate from your Bittensor hotkey)
+python scripts/sn21_keys.py generate --role miner --output ~/.sn21/keys/miner.pem
+
+# Register the hotkey ↔ ed25519 binding on chain (one-time)
+python scripts/sn21_keys.py register --role miner \
+    --network finney --netuid 21 \
+    --wallet-name my_miner --wallet-hotkey default \
+    --key ~/.sn21/keys/miner.pem
+
 # Train on bundled sample data (10 episodes, known outcomes)
 python scripts/train_example_model.py --data-file data/training/training_episodes.json
 
-# Run miner against a live validator (specify --bt-network test --netuid 466 for testnet)
+# Run miner against a live validator (testnet: --bt-network test --netuid 466)
 hope-miner --wallet-name my_miner --validator-url <validator-url>
 
-# Score yourself offline against a release
+# Score yourself offline against any release
 python scripts/score_predictions.py --release CURRENT_RELEASE_KEY --run-baseline
 ```
 
 Full guide: [miner quickstart](docs/miner_quickstart.md).
+
+---
+
+## Running a validator
+
+Third-party validator registration is **not open at launch** — the operator runs the canonical primary + shadow validators. The codebase is the same one a third-party validator would run; the Review 4 milestone tracks readiness.
+
+If you want to run the validator code locally for testing or to mirror what the operator runs:
+
+```bash
+# Install
+pip install -e .
+
+# Generate ed25519 key + register on chain (same as miner)
+python scripts/sn21_keys.py generate --role validator --output ~/.sn21/keys/validator.pem
+python scripts/sn21_keys.py register --role validator \
+    --network finney --netuid 21 \
+    --wallet-name my_validator --wallet-hotkey default \
+    --key ~/.sn21/keys/validator.pem
+
+# Run validator (HTTP API on :8080, --no-chain for offline development)
+hope-validator --release CURRENT_RELEASE_KEY --port 8080
+```
+
+Full guide: [validator setup](docs/validator_setup.md).
 
 ---
 
@@ -217,15 +303,22 @@ blocks.
 
 ---
 
-## Tests
+## Development
 
 ```bash
-pytest tests/                    # Full suite
-pytest tests/adversarial/ -v     # Adversarial scenarios (every claimed defence has a test)
-ruff check hope/ scripts/ tests/ # Lint
+# Full unit + adversarial + e2e suite (412 tests)
+pytest tests/
+
+# Adversarial scenarios only — every claimed defence has a passing attack test
+pytest tests/adversarial/ -v
+
+# Lint
+ruff check hope/ scripts/ tests/
 ```
 
-CI runs the same on every push to `main`.
+CI runs the same on every push to `main` (`.github/workflows/test.yml`).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, commit-message style, and the protocol-change PR process.
 
 ---
 
