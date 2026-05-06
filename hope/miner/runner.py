@@ -146,8 +146,10 @@ class MinerRunner:
             miner_hotkey_bytes: 32-byte raw ed25519 public key matching
                 `miner_signing_key`. Embedded in the prediction CBOR.
             miner_signing_key: ed25519 private key used to sign the prediction
-                inner_sig. Phase D will bind this to the Bittensor hotkey via
-                a registration commit; for now it is supplied externally.
+                inner_sig. The on-chain binding from Bittensor hotkey to
+                ed25519 public key is established once via
+                `scripts/sn21_keys.py register` (or
+                `hope.commitment.registration.submit_registration_commit`).
             submitted_round: drand round at submission time (must be within
                 the epoch's [open, deadline] window).
             archive_endpoints: list of (tier, base_url) targets for AES_ct.

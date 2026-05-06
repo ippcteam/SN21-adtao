@@ -1,10 +1,10 @@
 # SN21 — Impact Prediction Subnet
 
-**Verifiable prediction markets for Google Ads campaign outcomes,
-running on Bittensor.**
+### Predict Google Ads outcomes. Earn from accuracy alone.
 
-> Anyone can submit a prediction. Anyone can verify it was scored
-> honestly. The chain is the source of truth.
+Every prediction is sealed on chain before the outcome is knowable.
+Every score is reproducible by anyone with a chain reader.
+No one — including the operator — can rewrite the record after the fact.
 
 | | |
 |---|---|
