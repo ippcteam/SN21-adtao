@@ -1,27 +1,24 @@
 """Miner Runner — main entry point for SN21 miners.
 
-Handles the complete miner lifecycle:
-1. Load Bittensor wallet for signing
-2. Fetch episodes from validator HTTP API
-3. Run prediction model on each episode
-4. Submit signed predictions
+Runs one epoch via the Layer 9.B on-chain submission path:
 
-Submission paths:
-- HTTP path (legacy): submits a JSON payload to the validator API.
-- ON-CHAIN path (Layer 9.B, default in chain mode): packages predictions as
-  AES-GCM(ciphertext) + TimelockEncrypted(K) + Sha256(ct) + Raw(URL) and
-  publishes to the chain plus the Tier-2/Tier-3 archive endpoints.
+  1. Fetch episodes from the validator's HTTP episode API (Phase D —
+     episodes will move to the on-chain `episodes_root` in Phase E).
+  2. Generate a `Prediction` per episode using the configured model.
+  3. Aggregate per-horizon entries into the canonical CBOR payload.
+  4. AES-GCM encrypt the payload, timelock-encrypt the AES key to a
+     future drand round, and commit Sha256(AES_ct) + TLE'd K + Raw(URL)
+     on chain.
+  5. Push AES_ct to the configured Tier-2 / Tier-3 archive endpoints.
 
-Use `run_epoch_onchain(...)` or pass `--mode onchain` on the CLI to run the
-verifiable-scoring path. The HTTP path stays available for the operator's own data
-ingest until the chain path is the authoritative source.
+The legacy HTTP-only submission path was removed — every prediction is
+now anchored on chain so it can be independently verified.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -33,7 +30,6 @@ from hope.miner.onchain_submitter import (
     MinerSubmissionResult,
     submit_miner_epoch,
 )
-from hope.miner.prediction_client import PredictionClient
 from hope.miner.prediction_engine import PredictionEngine
 from hope.miner.models.baseline import BaselineModel
 from hope.protocol.prediction import Prediction
@@ -42,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 class MinerRunner:
-    """Main miner runner — HTTP only, wallet-authenticated."""
+    """Wraps a prediction model and runs one Layer 9.B on-chain epoch."""
 
     def __init__(
         self,
@@ -56,57 +52,6 @@ class MinerRunner:
         self.wallet = wallet
         self.validator_url = validator_url
         self.episode_client = EpisodeClient(hotkey=hotkey, wallet=wallet)
-        self.prediction_client = PredictionClient(hotkey=hotkey, wallet=wallet)
-
-    async def run_epoch(self, epoch_id: str) -> dict:
-        """Run the full miner cycle for one epoch."""
-        logger.info(f"Starting epoch {epoch_id} with model {self.model.name}")
-        self.model.on_epoch_start(epoch_id, 0)
-
-        # Fetch episodes
-        logger.info(f"Fetching episodes from {self.validator_url}...")
-        start = time.time()
-        episodes = await self.episode_client.fetch_all_episodes(
-            self.validator_url, epoch_id
-        )
-        fetch_time = time.time() - start
-        logger.info(f"Fetched {len(episodes)} episodes in {fetch_time:.1f}s")
-
-        # Generate predictions
-        logger.info(f"Generating predictions with {self.model.name}...")
-        start = time.time()
-        predictions = []
-        for ep in episodes:
-            try:
-                pred = self.model.predict(ep)
-                predictions.append(pred)
-            except Exception as e:
-                logger.warning(f"Failed to predict {ep.episode_metadata.episode_id}: {e}")
-
-        predict_time = time.time() - start
-        logger.info(f"Generated {len(predictions)} predictions in {predict_time:.1f}s")
-
-        # Submit predictions
-        logger.info("Submitting predictions...")
-        result = await self.prediction_client.submit_predictions(
-            self.validator_url, epoch_id, predictions
-        )
-
-        logger.info(
-            f"Epoch {epoch_id} complete: "
-            f"{result.get('accepted', 0)} accepted, "
-            f"{result.get('rejected', 0)} rejected"
-        )
-
-        return {
-            "epoch_id": epoch_id,
-            "model": self.model.name,
-            "episodes_fetched": len(episodes),
-            "predictions_made": len(predictions),
-            "fetch_time_s": round(fetch_time, 1),
-            "predict_time_s": round(predict_time, 1),
-            **result,
-        }
 
     def run_epoch_onchain(
         self,
@@ -146,8 +91,10 @@ class MinerRunner:
             miner_hotkey_bytes: 32-byte raw ed25519 public key matching
                 `miner_signing_key`. Embedded in the prediction CBOR.
             miner_signing_key: ed25519 private key used to sign the prediction
-                inner_sig. Phase D will bind this to the Bittensor hotkey via
-                a registration commit; for now it is supplied externally.
+                inner_sig. The on-chain binding from Bittensor hotkey to
+                ed25519 public key is established once via
+                `scripts/sn21_keys.py register` (or
+                `hope.commitment.registration.submit_registration_commit`).
             submitted_round: drand round at submission time (must be within
                 the epoch's [open, deadline] window).
             archive_endpoints: list of (tier, base_url) targets for AES_ct.
@@ -234,82 +181,42 @@ class MinerRunner:
             ))
         return entries
 
-    async def discover_epoch(self) -> str | None:
-        """Check the validator's health endpoint for the current epoch."""
-        import httpx
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{self.validator_url}/health")
-                if resp.status_code == 200:
-                    return resp.json().get("current_epoch")
-        except Exception as e:
-            logger.debug(f"Health check failed: {e}")
-        return None
-
-    async def run_continuous(self, poll_interval: int = 30):
-        """Run continuous miner loop — poll validator for new epochs."""
-        logger.info(f"Miner running continuously (model: {self.model.name})")
-        last_epoch = None
-
-        while True:
-            try:
-                current_epoch = await self.discover_epoch()
-                if current_epoch and current_epoch != last_epoch:
-                    logger.info(f"New epoch detected: {current_epoch}")
-                    result = await self.run_epoch(current_epoch)
-                    logger.info(f"Epoch result: {result.get('accepted', 0)} accepted")
-                    last_epoch = current_epoch
-
-                await asyncio.sleep(poll_interval)
-
-            except KeyboardInterrupt:
-                logger.info("Miner shutting down")
-                break
-            except Exception as e:
-                logger.error(f"Miner error: {e}")
-                await asyncio.sleep(60)
-
 
 def main():
-    """CLI entry point for the miner."""
+    """CLI entry point for the miner — Layer 9.B on-chain only."""
     import argparse
 
     parser = argparse.ArgumentParser(description="SN21 Miner")
     parser.add_argument("--validator-url", type=str, default="http://localhost:8080",
-                        help="Validator HTTP API URL")
+                        help="Validator HTTP API URL (used to fetch episodes only — "
+                             "Phase D)")
     parser.add_argument("--wallet-name", type=str, required=True,
-                        help="Bittensor wallet name (required for signing)")
+                        help="Bittensor wallet name")
     parser.add_argument("--wallet-hotkey", type=str, default="default",
                         help="Wallet hotkey name")
-    parser.add_argument("--epoch", type=str, default=None,
-                        help="Epoch ID (omit for auto-discover from validator)")
+    parser.add_argument("--epoch", type=str, required=True,
+                        help="Epoch ID (release_key) to submit predictions for")
     parser.add_argument("--model", type=str, default="baseline",
                         choices=["baseline"], help="Prediction model")
-    parser.add_argument("--continuous", action="store_true",
-                        help="Run continuous (polls validator for new epochs)")
-    parser.add_argument("--poll-interval", type=int, default=30,
-                        help="Seconds between health checks in continuous mode")
-    parser.add_argument("--mode", choices=["http", "onchain"], default="http",
-                        help="Submission path (http=legacy, onchain=Layer 9.B)")
     parser.add_argument("--netuid", type=int, default=21,
-                        help="Subtensor netuid (chain mode only)")
+                        help="Subtensor netuid (default: 21 mainnet; testnet is 466)")
     parser.add_argument("--bt-network", default="finney",
-                        help="Bittensor network name (chain mode only)")
-    parser.add_argument("--archive-tier-2", action="append", default=[],
-                        help="Tier-2 archive base URL (chain mode; repeat for multiple)")
-    parser.add_argument("--archive-tier-3", default=None,
-                        help="Tier-3 (self) archive base URL (chain mode only)")
+                        help="Bittensor network name (default: finney; "
+                             "use 'test' for testnet)")
+    parser.add_argument("--archive-tier-2", action="append", default=[], required=True,
+                        help="Tier-2 archive base URL (repeat for multiple)")
+    parser.add_argument("--archive-tier-3", required=True,
+                        help="Tier-3 (self) archive base URL")
     parser.add_argument("--blocks-until-reveal", type=int, default=300,
-                        help="Subtensor blocks until K auto-decrypts (chain mode)")
+                        help="Subtensor blocks until K auto-decrypts")
     parser.add_argument("--ed25519-key-file", default=None,
-                        help="Path to ed25519 PEM private key for inner_sig (chain mode); "
+                        help="Path to ed25519 PEM private key for inner_sig; "
                              "if omitted and the wallet hotkey is ed25519, that key is used")
 
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    # Load Bittensor wallet for request signing
     import bittensor as bt
     wallet = bt.wallet(name=args.wallet_name, hotkey=args.wallet_hotkey)
     hotkey = wallet.hotkey.ss58_address
@@ -322,33 +229,10 @@ def main():
         validator_url=args.validator_url,
     )
 
-    if args.mode == "onchain":
-        if not args.epoch:
-            parser.error("--mode onchain requires --epoch (auto-discover unsupported in chain mode)")
-        if not args.archive_tier_2 or not args.archive_tier_3:
-            parser.error("--mode onchain requires --archive-tier-2 and --archive-tier-3")
-        result = _run_epoch_onchain_cli(args, runner, wallet)
-        print("\nResults:")
-        for k, v in result.items():
-            print(f"  {k}: {v}")
-    elif args.continuous:
-        asyncio.run(runner.run_continuous(args.poll_interval))
-    elif args.epoch:
-        result = asyncio.run(runner.run_epoch(args.epoch))
-        print("\nResults:")
-        for k, v in result.items():
-            print(f"  {k}: {v}")
-    else:
-        loop = asyncio.new_event_loop()
-        epoch_id = loop.run_until_complete(runner.discover_epoch())
-        if epoch_id:
-            result = loop.run_until_complete(runner.run_epoch(epoch_id))
-            print("\nResults:")
-            for k, v in result.items():
-                print(f"  {k}: {v}")
-        else:
-            print("No active epoch found. Is the validator running?")
-        loop.close()
+    result = _run_epoch_onchain_cli(args, runner, wallet)
+    print("\nResults:")
+    for k, v in result.items():
+        print(f"  {k}: {v}")
 
 
 def _avg(it) -> float:
@@ -389,7 +273,7 @@ def _run_epoch_onchain_cli(args, runner: "MinerRunner", wallet) -> dict:
 
     endpoints: list[ArchiveEndpoint] = []
     for i, url in enumerate(args.archive_tier_2):
-        endpoints.append(ArchiveEndpoint(tier=2, base_url=url, name=f"hope-{i}"))
+        endpoints.append(ArchiveEndpoint(tier=2, base_url=url, name=f"tier-2-{i}"))
     if args.archive_tier_3:
         endpoints.append(ArchiveEndpoint(tier=3, base_url=args.archive_tier_3, name="self"))
 

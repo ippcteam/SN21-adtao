@@ -15,15 +15,15 @@ Bittensor Subnet 21 · MIT-licensed · Public verifier ships at launch
 | Item | Status | Where |
 |---|---|---|
 | Mainnet netuid | **21** (Bittensor `finney`) | Subnet registration |
-| Testnet netuid | **466** (Bittensor `test`) | Phase 0 + integration probes |
-| Current phase | Pre-mainnet — testnet validation complete | §14.3 |
+| Testnet netuid | **466** (Bittensor `test`) | testnet validation |
+| Current phase | Pre-mainnet — testnet validation complete | §15.3 |
 | Validator registration | **Closed at launch.** Operator runs primary + shadow. Opening is on the Review 4 agenda | `docs/SN21_REWARD_MECHANISM.md` |
 | Miner registration | Open on testnet 466 today; mainnet 21 opens when launch announces | `docs/miner_quickstart.md` |
-| Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/unit/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
-| Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is upstream Bittensor RFC, tracked in `docs/proposals/q26_weights_payload_anchor.md` | §13.1 + adversarial test |
-| Per-episode artifacts | **Available via configuration.** `submit_miner_epoch(per_episode_entries=...)` builds the bundle, binds `episodes_root` + `episodes_bundle_sha256` in the aggregated plaintext, and uploads to the archives. The default `hope-miner` CLI submits aggregate-per-horizon at launch; per-episode is opt-in for miners that wire it. Default behaviour will move to per-episode after operational-cycle-1 | §13.2 |
+| Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
+| Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is being pursued as an upstream Bittensor change | §14.1 + adversarial test |
+| Per-episode artifacts | **Available via configuration.** `submit_miner_epoch(per_episode_entries=...)` builds the bundle, binds `episodes_root` + `episodes_bundle_sha256` in the aggregated plaintext, and uploads to the archives. The default `hope-miner` CLI submits aggregate-per-horizon at launch; per-episode is opt-in for miners that wire it. Default behaviour will move to per-episode after operational-cycle-1 | §14.2 |
 | Reward mechanism | **`TieredAllocator` available, default runner uses simple normalization + burn.** `hope/validator/tiered_weights.py:TieredAllocator` enforces the full participation gate / EMA tier placement / Elite floor / pool shares spec. The default `hope-validator` CLI runs `WeightSetter(burn_fraction=0.95)` + `normalize_scores(...)` at launch. To enable tiers, an operator constructs `WeightSetter(tiered_allocator=TieredAllocator())` and calls `allocate_tiered(...)`. Tier mechanics are scheduled to become the default after Review 1 | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
-| Conditional-prior baseline | **Live at launch.** The release artifact's `scoring_metadata.conditional_prior` per episode plumbs through `ScoringMetadata` and `SkillScoreCalculator.compute_baseline_prediction(...)`. Episodes with no published prior fall through to predict-zero — no crash, no silent gate-zeroing | §11 |
+| Conditional-prior baseline | **Live at launch.** The release artifact's `scoring_metadata.conditional_prior` per episode plumbs through `ScoringMetadata` and `SkillScoreCalculator.compute_baseline_prediction(...)`. Episodes with no published prior fall through to predict-zero — no crash, no silent gate-zeroing | §12 |
 
 When in doubt about a claim in the rest of this paper, this table is the
 authoritative read on what is shipping at launch versus what is
@@ -35,150 +35,197 @@ described as the target architecture.
 
 ---
 
-## 1. The problem we're solving
+## 1. The Problem
 
-Advertisers spend trillions of dollars on Google Ads each year. The
-algorithms that decide which auction to enter, which bid to place, and
-which audience to target are run inside a black box. When an advertiser
-sees a bad week of performance, they cannot tell whether the cause was a
-genuine market shift or a quietly-changed Google policy.
+Modern advertising platforms make millions of automated decisions per
+day. Budgets shift, bid strategies retrain, campaigns pause and
+resume. Each intervention has a measurable impact on cost,
+conversions, and efficiency over the days that follow.
 
-Existing prediction services try to fill this gap. They train models on
-performance data and forecast what will happen next quarter. The
-problem with these services is that **they grade their own homework**:
+**Nobody predicts that impact before the change is made.**
 
-- The vendor predicts a number.
-- The vendor measures the outcome.
-- The vendor reports how accurate they were.
+This is not a gap in any one product. It is structural across the
+industry. PPC managers make decisions based on experience, partial
+data, and rough estimates. PPC software offers reporting dashboards,
+automation rules, and template-based recommendations — not calibrated
+forecasts of what specific interventions will do to specific
+accounts. The closest thing to a forecast in the field is a manual
+A/B test, which is slow, expensive, and only available to the largest
+advertisers.
 
-There is no way for the advertiser to verify that the prediction sold to
-them last month was the prediction the vendor actually made. The
-prediction lives in a private database. The vendor can quietly improve
-yesterday's record before today's customer asks about it.
+Predicting intervention impact has been on the "too difficult" pile
+for good reasons:
 
-**The fundamental issue is that prediction and grading are bundled in
-the same trust domain.** The vendor is judge, jury, and historian.
+- **Heterogeneous action space.** Budget changes, bid strategy
+  switches, target value adjustments, structural edits, creative
+  changes, targeting changes — each has a different mechanism and a
+  different time-to-effect. A model that handles one action class
+  well is silent on the others.
+- **Noisy short-horizon outcomes.** Day-to-day variance in
+  impressions, clicks, and conversions is large relative to the size
+  of most interventions. Extracting a clean impact signal at 7 or
+  14 days requires modelling the noise, not just the signal.
+- **Portfolio effects.** Changing one campaign reshapes the budget
+  and impression flow across an account. A model that predicts a
+  single-campaign delta in isolation is wrong by construction.
+- **Learning-period dynamics.** Bid strategies retrain over a 7–14
+  day window after a change. Outcomes during that window are
+  dominated by the retrain, not the underlying account economics.
+- **Skill mismatch.** Building accurate impact models is a
+  probabilistic forecasting problem. The expertise lives in ML and
+  statistics, not in the agency or in-house teams that own ad
+  accounts.
+- **No accountability layer.** Even if a forecaster did emerge, a
+  track record on this kind of prediction is unverifiable today:
+  outcomes are private to the advertiser, screenshots can be
+  cherry-picked, and "I called it last quarter" is impossible to
+  falsify.
 
-SN21 unbundles them. Predictions are committed on a public blockchain
-before outcomes are measured. Outcomes are committed too. Scoring is a
-deterministic function of public chain state. Anyone can recompute it.
-The vendor cannot retroactively improve their record because the record
-isn't theirs to edit.
+The cost of operating without impact forecasts is paid every day.
+Advertisers commit budget to changes whose effect they cannot
+quantify in advance. Optimisation systems grade their own homework.
+Decisions that look identical on paper produce wildly different
+outcomes, and the industry treats the variance as irreducible.
 
-### 1.1 What this gives you
+**It is not irreducible. It is unmeasured.**
 
-- **Cryptographic accountability.** Every prediction is signed by the
-  miner that produced it and recorded on chain before the outcome is
-  known. A miner cannot deny submitting a prediction, and no one can
-  fabricate a prediction in their name.
-- **Independent re-scoring.** Anyone running the verifier can reproduce
-  the validator's scoring decisions from chain state and archived
-  ciphertexts. Disagreement is publicly auditable.
-- **Open competition.** Miners are anonymous Bittensor neurons. Whoever
-  predicts best earns the most weight. There is no vendor lock-in
-  because there is no vendor.
-
-### 1.2 What this is NOT
-
-It is not a sportsbook. It is not a synthetic prediction market with
-play-money tokens. It is a real-money mechanism (Bittensor's TAO
-emissions) that pays for accurate forecasts of real Google Ads
-performance.
-
-It is also not a product you buy access to. It is a public protocol.
-Validators run software that reads the chain. Anyone who wants
-predictions can read the chain too. The economics are wholesale; the
-audit surface is retail.
-
-### 1.3 Outcomes are released in arrears (important)
-
-A reasonable reading of "predict the next 7 days" is that miners predict
-some live future and the operator measures it as it happens. **That is
-not how SN21 works.**
-
-Each epoch is built from a fixed historical window of Google Ads data
-that has already finished playing out at the moment the epoch is
-released. Concretely:
-
-- The pre-window (account state, time series, action context) covers
-  days `[T-60, T-1]` for some past anchor date `T`.
-- The action being predicted occurred on day `T`.
-- The 7-day and 14-day outcomes — what we ask miners to predict —
-  cover `[T+1, T+7]` and `[T+1, T+14]`. Those windows are also in the
-  past. The operator already knows what happened.
-
-The miner is predicting a withheld historical outcome, not a live future
-one. From the protocol's point of view this is identical (the miner
-sees only the pre-window and action; outcomes are sealed until reveal),
-but it has three concrete consequences:
-
-1. **Outcomes do not change between release and reveal.** The release
-   package, the reveal blob, the salts, and the baseline values are
-   content-addressed and committed on chain. Nothing is re-measured.
-2. **There is no "live data" trust assumption.** A skeptical
-   participant does not need to trust that the operator is measuring
-   live Google Ads honestly between T+1 and T+14. By the time an epoch
-   opens, T+14 has already happened; the outcome blob exists on the
-   operator's side; what the chain commits is the SHA-256 of bytes
-   that already exist.
-3. **The "commit-then-serve" gate is what enforces fairness.** The
-   reveal blob is published on the operator's HTTPS endpoint **only
-   after** the chain commit (9.A.2) is finalized. Until that block is
-   final, no participant — including the operator — can serve a
-   different blob to anyone without contradicting the on-chain hash.
-
-What stops the operator from re-measuring the outcomes after seeing
-miner predictions and choosing different ground truth? The chain
-commit at T=0 (9.A.1, `release_commit_digest`) pins the EPISODE SET
-and its query hashes. The chain commit at deadline (9.A.2) pins the
-OUTCOME BYTES. Between those two commits the operator publishes
-predictions that are themselves chain-anchored (9.B). Re-measuring
-outcomes after seeing predictions would force the operator to break
-the 9.A.2 hash that has already been committed before the predictions
-were even revealed by the chain auto-decrypt.
-
-The protocol does not prevent the operator from picking arbitrarily
-favorable historical episodes for an epoch. It does prevent the
-operator from rewriting outcomes after seeing predictions, which is
-the trust gap the protocol was built to close.
+The structural gap is that there is no infrastructure to (a) publish
+impact-prediction problems consistently and at scale, (b) settle
+predictions against measured outcomes, and (c) reward predictive
+skill independent of who owns the underlying ad account. Without
+that infrastructure, no market for impact prediction can form.
 
 ---
 
-## 2. Two core guarantees
+## 2. The Solution
 
-The protocol gives two cryptographic guarantees, plain English first:
+SN21 builds the missing prediction layer.
 
-### Guarantee A — Predictions are bound to the miner that produced them
+A weekly stream of structured prediction problems — **episodes** — is
+published from real Google Ads management data. Each episode
+describes an account's pre-window state, the actions that were taken,
+and the environmental context. Miners predict the impact of those
+actions on cost, conversions, and efficiency over 7-day and 14-day
+horizons. Validators score those predictions against measured
+outcomes. Bittensor distributes emissions in proportion to predictive
+skill.
 
-When you read a miner's prediction off the chain, you can prove three
-things mechanically:
+The mechanism solves each piece of the structural gap:
 
-1. The bytes were committed by THAT miner's hotkey at THAT block.
-2. Nobody altered them after the fact, including the validator.
-3. The prediction was made BEFORE the outcome was knowable.
+- **Structured prediction problems at scale.** The data pipeline
+  normalises thousands of Google Ads accounts into a consistent v1.9
+  episode schema and publishes weekly. Miners face the same problem
+  shape every epoch and can build models that compound across cycles.
+- **Settlement against measured outcomes.** Outcomes are measured
+  from live Google Ads data and committed on chain. The scoring
+  function is open source and deterministic. Prediction skill is
+  separated from outcome measurement at the protocol level.
+- **Skill rewarded independent of execution surface.** Miners do not
+  need ad accounts, advertiser relationships, or platform access.
+  Bittensor pays them in TAO emissions for accurate predictions. A
+  statistician with no PPC background can compete on equal terms
+  with a domain expert.
 
-These are not policy claims; they are checks anyone can run.
+The protocol is designed around two core cryptographic guarantees:
 
-### Guarantee B — Scoring is a deterministic function of public state
+1. **Predictions cannot be re-written after outcomes are known.**
+   Every miner prediction is committed on chain via timelock-
+   encryption (TLE) before the validator publishes outcomes. The
+   chain auto-decrypts the prediction key only after the deadline
+   has passed. Late or rewritten predictions are detectable from
+   chain state alone.
 
-When you read a validator's score for a miner, you can prove four
-things mechanically:
+2. **Validator scoring is independently reproducible.** Every input
+   that affects a miner's score is anchored on chain through a
+   Merkle root. A public verifier (`scripts/verify_epoch.py`) reads
+   the chain, fetches the off-chain artifacts, re-runs the
+   open-source scoring code, and either confirms the chain-anchored
+   result or produces a structured diff identifying the divergence.
 
-1. The validator used the on-chain prediction we already verified.
-2. The validator used the on-chain outcome the operator published.
-3. The scoring algorithm is the published one — its hash is committed.
-4. Two independent verifiers will reach the same score.
-
-If a verifier reaches a different score, exactly one of {validator,
-verifier} is wrong, and the disagreement is publicly auditable.
-
-These two guarantees are the entire trust model. Every other piece of
-the architecture — the timelock encryption, the Merkle trees, the
-shadow validator, the three-tier archive — exists to enforce them.
+Both guarantees are structural, not procedural. The protocol does
+not run privileged infrastructure that miners must trust. The
+validator is open-source and reproducible. The scoring algorithm is
+open-source. The chain is the system of record.
 
 ---
 
-## 3. Vocabulary
+## 3. The Verification Layer
+
+Most subnets settle weights opaquely: the validator computes scores
+in private, sets weights via `set_weights`, and miners take the
+result on faith. SN21 replaces faith with cryptographic evidence at
+every layer.
+
+### Commit-Reveal at Each Layer
+
+Three protocol layers commit to immutable hashes on chain *before*
+anyone can act on the underlying data:
+
+- **Layer 9.A — Outcome signer.** Commits the canonical CBOR digest
+  of the epoch's release package (episode set, queries, scoring
+  rules) at T=0, before miners see anything. After the deadline,
+  commits the SHA-256 of the reveal blob (measured outcomes, salts)
+  before serving the blob via HTTPS. The operator cannot retroactively
+  change which episodes were in scope or what outcomes were measured.
+
+- **Layer 9.B — Miner predictions.** Each miner submits three
+  on-chain commits per epoch — a timelock-encrypted AES key K, the
+  SHA-256 of the AES-encrypted prediction ciphertext, and a self-
+  archive URL. The chain auto-decrypts K only after the deadline. The
+  full prediction never touches operator infrastructure.
+
+- **Layer 9.C — Validator scoring.** Before scoring, each validator
+  commits an Indexed Merkle Tree (IMT) root over per-miner chain
+  commits and an excluded-miners hash. After scoring, it commits an
+  IMT root over per-miner final scores plus the block hash where its
+  `commit_timelocked_weights` extrinsic landed. Validators cannot
+  rewrite the score table without producing a contradicting chain
+  commit.
+
+### Inner Signatures Defeat Rubber-Stamping
+
+Every committed plaintext carries an `inner_sig` — an ed25519
+signature over the canonical CBOR encoding of the plaintext
+(excluding the signature field itself), bound to the writer's
+hotkey. A second validator that copies the primary's ciphertext
+bytes verbatim cannot pass off the result as its own work: the
+`validator_hotkey` field inside the plaintext would not match its
+storage account, and any verifier checking both slots sees the
+divergence immediately.
+
+### Indexed Merkle Trees for Per-Miner Inclusion
+
+Score artifacts are anchored as IMT roots, not flat lists. The
+Merkle structure is sorted-leaf with low/high pointers (Aztec-style),
+giving cheap inclusion *and* non-inclusion proofs. A miner can prove
+their score is `S` under the chain-anchored root without downloading
+the entire score table; a validator can prove a contested miner is
+*absent* from the score set by exhibiting the bracketing leaf.
+
+### Drand Timelock Encryption
+
+Timelock encryption uses [drand quicknet](https://drand.love) — a
+public, distributed beacon producing a verifiable BLS pulse every
+3 seconds. Encrypted commits target a specific future round; the
+network reveals the decryption key when that round is reached.
+Subtensor's chain runtime auto-decrypts qualifying commits in the
+block where the round arrives. The protocol does not depend on any
+single drand operator: drand quicknet is run by an independent set of
+organisations and verified at the BLS-on-BLS12-381 level.
+
+### Hotkey ↔ ed25519 Binding
+
+Bittensor hotkeys are typically `sr25519`, but inner signatures need
+an ed25519 verifier. Each role (miner, validator, outcome signer)
+publishes a one-time on-chain `Raw{109}` registration linking its
+hotkey SS58 to a 32-byte ed25519 public key, co-signed by both keys.
+The binding is auditable from chain state alone —
+`python scripts/sn21_keys.py verify-reg --hotkey-ss58 <ss58>`
+returns `sig valid: True/False`.
+
+---
+
+## 4. Vocabulary
 
 You can read this paper without the glossary, but the glossary makes
 later sections shorter.
@@ -205,13 +252,13 @@ We will introduce one more term — `inner_sig` — when we get to it.
 
 ---
 
-## 4. How an epoch runs (narrative)
+## 5. How an epoch runs (narrative)
 
 Three characters: **Hannah** the outcome signer, **Miner Mike** the
 prediction model operator, **Validator Vera** the scoring honest party.
-A fourth, **Adversary Adam**, will join in §10.
+A fourth, **Adversary Adam**, will join in §11.
 
-> Reminder from §1.3: the 7-day and 14-day windows have already played
+> (Reminder: the 7-day and 14-day windows have already played
 > out by the time the epoch opens. Hannah already knows what happened.
 > What the protocol prevents is Hannah re-measuring the outcomes after
 > she sees the predictions.
@@ -308,7 +355,7 @@ the archive (any tier; she trusts none of them and verifies the
 SHA-256 against what's on chain). She decrypts AES_ct with K, with
 the epoch ID as AAD. She gets the miner's CBOR plaintext.
 
-She runs **the eight-check scoreability rule** (§7) on each miner.
+She runs **the eight-check scoreability rule** (§8) on each miner.
 Failed checks → that miner is excluded from this epoch. Passed checks
 → Vera scores the prediction against the outcomes.
 
@@ -358,15 +405,15 @@ publicly auditable.
 > built from the 9.A.2 reveal blob and the verifier reproduces miner
 > scores end-to-end. The recorded-epoch fixture in
 > `tests/fixtures/recorded_epoch/` is proved `ok=true` by
-> `tests/unit/scripts/test_verify_epoch_live_scorer.py`, and a
+> `tests/scripts/test_verify_epoch_live_scorer.py`, and a
 > regression guard test fails the build if a placeholder scorer is
 > ever reintroduced into `scripts/verify_epoch.py`. The verifier also
 > cross-checks `actual_weights_at_commit_block` against weights
-> re-derived from the score table — see §13.1.
+> re-derived from the score table — see §14.1.
 
 ---
 
-## 5. Seven chain anchors
+## 6. Seven chain anchors
 
 Every binding moment in the protocol is a chain commit. Here is the
 exhaustive list.
@@ -392,14 +439,14 @@ the optional retry log). Both fit in one rate-limit window.
 
 ---
 
-## 6. Cryptographic primitives, intuitive depth
+## 7. Cryptographic primitives, intuitive depth
 
 The protocol's load-bearing crypto, explained at the depth a curious
 reader can follow. Implementation lives in `hope/commitment/`; every
 claim here maps to a function in that package and a unit test in
-`tests/unit/commitment/`.
+`tests/commitment/`.
 
-### 6.1 Canonical CBOR
+### 7.1 Canonical CBOR
 
 Canonical CBOR is the encoding used for every byte that gets hashed
 or signed. "Canonical" means there is one and only one way to encode
@@ -413,7 +460,7 @@ on both sides. Without the rule, two implementations could produce
 different hashes for "the same" map, and the protocol would silently
 break.
 
-### 6.2 AES-GCM with epoch-bound AAD
+### 7.2 AES-GCM with epoch-bound AAD
 
 Each miner generates a fresh 32-byte AES key K per epoch. They encrypt
 their prediction CBOR with K under AES-256-GCM. The AAD (Associated
@@ -427,7 +474,7 @@ under a different epoch ID. With AAD, the decrypt simply fails unless
 the verifier supplies the same epoch ID that was used at encrypt time.
 The chain commit pins which epoch ID is the right one.
 
-### 6.3 ed25519 inner_sig
+### 7.3 ed25519 inner_sig
 
 Every miner and every validator owns an ed25519 keypair, separate from
 their Bittensor SS58 hotkey. They register their public key on chain
@@ -451,73 +498,38 @@ in those bytes verifies against the **primary's** hotkey, not the
 second's. A verifier comparing the second's chain account against the
 inner_sig's hotkey field spots the mismatch right away.
 
-### 6.4 drand timelock encryption (TLE)
+### 7.4 drand timelock encryption (TLE)
 
 Drand quicknet is a randomness beacon run by the League of Entropy.
-Every 3 seconds it publishes a BLS signature for the next round. The
-signature for any future round is unknowable until that round drops.
+Every 3 seconds it publishes a BLS signature for the next round; any
+future round's signature is unknowable until that round drops. Drand
+TLE encrypts a message so it can only be decrypted with the round-N
+signature.
 
-Drand TLE encrypts a message so it can only be decrypted with the
-round-N signature. Submit a TLE'd ciphertext at time T; it stays
-opaque until round N's signature drops; then anyone can decrypt it.
-
-Subtensor has a built-in feature for this. When you submit a
-`TimelockEncrypted` commit with a `reveal_round` field, the chain
-auto-decrypts the payload after that round fires and stores it back
-on chain. We use this for two things:
+Subtensor has a built-in feature for this: a `TimelockEncrypted`
+commit with a `reveal_round` field is auto-decrypted by the chain
+after that round fires and stored back on chain. We use this for:
 
 - The miner's AES key K (auto-reveals after the miner deadline).
-- The validator's 9.C.1 and 9.C.2 plaintexts (auto-reveal a
-  configurable delay later, typically 1–2 hours).
+- The validator's 9.C.1 and 9.C.2 plaintexts (auto-reveal 1–2 hours
+  later).
 
-A subtle point we learned the hard way. We tell this story because the
-generalised lesson is worth more than the specific bug.
+The chain runtime is strict about which TLE format it auto-decrypts.
+We use `bittensor_drand.get_encrypted_commitment(data: str, ...)` —
+the same helper `Subtensor.set_reveal_commitment(...)` calls
+internally. Binary plaintext is hex-encoded into the string, which
+halves the effective plaintext budget; the cap is
+`MAX_TLE_PLAINTEXT_BYTES = 380` bytes raw. The fix is regression-tested
+in `tests/commitment/test_on_chain.py`. End-to-end round-trip on
+testnet: submit → auto-decrypt → byte-exact decode in 105 seconds.
 
-We started with `bittensor_drand.encrypt(bytes, n_blocks, block_time)`.
-It returns `(ciphertext_bytes, reveal_round)`, takes binary input, and
-looks like the obvious choice. The chain accepted our
-`TimelockEncrypted` extrinsics with `success=True` returned. We
-assumed it worked.
+The lesson generalises: *"the chain accepted the extrinsic"* is not
+the same as *"the chain processed the extrinsic correctly."*
+Substrate storage will write almost any bytes you give it; the
+runtime's interpretation is where the real work happens. Every claim
+in this paper that depends on chain processing has a probe behind it.
 
-It didn't.
-
-The H-3 probe (2026-05-04) submitted a known 32-byte plaintext, then
-polled `RevealedCommitments` for 30 minutes past the reveal_round, and
-observed nothing. We had assumed `success=True` from the chain meant
-the auto-decrypt would fire. In fact the chain runtime silently drops
-ciphertexts whose format it doesn't recognise.
-
-H-4 was the diagnosis. We read the SDK source and found that
-`Subtensor.set_reveal_commitment(...)` calls a DIFFERENT C function:
-`bittensor_drand.get_encrypted_commitment(data: str, ...)`. That is
-what the chain runtime decodes. The two functions look identical at
-the Python signature level; their underlying ciphertext formats are
-not.
-
-H-6 was the fix. Hex-encode the binary plaintext to a string, call the
-right C function, halve the plaintext budget (because hex doubles the
-byte count). We re-ran the round-trip on testnet:
-
-```
-plaintext (hex):    0xc0ffee64284082626c6ebdf1b074c9afdeadbeef
-submit:             success=True reveal_round=28367904
-auto-decrypt fired: block 7049220, 105 seconds after submission
-decode round-trip:  byte-exact match
-```
-
-That was the proof. Until we ran it on real chain, the protocol was
-running on an assumption that turned out to be false.
-`docs/build_journey.md` (Phase H) records the H-3 → H-6 arc; the test
-suite encodes the fix in `tests/unit/commitment/test_on_chain.py`.
-
-The general lesson: *"the chain accepted the extrinsic"* is not the
-same as *"the chain processed the extrinsic correctly."* Substrate
-storage will write almost any bytes you give it; the runtime's
-interpretation of those bytes is where the real work happens. Every
-claim in this paper that depends on the chain processing something
-correctly has a probe behind it.
-
-### 6.5 Indexed Merkle trees
+### 7.5 Indexed Merkle trees
 
 A standard Merkle tree lets you prove "X is a leaf of this tree." An
 indexed Merkle tree (IMT) goes further. Every leaf carries a
@@ -542,7 +554,7 @@ The IMT root is 32 bytes. Inclusion + non-inclusion proofs are
 
 ---
 
-## 7. The eight-check scoreability rule
+## 8. The eight-check scoreability rule
 
 Eight checks decide whether a miner's submission is scoreable for an
 epoch. Validator Vera reads each miner's three on-chain commits and
@@ -570,9 +582,9 @@ excluded miners (with reasons) off-chain; only its SHA-256 goes in
 9.C.1. Verifier replays each check and confirms exclusion-vs-scored
 state matches.
 
-### 7.1 Worked example — Adversary Adam tries to rewrite Mike's prediction
+### 8.1 Worked example — Adversary Adam tries to rewrite Mike's prediction
 
-Adam controls the validator. Mike has submitted his epoch as in §4.
+Adam controls the validator. Mike has submitted his epoch as in §5.
 
 **Attempt 1:** Adam decrypts AES_ct using K from chain, edits the CBOR
 to replace Mike's P50 cost forecast with a much worse one, re-encrypts
@@ -606,7 +618,7 @@ verifiers see exactly which link broke.
 
 ---
 
-## 8. Three-tier archive durability
+## 9. Three-tier archive durability
 
 The chain stores ~32 bytes per AES ciphertext (its SHA-256). The
 ciphertext itself — typically 350-400 bytes per miner per epoch — lives
@@ -641,7 +653,7 @@ publicly.
 
 ---
 
-## 9. Validator architecture: primary + shadow
+## 10. Validator architecture: primary + shadow
 
 A single validator scoring all miners is a weakness, no matter how
 honest. Validator Vera could be subtly wrong, compromised, or
@@ -664,7 +676,7 @@ identically wrong, which is a much harder feat for an adversary).
 If they disagree, the verifier can attribute the divergence: one of
 them got which fact wrong is recorded byte-for-byte.
 
-### 9.1 The rubber-stamp attack and why it doesn't work
+### 10.1 The rubber-stamp attack and why it doesn't work
 
 A naive shadow could just copy primary's chain bytes into its own
 storage slot. Substrate authorizes the WRITER, not the CONTENT, so
@@ -705,7 +717,7 @@ def test_shadow_using_primary_plaintext_fails_under_shadow_slot():
     )
 ```
 
-### 9.2 What the shadow doesn't fix
+### 10.2 What the shadow doesn't fix
 
 The shadow is an operational defense, not a cryptographic one. If a
 single operator controls both primary and shadow, that operator can
@@ -724,11 +736,11 @@ The shadow buys us cryptographic-level defenses against
 single-validator dishonesty. It does NOT buy us protection against
 the operator-as-an-organization being dishonest. That requires Phase
 3's external validators or, ultimately, an upstream chain runtime
-change (see §13).
+change (see §14).
 
 ---
 
-## 10. Adversarial defense matrix
+## 11. Adversarial defense matrix
 
 Here is the explicit list of attacks the protocol claims to defeat,
 with the defense and the test that proves it. (`tests/adversarial/`
@@ -759,12 +771,12 @@ defenses live in the next section.
 
 ---
 
-## 11. Economic model
+## 12. Economic model
 
 SN21 is a Bittensor subnet. The token economics are inherited from the
 chain, not invented by us.
 
-### 11.1 How TAO flows
+### 12.1 How TAO flows
 
 - Subnet 21 is registered on the Bittensor mainnet. The subnet's stake
   determines its share of network-wide TAO emissions.
@@ -782,7 +794,7 @@ There is no synthetic token. There is no play-money market. Miners
 who predict accurately receive a share of real TAO emissions;
 miners who don't, don't.
 
-### 11.2 What weights are based on
+### 12.2 What weights are based on
 
 A miner's score combines four signals (per
 `hope/scoring/onchain_adapter.py:score_one_miner`):
@@ -802,7 +814,7 @@ via simple normalization and submits via `set_weights`.
 
 > **Status (launch).** The tiered allocator is **available** in
 > `hope/validator/tiered_weights.py:TieredAllocator` and fully unit-
-> tested (`tests/unit/validator/test_tiered_weights.py`), but it is
+> tested (`tests/validator/test_tiered_weights.py`), but it is
 > **not the default path in the production validator runner**. The
 > default `hope-validator` CLI constructs
 > `WeightSetter(burn_fraction=0.95)` and calls `normalize_scores(...)`
@@ -819,7 +831,7 @@ via simple normalization and submits via `set_weights`.
 > Epoch-type multipliers and the diversity bonus are roadmap
 > (Review 2 / Review 3).
 
-### 11.3 Worked example — 20 miners, one epoch
+### 12.3 Worked example — 20 miners, one epoch
 
 Concrete numbers help. Twenty miners submit predictions in one epoch.
 Their raw scores (after the conditional-prior gate has already
@@ -881,10 +893,10 @@ tiers:
 - The 2 excluded miners: **0**.
 
 The math is in `hope/validator/tiered_weights.py` and pinned by
-`tests/unit/validator/test_tiered_weights.py`. A reader who wants to
+`tests/validator/test_tiered_weights.py`. A reader who wants to
 replay the table can run those tests.
 
-### 11.4 Why this is competitive, not extractive
+### 12.4 Why this is competitive, not extractive
 
 A naive prediction service charges per-query and skims the spread.
 SN21's model is different:
@@ -903,12 +915,12 @@ chain.
 
 ---
 
-## 12. Edge cases we've thought through
+## 13. Edge cases we've thought through
 
 A protocol is only as good as its handling of the unhappy paths. The
 ones below are designed for, not deferred.
 
-### 12.1 drand pulse outage
+### 13.1 drand pulse outage
 
 Drand has run continuously since 2020. But "continuously" is not
 "infallibly." If the pulse for the round that should auto-decrypt our
@@ -927,7 +939,7 @@ the verifier can't read them.
 The protocol degrades visibly. Validators don't silently use stale
 data; they explicitly skip the epoch.
 
-### 12.2 Archive loss
+### 13.2 Archive loss
 
 If both Tier-2 (operator) and Tier-3 (miner self) lose a specific miner's
 AES_ct between submission and scoring time, the validator can't
@@ -939,17 +951,16 @@ This is failure mode by design. We chose three independent storage
 tiers specifically because no single archive can be trusted; the
 exclusion is the protocol working correctly under partial failure.
 
-### 12.3 MaxSpace contention
+### 13.3 MaxSpace contention
 
 A miner's epoch costs ~2,174 bytes against the chain's ~3,100-byte
-MaxSpace per ~4-hour rolling window (per Phase 0 Q11 measurement;
-empirical, not assumed). A miner submitting more than once per ~4.5
-hours from the same hotkey will hit `SpaceLimitExceeded`.
+MaxSpace per ~4-hour rolling window (empirical, measured on testnet).
+A miner submitting more than once per ~4.5 hours from the same hotkey
+will hit `SpaceLimitExceeded`.
 
 **Mitigation in code:** the miner runner returns
 `MinerSubmissionResult.failure_reason="chain_*_commit_failed: SpaceLimit..."`
-and the operator's runbook §9.1 instructs them to wait for the window
-to clear before retrying.
+and operators wait for the rate-limit window to clear before retrying.
 
 **Architectural mitigation:** SN21's launch epoch cadence is **weekly**
 (see `docs/SN21_EPOCH_STRUCTURE.md` and `docs/MINER_ECONOMICS.md`).
@@ -961,7 +972,7 @@ sit comfortably above this floor with ~37× headroom. The 4.5h floor
 matters only for operators who run short experimental epochs — not
 for the launch cadence.
 
-### 12.4 Validator MaxSpace contention
+### 13.4 Validator MaxSpace contention
 
 The validator's per-epoch cost is ~1,960 bytes (without retry log) or
 ~2,492 bytes (with). One validator + one epoch fits a window. The
@@ -971,15 +982,15 @@ uses ~63% of its window budget.
 
 Validators running shadow + primary on the SAME wallet on the SAME
 epoch would bust MaxSpace; we explicitly require shadow on a separate
-hotkey. Operator runbook §9.1 documents this.
+hotkey. Operators run shadow on a separate hotkey to avoid this.
 
-### 12.5 Hotkey ↔ ed25519 binding loss
+### 13.5 Hotkey ↔ ed25519 binding loss
 
 Every miner and validator publishes a 109-byte `Raw{N}` registration
 commit binding their Bittensor hotkey to an ed25519 public key. Lose
 the ed25519 PEM and you can't sign new predictions until you re-register.
 
-**Recovery procedure** (operator runbook §9.4):
+**Recovery procedure**:
 1. Generate a new ed25519 key (`scripts/sn21_keys.py generate`).
 2. Register the new binding on chain (`sn21_keys.py register`).
 3. The new commit overwrites the old binding in `CommitmentOf`.
@@ -989,9 +1000,9 @@ the ed25519 PEM and you can't sign new predictions until you re-register.
 **Architectural caveat:** the chain's `CommitmentOf` storage holds ONLY
 the latest commit per (netuid, hotkey). Historical bindings are NOT in
 chain head state — auditing them requires an archive node. Operator
-runbook §8.1 documents this explicitly.
+operators must use an archive node to read past-epoch state.
 
-### 12.6 Disputed scoring
+### 13.6 Disputed scoring
 
 If an advertiser thinks Miner Mike got credit for a prediction Mike
 shouldn't have received credit for, the dispute path is:
@@ -1013,12 +1024,12 @@ mechanical: replay the chain, see who's right.
 
 ---
 
-## 13. What we deliberately defer
+## 14. What we deliberately defer
 
 Some properties are roadmap, not launch. The list below is honest
 about which, and why.
 
-### 13.1 Chain-side weights ↔ scoring binding
+### 14.1 Chain-side weights ↔ scoring binding
 
 The `commit_timelocked_weights` extrinsic publishes weights at block X.
 Our 9.C.2 commits contain `weights_commit_block_hash = X`. A verifier
@@ -1033,12 +1044,12 @@ weights at `weights_commit_block_hash` detects the divergence
 mechanically. Yuma stake-weighted median naturally clips the
 dishonest validator if a shadow is running.
 
-**Long-term fix:** an upstream Bittensor runtime patch adding a 32-byte
-`external_anchor` field to `WeightsTlockPayload`. We've drafted the RFC
-in `docs/proposals/q26_weights_payload_anchor.md`. With that field, the
-chain itself binds weights to the scoring artifact — no off-chain check
-needed. We'll submit the proposal to the Subtensor maintainers when the
-on-chain protocol has run cleanly for one operational cycle.
+**Long-term fix:** an upstream Bittensor runtime change that adds a
+32-byte `external_anchor` field to `WeightsTlockPayload`. With that
+field, the chain itself binds weights to the scoring artifact — no
+off-chain check needed. The proposal will be submitted to the
+Subtensor maintainers once the on-chain protocol has run cleanly for
+one operational cycle.
 
 > **Read this carefully.** Earlier sections of this paper describe
 > 9.C.2 as "binding the score table to the weights commit block hash."
@@ -1057,9 +1068,9 @@ on-chain protocol has run cleanly for one operational cycle.
 > change above lands. The verifier-side cross-check + the shadow
 > validator + Yuma median is the operational defense in the interim.
 
-### 13.2 Per-episode scoring commitments
+### 14.2 Per-episode scoring commitments
 
-Phase E added per-episode artifacts: each miner's CBOR bundle of
+We added per-episode artifacts: each miner's CBOR bundle of
 per-(episode × horizon) quantiles, with an IMT root committed inside
 the aggregated 9.C.1 plaintext. This lets the verifier reproduce
 per-episode scoring against the specific predictions for that episode.
@@ -1070,7 +1081,7 @@ MaxSpace forbids it. Per-episode artifacts live off-chain in archives
 with a chain-anchored root. This is a deliberate trade-off: cheaper
 chain footprint, slightly more off-chain trust.
 
-> **Status (launch).** Phase E primitives are **available** as
+> **Status (launch).** Per-episode primitives are **available** as
 > `submit_miner_epoch(per_episode_entries=...)` —
 > `episodes_root` (IMT root over per-(episode, horizon) entries) and
 > `episodes_bundle_sha256` (SHA-256 of the bundle bytes) get bound
@@ -1085,7 +1096,7 @@ chain footprint, slightly more off-chain trust.
 > per-episode after operational-cycle-1, once the field is exercised
 > end-to-end on mainnet.
 
-### 13.3 Privacy of predictions
+### 14.3 Privacy of predictions
 
 A miner's predictions become public after the chain auto-decrypts K
 and verifiers fetch the AES_ct. There is no privacy mechanism for
@@ -1095,77 +1106,41 @@ This is by design. Auditing requires plaintext access. A miner who
 wants their model's outputs private should not participate in a
 verifiable prediction subnet; they should sell predictions privately.
 
-### 13.4 Mainnet TAO fees
+### 14.4 Mainnet TAO fees
 
-Phase 0 Q13 measured `set_commitment` extrinsic fees on testnet 466 at
+Testnet measurement of `set_commitment` extrinsic fees on testnet 466 at
 0 µTAO. Mainnet may differ. We'll measure once before the mainnet
-flip; the operator runbook §12 has the pre-launch checklist that
-includes this measurement.
+flip; pre-launch operators measure this on mainnet before opening miner registration.
 
-### 13.5 What we tried first and rejected
+### 14.5 Known operational limits
 
-A list of design attempts that didn't survive empirical contact with
-the chain. We're including these because they're the most honest
-record of the design process: ideas that looked good on paper, broke
-on real testnet, and forced revisions.
+A handful of empirical limits the implementation has hit and routed
+around:
 
-**Multi-field commit (Q36).** The Bittensor `Commitments` pallet
-accepts `info = {"fields": [[Sha256, TimelockEncrypted, Raw]]}` —
-multiple Data variants in one extrinsic. We prototyped this hoping
-to compress all three Layer 9.B miner commits (TLE'd K, Sha256 of
-ciphertext, archive URL) into a single chain submission, saving
-~2 of 3 extrinsic fees per miner per epoch. The Q36 testnet probe
-confirmed: the chain RUNTIME accepts the extrinsic (success=True
-returned), but the auto-decrypt subsystem silently skips
-multi-variant slots, AND the SDK readback methods do not return
-them. The variant exists in the chain types but is unsupported in
-practice. We gated `submit_layer_9b_multi_field` with
-`NotImplementedError` and kept the 3-extrinsic path. Cost: 3× the
-per-extrinsic fee per miner per epoch. Acceptable given the testnet
-fee is 0 µTAO and the mainnet fee should be nominal.
-
-**Burst probe with small payloads (Q11 v1).** The first version of
-the rate-limit probe submitted ~17-byte payloads in a tight loop,
-hoping to trip MaxSpace. It didn't — 21 commits at 17 bytes each
-totalled ~360 bytes, well under the 3,100-byte cap. We re-ran with
-128-byte Raw{128} payloads (Q11 v2) and got the empirical answer
-(252 minutes per window, ~500 bytes per-commit overhead). The
-mistake was assuming MaxSpace was per-call rather than per-byte;
-the corrected probe confirmed it's per-byte.
-
-**Chain auto-decrypt assumption (H-3).** Detailed in §6.4. We
-initially used `bittensor_drand.encrypt(bytes, ...)`. The chain
-silently dropped our commits despite returning success=True. H-3
-diagnosed; H-4 found the right helper; H-6 shipped the fix.
-
-**768-byte plaintext budget (pre-H-6).** Before the H-6 fix, we
-budgeted for ~768 bytes of raw binary plaintext per TLE commit.
-After switching to `get_encrypted_commitment(str)` and hex-encoding,
-the effective budget halved to ~380 bytes. The 9.C.1 / 9.C.2 builders
-fit (real plaintexts measure 364-380 bytes for realistic 50-miner
-epochs), but barely. A larger validator population — say 200 miners —
-would exceed the budget and force splitting commits into multiple
-extrinsics. The architecture records this as a Phase E follow-up.
-
-**SDK readback path (Phase G).** Bittensor SDK 10.2.1's
-`get_revealed_commitment_by_hotkey()` lossily UTF-8 decodes binary
-chain bytes — codepoints >127 mangle into multi-byte sequences. We
-hit this when our 32-byte AES key K came back as garbled string. The
-fix was to drop to `subtensor.substrate.query("Commitments",
-"RevealedCommitments", ...)` directly and convert SCALE int-tuples
-via `bytes(t)`. `hope/commitment/chain_reader.py` is that bypass.
-
-These are not embarrassments; they are the work. Each one is a
-specific decision a human made by reading code, running tests, and
-choosing the next move.
+- **Multi-field chain commits are unsupported in practice.** The
+  `Commitments` pallet accepts a multi-variant `info.fields[0]`, but
+  the auto-decrypt subsystem silently skips multi-variant slots and
+  SDK readback can't see them. We use the 3-extrinsic per-miner path.
+- **TLE plaintext budget is 380 bytes raw**, not 768 — the chain's
+  auto-decrypt requires hex-encoded payloads via
+  `get_encrypted_commitment`, which doubles the byte count. The 9.C.1
+  / 9.C.2 builders fit comfortably for ≤ 50-miner epochs; populations
+  of 200+ would need split commits across multiple extrinsics.
+- **SDK lossy UTF-8 readback.** Bittensor SDK 10.2.1's
+  `get_revealed_commitment_by_hotkey()` mangles binary bytes >127.
+  Bypassed by `hope/commitment/chain_reader.py` which queries
+  substrate directly.
+- **MaxSpace is per-byte, not per-call.** ~3,100 bytes per (netuid,
+  hotkey) per ~4-hour window. Per-extrinsic byte cost includes ~500
+  bytes of overhead.
 
 ---
 
-## 14. What ships in v1.0
+## 15. What ships in v1.0
 
 Here is the inventory, with file paths so you can audit.
 
-### 14.1 Code surface
+### 15.1 Code surface
 
 | Module | Lines | Responsibility |
 |---|---|---|
@@ -1180,16 +1155,15 @@ Here is the inventory, with file paths so you can audit.
 | `hope/commitment/scoring_state.py` | 269 | 9.C.1 / 9.C.2 builders + IMT roots |
 | `hope/commitment/retry_log.py` | 167 | 9.C.6 JSON blob builder |
 | `hope/commitment/registration.py` | ~190 | hotkey ↔ ed25519 binding |
-| `hope/commitment/episode_artifacts.py` | 230 | per-episode bundle (Phase E) |
-| `hope/commitment/chain_reader.py` | 270 | substrate-direct reads (Phase G/H) |
+| `hope/commitment/episode_artifacts.py` | 230 | per-episode bundle |
+| `hope/commitment/chain_reader.py` | 270 | substrate-direct reads |
 | `hope/hope_outcomes/release_commit.py` | 170 | 9.A.1 release_commit |
 | `hope/hope_outcomes/reveal_blob.py` | 200 | 9.A.2 reveal blob |
 | `hope/miner/onchain_submitter.py` | 220 | full 9.B pipeline |
-| `hope/miner/runner.py` | 320 | miner CLI with `--mode {http,onchain}` |
+| `hope/miner/runner.py` | 290 | miner CLI — Layer 9.B on-chain submission |
 | `hope/validator/onchain_reader.py` | 218 | chain reads → scoreability per miner |
 | `hope/validator/onchain_runner.py` | 290 | full 9.C orchestration |
 | `hope/validator/weights_commit.py` | 170 | 9.C.3 wrapper |
-| `hope/validator/migration.py` | 200 | HTTP → on-chain replay tool |
 | `hope/scoring/onchain_adapter.py` | 320 | EpochScorer adapter + CRPS scorer |
 | `hope/archive_server/app.py` | 280 | FastAPI Tier-2/Tier-3 archive |
 | `hope/archive_server/store.py` | 130 | InMemory + Filesystem stores |
@@ -1206,22 +1180,20 @@ Total: ~7,500 LOC code, ~6,800 LOC tests. 488 tests pass — see
 `tests/` for the unit, adversarial, and end-to-end surface; lint
 clean under `ruff check`.
 
-### 14.2 Documentation surface
+### 15.2 Documentation surface
 
 | Doc | Purpose |
 |---|---|
 | `docs/whitepaper.md` | This document. Protocol description, trust model, adversarial matrix. |
-| `docs/build_journey.md` | Phase-by-phase build narrative (Phase 0 calibration → A–H + audit-feedback wave). |
-| `docs/operator_runbook.md` | Operator playbook: setup, daily ops, incidents, rotation, mainnet pre-launch. |
 | `docs/SN21_REWARD_MECHANISM.md` | Full reward spec (gates, tiers, EMA, governance). |
 | `docs/SN21_EPOCH_STRUCTURE.md` | Epoch and phase progression. |
 | `docs/miner_quickstart.md` | Miner onboarding tutorial. |
 | `docs/MINER_ECONOMICS.md` | Short reference for how emissions relate to miner behaviour. |
-| `docs/proposals/q26_weights_payload_anchor.md` | Upstream Bittensor RFC for chain-side weights ↔ scoring binding. |
+| `docs/validator_setup.md` | Validator deployment guide. |
 | `deploy/archive_server/README.md` | Archive server deployment (Docker / systemd). |
 | `deploy/grafana/README.md` | Sample Grafana dashboard for archive server metrics. |
 
-### 14.3 Empirical record (testnet 466)
+### 15.3 Empirical record (testnet 466)
 
 What we've actually run on chain:
 - 4 ed25519 keys generated, mode 0600 PEMs, ALL backed up offline.
@@ -1229,15 +1201,13 @@ What we've actually run on chain:
 - 1 9.C.1 pre-scoring TLE commit (success=True, reveal_round 28336161).
 - 1 9.C.3 weights commit via `commit_timelocked_weights` (success=True).
 - 1 9.C.2 post-scoring TLE commit (success=True, reveal_round 28336216).
-- 1 H-3 TLE auto-decrypt probe (FAIL — found the format bug).
-- 1 H-4 verification probe via `set_reveal_commitment` (PASS — found the fix).
-- 1 H-6 end-to-end round-trip (PASS — submit → auto-decrypt → decode in 105s).
+- 1 TLE auto-decrypt round-trip (PASS — submit → auto-decrypt → decode in 105s).
 
 Validator running live (chain mode flip pending operator decision).
 
 ---
 
-## 15. Future expansion
+## 16. Future expansion
 
 The protocol is generic over "predict some future quantity that has
 verifiable ground truth." Google Ads is the v1 target because:
@@ -1251,14 +1221,14 @@ verifiable ground truth." Google Ads is the v1 target because:
 But nothing in the protocol is Google-Ads-specific. The architecture
 generalizes to:
 
-### 15.1 Other ad platforms
+### 16.1 Other ad platforms
 
 Meta, TikTok, LinkedIn — same protocol, different episode schema.
 Adapters live in `hope/protocol/episode.py` and the scoring weights in
 `hope/scoring/weights.py`. A new platform is a new schema + a new
 authoritative oracle.
 
-### 15.2 Other data domains with a similar shape
+### 16.2 Other data domains with a similar shape
 
 Anything where:
 - Inputs are visible to predictors at T=0.
@@ -1270,7 +1240,7 @@ E-commerce demand forecasting fits. Supply chain logistics fit. Crop
 yield forecasting fits. Each requires an authoritative oracle; the
 protocol is otherwise unchanged.
 
-### 15.3 Protocol-level upgrades
+### 16.3 Protocol-level upgrades
 
 - **Per-episode chain commits**: when a future Bittensor runtime allows
   larger `TimelockEncrypted` payloads or batched commits, we can move
@@ -1286,7 +1256,7 @@ protocol is otherwise unchanged.
 
 ---
 
-## 16. Conclusion
+## 17. Conclusion
 
 The mechanism is not subtle. Predictions are committed on chain.
 Outcomes are committed on chain. Scoring is a function of public state.
@@ -1300,8 +1270,8 @@ shadow validator whose mere existence makes single-validator
 dishonesty publicly auditable.
 
 We spent more cycles than expected discovering empirical truths the
-chain hides — the auto-decrypt format bug in Phase H was the most
-expensive (§6.4 narrates that one) — but every discovery tightened the
+chain hides — the auto-decrypt format bug was the most
+expensive (§7.4 narrates that one) — but every discovery tightened the
 protocol. The result is v1.0: a verifiable prediction subnet that runs
 on testnet, with every binding tested against a 12-attack adversarial
 suite, every scoring decision reproducible from chain state, and every
@@ -1325,24 +1295,17 @@ Mainnet next.
 
 ## Appendix A — Test surface
 
-Run `pytest tests/ --collect-only -q | wc -l` for the live count;
-the surface as of v1.0 launch:
+Live count: `pytest tests/ --collect-only -q | wc -l`. Layout:
 
 ```
-tests/unit/commitment/             243 tests
-tests/unit/scoring/                 49 tests
-tests/unit/validator/               43 tests
-tests/unit/                         39 tests
-tests/unit/archive_server/          38 tests
-tests/unit/hope_outcomes/           26 tests
-tests/e2e/                          15 tests
-tests/unit/scripts/                 12 tests
-tests/adversarial/                  12 tests  (every claimed defence has a test)
-tests/unit/miner/                    9 tests
-tests/integration/                   7 tests  (live API; CI runs continue-on-error)
-tests/unit/hope_shadow_validator/    2 tests
-─────────────────────────────────────────────
-Total:                             495 collected, 488 pass, 7 skipped
+tests/commitment/   crypto primitives + chain commit helpers
+tests/scoring/      scoring components + adapter + skill score
+tests/validator/    validator runtime + tier mechanics
+tests/miner/        miner runtime + on-chain submitter
+tests/scripts/      public verifier (verify_epoch.py)
+tests/e2e/          full miner flow against a live validator
+tests/adversarial/  every claimed defence has a passing attack test
+tests/fixtures/     recorded-epoch fixture for verifier round-trip
 ```
 
 Adversarial tests are in `tests/adversarial/test_attack_surface.py`.
@@ -1356,61 +1319,17 @@ Run locally: `pytest tests/`. Run only adversarial: `pytest tests/adversarial/ -
 
 ## Appendix B — Empirical findings (testnet 466)
 
-The architecture's claims are backed by measurement. Here is the
-condensed record; the phase-by-phase build narrative — including who
-ran what probe, when, and why — is in `docs/build_journey.md`.
+The architecture's claims are backed by testnet measurement.
 
-### B.1 Q11 — RateLimit window (2026-05-03)
-
-- 5 × 128-byte `Raw{128}` commits succeeded before `SpaceLimitExceeded`.
-- Per-commit overhead inferred: ~500 bytes.
-- Window: 1,259 blocks ≈ 252 minutes ≈ 4.2 hours ≈ 3.5 × subnet tempo.
-- Implication: minimum supported epoch cadence ≈ 4.5h; 24h cadence has
-  5x headroom.
-
-### B.2 Q13 — Extrinsic fee (2026-05-03)
-
-- `set_commitment` on testnet 466: 0 µTAO.
-- Mainnet measurement deferred to pre-launch.
-
-### B.3 Q35 — Lower-level commit path (2026-05-03)
-
-- `subtensor.set_commitment(data: str)` is limited to `Raw{0..128}`.
-- `publish_metadata_extrinsic(data_type=...)` accepts `Sha256` (32 B)
-  and `TimelockEncrypted` (≤ 1024 B) directly.
-- We use the lower-level path; the higher-level helper would waste
-  capacity on hex/UTF-8 wrappers.
-
-### B.4 Q36 — Multi-field commit (2026-05-03)
-
-- Multi-variant `info.fields[0]` is ACCEPTED by the chain runtime.
-- But: chain auto-decrypt does NOT walk multi-variant slots, AND SDK
-  readback does not return them.
-- Implication: the 3-extrinsic Layer 9.B path is authoritative.
-  `submit_layer_9b_multi_field` is gated with `NotImplementedError`.
-
-### B.5 H-3 — TLE auto-decrypt probe (2026-05-04)
-
-- Submitted via `bittensor_drand.encrypt(bytes, ...)` + `publish_metadata_extrinsic`.
-- 30-min poll, NO auto-decrypt observed.
-- Confirmed Hypothesis B: format incompatible.
-
-### B.6 H-4 — Discovery (2026-05-04)
-
-- The SDK's `set_reveal_commitment(data: str)` calls
-  `bittensor_drand.get_encrypted_commitment(data: str, ...)` — a
-  DIFFERENT C function from `encrypt(bytes, ...)`.
-- Verification probe: marker auto-decrypted in 105s. The chain accepts
-  this format.
-
-### B.7 H-6 — End-to-end fix verification (2026-05-04)
-
-- Updated `submit_timelock_commit` to hex-encode + use
-  `get_encrypted_commitment`.
-- Test: 20-byte plaintext `0xc0ffee...deadbeef` submitted, auto-decrypted
-  at block 7049220 (105 seconds after submission), decoded byte-exact
-  via `chain_reader.decode_revealed_tle_plaintext`.
-- The protocol is now end-to-end verified on real chain.
+| Property | Value | Implication |
+|---|---|---|
+| MaxSpace per (netuid, hotkey) per ~4-hour window | ~3,100 bytes | Min epoch cadence ≈ 4.5h; 24h cadence has 5× headroom |
+| Per-commit byte overhead | ~500 bytes | Plus payload bytes count toward MaxSpace |
+| `set_commitment` extrinsic fee on testnet | 0 µTAO | Mainnet TBC pre-launch |
+| `Raw{N}` capacity via `subtensor.set_commitment(data: str)` | N ≤ 128 | Use `publish_metadata_extrinsic` for larger / Sha256 / TimelockEncrypted |
+| TLE plaintext budget (raw bytes) | 380 | Hex-encoded for `get_encrypted_commitment`, doubling on-the-wire byte count |
+| TLE auto-decrypt latency (from submit to revealed plaintext on chain) | ≈ 105 seconds | At quicknet 3s period + ~100-round safety margin |
+| Multi-field commits (`info.fields[0]` with multiple variants) | Accepted by chain, NOT auto-decrypted | Use 3-extrinsic Layer 9.B path |
 
 ---
 
@@ -1437,25 +1356,18 @@ ran what probe, when, and why — is in `docs/build_journey.md`.
 
 ### C.4 Companion documents in this repo
 
-- `docs/build_journey.md` — phase-by-phase build narrative.
-- `docs/operator_runbook.md` — production playbook for operators.
-- `docs/proposals/q26_weights_payload_anchor.md` — upstream RFC for
-  the chain-side weights ↔ scoring binding (§13.1).
 - `docs/SN21_REWARD_MECHANISM.md` — full reward spec.
-- `docs/SN21_EPOCH_STRUCTURE.md` — epoch and phase progression.
+- `docs/SN21_EPOCH_STRUCTURE.md` — epoch progression.
 - `docs/miner_quickstart.md` — miner onboarding tutorial.
+- `docs/MINER_ECONOMICS.md` — short reference for emissions.
+- `docs/validator_setup.md` — validator deployment guide.
 
 ### C.5 Code
 
-- Every phase landed on `main`. Commit history is the audit trail.
+The protocol implementation is in this repository; commit history is
+the audit trail.
 
 ---
 
-*Last updated 2026-05-05, v1.0+G+H. The protocol was built between
-2026-04-30 and 2026-05-04 with substantial authoring help from an AI
-coding agent; design choices, empirical validation, and chain-side
-debugging were human work. The phase-by-phase narrative —
-which probe ran when, which assumption broke against real testnet,
-which fix landed where — is in `docs/build_journey.md`. All claims
-in this paper are linked to source files and commit hashes; verify
-directly.*
+*v1.0. All claims in this paper are linked to source files in this
+repository and to commit hashes on `main`. Verify directly.*

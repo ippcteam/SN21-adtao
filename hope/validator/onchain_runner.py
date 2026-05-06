@@ -72,9 +72,10 @@ ScorerFn = Callable[[str, dict[bytes, dict[str, Any]]], dict[bytes, int]]
 class MinerOnChainInputs:
     """Per-miner chain state assembled by the caller for one epoch.
 
-    The runner is agnostic to HOW the caller obtained these — Phase C wires
-    them from `subtensor.get_revealed_commitment_by_hotkey` etc., but tests
-    can supply them directly.
+    The runner is agnostic to how the caller assembled these. Production
+    callers fill them via `hope/commitment/chain_reader.py`
+    (`read_revealed_commitments`, `read_commitment_of`) which queries
+    substrate directly; tests can supply them inline.
     """
 
     miner_uid: int

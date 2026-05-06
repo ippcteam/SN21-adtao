@@ -45,6 +45,7 @@ miner = [
 [project.scripts]
 hope-miner = "hope.miner.runner:main"
 hope-validator = "hope.validator.runner:main"
+hope-validator-api = "hope.validator.serve:main"
 hope-score = "scripts.score_predictions:main"
 
 [tool.setuptools.packages.find]

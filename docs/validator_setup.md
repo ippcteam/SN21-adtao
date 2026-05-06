@@ -147,7 +147,7 @@ IDLE → PREPARING → COMMITTED → DISTRIBUTING → COLLECTING → SCORING →
 | **PREPARING** | Fetch episodes + outcomes from the data API, verify package hash |
 | **COMMITTED** | Compute SHA-256 hash of outcomes + salt + weights |
 | **DISTRIBUTING** | Start serving episodes to miners via HTTP |
-| **COLLECTING** | Accept predictions until deadline (48 hours default) |
+| **COLLECTING** | Accept predictions until deadline (156 hours / ~6.5 days, per `PREDICTION_DEADLINE_HOURS` in `hope/constants.py`) |
 | **SCORING** | Run scoring pipeline on all submitted predictions |
 | **REVEALING** | Publish outcomes + salt for verification |
 | **COMPLETE** | Log summary, archive epoch |
@@ -305,7 +305,7 @@ tail -f validator.log
 Each Monday:
 1. A new release is available from the operator (e.g., `WR-2026-W19-PUB-E1`)
 2. Restart the validator with the new release key
-3. Miners have 48 hours to submit predictions
+3. Miners have until the weekly deadline (~6.5 days) to submit predictions
 4. Trigger scoring after deadline
 5. Outcomes revealed, weights set
 
