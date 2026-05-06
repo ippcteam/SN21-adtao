@@ -19,7 +19,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 # Make scripts/ importable.
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from hope.commitment.archives import ArchiveEndpoint, FetchAggregate, FetchResult
 from hope.commitment.prediction_payload import (

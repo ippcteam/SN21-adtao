@@ -19,7 +19,7 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from hope.commitment.archives import ArchiveEndpoint, FetchAggregate, FetchResult
 from hope.commitment.prediction_payload import (
@@ -39,7 +39,7 @@ from hope.scoring.onchain_adapter import HorizonTruth, score_one_miner
 import verify_epoch as ve
 
 
-FIXTURE_PATH = Path(__file__).resolve().parents[2] / "fixtures" / "recorded_epoch" / "recorded_epoch.json"
+FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "recorded_epoch" / "recorded_epoch.json"
 
 
 class _InMemArchive:
@@ -208,6 +208,6 @@ def test_placeholder_scorer_is_no_longer_referenced():
 
     A future refactor that re-introduces a placeholder would break the
     verifier's launch claim; this test pins the file's invariant."""
-    src = (Path(__file__).resolve().parents[3] / "scripts" / "verify_epoch.py").read_text()
+    src = (Path(__file__).resolve().parents[2] / "scripts" / "verify_epoch.py").read_text()
     assert "_placeholder_scorer" not in src
     assert "make_live_scorer" in src

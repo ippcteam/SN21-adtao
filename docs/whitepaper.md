@@ -19,7 +19,7 @@ Bittensor Subnet 21 · MIT-licensed · Public verifier ships at launch
 | Current phase | Pre-mainnet — testnet validation complete | §14.3 |
 | Validator registration | **Closed at launch.** Operator runs primary + shadow. Opening is on the Review 4 agenda | `docs/SN21_REWARD_MECHANISM.md` |
 | Miner registration | Open on testnet 466 today; mainnet 21 opens when launch announces | `docs/miner_quickstart.md` |
-| Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/unit/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
+| Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
 | Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is being pursued as an upstream Bittensor change | §13.1 + adversarial test |
 | Per-episode artifacts | **Available via configuration.** `submit_miner_epoch(per_episode_entries=...)` builds the bundle, binds `episodes_root` + `episodes_bundle_sha256` in the aggregated plaintext, and uploads to the archives. The default `hope-miner` CLI submits aggregate-per-horizon at launch; per-episode is opt-in for miners that wire it. Default behaviour will move to per-episode after operational-cycle-1 | §13.2 |
 | Reward mechanism | **`TieredAllocator` available, default runner uses simple normalization + burn.** `hope/validator/tiered_weights.py:TieredAllocator` enforces the full participation gate / EMA tier placement / Elite floor / pool shares spec. The default `hope-validator` CLI runs `WeightSetter(burn_fraction=0.95)` + `normalize_scores(...)` at launch. To enable tiers, an operator constructs `WeightSetter(tiered_allocator=TieredAllocator())` and calls `allocate_tiered(...)`. Tier mechanics are scheduled to become the default after Review 1 | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
@@ -96,51 +96,32 @@ A reasonable reading of "predict the next 7 days" is that miners predict
 some live future and the operator measures it as it happens. **That is
 not how SN21 works.**
 
-Each epoch is built from a fixed historical window of Google Ads data
-that has already finished playing out at the moment the epoch is
-released. Concretely:
+Each epoch is built from a **fixed historical window** of Google Ads
+data that has already finished playing out at the moment the epoch
+opens. The pre-window covers days `[T-60, T-1]` for some past anchor
+date `T`; the action occurred on day `T`; the 7-day and 14-day
+outcomes cover `[T+1, T+7]` and `[T+1, T+14]` — also in the past. The
+operator already knows what happened. Miners predict the withheld
+historical outcome, not a live future one.
 
-- The pre-window (account state, time series, action context) covers
-  days `[T-60, T-1]` for some past anchor date `T`.
-- The action being predicted occurred on day `T`.
-- The 7-day and 14-day outcomes — what we ask miners to predict —
-  cover `[T+1, T+7]` and `[T+1, T+14]`. Those windows are also in the
-  past. The operator already knows what happened.
-
-The miner is predicting a withheld historical outcome, not a live future
-one. From the protocol's point of view this is identical (the miner
-sees only the pre-window and action; outcomes are sealed until reveal),
-but it has three concrete consequences:
+What the protocol prevents:
 
 1. **Outcomes do not change between release and reveal.** The release
-   package, the reveal blob, the salts, and the baseline values are
-   content-addressed and committed on chain. Nothing is re-measured.
-2. **There is no "live data" trust assumption.** A skeptical
-   participant does not need to trust that the operator is measuring
-   live Google Ads honestly between T+1 and T+14. By the time an epoch
-   opens, T+14 has already happened; the outcome blob exists on the
+   package, reveal blob, salts, and baseline values are
+   content-addressed and committed on chain.
+2. **No "live data" trust assumption.** By the time an epoch opens,
+   T+14 has already happened; the outcome blob exists on the
    operator's side; what the chain commits is the SHA-256 of bytes
    that already exist.
-3. **The "commit-then-serve" gate is what enforces fairness.** The
-   reveal blob is published on the operator's HTTPS endpoint **only
-   after** the chain commit (9.A.2) is finalized. Until that block is
-   final, no participant — including the operator — can serve a
-   different blob to anyone without contradicting the on-chain hash.
+3. **Commit-then-serve gate.** The reveal blob is published on the
+   operator's HTTPS endpoint only after the chain commit (9.A.2) is
+   finalized. Until then, nobody — including the operator — can serve
+   a different blob without contradicting the on-chain hash.
 
-What stops the operator from re-measuring the outcomes after seeing
-miner predictions and choosing different ground truth? The chain
-commit at T=0 (9.A.1, `release_commit_digest`) pins the EPISODE SET
-and its query hashes. The chain commit at deadline (9.A.2) pins the
-OUTCOME BYTES. Between those two commits the operator publishes
-predictions that are themselves chain-anchored (9.B). Re-measuring
-outcomes after seeing predictions would force the operator to break
-the 9.A.2 hash that has already been committed before the predictions
-were even revealed by the chain auto-decrypt.
-
-The protocol does not prevent the operator from picking arbitrarily
-favorable historical episodes for an epoch. It does prevent the
-operator from rewriting outcomes after seeing predictions, which is
-the trust gap the protocol was built to close.
+The protocol does not prevent the operator from picking favorable
+historical episodes; it does prevent the operator from rewriting
+outcomes after seeing predictions. That is the trust gap the protocol
+closes.
 
 ---
 
@@ -358,7 +339,7 @@ publicly auditable.
 > built from the 9.A.2 reveal blob and the verifier reproduces miner
 > scores end-to-end. The recorded-epoch fixture in
 > `tests/fixtures/recorded_epoch/` is proved `ok=true` by
-> `tests/unit/scripts/test_verify_epoch_live_scorer.py`, and a
+> `tests/scripts/test_verify_epoch_live_scorer.py`, and a
 > regression guard test fails the build if a placeholder scorer is
 > ever reintroduced into `scripts/verify_epoch.py`. The verifier also
 > cross-checks `actual_weights_at_commit_block` against weights
@@ -397,7 +378,7 @@ the optional retry log). Both fit in one rate-limit window.
 The protocol's load-bearing crypto, explained at the depth a curious
 reader can follow. Implementation lives in `hope/commitment/`; every
 claim here maps to a function in that package and a unit test in
-`tests/unit/commitment/`.
+`tests/commitment/`.
 
 ### 6.1 Canonical CBOR
 
@@ -454,67 +435,33 @@ inner_sig's hotkey field spots the mismatch right away.
 ### 6.4 drand timelock encryption (TLE)
 
 Drand quicknet is a randomness beacon run by the League of Entropy.
-Every 3 seconds it publishes a BLS signature for the next round. The
-signature for any future round is unknowable until that round drops.
+Every 3 seconds it publishes a BLS signature for the next round; any
+future round's signature is unknowable until that round drops. Drand
+TLE encrypts a message so it can only be decrypted with the round-N
+signature.
 
-Drand TLE encrypts a message so it can only be decrypted with the
-round-N signature. Submit a TLE'd ciphertext at time T; it stays
-opaque until round N's signature drops; then anyone can decrypt it.
-
-Subtensor has a built-in feature for this. When you submit a
-`TimelockEncrypted` commit with a `reveal_round` field, the chain
-auto-decrypts the payload after that round fires and stores it back
-on chain. We use this for two things:
+Subtensor has a built-in feature for this: a `TimelockEncrypted`
+commit with a `reveal_round` field is auto-decrypted by the chain
+after that round fires and stored back on chain. We use this for:
 
 - The miner's AES key K (auto-reveals after the miner deadline).
-- The validator's 9.C.1 and 9.C.2 plaintexts (auto-reveal a
-  configurable delay later, typically 1–2 hours).
+- The validator's 9.C.1 and 9.C.2 plaintexts (auto-reveal 1–2 hours
+  later).
 
-A subtle point we learned the hard way. We tell this story because the
-generalised lesson is worth more than the specific bug.
+The chain runtime is strict about which TLE format it auto-decrypts.
+We use `bittensor_drand.get_encrypted_commitment(data: str, ...)` —
+the same helper `Subtensor.set_reveal_commitment(...)` calls
+internally. Binary plaintext is hex-encoded into the string, which
+halves the effective plaintext budget; the cap is
+`MAX_TLE_PLAINTEXT_BYTES = 380` bytes raw. The fix is regression-tested
+in `tests/commitment/test_on_chain.py`. End-to-end round-trip on
+testnet: submit → auto-decrypt → byte-exact decode in 105 seconds.
 
-We started with `bittensor_drand.encrypt(bytes, n_blocks, block_time)`.
-It returns `(ciphertext_bytes, reveal_round)`, takes binary input, and
-looks like the obvious choice. The chain accepted our
-`TimelockEncrypted` extrinsics with `success=True` returned. We
-assumed it worked.
-
-It didn't.
-
-The probe submitted a known 32-byte plaintext, then
-polled `RevealedCommitments` for 30 minutes past the reveal_round, and
-observed nothing. We had assumed `success=True` from the chain meant
-the auto-decrypt would fire. In fact the chain runtime silently drops
-ciphertexts whose format it doesn't recognise.
-
-Diagnosis: We read the SDK source and found that
-`Subtensor.set_reveal_commitment(...)` calls a DIFFERENT C function:
-`bittensor_drand.get_encrypted_commitment(data: str, ...)`. That is
-what the chain runtime decodes. The two functions look identical at
-the Python signature level; their underlying ciphertext formats are
-not.
-
-The fix: Hex-encode the binary plaintext to a string, call the
-right C function, halve the plaintext budget (because hex doubles the
-byte count). We re-ran the round-trip on testnet:
-
-```
-plaintext (hex):    0xc0ffee64284082626c6ebdf1b074c9afdeadbeef
-submit:             success=True reveal_round=28367904
-auto-decrypt fired: block 7049220, 105 seconds after submission
-decode round-trip:  byte-exact match
-```
-
-That was the proof. Until we ran it on real chain, the protocol was
-running on an assumption that turned out to be false. The fix is
-encoded in `tests/unit/commitment/test_on_chain.py`.
-
-The general lesson: *"the chain accepted the extrinsic"* is not the
-same as *"the chain processed the extrinsic correctly."* Substrate
-storage will write almost any bytes you give it; the runtime's
-interpretation of those bytes is where the real work happens. Every
-claim in this paper that depends on the chain processing something
-correctly has a probe behind it.
+The lesson generalises: *"the chain accepted the extrinsic"* is not
+the same as *"the chain processed the extrinsic correctly."*
+Substrate storage will write almost any bytes you give it; the
+runtime's interpretation is where the real work happens. Every claim
+in this paper that depends on chain processing has a probe behind it.
 
 ### 6.5 Indexed Merkle trees
 
@@ -801,7 +748,7 @@ via simple normalization and submits via `set_weights`.
 
 > **Status (launch).** The tiered allocator is **available** in
 > `hope/validator/tiered_weights.py:TieredAllocator` and fully unit-
-> tested (`tests/unit/validator/test_tiered_weights.py`), but it is
+> tested (`tests/validator/test_tiered_weights.py`), but it is
 > **not the default path in the production validator runner**. The
 > default `hope-validator` CLI constructs
 > `WeightSetter(burn_fraction=0.95)` and calls `normalize_scores(...)`
@@ -880,7 +827,7 @@ tiers:
 - The 2 excluded miners: **0**.
 
 The math is in `hope/validator/tiered_weights.py` and pinned by
-`tests/unit/validator/test_tiered_weights.py`. A reader who wants to
+`tests/validator/test_tiered_weights.py`. A reader who wants to
 replay the table can run those tests.
 
 ### 11.4 Why this is competitive, not extractive
@@ -1101,62 +1048,27 @@ Testnet measurement of `set_commitment` extrinsic fees on testnet 466 at
 flip; the operator runbook §12 has the pre-launch checklist that
 includes this measurement.
 
-### 13.5 What we tried first and rejected
+### 13.5 Known operational limits
 
-A list of design attempts that didn't survive empirical contact with
-the chain. We're including these because they're the most honest
-record of the design process: ideas that looked good on paper, broke
-on real testnet, and forced revisions.
+A handful of empirical limits the implementation has hit and routed
+around:
 
-**Multi-field commit.** The Bittensor `Commitments` pallet
-accepts `info = {"fields": [[Sha256, TimelockEncrypted, Raw]]}` —
-multiple Data variants in one extrinsic. We prototyped this hoping
-to compress all three Layer 9.B miner commits (TLE'd K, Sha256 of
-ciphertext, archive URL) into a single chain submission, saving
-~2 of 3 extrinsic fees per miner per epoch. The testnet probe
-confirmed: the chain RUNTIME accepts the extrinsic (success=True
-returned), but the auto-decrypt subsystem silently skips
-multi-variant slots, AND the SDK readback methods do not return
-them. The variant exists in the chain types but is unsupported in
-practice. We gated `submit_layer_9b_multi_field` with
-`NotImplementedError` and kept the 3-extrinsic path. Cost: 3× the
-per-extrinsic fee per miner per epoch. Acceptable given the testnet
-fee is 0 µTAO and the mainnet fee should be nominal.
-
-**Burst probe with small payloads.** The first version of
-the rate-limit probe submitted ~17-byte payloads in a tight loop,
-hoping to trip MaxSpace. It didn't — 21 commits at 17 bytes each
-totalled ~360 bytes, well under the 3,100-byte cap. We re-ran with
-128-byte Raw{128} payloads (corrected probe) and got the empirical answer
-(252 minutes per window, ~500 bytes per-commit overhead). The
-mistake was assuming MaxSpace was per-call rather than per-byte;
-the corrected probe confirmed it's per-byte.
-
-**Chain auto-decrypt assumption.** Detailed in §6.4. We
-initially used `bittensor_drand.encrypt(bytes, ...)`. The chain
-silently dropped our commits despite returning success=True. The
-probe diagnosed it, we found the right helper, and shipped the fix.
-
-**768-byte plaintext budget (pre-fix).** Before the fix, we
-budgeted for ~768 bytes of raw binary plaintext per TLE commit.
-After switching to `get_encrypted_commitment(str)` and hex-encoding,
-the effective budget halved to ~380 bytes. The 9.C.1 / 9.C.2 builders
-fit (real plaintexts measure 364-380 bytes for realistic 50-miner
-epochs), but barely. A larger validator population — say 200 miners —
-would exceed the budget and force splitting commits into multiple
-extrinsics. This is a known follow-up.
-
-**SDK readback path.** Bittensor SDK 10.2.1's
-`get_revealed_commitment_by_hotkey()` lossily UTF-8 decodes binary
-chain bytes — codepoints >127 mangle into multi-byte sequences. We
-hit this when our 32-byte AES key K came back as garbled string. The
-fix was to drop to `subtensor.substrate.query("Commitments",
-"RevealedCommitments", ...)` directly and convert SCALE int-tuples
-via `bytes(t)`. `hope/commitment/chain_reader.py` is that bypass.
-
-These are not embarrassments; they are the work. Each one is a
-specific decision a human made by reading code, running tests, and
-choosing the next move.
+- **Multi-field chain commits are unsupported in practice.** The
+  `Commitments` pallet accepts a multi-variant `info.fields[0]`, but
+  the auto-decrypt subsystem silently skips multi-variant slots and
+  SDK readback can't see them. We use the 3-extrinsic per-miner path.
+- **TLE plaintext budget is 380 bytes raw**, not 768 — the chain's
+  auto-decrypt requires hex-encoded payloads via
+  `get_encrypted_commitment`, which doubles the byte count. The 9.C.1
+  / 9.C.2 builders fit comfortably for ≤ 50-miner epochs; populations
+  of 200+ would need split commits across multiple extrinsics.
+- **SDK lossy UTF-8 readback.** Bittensor SDK 10.2.1's
+  `get_revealed_commitment_by_hotkey()` mangles binary bytes >127.
+  Bypassed by `hope/commitment/chain_reader.py` which queries
+  substrate directly.
+- **MaxSpace is per-byte, not per-call.** ~3,100 bytes per (netuid,
+  hotkey) per ~4-hour window. Per-extrinsic byte cost includes ~500
+  bytes of overhead.
 
 ---
 
@@ -1320,24 +1232,17 @@ Mainnet next.
 
 ## Appendix A — Test surface
 
-Run `pytest tests/ --collect-only -q | wc -l` for the live count;
-the surface as of v1.0 launch:
+Live count: `pytest tests/ --collect-only -q | wc -l`. Layout:
 
 ```
-tests/unit/commitment/             243 tests
-tests/unit/scoring/                 49 tests
-tests/unit/validator/               43 tests
-tests/unit/                         39 tests
-tests/unit/archive_server/          38 tests
-tests/unit/hope_outcomes/           26 tests
-tests/e2e/                          15 tests
-tests/unit/scripts/                 12 tests
-tests/adversarial/                  12 tests  (every claimed defence has a test)
-tests/unit/miner/                    9 tests
-tests/integration/                   7 tests  (live API; CI runs continue-on-error)
-tests/unit/hope_shadow_validator/    2 tests
-─────────────────────────────────────────────
-Total:                             495 collected, 488 pass, 7 skipped
+tests/commitment/   crypto primitives + chain commit helpers
+tests/scoring/      scoring components + adapter + skill score
+tests/validator/    validator runtime + tier mechanics
+tests/miner/        miner runtime + on-chain submitter
+tests/scripts/      public verifier (verify_epoch.py)
+tests/e2e/          full miner flow against a live validator
+tests/adversarial/  every claimed defence has a passing attack test
+tests/fixtures/     recorded-epoch fixture for verifier round-trip
 ```
 
 Adversarial tests are in `tests/adversarial/test_attack_surface.py`.
@@ -1351,61 +1256,17 @@ Run locally: `pytest tests/`. Run only adversarial: `pytest tests/adversarial/ -
 
 ## Appendix B — Empirical findings (testnet 466)
 
-The architecture's claims are backed by testnet measurement. The
-record below is condensed; each entry is a probe run against testnet
-466 with the chain extrinsic hash as the witness.
+The architecture's claims are backed by testnet measurement.
 
-### B.1 Chain rate-limit window
-
-- 5 × 128-byte `Raw{128}` commits succeeded before `SpaceLimitExceeded`.
-- Per-commit overhead inferred: ~500 bytes.
-- Window: 1,259 blocks ≈ 252 minutes ≈ 4.2 hours ≈ 3.5 × subnet tempo.
-- Implication: minimum supported epoch cadence ≈ 4.5h; 24h cadence has
-  5x headroom.
-
-### B.2 Extrinsic fee
-
-- `set_commitment` on testnet 466: 0 µTAO.
-- Mainnet measurement deferred to pre-launch.
-
-### B.3 Lower-level commit path
-
-- `subtensor.set_commitment(data: str)` is limited to `Raw{0..128}`.
-- `publish_metadata_extrinsic(data_type=...)` accepts `Sha256` (32 B)
-  and `TimelockEncrypted` (≤ 1024 B) directly.
-- We use the lower-level path; the higher-level helper would waste
-  capacity on hex/UTF-8 wrappers.
-
-### B.4 Multi-field commit (rejected)
-
-- Multi-variant `info.fields[0]` is ACCEPTED by the chain runtime.
-- But: chain auto-decrypt does NOT walk multi-variant slots, AND SDK
-  readback does not return them.
-- Implication: the 3-extrinsic Layer 9.B path is authoritative.
-  `submit_layer_9b_multi_field` is gated with `NotImplementedError`.
-
-### B.5 TLE auto-decrypt probe (initial format)
-
-- Submitted via `bittensor_drand.encrypt(bytes, ...)` + `publish_metadata_extrinsic`.
-- 30-min poll, NO auto-decrypt observed.
-- Confirmed Hypothesis B: format incompatible.
-
-### B.6 Discovery — `get_encrypted_commitment` is the chain-correct helper
-
-- The SDK's `set_reveal_commitment(data: str)` calls
-  `bittensor_drand.get_encrypted_commitment(data: str, ...)` — a
-  DIFFERENT C function from `encrypt(bytes, ...)`.
-- Verification probe: marker auto-decrypted in 105s. The chain accepts
-  this format.
-
-### B.7 End-to-end fix verification
-
-- Updated `submit_timelock_commit` to hex-encode + use
-  `get_encrypted_commitment`.
-- Test: 20-byte plaintext `0xc0ffee...deadbeef` submitted, auto-decrypted
-  at block 7049220 (105 seconds after submission), decoded byte-exact
-  via `chain_reader.decode_revealed_tle_plaintext`.
-- The protocol is now end-to-end verified on real chain.
+| Property | Value | Implication |
+|---|---|---|
+| MaxSpace per (netuid, hotkey) per ~4-hour window | ~3,100 bytes | Min epoch cadence ≈ 4.5h; 24h cadence has 5× headroom |
+| Per-commit byte overhead | ~500 bytes | Plus payload bytes count toward MaxSpace |
+| `set_commitment` extrinsic fee on testnet | 0 µTAO | Mainnet TBC pre-launch |
+| `Raw{N}` capacity via `subtensor.set_commitment(data: str)` | N ≤ 128 | Use `publish_metadata_extrinsic` for larger / Sha256 / TimelockEncrypted |
+| TLE plaintext budget (raw bytes) | 380 | Hex-encoded for `get_encrypted_commitment`, doubling on-the-wire byte count |
+| TLE auto-decrypt latency (from submit to revealed plaintext on chain) | ≈ 105 seconds | At quicknet 3s period + ~100-round safety margin |
+| Multi-field commits (`info.fields[0]` with multiple variants) | Accepted by chain, NOT auto-decrypted | Use 3-extrinsic Layer 9.B path |
 
 ---
 
