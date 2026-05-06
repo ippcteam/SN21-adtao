@@ -88,7 +88,7 @@ def test_run_epoch_onchain_happy_path(monkeypatch):
 
     endpoints = [
         ArchiveEndpoint(tier=1, base_url="https://val", name="val"),
-        ArchiveEndpoint(tier=2, base_url="https://hope", name="hope"),
+        ArchiveEndpoint(tier=2, base_url="https://archive.example.io", name="archive2"),
         ArchiveEndpoint(tier=3, base_url="https://miner", name="miner"),
     ]
 
@@ -153,7 +153,7 @@ def test_no_predictions_raises(monkeypatch):
             miner_hotkey_bytes=pk,
             miner_signing_key=sk,
             submitted_round=12345700,
-            archive_endpoints=[ArchiveEndpoint(tier=2, base_url="https://hope")],
+            archive_endpoints=[ArchiveEndpoint(tier=2, base_url="https://archive.example.io")],
             self_archive_url="https://m/x",
             blocks_until_reveal=300,
         )

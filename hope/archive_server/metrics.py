@@ -8,7 +8,7 @@ Metrics are populated by the FastAPI middleware in `app.py`. The
 `/metrics` endpoint exposes them in Prometheus text format.
 
 Operators scrape `/metrics` with their existing Prometheus + Grafana
-stack. A sample dashboard JSON is in `deploy/grafana/sn21-archive.json`.
+stack. Standard scrape config applies.
 
 Cardinality is bounded:
   - method ∈ {POST, GET}                          (2 labels)

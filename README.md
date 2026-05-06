@@ -22,8 +22,6 @@ No one — including the operator — can rewrite the record after the fact.
 
 * **What it is:** [whitepaper](docs/whitepaper.md) — design, trust
   model, two cryptographic guarantees, adversarial defence matrix.
-* **How it was built:** [build journey](docs/build_journey.md) —
-  phase-by-phase narrative with the receipts.
 * **Are you a miner?** [miner quickstart](docs/miner_quickstart.md) —
   install, register, train, predict, verify.
 * **What you earn:** [miner economics](docs/MINER_ECONOMICS.md) (short)
@@ -188,14 +186,11 @@ Full guide: [miner quickstart](docs/miner_quickstart.md).
 tao-discovery/
 ├── docs/
 │   ├── whitepaper.md                Design + trust model + adversarial matrix
-│   ├── build_journey.md             Phase-by-phase build narrative (A–H + design wave)
 │   ├── miner_quickstart.md          Miner onboarding tutorial
 │   ├── validator_setup.md           How to run a validator
-│   ├── operator_runbook.md          Operator playbook (running primary + shadow)
 │   ├── MINER_ECONOMICS.md           Gates, tiers, multipliers (short)
 │   ├── SN21_REWARD_MECHANISM.md     Full reward spec
-│   ├── SN21_EPOCH_STRUCTURE.md      Phases, horizons, consolidation
-│   └── proposals/q26_*.md           Upstream Bittensor RFC for chain-side anchor
+│   └── SN21_EPOCH_STRUCTURE.md      Phases, horizons, consolidation
 │
 ├── hope/
 │   ├── protocol/                    Episode / Prediction / Outcome models
@@ -256,8 +251,8 @@ reveal blob handy; use full recomputation when you do.
 
 For block-pinned reads of past epochs, the chain RPC must be an
 **archive node**. Standard `finney` RPCs only retain the last ~256
-blocks; older blocks return empty state. See `docs/operator_runbook.md`
-§8.1 for archive-node operator setup.
+blocks; older blocks return empty state — operators running their own
+verifier should configure an archive RPC accordingly.
 
 Match → validator is honest. Mismatch → exactly one of {validator,
 verifier} has a bug or is malicious; the divergence is publicly

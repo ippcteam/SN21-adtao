@@ -144,7 +144,7 @@ def epoch_setup():
         timing=timing,
     )
 
-    endpoints = [ArchiveEndpoint(tier=2, base_url="https://hope-shadow")]
+    endpoints = [ArchiveEndpoint(tier=2, base_url="https://archive-shadow.example.io")]
 
     return {
         "epoch_id": epoch_id,

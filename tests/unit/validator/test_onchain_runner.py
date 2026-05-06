@@ -99,7 +99,7 @@ def setup():
         inp, ct = _make_miner_input("EPOCH-A", uid=i, block=7038900 + i)
         archive.store(inp.sha256_ct_commit, ct)
         inputs.append(inp)
-    endpoints = [ArchiveEndpoint(tier=2, base_url="https://hope")]
+    endpoints = [ArchiveEndpoint(tier=2, base_url="https://archive.example.io")]
     return {
         "val_sk": val_sk, "val_pk": val_pk, "timing": timing,
         "archive": archive, "inputs": inputs, "endpoints": endpoints,

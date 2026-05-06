@@ -27,7 +27,7 @@ before flipping the cutover switch.
 
 Cutover guidance
 ----------------
-Phase D recommends running BOTH paths for at least one full epoch:
+We recommend running BOTH paths for at least one full epoch:
 
   - HTTP path scores miners via `EpochScorer.score_epoch` as today.
   - Chain path scores via `run_epoch_scoring(scorer=...)` against the
@@ -101,7 +101,7 @@ def replay_http_predictions_as_chain_inputs(
         miner_signing_keys: per-miner ed25519 private key for inner_sig.
             Test/migration setups generate these locally; production
             cutover would source them from the miners' registration commits
-            (Phase E auto-discovery).
+           .
         starting_uid / starting_block / starting_round: synthesized chain
             metadata — these go into the IMT leaf values so re-runs against
             the same inputs produce the same `miner_commits_root`.

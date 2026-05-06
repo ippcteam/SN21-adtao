@@ -15,12 +15,12 @@ Bittensor Subnet 21 · MIT-licensed · Public verifier ships at launch
 | Item | Status | Where |
 |---|---|---|
 | Mainnet netuid | **21** (Bittensor `finney`) | Subnet registration |
-| Testnet netuid | **466** (Bittensor `test`) | Phase 0 + integration probes |
+| Testnet netuid | **466** (Bittensor `test`) | testnet validation |
 | Current phase | Pre-mainnet — testnet validation complete | §14.3 |
 | Validator registration | **Closed at launch.** Operator runs primary + shadow. Opening is on the Review 4 agenda | `docs/SN21_REWARD_MECHANISM.md` |
 | Miner registration | Open on testnet 466 today; mainnet 21 opens when launch announces | `docs/miner_quickstart.md` |
 | Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/unit/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
-| Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is upstream Bittensor RFC, tracked in `docs/proposals/q26_weights_payload_anchor.md` | §13.1 + adversarial test |
+| Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is being pursued as an upstream Bittensor change | §13.1 + adversarial test |
 | Per-episode artifacts | **Available via configuration.** `submit_miner_epoch(per_episode_entries=...)` builds the bundle, binds `episodes_root` + `episodes_bundle_sha256` in the aggregated plaintext, and uploads to the archives. The default `hope-miner` CLI submits aggregate-per-horizon at launch; per-episode is opt-in for miners that wire it. Default behaviour will move to per-episode after operational-cycle-1 | §13.2 |
 | Reward mechanism | **`TieredAllocator` available, default runner uses simple normalization + burn.** `hope/validator/tiered_weights.py:TieredAllocator` enforces the full participation gate / EMA tier placement / Elite floor / pool shares spec. The default `hope-validator` CLI runs `WeightSetter(burn_fraction=0.95)` + `normalize_scores(...)` at launch. To enable tiers, an operator constructs `WeightSetter(tiered_allocator=TieredAllocator())` and calls `allocate_tiered(...)`. Tier mechanics are scheduled to become the default after Review 1 | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
 | Conditional-prior baseline | **Live at launch.** The release artifact's `scoring_metadata.conditional_prior` per episode plumbs through `ScoringMetadata` and `SkillScoreCalculator.compute_baseline_prediction(...)`. Episodes with no published prior fall through to predict-zero — no crash, no silent gate-zeroing | §11 |
@@ -481,20 +481,20 @@ assumed it worked.
 
 It didn't.
 
-The H-3 probe (2026-05-04) submitted a known 32-byte plaintext, then
+The probe submitted a known 32-byte plaintext, then
 polled `RevealedCommitments` for 30 minutes past the reveal_round, and
 observed nothing. We had assumed `success=True` from the chain meant
 the auto-decrypt would fire. In fact the chain runtime silently drops
 ciphertexts whose format it doesn't recognise.
 
-H-4 was the diagnosis. We read the SDK source and found that
+Diagnosis: We read the SDK source and found that
 `Subtensor.set_reveal_commitment(...)` calls a DIFFERENT C function:
 `bittensor_drand.get_encrypted_commitment(data: str, ...)`. That is
 what the chain runtime decodes. The two functions look identical at
 the Python signature level; their underlying ciphertext formats are
 not.
 
-H-6 was the fix. Hex-encode the binary plaintext to a string, call the
+The fix: Hex-encode the binary plaintext to a string, call the
 right C function, halve the plaintext budget (because hex doubles the
 byte count). We re-ran the round-trip on testnet:
 
@@ -506,9 +506,8 @@ decode round-trip:  byte-exact match
 ```
 
 That was the proof. Until we ran it on real chain, the protocol was
-running on an assumption that turned out to be false.
-`docs/build_journey.md` (Phase H) records the H-3 → H-6 arc; the test
-suite encodes the fix in `tests/unit/commitment/test_on_chain.py`.
+running on an assumption that turned out to be false. The fix is
+encoded in `tests/unit/commitment/test_on_chain.py`.
 
 The general lesson: *"the chain accepted the extrinsic"* is not the
 same as *"the chain processed the extrinsic correctly."* Substrate
@@ -942,9 +941,9 @@ exclusion is the protocol working correctly under partial failure.
 ### 12.3 MaxSpace contention
 
 A miner's epoch costs ~2,174 bytes against the chain's ~3,100-byte
-MaxSpace per ~4-hour rolling window (per Phase 0 Q11 measurement;
-empirical, not assumed). A miner submitting more than once per ~4.5
-hours from the same hotkey will hit `SpaceLimitExceeded`.
+MaxSpace per ~4-hour rolling window (empirical, measured on testnet).
+A miner submitting more than once per ~4.5 hours from the same hotkey
+will hit `SpaceLimitExceeded`.
 
 **Mitigation in code:** the miner runner returns
 `MinerSubmissionResult.failure_reason="chain_*_commit_failed: SpaceLimit..."`
@@ -1033,12 +1032,12 @@ weights at `weights_commit_block_hash` detects the divergence
 mechanically. Yuma stake-weighted median naturally clips the
 dishonest validator if a shadow is running.
 
-**Long-term fix:** an upstream Bittensor runtime patch adding a 32-byte
-`external_anchor` field to `WeightsTlockPayload`. We've drafted the RFC
-in `docs/proposals/q26_weights_payload_anchor.md`. With that field, the
-chain itself binds weights to the scoring artifact — no off-chain check
-needed. We'll submit the proposal to the Subtensor maintainers when the
-on-chain protocol has run cleanly for one operational cycle.
+**Long-term fix:** an upstream Bittensor runtime change that adds a
+32-byte `external_anchor` field to `WeightsTlockPayload`. With that
+field, the chain itself binds weights to the scoring artifact — no
+off-chain check needed. The proposal will be submitted to the
+Subtensor maintainers once the on-chain protocol has run cleanly for
+one operational cycle.
 
 > **Read this carefully.** Earlier sections of this paper describe
 > 9.C.2 as "binding the score table to the weights commit block hash."
@@ -1059,7 +1058,7 @@ on-chain protocol has run cleanly for one operational cycle.
 
 ### 13.2 Per-episode scoring commitments
 
-Phase E added per-episode artifacts: each miner's CBOR bundle of
+We added per-episode artifacts: each miner's CBOR bundle of
 per-(episode × horizon) quantiles, with an IMT root committed inside
 the aggregated 9.C.1 plaintext. This lets the verifier reproduce
 per-episode scoring against the specific predictions for that episode.
@@ -1070,7 +1069,7 @@ MaxSpace forbids it. Per-episode artifacts live off-chain in archives
 with a chain-anchored root. This is a deliberate trade-off: cheaper
 chain footprint, slightly more off-chain trust.
 
-> **Status (launch).** Phase E primitives are **available** as
+> **Status (launch).** Per-episode primitives are **available** as
 > `submit_miner_epoch(per_episode_entries=...)` —
 > `episodes_root` (IMT root over per-(episode, horizon) entries) and
 > `episodes_bundle_sha256` (SHA-256 of the bundle bytes) get bound
@@ -1097,7 +1096,7 @@ verifiable prediction subnet; they should sell predictions privately.
 
 ### 13.4 Mainnet TAO fees
 
-Phase 0 Q13 measured `set_commitment` extrinsic fees on testnet 466 at
+Testnet measurement of `set_commitment` extrinsic fees on testnet 466 at
 0 µTAO. Mainnet may differ. We'll measure once before the mainnet
 flip; the operator runbook §12 has the pre-launch checklist that
 includes this measurement.
@@ -1109,12 +1108,12 @@ the chain. We're including these because they're the most honest
 record of the design process: ideas that looked good on paper, broke
 on real testnet, and forced revisions.
 
-**Multi-field commit (Q36).** The Bittensor `Commitments` pallet
+**Multi-field commit.** The Bittensor `Commitments` pallet
 accepts `info = {"fields": [[Sha256, TimelockEncrypted, Raw]]}` —
 multiple Data variants in one extrinsic. We prototyped this hoping
 to compress all three Layer 9.B miner commits (TLE'd K, Sha256 of
 ciphertext, archive URL) into a single chain submission, saving
-~2 of 3 extrinsic fees per miner per epoch. The Q36 testnet probe
+~2 of 3 extrinsic fees per miner per epoch. The testnet probe
 confirmed: the chain RUNTIME accepts the extrinsic (success=True
 returned), but the auto-decrypt subsystem silently skips
 multi-variant slots, AND the SDK readback methods do not return
@@ -1124,30 +1123,30 @@ practice. We gated `submit_layer_9b_multi_field` with
 per-extrinsic fee per miner per epoch. Acceptable given the testnet
 fee is 0 µTAO and the mainnet fee should be nominal.
 
-**Burst probe with small payloads (Q11 v1).** The first version of
+**Burst probe with small payloads.** The first version of
 the rate-limit probe submitted ~17-byte payloads in a tight loop,
 hoping to trip MaxSpace. It didn't — 21 commits at 17 bytes each
 totalled ~360 bytes, well under the 3,100-byte cap. We re-ran with
-128-byte Raw{128} payloads (Q11 v2) and got the empirical answer
+128-byte Raw{128} payloads (corrected probe) and got the empirical answer
 (252 minutes per window, ~500 bytes per-commit overhead). The
 mistake was assuming MaxSpace was per-call rather than per-byte;
 the corrected probe confirmed it's per-byte.
 
-**Chain auto-decrypt assumption (H-3).** Detailed in §6.4. We
+**Chain auto-decrypt assumption.** Detailed in §6.4. We
 initially used `bittensor_drand.encrypt(bytes, ...)`. The chain
-silently dropped our commits despite returning success=True. H-3
-diagnosed; H-4 found the right helper; H-6 shipped the fix.
+silently dropped our commits despite returning success=True. The
+probe diagnosed it, we found the right helper, and shipped the fix.
 
-**768-byte plaintext budget (pre-H-6).** Before the H-6 fix, we
+**768-byte plaintext budget (pre-fix).** Before the fix, we
 budgeted for ~768 bytes of raw binary plaintext per TLE commit.
 After switching to `get_encrypted_commitment(str)` and hex-encoding,
 the effective budget halved to ~380 bytes. The 9.C.1 / 9.C.2 builders
 fit (real plaintexts measure 364-380 bytes for realistic 50-miner
 epochs), but barely. A larger validator population — say 200 miners —
 would exceed the budget and force splitting commits into multiple
-extrinsics. The architecture records this as a Phase E follow-up.
+extrinsics. This is a known follow-up.
 
-**SDK readback path (Phase G).** Bittensor SDK 10.2.1's
+**SDK readback path.** Bittensor SDK 10.2.1's
 `get_revealed_commitment_by_hotkey()` lossily UTF-8 decodes binary
 chain bytes — codepoints >127 mangle into multi-byte sequences. We
 hit this when our 32-byte AES key K came back as garbled string. The
@@ -1180,8 +1179,8 @@ Here is the inventory, with file paths so you can audit.
 | `hope/commitment/scoring_state.py` | 269 | 9.C.1 / 9.C.2 builders + IMT roots |
 | `hope/commitment/retry_log.py` | 167 | 9.C.6 JSON blob builder |
 | `hope/commitment/registration.py` | ~190 | hotkey ↔ ed25519 binding |
-| `hope/commitment/episode_artifacts.py` | 230 | per-episode bundle (Phase E) |
-| `hope/commitment/chain_reader.py` | 270 | substrate-direct reads (Phase G/H) |
+| `hope/commitment/episode_artifacts.py` | 230 | per-episode bundle |
+| `hope/commitment/chain_reader.py` | 270 | substrate-direct reads |
 | `hope/hope_outcomes/release_commit.py` | 170 | 9.A.1 release_commit |
 | `hope/hope_outcomes/reveal_blob.py` | 200 | 9.A.2 reveal blob |
 | `hope/miner/onchain_submitter.py` | 220 | full 9.B pipeline |
@@ -1211,13 +1210,11 @@ clean under `ruff check`.
 | Doc | Purpose |
 |---|---|
 | `docs/whitepaper.md` | This document. Protocol description, trust model, adversarial matrix. |
-| `docs/build_journey.md` | Phase-by-phase build narrative (Phase 0 calibration → A–H + audit-feedback wave). |
-| `docs/operator_runbook.md` | Operator playbook: setup, daily ops, incidents, rotation, mainnet pre-launch. |
 | `docs/SN21_REWARD_MECHANISM.md` | Full reward spec (gates, tiers, EMA, governance). |
 | `docs/SN21_EPOCH_STRUCTURE.md` | Epoch and phase progression. |
 | `docs/miner_quickstart.md` | Miner onboarding tutorial. |
 | `docs/MINER_ECONOMICS.md` | Short reference for how emissions relate to miner behaviour. |
-| `docs/proposals/q26_weights_payload_anchor.md` | Upstream Bittensor RFC for chain-side weights ↔ scoring binding. |
+| `docs/validator_setup.md` | Validator deployment guide. |
 | `deploy/archive_server/README.md` | Archive server deployment (Docker / systemd). |
 | `deploy/grafana/README.md` | Sample Grafana dashboard for archive server metrics. |
 
@@ -1229,9 +1226,7 @@ What we've actually run on chain:
 - 1 9.C.1 pre-scoring TLE commit (success=True, reveal_round 28336161).
 - 1 9.C.3 weights commit via `commit_timelocked_weights` (success=True).
 - 1 9.C.2 post-scoring TLE commit (success=True, reveal_round 28336216).
-- 1 H-3 TLE auto-decrypt probe (FAIL — found the format bug).
-- 1 H-4 verification probe via `set_reveal_commitment` (PASS — found the fix).
-- 1 H-6 end-to-end round-trip (PASS — submit → auto-decrypt → decode in 105s).
+- 1 TLE auto-decrypt round-trip (PASS — submit → auto-decrypt → decode in 105s).
 
 Validator running live (chain mode flip pending operator decision).
 
@@ -1300,7 +1295,7 @@ shadow validator whose mere existence makes single-validator
 dishonesty publicly auditable.
 
 We spent more cycles than expected discovering empirical truths the
-chain hides — the auto-decrypt format bug in Phase H was the most
+chain hides — the auto-decrypt format bug was the most
 expensive (§6.4 narrates that one) — but every discovery tightened the
 protocol. The result is v1.0: a verifiable prediction subnet that runs
 on testnet, with every binding tested against a 12-attack adversarial
@@ -1356,11 +1351,11 @@ Run locally: `pytest tests/`. Run only adversarial: `pytest tests/adversarial/ -
 
 ## Appendix B — Empirical findings (testnet 466)
 
-The architecture's claims are backed by measurement. Here is the
-condensed record; the phase-by-phase build narrative — including who
-ran what probe, when, and why — is in `docs/build_journey.md`.
+The architecture's claims are backed by testnet measurement. The
+record below is condensed; each entry is a probe run against testnet
+466 with the chain extrinsic hash as the witness.
 
-### B.1 Q11 — RateLimit window (2026-05-03)
+### B.1 Chain rate-limit window
 
 - 5 × 128-byte `Raw{128}` commits succeeded before `SpaceLimitExceeded`.
 - Per-commit overhead inferred: ~500 bytes.
@@ -1368,12 +1363,12 @@ ran what probe, when, and why — is in `docs/build_journey.md`.
 - Implication: minimum supported epoch cadence ≈ 4.5h; 24h cadence has
   5x headroom.
 
-### B.2 Q13 — Extrinsic fee (2026-05-03)
+### B.2 Extrinsic fee
 
 - `set_commitment` on testnet 466: 0 µTAO.
 - Mainnet measurement deferred to pre-launch.
 
-### B.3 Q35 — Lower-level commit path (2026-05-03)
+### B.3 Lower-level commit path
 
 - `subtensor.set_commitment(data: str)` is limited to `Raw{0..128}`.
 - `publish_metadata_extrinsic(data_type=...)` accepts `Sha256` (32 B)
@@ -1381,7 +1376,7 @@ ran what probe, when, and why — is in `docs/build_journey.md`.
 - We use the lower-level path; the higher-level helper would waste
   capacity on hex/UTF-8 wrappers.
 
-### B.4 Q36 — Multi-field commit (2026-05-03)
+### B.4 Multi-field commit (rejected)
 
 - Multi-variant `info.fields[0]` is ACCEPTED by the chain runtime.
 - But: chain auto-decrypt does NOT walk multi-variant slots, AND SDK
@@ -1389,13 +1384,13 @@ ran what probe, when, and why — is in `docs/build_journey.md`.
 - Implication: the 3-extrinsic Layer 9.B path is authoritative.
   `submit_layer_9b_multi_field` is gated with `NotImplementedError`.
 
-### B.5 H-3 — TLE auto-decrypt probe (2026-05-04)
+### B.5 TLE auto-decrypt probe (initial format)
 
 - Submitted via `bittensor_drand.encrypt(bytes, ...)` + `publish_metadata_extrinsic`.
 - 30-min poll, NO auto-decrypt observed.
 - Confirmed Hypothesis B: format incompatible.
 
-### B.6 H-4 — Discovery (2026-05-04)
+### B.6 Discovery — `get_encrypted_commitment` is the chain-correct helper
 
 - The SDK's `set_reveal_commitment(data: str)` calls
   `bittensor_drand.get_encrypted_commitment(data: str, ...)` — a
@@ -1403,7 +1398,7 @@ ran what probe, when, and why — is in `docs/build_journey.md`.
 - Verification probe: marker auto-decrypted in 105s. The chain accepts
   this format.
 
-### B.7 H-6 — End-to-end fix verification (2026-05-04)
+### B.7 End-to-end fix verification
 
 - Updated `submit_timelock_commit` to hex-encode + use
   `get_encrypted_commitment`.
@@ -1437,25 +1432,18 @@ ran what probe, when, and why — is in `docs/build_journey.md`.
 
 ### C.4 Companion documents in this repo
 
-- `docs/build_journey.md` — phase-by-phase build narrative.
-- `docs/operator_runbook.md` — production playbook for operators.
-- `docs/proposals/q26_weights_payload_anchor.md` — upstream RFC for
-  the chain-side weights ↔ scoring binding (§13.1).
 - `docs/SN21_REWARD_MECHANISM.md` — full reward spec.
-- `docs/SN21_EPOCH_STRUCTURE.md` — epoch and phase progression.
+- `docs/SN21_EPOCH_STRUCTURE.md` — epoch progression.
 - `docs/miner_quickstart.md` — miner onboarding tutorial.
+- `docs/MINER_ECONOMICS.md` — short reference for emissions.
+- `docs/validator_setup.md` — validator deployment guide.
 
 ### C.5 Code
 
-- Every phase landed on `main`. Commit history is the audit trail.
+The protocol implementation is in this repository; commit history is
+the audit trail.
 
 ---
 
-*Last updated 2026-05-05, v1.0+G+H. The protocol was built between
-2026-04-30 and 2026-05-04 with substantial authoring help from an AI
-coding agent; design choices, empirical validation, and chain-side
-debugging were human work. The phase-by-phase narrative —
-which probe ran when, which assumption broke against real testnet,
-which fix landed where — is in `docs/build_journey.md`. All claims
-in this paper are linked to source files and commit hashes; verify
-directly.*
+*v1.0. All claims in this paper are linked to source files in this
+repository and to commit hashes on `main`. Verify directly.*

@@ -1,6 +1,6 @@
 """Cryptographic commitment primitives for SN21 verifiable scoring.
 
-This package implements Phase A foundation modules per the protocol spec:
+This package implements Foundation modules per the protocol spec:
 - canonical: RFC 8949 §4.2.1 deterministic CBOR encoding + AES-GCM AAD construction
 - imt: Indexed Merkle Tree (sorted-leaf with low/high pointers; non-inclusion proofs)
 - inner_sig: 4-step ed25519 inner-signature procedure for validator commits (CL-9)

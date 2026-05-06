@@ -40,7 +40,7 @@ def _miner(hotkey=None, attempts=None):
 
 class TestAttemptFromFetchResult:
     def test_failed_fetch(self):
-        ep = ArchiveEndpoint(tier=2, base_url="https://hope", name="hope-shadow")
+        ep = ArchiveEndpoint(tier=2, base_url="https://archive.example.io", name="archive2-shadow")
         fr = FetchResult(
             endpoint=ep,
             ok=False,
@@ -52,8 +52,8 @@ class TestAttemptFromFetchResult:
         )
         a = attempt_from_fetch_result(fr)
         assert a.tier == 2
-        assert a.name == "hope-shadow"
-        assert a.url == "https://hope"
+        assert a.name == "archive2-shadow"
+        assert a.url == "https://archive.example.io"
         assert a.ok is False
         assert a.status_code == 200
         assert a.sha256_match is False

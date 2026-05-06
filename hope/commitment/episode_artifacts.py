@@ -1,14 +1,14 @@
-"""Per-episode prediction artifacts (Phase E, Layer 9.B.1).
+"""Per-episode prediction artifacts (Layer 9.B.1).
 
-Phase B/C committed only the aggregated horizon CBOR (one entry per horizon
-across the whole portfolio). That kept the chain plaintext under the 380-byte (Phase H)
+The earlier protocol committed only the aggregated horizon CBOR (one entry per horizon
+across the whole portfolio). That kept the chain plaintext under the 380-byte 
 TLE budget but lost per-episode granularity — the scorer could only judge
 miners on aggregated quantiles, not on which specific episodes they got
 right or wrong.
 
-Phase E adds an OFF-CHAIN per-episode bundle whose IMT root is committed
+Layer 9.B.1 adds an OFF-CHAIN per-episode bundle whose IMT root is committed
 on-chain inside the existing aggregated plaintext. The chain still carries
-≤ 380 bytes (Phase H halved this from 768 after the auto-decrypt format fix; see docs/build_journey.md Phase H); the bundle goes to the same Tier-2 / Tier-3 archives, indexed
+≤ 380 bytes (raw bytes are hex-encoded for the chain's `get_encrypted_commitment` helper, doubling on-the-wire byte count); the bundle goes to the same Tier-2 / Tier-3 archives, indexed
 by epoch_id + miner_hotkey. After K reveals, anyone can fetch the bundle,
 verify its root against the on-chain commit, decode per-episode quantiles,
 and run the project's `EpochScorer` on it.
@@ -219,7 +219,7 @@ def verify_bundle_root(
     """Recompute the IMT root over the bundle's entries and compare.
 
     `expected_root` comes from the on-chain aggregated plaintext's
-    `episodes_root` field (Phase E adds it). A non-match means the archive
+    `episodes_root` field. A non-match means the archive
     served a tampered bundle, the on-chain commit was tampered, or the
     miner failed to upload the canonical bundle.
     """

@@ -241,7 +241,7 @@ class TestEndToEndDualMode:
                 epoch_id="EP-A", epoch_idx=42,
                 validator_hotkey=val_pk, validator_signing_key=val_sk,
                 miner_inputs=inputs, archive_endpoints=[
-                    ArchiveEndpoint(tier=2, base_url="https://hope")
+                    ArchiveEndpoint(tier=2, base_url="https://archive.example.io")
                 ],
                 archive_client=adapter,
                 timing=TimingBounds(

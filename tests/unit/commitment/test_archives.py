@@ -30,7 +30,7 @@ def aes_ct_sha(aes_ct) -> bytes:
 def endpoints():
     return [
         ArchiveEndpoint(tier=1, base_url="https://val.example", name="val-1"),
-        ArchiveEndpoint(tier=2, base_url="https://hope.example", name="hope"),
+        ArchiveEndpoint(tier=2, base_url="https://archive.example.io", name="archive2"),
         ArchiveEndpoint(tier=3, base_url="https://miner.example", name="miner"),
     ]
 
@@ -148,7 +148,7 @@ class TestUpload:
             )
             assert all(r.ok for r in results)
             assert len(results) == 3
-            assert seen == ["val.example", "hope.example", "miner.example"]
+            assert seen == ["val.example", "archive.example.io", "miner.example"]
         finally:
             self._restore(original)
 

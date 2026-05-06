@@ -1,4 +1,4 @@
-"""Hotkey ↔ ed25519 key binding registration (Phase D).
+"""Hotkey ↔ ed25519 key binding registration .
 
 Background
 ----------

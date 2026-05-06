@@ -468,7 +468,7 @@ def _run_validator_onchain_cli(args, runner):
     # SAME inputs so the resulting plaintexts match by construction.
     # We don't have AES_ct here yet — caller will fetch during the run. The
     # scoring_inputs_hash binds to the FINAL plaintexts, but for the upfront
-    # hash we use a simplification: hash the chain commits + truth. Phase E
+    # hash we use a simplification: hash the chain commits + truth (an in-progress
     # swaps in real plaintexts.
     plaintexts_for_hash: dict[bytes, dict] = {
         inp.miner_hotkey: {

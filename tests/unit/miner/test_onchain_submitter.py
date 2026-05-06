@@ -81,7 +81,7 @@ def horizons():
 def endpoints():
     return [
         ArchiveEndpoint(tier=1, base_url="https://val", name="val"),
-        ArchiveEndpoint(tier=2, base_url="https://hope", name="hope"),
+        ArchiveEndpoint(tier=2, base_url="https://archive.example.io", name="archive2"),
         ArchiveEndpoint(tier=3, base_url="https://miner", name="miner-self"),
     ]
 
