@@ -1,0 +1,40 @@
+# ============================================================================
+# OPERATOR-ONLY Render manifest. Public miners do NOT need this file.
+#
+# This manifest deploys the operator's hosted SN21 validator. Public miners
+# run `hope-miner` against an existing validator URL — see
+# docs/miner_quickstart.md.
+#
+# Service type is "worker" (no port binding) because the on-chain validator
+# is a one-shot per-epoch process (Layer 9.B–9.C), not a long-running web
+# service. Render restarts the worker on exit; trigger a redeploy each
+# epoch by bumping RELEASE_KEY in the dashboard.
+#
+# This file ships with the public repo for now and will move to a private
+# deploy repo once that's wired up.
+# ============================================================================
+services:
+  - type: worker
+    name: sn21-validator
+    runtime: python
+    plan: starter
+    buildCommand: pip install -e . && chmod +x scripts/start_validator.sh
+    startCommand: bash scripts/start_validator.sh
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: HOTKEY_NAME
+        value: default
+      - key: BT_NETWORK
+        value: finney
+      - key: NETUID
+        value: "21"
+      # Sensitive values — set in Render dashboard, not here:
+      #   WALLET_NAME           Bittensor wallet name
+      #   RELEASE_KEY           Current epoch / release key
+      #   HOTKEY_B64            base64-encoded hotkey file
+      #   COLDKEYPUB_B64        base64-encoded coldkeypub.txt
+      #   HOPE_API_KEY          operator data API key
+      #   HOPE_API_URL          operator data API base URL
+      #   ARCHIVE_TIER_2_URLS   comma-separated Tier-2 archive base URLs
