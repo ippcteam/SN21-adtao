@@ -16,7 +16,7 @@ Bittensor Subnet 21 · MIT-licensed · Public verifier ships at launch
 |---|---|---|
 | Mainnet netuid | **21** (Bittensor `finney`) | Subnet registration |
 | Testnet netuid | **466** (Bittensor `test`) | testnet validation |
-| Current phase | Pre-mainnet — testnet validation complete | §15.3 |
+| Current phase | Pre-mainnet — testnet validation complete | Appendix B |
 | Validator registration | **Closed at launch.** Operator runs primary + shadow. Opening is on the Review 4 agenda | `docs/SN21_REWARD_MECHANISM.md` |
 | Miner registration | Open on testnet 466 today; mainnet 21 opens when launch announces | `docs/miner_quickstart.md` |
 | Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
@@ -441,116 +441,139 @@ the optional retry log). Both fit in one rate-limit window.
 
 ## 7. Cryptographic primitives, intuitive depth
 
-The protocol's load-bearing crypto, explained at the depth a curious
-reader can follow. Implementation lives in `hope/commitment/`; every
-claim here maps to a function in that package and a unit test in
-`tests/commitment/`.
+This section walks through the load-bearing crypto at the depth a
+curious reader can follow without a textbook open. None of the
+building blocks are exotic — they're all standard primitives — but
+the way they fit together is what makes the rest of the protocol
+stand up. Implementation lives in `hope/commitment/`; every claim
+in this section maps to a function in that package and a unit test
+in `tests/commitment/`.
 
 ### 7.1 Canonical CBOR
 
-Canonical CBOR is the encoding used for every byte that gets hashed
-or signed. "Canonical" means there is one and only one way to encode
-any given map: definite-length items, sorted keys, smallest-form
-integers, no indefinite-length anything. The `cbor2.dumps(...,
-canonical=True)` library call gives us that for free.
+Canonical CBOR is the encoding we reach for whenever bytes are about
+to be hashed or signed. "Canonical" means there is exactly one way
+to encode any given map: definite-length items, sorted keys,
+smallest-form integers, no indefinite-length anything. The
+`cbor2.dumps(..., canonical=True)` library call gives us all of that
+for free.
 
-Why it matters: two different implementations encoding the same map
-produce byte-identical output. The hash of those bytes is identical
-on both sides. Without the rule, two implementations could produce
-different hashes for "the same" map, and the protocol would silently
-break.
+It sounds like a footnote, but it's load-bearing. Two different
+implementations encoding the same map produce byte-identical output,
+so the hash of those bytes is identical on both sides. Without the
+rule, two implementations could produce different hashes for "the
+same" map and the protocol would silently break — the kind of bug
+that doesn't surface until someone disputes a score and nobody can
+agree on what the canonical input even was.
 
 ### 7.2 AES-GCM with epoch-bound AAD
 
-Each miner generates a fresh 32-byte AES key K per epoch. They encrypt
-their prediction CBOR with K under AES-256-GCM. The AAD (Associated
-Authenticated Data) is the literal byte string
+Each miner generates a fresh 32-byte AES key K per epoch and
+encrypts their prediction CBOR with it under AES-256-GCM. The AAD
+(Associated Authenticated Data) is the literal byte string
 `b"sn21-prediction-v1:" + epoch_id`.
 
 Why bother with AAD? Without it, AES-GCM gives confidentiality and
-integrity of the ciphertext, but the ciphertext is not bound to any
-context. A malicious validator with a copy of K could try to play it
-under a different epoch ID. With AAD, the decrypt simply fails unless
-the verifier supplies the same epoch ID that was used at encrypt time.
-The chain commit pins which epoch ID is the right one.
+integrity of the ciphertext, but the ciphertext isn't bound to any
+particular context. A malicious validator who got hold of K could
+try to replay it under a different epoch ID, splicing an old
+prediction into a new scoring round. With AAD, the decrypt simply
+fails unless the verifier supplies the same epoch ID that was used
+at encrypt time. The chain commit pins which epoch ID is the right
+one, and the AAD makes sure the ciphertext can only ever live in
+that epoch.
 
 ### 7.3 ed25519 inner_sig
 
-Every miner and every validator owns an ed25519 keypair, separate from
-their Bittensor SS58 hotkey. They register their public key on chain
-once — a 109-byte `Raw{N}` commit that binds the hotkey to the
-ed25519 public key. After that, every prediction or scoring commit
-they make is signed with their ed25519 private key.
+Every miner and every validator owns an ed25519 keypair, separate
+from their Bittensor SS58 hotkey. They register their public key on
+chain once — a 109-byte `Raw{N}` commit binding the hotkey to the
+ed25519 public key. From that point on, every prediction or scoring
+commit they make is signed with their ed25519 private key.
 
 The inner_sig is computed over
 `blake2b_256(canonical_cbor(plaintext minus inner_sig))`. The clever
-part is that the plaintext carries the public key inside itself, AND
-the chain storage slot is owned by the writer's hotkey. Verifying the
-inner_sig means checking two things:
+part — and it really is the linchpin — is that the plaintext
+carries its own public key inside itself, AND the chain storage slot
+it lives in is owned by the writer's hotkey. Verifying the inner_sig
+is therefore two checks, not one:
 
 1. The signature is valid against the public key in the plaintext.
 2. The public key in the plaintext matches the one bound to the chain
    account that wrote this slot.
 
-This kills the rubber-stamp attack. A second validator can copy a
-primary's plaintext bytes into its own storage slot, but the inner_sig
-in those bytes verifies against the **primary's** hotkey, not the
-second's. A verifier comparing the second's chain account against the
-inner_sig's hotkey field spots the mismatch right away.
+That second check is what kills the rubber-stamp attack. A second
+validator can absolutely copy a primary's plaintext bytes into its
+own storage slot — Substrate authorizes the writer, not the
+contents. But the inner_sig in those copied bytes still verifies
+against the **primary's** hotkey, not the second's. A verifier
+comparing the second's chain account against the inner_sig's hotkey
+field spots the mismatch immediately.
 
 ### 7.4 drand timelock encryption (TLE)
 
 Drand quicknet is a randomness beacon run by the League of Entropy.
 Every 3 seconds it publishes a BLS signature for the next round; any
-future round's signature is unknowable until that round drops. Drand
-TLE encrypts a message so it can only be decrypted with the round-N
-signature.
+future round's signature is unknowable until that round actually
+drops. Drand TLE wraps that property — encrypt a message such that
+it can only be decrypted with the round-N signature, and you've
+effectively sealed it until time N.
 
-Subtensor has a built-in feature for this: a `TimelockEncrypted`
-commit with a `reveal_round` field is auto-decrypted by the chain
-after that round fires and stored back on chain. We use this for:
+Subtensor builds on top: a `TimelockEncrypted` commit with a
+`reveal_round` field is auto-decrypted by the chain runtime once the
+round fires, and the plaintext is stored back on chain. We use this
+for two things:
 
 - The miner's AES key K (auto-reveals after the miner deadline).
 - The validator's 9.C.1 and 9.C.2 plaintexts (auto-reveal 1–2 hours
   later).
 
-The chain runtime is strict about which TLE format it auto-decrypts.
-We use `bittensor_drand.get_encrypted_commitment(data: str, ...)` —
-the same helper `Subtensor.set_reveal_commitment(...)` calls
-internally. Binary plaintext is hex-encoded into the string, which
+The chain runtime is strict about which TLE format it will
+auto-decrypt — and this is where we paid tuition. We use
+`bittensor_drand.get_encrypted_commitment(data: str, ...)`, the same
+helper `Subtensor.set_reveal_commitment(...)` calls internally.
+Binary plaintext is hex-encoded into the string on the way in, which
 halves the effective plaintext budget; the cap is
-`MAX_TLE_PLAINTEXT_BYTES = 380` bytes raw. The fix is regression-tested
-in `tests/commitment/test_on_chain.py`. End-to-end round-trip on
-testnet: submit → auto-decrypt → byte-exact decode in 105 seconds.
+`MAX_TLE_PLAINTEXT_BYTES = 380` bytes raw. The fix is
+regression-tested in `tests/commitment/test_on_chain.py`, and the
+end-to-end round-trip on testnet — submit → auto-decrypt →
+byte-exact decode — completes in 105 seconds.
 
-The lesson generalises: *"the chain accepted the extrinsic"* is not
-the same as *"the chain processed the extrinsic correctly."*
-Substrate storage will write almost any bytes you give it; the
-runtime's interpretation is where the real work happens. Every claim
-in this paper that depends on chain processing has a probe behind it.
+There's a generalisable lesson buried in that paragraph: *"the chain
+accepted the extrinsic"* is not the same as *"the chain processed
+the extrinsic correctly."* Substrate storage will write almost any
+bytes you hand it; the runtime's interpretation of those bytes is
+where the real work happens, and that's the gap where assumptions
+die quietly. Every claim in this paper that depends on chain
+processing has a probe behind it for exactly that reason.
 
 ### 7.5 Indexed Merkle trees
 
 A standard Merkle tree lets you prove "X is a leaf of this tree." An
-indexed Merkle tree (IMT) goes further. Every leaf carries a
-`(key, value, next_key)` triple, where `next_key` points to the
+indexed Merkle tree (IMT) goes one step further. Every leaf carries
+a `(key, value, next_key)` triple, where `next_key` points to the
 next-larger key in sorted order. With that structure you can also
-prove "X is NOT a leaf of this tree" — point at a leaf whose key is
-less than X and whose `next_key` is greater than X. No leaf in between
-means X is not in the tree.
+prove "X is NOT a leaf of this tree" — exhibit a leaf whose key is
+less than X and whose `next_key` is greater than X. No leaf can fit
+in between, so X cannot be in the tree.
 
-We use IMT roots for two things:
+That non-inclusion proof is the property we actually need. We use
+IMT roots for two things:
 
 - **Miner commits root** (in 9.C.1): leaves are
   `(miner_hotkey, blake2b(k_block || k_round || sha256_ct))`. Any
   verifier can check whether a given miner's chain commit was
-  considered by the validator at scoring time.
+  considered by the validator at scoring time — and, just as
+  importantly, whether a miner who claims to have been wrongly
+  excluded actually appears in the tree at all.
 - **Final score root** (in 9.C.2): leaves are
   `(miner_hotkey, score_micro)`. Same check, but for the score the
   validator awarded.
 
-The IMT root is 32 bytes. Inclusion + non-inclusion proofs are
-~16 hashes (2,048 bits) per query. Cheap to compute, cheap to verify.
+The IMT root itself is 32 bytes. Inclusion and non-inclusion proofs
+run ~16 hashes (2,048 bits) per query. Cheap to compute, cheap to
+verify — which is what makes "every miner can audit their own slot"
+practical rather than theatrical.
 
 ---
 
@@ -1136,78 +1159,7 @@ around:
 
 ---
 
-## 15. What ships in v1.0
-
-Here is the inventory, with file paths so you can audit.
-
-### 15.1 Code surface
-
-| Module | Lines | Responsibility |
-|---|---|---|
-| `hope/commitment/canonical.py` | 60 | RFC 8949 §4.2.1 canonical CBOR + AAD |
-| `hope/commitment/drand_lib.py` | 73 | drand quicknet round math + constants |
-| `hope/commitment/imt.py` | 245 | indexed Merkle tree (sorted-leaf) |
-| `hope/commitment/inner_sig.py` | 119 | ed25519 signature over canonical-CBOR |
-| `hope/commitment/on_chain.py` | 460 | 7-variant chain commit helpers |
-| `hope/commitment/prediction_payload.py` | 305 | 9.B miner CBOR + AES-GCM envelope |
-| `hope/commitment/archives.py` | 341 | three-tier client (upload + verified fetch) |
-| `hope/commitment/scoreability.py` | 283 | the 8-check rule with discrete failures |
-| `hope/commitment/scoring_state.py` | 269 | 9.C.1 / 9.C.2 builders + IMT roots |
-| `hope/commitment/retry_log.py` | 167 | 9.C.6 JSON blob builder |
-| `hope/commitment/registration.py` | ~190 | hotkey ↔ ed25519 binding |
-| `hope/commitment/episode_artifacts.py` | 230 | per-episode bundle |
-| `hope/commitment/chain_reader.py` | 270 | substrate-direct reads |
-| `hope/hope_outcomes/release_commit.py` | 170 | 9.A.1 release_commit |
-| `hope/hope_outcomes/reveal_blob.py` | 200 | 9.A.2 reveal blob |
-| `hope/miner/onchain_submitter.py` | 220 | full 9.B pipeline |
-| `hope/miner/runner.py` | 290 | miner CLI — Layer 9.B on-chain submission |
-| `hope/validator/onchain_reader.py` | 218 | chain reads → scoreability per miner |
-| `hope/validator/onchain_runner.py` | 290 | full 9.C orchestration |
-| `hope/validator/weights_commit.py` | 170 | 9.C.3 wrapper |
-| `hope/scoring/onchain_adapter.py` | 320 | EpochScorer adapter + CRPS scorer |
-| `hope/archive_server/app.py` | 280 | FastAPI Tier-2/Tier-3 archive |
-| `hope/archive_server/store.py` | 130 | InMemory + Filesystem stores |
-| `hope/archive_server/metrics.py` | 90 | Prometheus metrics |
-| `hope/hope_shadow_validator/runner.py` | 100 | 9.E shadow wrapper |
-| `scripts/verify_epoch.py` | 600 | public verifier (CLI + library) |
-| `scripts/sn21_keys.py` | 320 | ed25519 key-management CLI |
-| `scripts/score_predictions.py` | 90 | offline scoring tool (miners) |
-| `scripts/train_example_model.py` | — | reference XGBoost training (miners) |
-| `scripts/generate_training_data.py` | — | training-set fetch helper (miners) |
-| `hope/validator/tiered_weights.py` | ~260 | participation gate + EMA tiers + Elite floor |
-
-Total: ~7,500 LOC code, ~6,800 LOC tests. 488 tests pass — see
-`tests/` for the unit, adversarial, and end-to-end surface; lint
-clean under `ruff check`.
-
-### 15.2 Documentation surface
-
-| Doc | Purpose |
-|---|---|
-| `docs/whitepaper.md` | This document. Protocol description, trust model, adversarial matrix. |
-| `docs/SN21_REWARD_MECHANISM.md` | Full reward spec (gates, tiers, EMA, governance). |
-| `docs/SN21_EPOCH_STRUCTURE.md` | Epoch and phase progression. |
-| `docs/miner_quickstart.md` | Miner onboarding tutorial. |
-| `docs/MINER_ECONOMICS.md` | Short reference for how emissions relate to miner behaviour. |
-| `docs/validator_setup.md` | Validator deployment guide. |
-| `deploy/archive_server/README.md` | Archive server deployment (Docker / systemd). |
-| `deploy/grafana/README.md` | Sample Grafana dashboard for archive server metrics. |
-
-### 15.3 Empirical record (testnet 466)
-
-What we've actually run on chain:
-- 4 ed25519 keys generated, mode 0600 PEMs, ALL backed up offline.
-- 1 validator-role registration commit (block 7041171, success=True).
-- 1 9.C.1 pre-scoring TLE commit (success=True, reveal_round 28336161).
-- 1 9.C.3 weights commit via `commit_timelocked_weights` (success=True).
-- 1 9.C.2 post-scoring TLE commit (success=True, reveal_round 28336216).
-- 1 TLE auto-decrypt round-trip (PASS — submit → auto-decrypt → decode in 105s).
-
-Validator running live (chain mode flip pending operator decision).
-
----
-
-## 16. Future expansion
+## 15. Future expansion
 
 The protocol is generic over "predict some future quantity that has
 verifiable ground truth." Google Ads is the v1 target because:
@@ -1221,14 +1173,14 @@ verifiable ground truth." Google Ads is the v1 target because:
 But nothing in the protocol is Google-Ads-specific. The architecture
 generalizes to:
 
-### 16.1 Other ad platforms
+### 15.1 Other ad platforms
 
 Meta, TikTok, LinkedIn — same protocol, different episode schema.
 Adapters live in `hope/protocol/episode.py` and the scoring weights in
 `hope/scoring/weights.py`. A new platform is a new schema + a new
 authoritative oracle.
 
-### 16.2 Other data domains with a similar shape
+### 15.2 Other data domains with a similar shape
 
 Anything where:
 - Inputs are visible to predictors at T=0.
@@ -1240,7 +1192,7 @@ E-commerce demand forecasting fits. Supply chain logistics fit. Crop
 yield forecasting fits. Each requires an authoritative oracle; the
 protocol is otherwise unchanged.
 
-### 16.3 Protocol-level upgrades
+### 15.3 Protocol-level upgrades
 
 - **Per-episode chain commits**: when a future Bittensor runtime allows
   larger `TimelockEncrypted` payloads or batched commits, we can move
@@ -1256,7 +1208,7 @@ protocol is otherwise unchanged.
 
 ---
 
-## 17. Conclusion
+## 16. Conclusion
 
 The mechanism is not subtle. Predictions are committed on chain.
 Outcomes are committed on chain. Scoring is a function of public state.
