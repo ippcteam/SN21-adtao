@@ -50,7 +50,7 @@ hope-archive-server = "hope.archive_server.serve:main"
 hope-score = "scripts.score_predictions:main"
 
 [tool.setuptools.packages.find]
-include = ["hope*"]
+include = ["hope*", "scripts"]
 
 [tool.ruff]
 line-length = 120
