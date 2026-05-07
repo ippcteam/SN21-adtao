@@ -340,6 +340,7 @@ def fetch_chain_view(
     miner_hotkey_ss58_list: list[str],
     timing: TimingBounds,
     block_hash: Optional[str] = None,
+    require_validator_reveals: bool = True,
 ) -> ChainView:
     """Read pre/post scoring CBOR + per-miner triples from a live chain.
 
@@ -402,14 +403,23 @@ def fetch_chain_view(
             continue
 
     if len(plaintexts) < 2:
-        raise RuntimeError(
-            f"validator {validator_hotkey_ss58[:16]}... has fewer than 2 revealed "
-            f"commitments at netuid {netuid}; expected 9.C.1 + 9.C.2. "
-            f"Auto-decrypt may not have fired yet (chain pulls drand pulses on a "
-            f"schedule). If the reveal_round is past, try again in a few minutes."
+        if require_validator_reveals:
+            raise RuntimeError(
+                f"validator {validator_hotkey_ss58[:16]}... has fewer than 2 revealed "
+                f"commitments at netuid {netuid}; expected 9.C.1 + 9.C.2. "
+                f"Auto-decrypt may not have fired yet (chain pulls drand pulses on a "
+                f"schedule). If the reveal_round is past, try again in a few minutes."
+            )
+        # Validator runner first-scoring path: no prior 9.C.1/9.C.2 to read.
+        # The runner is about to CREATE these. Leave pre/post as None.
+        logger.info(
+            "validator %s... has %d revealed commitments (need 2 for audit); "
+            "continuing with empty pre/post blobs (first-scoring path).",
+            validator_hotkey_ss58[:16], len(plaintexts),
         )
-    pre_blob = plaintexts[-2]
-    post_blob = plaintexts[-1]
+    else:
+        pre_blob = plaintexts[-2]
+        post_blob = plaintexts[-1]
 
     miner_states: dict[bytes, ChainMinerState] = {}
     for i, miner_ss58 in enumerate(miner_hotkey_ss58_list):

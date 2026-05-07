@@ -205,6 +205,10 @@ def _run_validator_onchain_cli(args, runner):
         validator_hotkey_ss58=runner.wallet.hotkey.ss58_address,
         miner_hotkey_ss58_list=miner_ss58s,
         timing=timing,
+        # First-scoring path: validator hasn't published 9.C.1/9.C.2 yet —
+        # this run is about to CREATE them. The audit verifier (verify_epoch.py)
+        # uses the default require_validator_reveals=True.
+        require_validator_reveals=False,
     )
 
     miner_inputs: list[MinerOnChainInputs] = []
