@@ -1,0 +1,72 @@
+[project]
+name = "hope-sn21"
+version = "0.1.0"
+description = "Impact Prediction Subnet for Bittensor (SN21)"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "bittensor>=8.0.0",
+    "pydantic>=2.0",
+    "numpy>=1.24",
+    "fastapi>=0.100",
+    "uvicorn>=0.23",
+    "httpx>=0.24",
+    "cryptography>=41.0",
+    "cbor2>=5.6.0",
+    "prometheus-client>=0.19",
+    # `bittensor_drand` (pulled in transitively by bittensor) provides the
+    # general-purpose TLE primitives we need. Phase 0 Q34 confirmed the
+    # `timelock` PyPI package only ships dev wheels (0.0.1.dev0) and is
+    # not needed — bittensor_drand.encrypt(bytes, n_blocks) covers it.
+    #
+    # NOTE: `substrate-interface` is intentionally NOT a direct dep.
+    # bittensor>=10 pulls in `async_substrate_interface` + `cyscale`,
+    # which conflict with the older `scalecodec` namespace that
+    # `substrate-interface` requires. We use `subtensor.substrate.query`
+    # (which is async_substrate_interface under the hood) and
+    # `bittensor_wallet.Keypair` for SS58 decoding.
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "ruff>=0.1",
+    "mypy>=1.5",
+]
+miner = [
+    "xgboost>=2.0",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
+]
+
+[project.scripts]
+hope-miner = "hope.miner.runner:main"
+hope-validator = "hope.validator.runner:main"
+hope-validator-api = "hope.validator.serve:main"
+hope-score = "scripts.score_predictions:main"
+
+[tool.setuptools.packages.find]
+include = ["hope*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+# Integration + diagnostic scripts manipulate sys.path before importing
+# the local `hope` package. The E402 rule fires on those imports; this is
+# intentional, so we silence it per-file rather than scatter inline noqa.
+"scripts/integration/*.py" = ["E402"]
+"scripts/phase0/*.py" = ["E402"]
+"scripts/verify_epoch.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -1,0 +1,12 @@
+{
+  "release_key": "WR-2026-W17-PUB-E1",
+  "total_episodes": 101,
+  "training_episodes": 10,
+  "with_t7_outcomes": 10,
+  "with_t14_outcomes": 10,
+  "schema_version": "v1.9",
+  "action_types": {
+    "BID_STRATEGY_CHANGE": 7,
+    "CAMPAIGN_ENABLE": 2
+  }
+}
