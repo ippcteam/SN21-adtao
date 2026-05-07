@@ -9,7 +9,7 @@ Every score is reproducible by anyone with a chain reader.
 No one — including the operator — can rewrite the record after the fact.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://github.com/ippcteam/tao-discovery/actions/workflows/test.yml/badge.svg)](https://github.com/ippcteam/tao-discovery/actions/workflows/test.yml)
+[![Tests](https://github.com/ippcteam/SN21-adtao/actions/workflows/test.yml/badge.svg)](https://github.com/ippcteam/SN21-adtao/actions/workflows/test.yml)
 
 ---
 
