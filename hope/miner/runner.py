@@ -218,7 +218,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     import bittensor as bt
-    wallet = bt.wallet(name=args.wallet_name, hotkey=args.wallet_hotkey)
+    wallet = bt.Wallet(name=args.wallet_name, hotkey=args.wallet_hotkey)
     hotkey = wallet.hotkey.ss58_address
     logger.info(f"Loaded wallet {args.wallet_name}/{args.wallet_hotkey}: {hotkey[:16]}...")
 

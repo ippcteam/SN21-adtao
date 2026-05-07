@@ -51,7 +51,10 @@ def __getattr__(name):
 
 
 def _publish_metadata_extrinsic():
-    """Backwards-compatible accessor that resolves the lazy attribute."""
+    """Resolve the lazy attribute. Checks globals first so test mocks (placed
+    via mock.patch) take precedence over the live bittensor import."""
+    if "publish_metadata_extrinsic" in globals():
+        return globals()["publish_metadata_extrinsic"]
     return __getattr__("publish_metadata_extrinsic")
 
 # Raw{N} field variant capacities (chain-side `Data` enum range).
@@ -138,7 +141,7 @@ def submit_sha256_commit(
     if len(hash_bytes) != 32:
         raise ValueError(f"hash_bytes must be 32 bytes, got {len(hash_bytes)}")
 
-    response = publish_metadata_extrinsic(  # noqa: F821 — resolved via PEP 562 __getattr__
+    response = _publish_metadata_extrinsic()(
         subtensor=subtensor,
         wallet=wallet,
         netuid=netuid,
@@ -203,7 +206,7 @@ def submit_timelock_commit(
         plaintext_str, blocks_until_reveal, block_time_secs
     )
 
-    response = publish_metadata_extrinsic(  # noqa: F821 — resolved via PEP 562 __getattr__
+    response = _publish_metadata_extrinsic()(
         subtensor=subtensor,
         wallet=wallet,
         netuid=netuid,
@@ -397,7 +400,7 @@ def submit_raw_url_commit_layer_9b(
             f"self_archive_url too long: {n} bytes > {RAW_FIELD_MAX_BYTES}"
         )
 
-    response = publish_metadata_extrinsic(  # noqa: F821 — resolved via PEP 562 __getattr__
+    response = _publish_metadata_extrinsic()(
         subtensor=subtensor,
         wallet=miner_wallet,
         netuid=netuid,
