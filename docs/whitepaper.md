@@ -168,11 +168,13 @@ anyone can act on the underlying data:
   before serving the blob via HTTPS. The operator cannot retroactively
   change which episodes were in scope or what outcomes were measured.
 
-- **Layer 9.B — Miner predictions.** Each miner submits three
-  on-chain commits per epoch — a timelock-encrypted AES key K, the
-  SHA-256 of the AES-encrypted prediction ciphertext, and a self-
-  archive URL. The chain auto-decrypts K only after the deadline. The
-  full prediction never touches operator infrastructure.
+- **Layer 9.B — Miner predictions.** Each miner submits one
+  timelock-encrypted on-chain commit per epoch whose plaintext
+  bundles three values: the AES key K, the SHA-256 of the
+  AES-encrypted prediction ciphertext, and the miner's self-archive
+  URL. The chain auto-decrypts the bundle only after the deadline,
+  surfacing all three values atomically. The full prediction itself
+  never touches operator infrastructure.
 
 - **Layer 9.C — Validator scoring.** Before scoring, each validator
   commits an Indexed Merkle Tree (IMT) root over per-miner chain
@@ -345,15 +347,20 @@ Vera now has everything she needs:
 - The on-chain `release_commit` digest (rules of the epoch).
 - The on-chain `reveal_blob_hash` (with the blob fetchable from
   Hannah's HTTPS).
-- For each miner, three on-chain commits and an off-chain ciphertext.
+- For each miner, one timelock-encrypted on-chain commit (whose
+  plaintext bundles K, SHA-256 of the ciphertext, and the self-archive
+  URL) plus the off-chain ciphertext at that URL.
 
-The drand round of each miner's K commit has by now passed. The chain
-has auto-decrypted K and stored it in `Commitments::RevealedCommitments`.
+The drand round of each miner's bundle commit has by now passed. The
+chain has auto-decrypted the bundle and stored the plaintext in
+`Commitments::RevealedCommitments`.
 
-Vera reads each miner's K from chain. She fetches their AES_ct from
-the archive (any tier; she trusts none of them and verifies the
-SHA-256 against what's on chain). She decrypts AES_ct with K, with
-the epoch ID as AAD. She gets the miner's CBOR plaintext.
+Vera reads each miner's bundle from chain and decodes it into K,
+sha256_ct, and url. She fetches the AES_ct from the URL (which a
+miner may also mirror to operator Tier-2 archives; she trusts none of
+them and verifies SHA-256 against the chain-revealed digest). She
+decrypts AES_ct with K, with the epoch ID as AAD. She gets the
+miner's CBOR plaintext.
 
 She runs **the eight-check scoreability rule** (§8) on each miner.
 Failed checks → that miner is excluded from this epoch. Passed checks
@@ -422,20 +429,27 @@ exhaustive list.
 |---|---|---|---|---|---|
 | 1 | 9.A.1 | Operator | release_commit_digest | Sha256 | Pin epoch rules at T=0 |
 | 2 | 9.A.2 | Operator | reveal_blob_sha256 | Sha256 | Pin measured outcomes at T=deadline+δ |
-| 3 | 9.B.K | Miner | TimelockEncrypted(K) | TimelockEncrypted | The miner's AES key, auto-decrypted by chain at reveal_round |
-| 4 | 9.B.s | Miner | Sha256(AES_ct) | Sha256 | Bind off-chain ciphertext to chain |
-| 5 | 9.B.u | Miner | self_archive_url | Raw{N} | Tier-3 archive location |
-| 6 | 9.C.1 | Validator | pre_scoring_state | TimelockEncrypted | IMT root over miner commits + outcome-fetch round |
-| 7 | 9.C.3 | Validator | weights | (subtensor) | Yuma weights via `commit_timelocked_weights` |
-| 8 | 9.C.2 | Validator | post_scoring_artifacts | TimelockEncrypted | IMT root over scores + scoring-inputs hash + weights block hash |
-| 9 | 9.C.6 | Validator | retry_log_blob_sha256 | Sha256 | Only when ≥1 miner excluded for plaintext_unavailable |
+| 3 | 9.B   | Miner | TimelockEncrypted bundle | TimelockEncrypted | One commit carrying `{K, sha256(AES_ct), self_archive_url}`; chain auto-decrypts at reveal_round and surfaces all three values atomically |
+| 4 | 9.C.1 | Validator | pre_scoring_state | TimelockEncrypted | IMT root over miner commits + outcome-fetch round |
+| 5 | 9.C.3 | Validator | weights | (subtensor) | Yuma weights via `commit_timelocked_weights` |
+| 6 | 9.C.2 | Validator | post_scoring_artifacts | TimelockEncrypted | IMT root over scores + scoring-inputs hash + weights block hash |
+| 7 | 9.C.6 | Validator | retry_log_blob_sha256 | Sha256 | Only when ≥1 miner excluded for plaintext_unavailable |
 
-(Yes that's nine. We say "seven" colloquially because 9.B is naturally
-counted as one layer. Pedants and protocol implementers should count nine.)
+Seven anchors total: two operator, one miner, four validator.
 
-The chain footprint is tight. A miner's epoch costs ~2,174 bytes against
-a 3,100-byte MaxSpace; a validator's costs ~1,960 bytes (2,492 with
-the optional retry log). Both fit in one rate-limit window.
+**Why a single bundled miner commit (and not three separate ones):**
+Substrate's `set_commitment` is single-slot, last-write-wins on
+`CommitmentOf`. A three-extrinsic flow (TLE'd K → Sha256 → Raw URL)
+gets the TLE'd K commit overwritten by the subsequent non-TLE commits
+before its drand reveal_round fires; the chain then has nothing to
+auto-decrypt. Bundling K, sha256(ct), and the URL into one TLE'd
+plaintext eliminates that failure mode entirely. Plaintext stays well
+under the ≤380-byte TLE budget (typical: ~110 bytes).
+
+The chain footprint is tight. A miner's epoch costs ~700 bytes (one
+TimelockEncrypted commit) against a 3,100-byte MaxSpace; a validator's
+costs ~1,960 bytes (2,492 with the optional retry log). All commits
+fit comfortably in one rate-limit window.
 
 ---
 
@@ -580,14 +594,14 @@ practical rather than theatrical.
 ## 8. The eight-check scoreability rule
 
 Eight checks decide whether a miner's submission is scoreable for an
-epoch. Validator Vera reads each miner's three on-chain commits and
+epoch. Validator Vera reads each miner's revealed Layer 9.B bundle and
 the archived AES_ct, then runs the checks below in order. Any failure
 excludes that miner from the epoch with a discrete reason.
 
 | # | Name | What it catches |
 |---|---|---|
-| 1 | `ON_CHAIN_PRESENT` | Miner missing one of the three commits → exclude |
-| 2 | `CIPHERTEXT_MATCH` | SHA-256(AES_ct) doesn't match the chain commit → archive served wrong bytes |
+| 1 | `ON_CHAIN_PRESENT` | Miner has no revealed 9.B bundle → exclude (no submission, or commit was malformed and never auto-decrypted) |
+| 2 | `CIPHERTEXT_MATCH` | SHA-256(AES_ct) doesn't match the bundle's `sha256_ct` → archive served wrong bytes |
 | 3 | `AAD_BIND` | AES-GCM decrypt fails under epoch AAD → cross-epoch replay or wrong K |
 | 4 | `CANONICAL_ENCODING` | Decrypted CBOR doesn't round-trip canonically → malformed input |
 | 5 | `INNER_SIG` | inner_sig invalid OR doesn't match chain hotkey → forgery / wrong miner |

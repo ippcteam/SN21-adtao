@@ -31,6 +31,8 @@ from typing import Optional
 
 import bittensor_drand
 
+from hope.commitment.prediction_payload import build_miner_onchain_bundle
+
 
 # Importing ``bittensor.core.extrinsics.serving`` eagerly triggers
 # bittensor's CLI logging machine, which scans ``sys.argv`` for ``--help``
@@ -342,30 +344,41 @@ def submit_miner_prediction_layer_9b(
     miner_wallet,
     netuid: int,
     aes_key: bytes,
+    sha256_ct: bytes,
+    self_archive_url: str,
     blocks_until_reveal: int,
 ) -> CommitResult:
-    """Layer 9.B — miner timelock-commits the AES key K.
+    """Layer 9.B — miner timelock-commits the {K, sha256(ct), url} bundle.
 
-    The 32-byte AES-GCM key encrypts the off-chain prediction blob.
-    The chain auto-decrypts K at `reveal_round` derived from
-    `blocks_until_reveal`. Anyone can then fetch AES_ct from any of
-    the three archives, decrypt with K, and validate inner_sig.
+    A miner publishes a single TimelockEncrypted commit per epoch whose
+    plaintext is the canonical-CBOR bundle of:
+      - AES-GCM key ``K`` (decrypts the off-chain prediction blob)
+      - ``sha256(AES_ct)`` (binds the off-chain ciphertext)
+      - ``self_archive_url`` (Tier-3 fetch location)
 
-    This helper commits ONLY K. A complete 9.B submission also requires:
-      1. Sha256(AES_ct)        — submit_sha256_commit
-      2. self_archive_url Raw  — submit_raw_url_commit_layer_9b
-    The full miner orchestration lives in `hope/miner/onchain_submitter.py`.
+    The chain auto-decrypts the bundle at the drand round derived from
+    ``blocks_until_reveal``. Validators read the revealed plaintext from
+    `RevealedCommitments`, fetch AES_ct from ``url``, SHA-cross-check,
+    decrypt with ``K``, and verify inner_sig against the on-chain
+    hotkey↔ed25519 binding.
 
-    See `submit_layer_9b_multi_field` for the experimental single-extrinsic
-    path that packs all three fields into one commit (Q36).
+    Why a single bundled commit (and not three separate ones):
+      Substrate's `set_commitment` is single-slot, last-write-wins on
+      `CommitmentOf`. A separate-extrinsics flow (TLE'd K → Sha256 → Raw URL)
+      causes the TLE'd K to be overwritten before its reveal_round fires,
+      so the chain has nothing to auto-decrypt. Bundling all three fields
+      into one TLE'd commit removes the overwriting hazard entirely.
     """
-    if len(aes_key) != 32:
-        raise ValueError(f"aes_key must be 32 bytes (AES-256), got {len(aes_key)}")
+    plaintext = build_miner_onchain_bundle(
+        aes_key=aes_key,
+        sha256_ct=sha256_ct,
+        self_archive_url=self_archive_url,
+    )
     return submit_timelock_commit(
         subtensor=subtensor,
         wallet=miner_wallet,
         netuid=netuid,
-        plaintext=aes_key,
+        plaintext=plaintext,
         blocks_until_reveal=blocks_until_reveal,
     )
 

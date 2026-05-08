@@ -98,14 +98,6 @@ def test_run_epoch_onchain_happy_path(monkeypatch):
             "hope.miner.onchain_submitter.submit_miner_prediction_layer_9b",
             return_value=_ok_commit(7038901, reveal_round=12345710),
         ),
-        patch(
-            "hope.miner.onchain_submitter.submit_sha256_commit",
-            return_value=_ok_commit(7038902),
-        ),
-        patch(
-            "hope.miner.onchain_submitter.submit_raw_url_commit_layer_9b",
-            return_value=_ok_commit(7038903),
-        ),
         # Inject our fake archive client by monkeypatching the default factory
         # in submit_miner_epoch. Easiest path: patch ArchiveClient so
         # submit_miner_epoch's default-construct yields our fake.
@@ -127,9 +119,7 @@ def test_run_epoch_onchain_happy_path(monkeypatch):
 
     assert result.ok
     assert all(r.ok for r in result.archive_uploads)
-    assert result.chain_k_commit.success
-    assert result.chain_sha_commit.success
-    assert result.chain_url_commit.success
+    assert result.chain_bundle_commit.success
 
 
 def test_no_predictions_raises(monkeypatch):

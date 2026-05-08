@@ -100,19 +100,9 @@ class TestHappyPath:
             ]
         client = FakeArchiveClient(factory)
 
-        with (
-            patch(
-                "hope.miner.onchain_submitter.submit_miner_prediction_layer_9b",
-                return_value=_ok_commit(7038901, reveal_round=12345710),
-            ),
-            patch(
-                "hope.miner.onchain_submitter.submit_sha256_commit",
-                return_value=_ok_commit(7038902),
-            ),
-            patch(
-                "hope.miner.onchain_submitter.submit_raw_url_commit_layer_9b",
-                return_value=_ok_commit(7038903),
-            ),
+        with patch(
+            "hope.miner.onchain_submitter.submit_miner_prediction_layer_9b",
+            return_value=_ok_commit(7038901, reveal_round=12345710),
         ):
             result = submit_miner_epoch(
                 subtensor=object(),
@@ -130,33 +120,24 @@ class TestHappyPath:
             )
         assert result.ok
         assert all(r.ok for r in result.archive_uploads)
-        assert result.chain_k_commit.success
-        assert result.chain_sha_commit.success
-        assert result.chain_url_commit.success
+        assert result.chain_bundle_commit.success
         assert result.failure_reason is None
 
     def test_aes_ct_sha_is_consistent_across_pipeline(self, miner_keys, horizons, endpoints):
         sk, pk = miner_keys
-        captured_sha = []
+        captured: list[bytes] = []
 
-        def fake_sha_commit(subtensor, wallet, netuid, hash_bytes, **kwargs):
-            captured_sha.append(hash_bytes)
-            return _ok_commit(7038902)
+        def fake_bundle_commit(*, sha256_ct, **kwargs):
+            captured.append(sha256_ct)
+            return _ok_commit(1, reveal_round=2)
 
         def factory(endpoints, **kwargs):
             return [UploadResult(endpoint=ep, ok=True, status_code=200) for ep in endpoints]
         client = FakeArchiveClient(factory)
 
-        with (
-            patch(
-                "hope.miner.onchain_submitter.submit_miner_prediction_layer_9b",
-                return_value=_ok_commit(1, reveal_round=2),
-            ),
-            patch("hope.miner.onchain_submitter.submit_sha256_commit", side_effect=fake_sha_commit),
-            patch(
-                "hope.miner.onchain_submitter.submit_raw_url_commit_layer_9b",
-                return_value=_ok_commit(3),
-            ),
+        with patch(
+            "hope.miner.onchain_submitter.submit_miner_prediction_layer_9b",
+            side_effect=fake_bundle_commit,
         ):
             result = submit_miner_epoch(
                 subtensor=object(),
@@ -173,8 +154,8 @@ class TestHappyPath:
                 archive_client=client,
             )
         assert result.ok
-        # The SHA we committed on-chain matches SHA(aes_ct).
-        assert captured_sha[0] == hashlib.sha256(result.encrypted.aes_ct).digest()
+        # The SHA we bundled into the on-chain commit matches SHA(aes_ct).
+        assert captured[0] == hashlib.sha256(result.encrypted.aes_ct).digest()
 
 
 class TestFailures:
@@ -212,19 +193,16 @@ class TestFailures:
         p_k.assert_not_called()
 
     def test_chain_k_commit_failure_short_circuits(self, miner_keys, horizons, endpoints):
+        """Bundled commit failure short-circuits the pipeline cleanly."""
         sk, pk = miner_keys
 
         def factory(endpoints, **_):
             return [UploadResult(endpoint=ep, ok=True, status_code=200) for ep in endpoints]
         client = FakeArchiveClient(factory)
 
-        with (
-            patch(
-                "hope.miner.onchain_submitter.submit_miner_prediction_layer_9b",
-                return_value=_bad_commit("RateLimit"),
-            ),
-            patch("hope.miner.onchain_submitter.submit_sha256_commit") as p_sha,
-            patch("hope.miner.onchain_submitter.submit_raw_url_commit_layer_9b") as p_url,
+        with patch(
+            "hope.miner.onchain_submitter.submit_miner_prediction_layer_9b",
+            return_value=_bad_commit("RateLimit"),
         ):
             result = submit_miner_epoch(
                 subtensor=object(),
@@ -241,48 +219,6 @@ class TestFailures:
                 archive_client=client,
             )
         assert not result.ok
-        assert "chain_k_commit_failed" in (result.failure_reason or "")
-        p_sha.assert_not_called()
-        p_url.assert_not_called()
-
-    def test_url_commit_failure_records_partial_state(self, miner_keys, horizons, endpoints):
-        sk, pk = miner_keys
-
-        def factory(endpoints, **_):
-            return [UploadResult(endpoint=ep, ok=True, status_code=200) for ep in endpoints]
-        client = FakeArchiveClient(factory)
-
-        with (
-            patch(
-                "hope.miner.onchain_submitter.submit_miner_prediction_layer_9b",
-                return_value=_ok_commit(1, reveal_round=2),
-            ),
-            patch(
-                "hope.miner.onchain_submitter.submit_sha256_commit",
-                return_value=_ok_commit(2),
-            ),
-            patch(
-                "hope.miner.onchain_submitter.submit_raw_url_commit_layer_9b",
-                return_value=_bad_commit("rate-limited"),
-            ),
-        ):
-            result = submit_miner_epoch(
-                subtensor=object(),
-                miner_wallet=FakeWallet(),
-                netuid=466,
-                epoch_id="EPOCH-A",
-                miner_hotkey=pk,
-                miner_signing_key=sk,
-                submitted_round=12345700,
-                horizons=horizons,
-                self_archive_url="https://m/x",
-                archive_endpoints=endpoints,
-                blocks_until_reveal=300,
-                archive_client=client,
-            )
-        assert not result.ok
-        assert result.chain_k_commit.success
-        assert result.chain_sha_commit.success
-        assert result.chain_url_commit is not None
-        assert not result.chain_url_commit.success
-        assert "chain_url_commit_failed" in (result.failure_reason or "")
+        assert "chain_bundle_commit_failed" in (result.failure_reason or "")
+        assert result.chain_bundle_commit is not None
+        assert not result.chain_bundle_commit.success

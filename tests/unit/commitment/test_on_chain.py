@@ -230,12 +230,14 @@ class TestLayerSpecificHelpers:
         assert mock_publish.call_args.kwargs["data"] == sha
 
     def test_layer_9b_validates_aes_key_length(self):
-        with pytest.raises(ValueError, match="32 bytes"):
+        with pytest.raises(ValueError, match="aes_key"):
             submit_miner_prediction_layer_9b(
                 subtensor=MagicMock(),
                 miner_wallet=MagicMock(),
                 netuid=466,
                 aes_key=b"\x00" * 16,
+                sha256_ct=b"\x11" * 32,
+                self_archive_url="https://archive.example/x",
                 blocks_until_reveal=20,
             )
 
@@ -249,6 +251,8 @@ class TestLayerSpecificHelpers:
             miner_wallet=MagicMock(),
             netuid=466,
             aes_key=b"\xc3" * 32,
+            sha256_ct=b"\xab" * 32,
+            self_archive_url="https://archive.example/miner",
             blocks_until_reveal=20,
         )
         assert mock_publish.call_args.kwargs["data_type"] == "TimelockEncrypted"

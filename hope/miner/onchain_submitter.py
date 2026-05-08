@@ -5,18 +5,23 @@ Pipeline (per epoch, per miner):
   1. build_prediction_plaintext       — gather predictions, attach inner_sig.
   2. encrypt_prediction               — AES-GCM with fresh K, AAD = epoch.
   3. POST AES_ct to all archive tiers — Tier-2 mandatory, others best effort.
-  4. Submit on-chain commits          — three separate extrinsics:
-       a. TimelockEncrypted(K) for auto-decrypt at deadline + safety margin.
-       b. Sha256(AES_ct).
-       c. Raw{N}(self_archive_url).
+  4. Submit ONE on-chain commit       — TimelockEncrypted bundle that carries
+       {K, sha256(AES_ct), self_archive_url}. The chain auto-decrypts the
+       full bundle at the drand reveal_round; validators read all three
+       fields atomically from `RevealedCommitments`.
 
-Step 4 currently runs as three extrinsics (proven path). The single-extrinsic
-multi-field variant in `submit_layer_9b_multi_field` is staged but unverified
-on testnet (see Q36 in the architecture doc).
+Why a single bundled commit (not three separate extrinsics):
+  Substrate's `set_commitment` is single-slot, last-write-wins on
+  `CommitmentOf`. A three-extrinsic flow (TLE'd K → Sha256 → Raw URL) gets
+  the TLE'd K commit overwritten by the subsequent non-TLE commits before
+  its drand reveal_round fires. By the time auto-decrypt runs, the slot is
+  no longer TimelockEncrypted, so the K is permanently lost from the chain
+  reveal path. Bundling all three fields into ONE TLE'd commit removes that
+  failure mode entirely.
 
 A miner that fails step 3 Tier-2 should NOT proceed to step 4 — without a
-durable archive, validators cannot fetch AES_ct after K reveals, and the
-miner will be excluded from scoring with a `plaintext_unavailable` reason.
+durable archive, validators cannot fetch AES_ct after the bundle reveals,
+and the miner will be excluded from scoring with `plaintext_unavailable`.
 """
 
 from __future__ import annotations
@@ -42,8 +47,6 @@ from hope.commitment.episode_artifacts import (
 from hope.commitment.on_chain import (
     CommitResult,
     submit_miner_prediction_layer_9b,
-    submit_raw_url_commit_layer_9b,
-    submit_sha256_commit,
 )
 from hope.commitment.prediction_payload import (
     EncryptedPrediction,
@@ -58,20 +61,28 @@ logger = logging.getLogger(__name__)
 class MinerSubmissionResult:
     """Outcome of one miner's full Layer 9.B submission for one epoch.
 
-    `ok` is True iff a Tier-2 upload succeeded AND all three on-chain extrinsics
+    `ok` is True iff a Tier-2 upload succeeded AND the bundled chain commit
     landed. The breakdown lets the miner runner log per-step outcomes for
     operations and the retry log.
+
+    `chain_bundle_commit` is the TimelockEncrypted commit carrying
+    {K, sha256(AES_ct), self_archive_url}. The legacy fields
+    `chain_sha_commit` / `chain_url_commit` remain on the dataclass as
+    deprecated `None`-valued slots so older log readers don't crash; new
+    code should use `chain_bundle_commit` only.
     """
 
     ok: bool
     encrypted: Optional[EncryptedPrediction]
     archive_uploads: list[UploadResult] = field(default_factory=list)
-    chain_k_commit: Optional[CommitResult] = None
-    chain_sha_commit: Optional[CommitResult] = None
-    chain_url_commit: Optional[CommitResult] = None
+    chain_bundle_commit: Optional[CommitResult] = None
     bundle_uploads: list[UploadResult] = field(default_factory=list)
     episodes_root: Optional[bytes] = None
     failure_reason: Optional[str] = None
+    # Deprecated — retained for backward-compat log readers.
+    chain_k_commit: Optional[CommitResult] = None
+    chain_sha_commit: Optional[CommitResult] = None
+    chain_url_commit: Optional[CommitResult] = None
 
 
 def submit_miner_epoch(
@@ -183,70 +194,36 @@ def submit_miner_epoch(
             failure_reason="tier_2_archive_upload_failed",
         )
 
-    k_commit = submit_miner_prediction_layer_9b(
+    bundle_commit = submit_miner_prediction_layer_9b(
         subtensor=subtensor,
         miner_wallet=miner_wallet,
         netuid=netuid,
         aes_key=encrypted.aes_key,
+        sha256_ct=sha256_ct,
+        self_archive_url=self_archive_url,
         blocks_until_reveal=blocks_until_reveal,
     )
-    if not k_commit.success:
+    if not bundle_commit.success:
         return MinerSubmissionResult(
             ok=False,
             encrypted=encrypted,
             archive_uploads=upload_results,
-            chain_k_commit=k_commit,
-            failure_reason=f"chain_k_commit_failed: {k_commit.message}",
-        )
-
-    sha_commit = submit_sha256_commit(
-        subtensor=subtensor,
-        wallet=miner_wallet,
-        netuid=netuid,
-        hash_bytes=sha256_ct,
-    )
-    if not sha_commit.success:
-        return MinerSubmissionResult(
-            ok=False,
-            encrypted=encrypted,
-            archive_uploads=upload_results,
-            chain_k_commit=k_commit,
-            chain_sha_commit=sha_commit,
-            failure_reason=f"chain_sha_commit_failed: {sha_commit.message}",
-        )
-
-    url_commit = submit_raw_url_commit_layer_9b(
-        subtensor=subtensor,
-        miner_wallet=miner_wallet,
-        netuid=netuid,
-        self_archive_url=self_archive_url,
-    )
-    if not url_commit.success:
-        return MinerSubmissionResult(
-            ok=False,
-            encrypted=encrypted,
-            archive_uploads=upload_results,
-            chain_k_commit=k_commit,
-            chain_sha_commit=sha_commit,
-            chain_url_commit=url_commit,
-            failure_reason=f"chain_url_commit_failed: {url_commit.message}",
+            chain_bundle_commit=bundle_commit,
+            failure_reason=f"chain_bundle_commit_failed: {bundle_commit.message}",
         )
 
     logger.info(
         "miner 9.B submission ok epoch=%s tier_uploads=%s "
-        "k_block=%s sha_block=%s url_block=%s reveal_round=%s",
+        "bundle_block=%s reveal_round=%s",
         epoch_id,
         [(r.endpoint.tier, r.ok) for r in upload_results],
-        k_commit.block_number, sha_commit.block_number, url_commit.block_number,
-        k_commit.reveal_round,
+        bundle_commit.block_number, bundle_commit.reveal_round,
     )
     return MinerSubmissionResult(
         ok=True,
         encrypted=encrypted,
         archive_uploads=upload_results,
-        chain_k_commit=k_commit,
-        chain_sha_commit=sha_commit,
-        chain_url_commit=url_commit,
+        chain_bundle_commit=bundle_commit,
         bundle_uploads=bundle_uploads,
         episodes_root=episodes_root,
     )

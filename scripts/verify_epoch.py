@@ -382,7 +382,7 @@ def fetch_chain_view(
     # strips the prefix and hex-decodes back to original bytes.
     from hope.commitment.chain_reader import (
         decode_revealed_tle_plaintext,
-        read_commitment_of, read_revealed_commitments,
+        read_revealed_commitments,
     )
 
     revealed_val = read_revealed_commitments(
@@ -421,6 +421,12 @@ def fetch_chain_view(
         pre_blob = plaintexts[-2]
         post_blob = plaintexts[-1]
 
+    # Each miner publishes a single TimelockEncrypted bundle per epoch:
+    # CBOR { v, k, h, u } carrying { AES key, sha256(ct), self_archive_url }.
+    # The chain auto-decrypts at the drand reveal_round; we read the bundle
+    # from RevealedCommitments and parse the three fields.
+    from hope.commitment.prediction_payload import parse_miner_onchain_bundle
+
     miner_states: dict[bytes, ChainMinerState] = {}
     for i, miner_ss58 in enumerate(miner_hotkey_ss58_list):
         try:
@@ -432,35 +438,25 @@ def fetch_chain_view(
             subtensor, netuid, miner_ss58, block_hash=block_hash,
         )
         revealed_k: Optional[bytes] = None
+        sha256_ct: Optional[bytes] = None
+        url: Optional[str] = None
         chain_block: Optional[int] = None
+        # Walk reveals newest-last: take the most recent valid bundle.
         for entry in revealed:
             try:
                 payload_bytes = decode_revealed_tle_plaintext(entry.payload_bytes)
             except ValueError:
                 continue
-            # The auto-decrypted K is exactly 32 bytes.
-            if len(payload_bytes) == 32:
-                revealed_k = payload_bytes
-                chain_block = entry.block_number
-
-        # Read latest CommitmentOf for sha256(ct) + self_archive_url. The
-        # chain stores ONE non-TLE entry per (netuid, hotkey) — overwritten
-        # by every new commit. For Phase D production we'd want an archive
-        # node + block-pinned reads; for now we take whatever's latest.
-        sha256_ct: Optional[bytes] = None
-        url: Optional[str] = None
-        fields = read_commitment_of(
-            subtensor, netuid, miner_ss58, block_hash=block_hash,
-        )
-        if fields:
-            for f in fields:
-                if f.variant == "Sha256" and len(f.bytes_) == 32:
-                    sha256_ct = f.bytes_
-                elif f.variant.startswith("Raw"):
-                    try:
-                        url = f.bytes_.decode("utf-8")
-                    except UnicodeDecodeError:
-                        pass
+            try:
+                bundle = parse_miner_onchain_bundle(payload_bytes)
+            except ValueError:
+                # Not a Layer 9.B bundle — skip (could be legacy K-only or
+                # a different commit type from this hotkey).
+                continue
+            revealed_k = bundle["aes_key"]
+            sha256_ct = bundle["sha256_ct"]
+            url = bundle["self_archive_url"]
+            chain_block = entry.block_number
 
         miner_states[miner_pk] = ChainMinerState(
             miner_uid=i,

@@ -334,3 +334,93 @@ def _is_valid_epoch_id(s: str) -> bool:
     if not isinstance(s, str) or not (1 <= len(s) <= 80):
         return False
     return all(("A" <= c <= "Z") or ("0" <= c <= "9") or c == "-" for c in s)
+
+
+# ----------------------------------------------------------------------------
+# Layer 9.B on-chain bundle (single TLE'd commit per miner per epoch).
+#
+# We previously submitted three separate extrinsics (TLE'd K, Sha256(ct), Raw URL)
+# but Substrate's `set_commitment` is single-slot last-write-wins on
+# `CommitmentOf`. Each subsequent commit overwrites the prior; by the time a K
+# commit's drand reveal_round arrives, `CommitmentOf` is no longer
+# TimelockEncrypted, so the chain has nothing to auto-decrypt.
+#
+# Solution: bundle K, sha256(ct), and self_archive_url into ONE TLE'd commit.
+# The chain auto-decrypts at reveal_round and surfaces all three values
+# atomically in `RevealedCommitments` — verifiers read a single state slot
+# and CBOR-decode.
+#
+# Wire format (canonical CBOR map, ≤140 bytes for typical 30-byte URLs):
+#     { "v": 1, "k": bstr(32), "h": bstr(32), "u": tstr }
+# ----------------------------------------------------------------------------
+
+MINER_BUNDLE_VERSION = 1
+MINER_BUNDLE_URL_MAX_BYTES = 128  # matches RAW_FIELD_MAX_BYTES
+
+
+def build_miner_onchain_bundle(
+    *, aes_key: bytes, sha256_ct: bytes, self_archive_url: str,
+) -> bytes:
+    """CBOR-encode the {K, sha256(ct), url} bundle for the Layer 9.B TLE commit.
+
+    Args:
+        aes_key: 32-byte AES-GCM key.
+        sha256_ct: 32-byte SHA-256 of the off-chain AES ciphertext.
+        self_archive_url: Tier-3 archive URL where AES_ct can be fetched
+            after reveal. Must be ≤128 UTF-8 bytes.
+
+    Returns:
+        Canonical CBOR-encoded bytes, suitable as the plaintext to
+        `submit_timelock_commit`. Always ≤ MAX_TLE_PLAINTEXT_BYTES.
+
+    Raises:
+        ValueError: malformed inputs.
+    """
+    if len(aes_key) != 32:
+        raise ValueError(f"aes_key must be 32 bytes, got {len(aes_key)}")
+    if len(sha256_ct) != 32:
+        raise ValueError(f"sha256_ct must be 32 bytes, got {len(sha256_ct)}")
+    url_bytes = self_archive_url.encode("utf-8")
+    if not (1 <= len(url_bytes) <= MINER_BUNDLE_URL_MAX_BYTES):
+        raise ValueError(
+            f"self_archive_url length {len(url_bytes)} out of "
+            f"[1, {MINER_BUNDLE_URL_MAX_BYTES}]"
+        )
+    return canonical_cbor_dumps({
+        "v": MINER_BUNDLE_VERSION,
+        "k": aes_key,
+        "h": sha256_ct,
+        "u": self_archive_url,
+    })
+
+
+def parse_miner_onchain_bundle(plaintext: bytes) -> dict[str, Any]:
+    """Decode an auto-decrypted Layer 9.B TLE plaintext into its three fields.
+
+    Returns a dict with keys ``aes_key``, ``sha256_ct``, ``self_archive_url``,
+    and ``version``. Raises ValueError if the bundle is malformed or carries
+    an unrecognised version.
+    """
+    if not isinstance(plaintext, (bytes, bytearray)) or not plaintext:
+        raise ValueError("empty or non-bytes plaintext")
+    obj = canonical_cbor_loads(plaintext)
+    if not isinstance(obj, dict):
+        raise ValueError(f"bundle is not a CBOR map: {type(obj).__name__}")
+    version = obj.get("v")
+    if version != MINER_BUNDLE_VERSION:
+        raise ValueError(f"unsupported miner bundle version: {version!r}")
+    k = obj.get("k")
+    h = obj.get("h")
+    u = obj.get("u")
+    if not isinstance(k, (bytes, bytearray)) or len(k) != 32:
+        raise ValueError(f"bundle 'k' invalid: {type(k).__name__}")
+    if not isinstance(h, (bytes, bytearray)) or len(h) != 32:
+        raise ValueError(f"bundle 'h' invalid: {type(h).__name__}")
+    if not isinstance(u, str) or not u:
+        raise ValueError(f"bundle 'u' invalid: {type(u).__name__}")
+    return {
+        "version": version,
+        "aes_key": bytes(k),
+        "sha256_ct": bytes(h),
+        "self_archive_url": u,
+    }

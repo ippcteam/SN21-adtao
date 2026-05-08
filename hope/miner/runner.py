@@ -295,10 +295,8 @@ def _run_epoch_onchain_cli(args, runner: "MinerRunner", wallet) -> dict:
     return {
         "ok": result.ok,
         "failure_reason": result.failure_reason,
-        "k_block": result.chain_k_commit.block_number if result.chain_k_commit else None,
-        "sha_block": result.chain_sha_commit.block_number if result.chain_sha_commit else None,
-        "url_block": result.chain_url_commit.block_number if result.chain_url_commit else None,
-        "reveal_round": result.chain_k_commit.reveal_round if result.chain_k_commit else None,
+        "bundle_block": result.chain_bundle_commit.block_number if result.chain_bundle_commit else None,
+        "reveal_round": result.chain_bundle_commit.reveal_round if result.chain_bundle_commit else None,
         "uploads_ok": [(r.endpoint.tier, r.ok) for r in result.archive_uploads],
     }
 
