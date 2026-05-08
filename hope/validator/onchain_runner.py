@@ -211,6 +211,25 @@ def run_epoch_scoring(
             type(e).__name__, str(e)[:120],
         )
 
+    # If NONE of the configured miners have a revealed bundle visible from
+    # this RPC connection, skip the entire scoring run. The 9.C.1 commit
+    # would otherwise consume ~600B of Commitments-pallet budget for an
+    # empty miner_commits root — wasted bytes that hurt later runs in the
+    # same pallet-epoch. The next run (on a synced RPC node, or after the
+    # bundle reveal fires) will pick this up.
+    if miner_inputs and all(inp.revealed_k is None for inp in miner_inputs):
+        return EpochScoringOutcome(
+            miner_reads=[],
+            aborted_reason=(
+                f"no_miner_reveals_visible: 0 of {len(miner_inputs)} miners "
+                f"have a revealed bundle on this RPC connection. Either the "
+                f"bundle reveal hasn't fired yet (wait for next subnet tempo "
+                f"step), the RPC node is stale (retry to land on a different "
+                f"backend), or no miner submitted this epoch. Skipping commits "
+                f"to preserve byte budget."
+            ),
+        )
+
     # ---- 1. read each miner's chain triple + run scoreability ----
     miner_reads: list[MinerReadResult] = []
     score_inputs: dict[bytes, dict[str, Any]] = {}
