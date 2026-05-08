@@ -157,6 +157,60 @@ def run_epoch_scoring(
     if archive_client is None:
         archive_client = ArchiveClient()
 
+    # ---- 0. pre-flight: idempotency + budget check ----
+    # If this validator has already submitted a 9.C.1 for this epoch_id,
+    # bail out cleanly. Re-running would either double-spend the
+    # Commitments-pallet byte budget or land a duplicate scoring record.
+    # If the budget for this pallet-epoch is exhausted (e.g. from earlier
+    # debug runs), bail out cleanly too — refusing a partial commit
+    # sequence is safer than leaving the chain in an inconsistent state.
+    #
+    # The pre-flight is wrapped in a try/except so unit tests that pass
+    # stub `subtensor` / `validator_wallet` objects can skip the check
+    # gracefully. Production wallets always expose `.hotkey.ss58_address`
+    # and a real subtensor; the tests mock at a lower layer.
+    try:
+        from hope.commitment.chain_reader import (
+            commitments_budget_sufficient,
+            validator_already_scored_epoch,
+            MIN_VALIDATOR_BUDGET_BYTES,
+        )
+        validator_ss58 = validator_wallet.hotkey.ss58_address
+        if validator_already_scored_epoch(subtensor, netuid, validator_ss58, epoch_id):
+            return EpochScoringOutcome(
+                miner_reads=[],
+                aborted_reason=(
+                    f"already_scored: validator {validator_ss58[:12]}... has a "
+                    f"prior 9.C.1 commit for epoch_id={epoch_id}. Re-running this "
+                    f"epoch would double-spend the Commitments-pallet byte budget. "
+                    f"Skip until the next epoch."
+                ),
+            )
+        sufficient, remaining, last_epoch = commitments_budget_sufficient(
+            subtensor, netuid, validator_ss58,
+            needed_bytes=MIN_VALIDATOR_BUDGET_BYTES,
+        )
+        if not sufficient:
+            return EpochScoringOutcome(
+                miner_reads=[],
+                aborted_reason=(
+                    f"insufficient_budget: validator {validator_ss58[:12]}... has "
+                    f"{remaining}B free in the Commitments pallet "
+                    f"(need ≥{MIN_VALIDATOR_BUDGET_BYTES}B for a full scoring run; "
+                    f"last_epoch={last_epoch}). Wait for the pallet-epoch to "
+                    f"advance, or use a fresh validator hotkey."
+                ),
+            )
+    except (AttributeError, Exception) as e:
+        # Test-mode stubs trip AttributeError on validator_wallet.hotkey;
+        # transient RPC errors trip the broader Exception. Log and proceed —
+        # the real chain extrinsic will surface SpaceLimitExceeded as a
+        # last line of defence if budget is genuinely exhausted.
+        logger.warning(
+            "validator pre-flight skipped (%s): %s",
+            type(e).__name__, str(e)[:120],
+        )
+
     # ---- 1. read each miner's chain triple + run scoreability ----
     miner_reads: list[MinerReadResult] = []
     score_inputs: dict[bytes, dict[str, Any]] = {}

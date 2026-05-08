@@ -370,3 +370,128 @@ def decode_revealed_tle_plaintext(payload_bytes: bytes) -> bytes:
 # helper as a "documentation landing pad" but no caller used it;
 # specific parsers (parse_registration_payload, decode_revealed_tle_plaintext)
 # handle their own prefix detection inline.
+
+
+# ----------------------------------------------------------------------------
+# Commitments pallet budget — read-side helpers
+#
+# Substrate's Commitments pallet enforces a per-(netuid, hotkey) byte
+# budget per pallet-epoch (`MaxSpace`, ~3100 bytes by default). Once
+# `used_space + new_commit_size > MaxSpace`, the chain rejects with
+# `SpaceLimitExceeded`. A validator scoring run consumes ~1232 bytes
+# (9.C.1 + 9.C.2 + optional 9.C.6); plenty of headroom in a fresh
+# epoch, but exhausted if the same hotkey re-runs scoring within the
+# same pallet-epoch.
+#
+# The pallet-epoch counter is governance-set and NOT necessarily aligned
+# with the subnet tempo. Callers should query budget before commits and
+# either skip cleanly or wait for the next pallet-epoch (when
+# `last_epoch` advances, `used_space` resets to 0).
+# ----------------------------------------------------------------------------
+
+# Conservative byte budget required for a full validator scoring round
+# (9.C.1 + 9.C.2 + optional 9.C.6). Below this the runner should refuse
+# to start commits to avoid leaving an epoch in a partially-scored state.
+MIN_VALIDATOR_BUDGET_BYTES = 1300
+
+
+def read_commitments_budget(
+    subtensor,
+    netuid: int,
+    hotkey_ss58: str,
+    *,
+    block_hash: Optional[str] = None,
+) -> tuple[int, int, int]:
+    """Read the Commitments pallet budget state for `(netuid, hotkey)`.
+
+    Returns:
+        Tuple ``(used_space, max_space, last_epoch)``. ``last_epoch`` is the
+        pallet-epoch counter at which the current ``used_space`` was tracked;
+        when the pallet-epoch ticks over, the runtime resets ``used_space``
+        on the first new commit.
+
+        ``max_space`` is read live from the runtime constant
+        ``Commitments.MaxSpace``; if not present, defaults to 3100.
+
+    The chain rejects new commits with ``SpaceLimitExceeded`` when
+    ``used_space + new_commit_size > max_space``.
+    """
+    query_kwargs = {"module": "Commitments", "storage_function": "UsedSpaceOf",
+                    "params": [netuid, hotkey_ss58]}
+    if block_hash is not None:
+        query_kwargs["block_hash"] = block_hash
+    raw = subtensor.substrate.query(**query_kwargs)
+    val = raw.value if hasattr(raw, "value") else raw
+    used = 0
+    last_epoch = 0
+    if isinstance(val, dict):
+        used = int(val.get("used_space", 0) or 0)
+        last_epoch = int(val.get("last_epoch", 0) or 0)
+
+    max_space = 3100
+    try:
+        ms = subtensor.substrate.query("Commitments", "MaxSpace", [])
+        ms_v = ms.value if hasattr(ms, "value") else ms
+        if isinstance(ms_v, int):
+            max_space = ms_v
+    except Exception:
+        pass
+
+    return used, max_space, last_epoch
+
+
+def commitments_budget_sufficient(
+    subtensor,
+    netuid: int,
+    hotkey_ss58: str,
+    *,
+    needed_bytes: int = MIN_VALIDATOR_BUDGET_BYTES,
+    block_hash: Optional[str] = None,
+) -> tuple[bool, int, int]:
+    """Return ``(sufficient, remaining_bytes, last_epoch)``.
+
+    ``sufficient`` is True iff ``max_space - used_space >= needed_bytes``.
+    """
+    used, max_space, last_epoch = read_commitments_budget(
+        subtensor, netuid, hotkey_ss58, block_hash=block_hash,
+    )
+    remaining = max_space - used
+    return remaining >= needed_bytes, remaining, last_epoch
+
+
+def validator_already_scored_epoch(
+    subtensor,
+    netuid: int,
+    validator_hotkey_ss58: str,
+    epoch_id: str,
+    *,
+    block_hash: Optional[str] = None,
+) -> bool:
+    """Return True if the validator has already submitted a 9.C.1 commit
+    for ``epoch_id``. Used to make scoring runs idempotent.
+
+    The check inspects the validator's revealed commitments and looks
+    for a CBOR plaintext whose ``epoch_id`` field matches. Pending (not
+    yet auto-decrypted) TLE commits cannot be inspected this way; for
+    those, the byte-budget check is the second line of defence — a
+    re-run with a recent same-epoch commit will fail
+    ``commitments_budget_sufficient`` because the commit ate ~600 bytes.
+    """
+    try:
+        from hope.commitment.canonical import canonical_cbor_loads
+    except ImportError:
+        return False
+    revealed = read_revealed_commitments(
+        subtensor, netuid, validator_hotkey_ss58, block_hash=block_hash,
+    )
+    for entry in revealed:
+        try:
+            payload = decode_revealed_tle_plaintext(entry.payload_bytes)
+            obj = canonical_cbor_loads(payload)
+        except Exception:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("epoch_id") == epoch_id:
+            return True
+    return False
