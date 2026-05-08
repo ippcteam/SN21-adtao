@@ -1,0 +1,222 @@
+[
+  {
+    "episode_id": "37b646dcdf02bd6e",
+    "t7": {
+      "cost_delta_pct": -0.080595,
+      "conversions_delta_pct": 0.464286,
+      "efficiency_delta_pct": -0.372113,
+      "goal_miss": 0
+    },
+    "t14": {
+      "cost_delta_pct": 0.11893,
+      "conversions_delta_pct": 0.220238,
+      "efficiency_delta_pct": -0.083023,
+      "goal_miss": 0
+    },
+    "scoring_metadata": {
+      "goal_metric": "CPA",
+      "measurement_resolution": "high",
+      "reliability_weight": 1.0,
+      "baseline_type": "predict_zero",
+      "coverage_status": "baseline"
+    }
+  },
+  {
+    "episode_id": "1f7c119e7c664c15",
+    "t7": {
+      "cost_delta_pct": 0.06057,
+      "conversions_delta_pct": -0.156563,
+      "efficiency_delta_pct": 0.257438,
+      "goal_miss": 0
+    },
+    "t14": {
+      "cost_delta_pct": 0.056109,
+      "conversions_delta_pct": -0.261993,
+      "efficiency_delta_pct": 0.431027,
+      "goal_miss": 0
+    },
+    "scoring_metadata": {
+      "goal_metric": "CPA",
+      "measurement_resolution": "high",
+      "reliability_weight": 1.0,
+      "baseline_type": "predict_zero",
+      "coverage_status": "baseline"
+    }
+  },
+  {
+    "episode_id": "55f0a56d32fd1590",
+    "t7": {
+      "cost_delta_pct": 0.030712,
+      "conversions_delta_pct": -0.346939,
+      "efficiency_delta_pct": 0.578278,
+      "goal_miss": 0
+    },
+    "t14": {
+      "cost_delta_pct": 0.030286,
+      "conversions_delta_pct": -0.047619,
+      "efficiency_delta_pct": 0.0818,
+      "goal_miss": 0
+    },
+    "scoring_metadata": {
+      "goal_metric": "CPA",
+      "measurement_resolution": "high",
+      "reliability_weight": 1.0,
+      "baseline_type": "predict_zero",
+      "coverage_status": "baseline"
+    }
+  },
+  {
+    "episode_id": "17989e9b3a74bc51",
+    "t7": {
+      "cost_delta_pct": -0.25025,
+      "conversions_delta_pct": -0.171429,
+      "efficiency_delta_pct": -0.095129,
+      "goal_miss": 0
+    },
+    "t14": {
+      "cost_delta_pct": -0.298776,
+      "conversions_delta_pct": 0.45,
+      "efficiency_delta_pct": -0.516397,
+      "goal_miss": 0
+    },
+    "scoring_metadata": {
+      "goal_metric": "cost_per_conversion",
+      "measurement_resolution": "high",
+      "reliability_weight": 1.0,
+      "baseline_type": "predict_zero",
+      "coverage_status": "baseline"
+    }
+  },
+  {
+    "episode_id": "53b75e0e5fee9f2b",
+    "t7": {
+      "cost_delta_pct": -0.295263,
+      "conversions_delta_pct": 0.5,
+      "efficiency_delta_pct": -0.530175,
+      "goal_miss": 0
+    },
+    "t14": {
+      "cost_delta_pct": -0.295263,
+      "conversions_delta_pct": 0.5,
+      "efficiency_delta_pct": -0.530175,
+      "goal_miss": 0
+    },
+    "scoring_metadata": {
+      "goal_metric": "CPA",
+      "measurement_resolution": "high",
+      "reliability_weight": 1.0,
+      "baseline_type": "predict_zero",
+      "coverage_status": "baseline"
+    }
+  },
+  {
+    "episode_id": "44f22c5cfe7fe5c0",
+    "t7": {
+      "cost_delta_pct": -0.834702,
+      "conversions_delta_pct": 0.75,
+      "efficiency_delta_pct": -0.905544,
+      "goal_miss": 0
+    },
+    "t14": {
+      "cost_delta_pct": -0.82252,
+      "conversions_delta_pct": 0.113636,
+      "efficiency_delta_pct": -0.84063,
+      "goal_miss": 0
+    },
+    "scoring_metadata": {
+      "goal_metric": "CPA",
+      "measurement_resolution": "high",
+      "reliability_weight": 1.0,
+      "baseline_type": "predict_zero",
+      "coverage_status": "baseline"
+    }
+  },
+  {
+    "episode_id": "3215ca6b95ee7242",
+    "t7": {
+      "cost_delta_pct": 0.191924,
+      "conversions_delta_pct": 0.490683,
+      "efficiency_delta_pct": -0.200418,
+      "goal_miss": 0
+    },
+    "t14": {
+      "cost_delta_pct": 0.227169,
+      "conversions_delta_pct": 0.217391,
+      "efficiency_delta_pct": 0.008032,
+      "goal_miss": 0
+    },
+    "scoring_metadata": {
+      "goal_metric": "CPA",
+      "measurement_resolution": "high",
+      "reliability_weight": 1.0,
+      "baseline_type": "predict_zero",
+      "coverage_status": "baseline"
+    }
+  },
+  {
+    "episode_id": "bfec4337e7af53bc",
+    "t7": {
+      "cost_delta_pct": 0.325248,
+      "conversions_delta_pct": -0.015093,
+      "efficiency_delta_pct": 0.345556,
+      "goal_miss": 0
+    },
+    "t14": {
+      "cost_delta_pct": 0.325248,
+      "conversions_delta_pct": -0.015093,
+      "efficiency_delta_pct": 0.345556,
+      "goal_miss": 0
+    },
+    "scoring_metadata": {
+      "goal_metric": "CPA",
+      "measurement_resolution": "high",
+      "reliability_weight": 1.0,
+      "baseline_type": "predict_zero",
+      "coverage_status": "baseline"
+    }
+  },
+  {
+    "episode_id": "8de2585409fa9ded",
+    "t7": {
+      "cost_delta_pct": 0.381806,
+      "conversions_delta_pct": 1.781818,
+      "efficiency_delta_pct": -0.503272,
+      "goal_miss": 0
+    },
+    "t14": {
+      "cost_delta_pct": 0.258634,
+      "conversions_delta_pct": 1.318182,
+      "efficiency_delta_pct": -0.45706,
+      "goal_miss": 0
+    },
+    "scoring_metadata": {
+      "goal_metric": "CPA",
+      "measurement_resolution": "high",
+      "reliability_weight": 1.0,
+      "baseline_type": "predict_zero",
+      "coverage_status": "baseline"
+    }
+  },
+  {
+    "episode_id": "825e748964ab3ae4",
+    "t7": {
+      "cost_delta_pct": -0.765964,
+      "conversions_delta_pct": -0.704633,
+      "efficiency_delta_pct": -0.207643,
+      "goal_miss": 0
+    },
+    "t14": {
+      "cost_delta_pct": -0.795218,
+      "conversions_delta_pct": -0.741554,
+      "efficiency_delta_pct": -0.207643,
+      "goal_miss": 0
+    },
+    "scoring_metadata": {
+      "goal_metric": "cost_per_conversion",
+      "measurement_resolution": "high",
+      "reliability_weight": 1.0,
+      "baseline_type": "predict_zero",
+      "coverage_status": "baseline"
+    }
+  }
+]

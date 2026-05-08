@@ -1,0 +1,20 @@
+{
+  "_doc": "Recorded-epoch fixture for verifier integration tests. The verifier should return ok=true when fed this truth file alongside a chain artifact whose final_score_root matches scoring with this truth.",
+  "epoch_id": "RECORDED-EPOCH-1",
+  "truth_by_horizon": {
+    "7": {
+      "cost_p50_dpct": 0,
+      "conv_p50_dpct": 0,
+      "eff_p50_dpct": 0,
+      "goal_miss_ppm": 500000,
+      "instab_ppm": 200000
+    },
+    "14": {
+      "cost_p50_dpct": 0,
+      "conv_p50_dpct": 0,
+      "eff_p50_dpct": 0,
+      "goal_miss_ppm": 500000,
+      "instab_ppm": 200000
+    }
+  }
+}
