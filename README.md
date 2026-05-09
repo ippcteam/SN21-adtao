@@ -224,32 +224,49 @@ Validators run scoring orchestration + an HTTP API for miners + a Tier-1 archive
 
 ## Running a miner
 
+The example below targets **testnet 466** — current open environment.
+For mainnet, swap `test` → `finney` and `466` → `21`.
+
 ```bash
 # Clone + install
-git clone <repo-url>
-cd tao-discovery
+git clone https://github.com/ippcteam/SN21-adtao.git
+cd SN21-adtao
 pip install -e ".[miner]"
 
-# Generate an ed25519 key (one-time, separate from your Bittensor hotkey)
-python scripts/sn21_keys.py generate --role miner --output ~/.sn21/keys/miner.pem
+# Create + register a Bittensor wallet (one-time)
+btcli wallet new_coldkey --wallet.name my_miner
+btcli wallet new_hotkey --wallet.name my_miner --wallet.hotkey default
+btcli subnet register --netuid 466 \
+    --wallet.name my_miner --wallet.hotkey default \
+    --subtensor.network test
+# Need testnet TAO? Bittensor Discord faucet: https://discord.gg/bittensor
+
+# Generate an ed25519 key for inner_sig (one-time, separate from the wallet hotkey)
+python scripts/sn21_keys.py generate --role miner --output ~/sn21-miner.pem
 
 # Register the hotkey ↔ ed25519 binding on chain (one-time)
 python scripts/sn21_keys.py register --role miner \
-    --network finney --netuid 21 \
+    --network test --netuid 466 \
     --wallet-name my_miner --wallet-hotkey default \
-    --key ~/.sn21/keys/miner.pem
+    --key ~/sn21-miner.pem
 
-# Train on bundled sample data (10 episodes, known outcomes)
+# Train on bundled sample data (optional — 10 episodes, known outcomes)
 python scripts/train_example_model.py --data-file data/training/training_episodes.json
 
-# Run miner against a live validator (testnet: --bt-network test --netuid 466)
-hope-miner --wallet-name my_miner --validator-url <validator-url>
+# Run miner against the live validator
+hope-miner --validator-url https://validator.adtao.io \
+    --wallet-name my_miner --wallet-hotkey default \
+    --epoch WR-2026-W18-PUB-E1 \
+    --bt-network test --netuid 466 \
+    --archive-tier-2 https://adtao-deploy.onrender.com \
+    --archive-tier-3 https://adtao-deploy.onrender.com \
+    --ed25519-key-file ~/sn21-miner.pem
 
 # Score yourself offline against any release
-python scripts/score_predictions.py --release CURRENT_RELEASE_KEY --run-baseline
+python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
 ```
 
-Full guide: [miner quickstart](docs/miner_quickstart.md).
+Full guide with troubleshooting: [miner quickstart](docs/miner_quickstart.md).
 
 ---
 

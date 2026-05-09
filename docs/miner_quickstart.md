@@ -1,9 +1,13 @@
 # Impact Prediction Subnet (SN21) — Miner Quickstart
 
 **For:** Miners joining the Impact Prediction Subnet on Bittensor
-**Subnet:** SN21 (testnet netuid: 466)
+**Subnet:** SN21 (testnet netuid 466 / mainnet netuid 21)
+**Validator URL:** https://validator.adtao.io
 **Schema:** v1.9 (Phase 1 Epoch 1 — Search campaigns, campaign-level actions)
 **Horizons:** 7-day and 14-day predictions
+
+The example commands in this guide target **testnet 466**. For
+mainnet, swap `test` → `finney` and `466` → `21`.
 
 ---
 
@@ -22,53 +26,85 @@ You output **probabilistic distributions** (P10/P50/P90), not point estimates. Y
 ### Step 1: Install
 
 ```bash
-git clone <repo-url>
-cd tao-discovery
+git clone https://github.com/ippcteam/SN21-adtao.git
+cd SN21-adtao
 pip install -e ".[miner]"
 ```
 
 ### Step 2: Register on the subnet
 
-You **must** register on-chain to participate and earn emissions. Registration burns a small amount of TAO.
+You **must** register on-chain to participate and earn emissions.
+Registration burns a small amount of TAO.
 
 ```bash
 # Create a wallet (if you don't have one)
-btcli wallet create --wallet.name my_miner
+btcli wallet new_coldkey --wallet.name my_miner
 
 # Create a hotkey for mining
-btcli wallet new_hotkey --wallet.name my_miner --hotkey default --n-words 12
+btcli wallet new_hotkey --wallet.name my_miner --wallet.hotkey default
+# (Save the mnemonic in your password manager — never paste it anywhere.)
 
-# Register on SN21 (testnet)
-btcli subnet register --wallet.name my_miner --hotkey default --netuid 466 --network test
+# Register on SN21 (testnet 466)
+btcli subnet register --netuid 466 \
+    --wallet.name my_miner --wallet.hotkey default \
+    --subtensor.network test
 
 # Verify registration
-btcli subnet metagraph --netuid 466 --network test
+btcli subnet metagraph --netuid 466 --subtensor.network test
 ```
 
-Your hotkey address (e.g. `5Hoo2cR...`) is what you pass to `--hotkey`. The validator identifies you by this address when setting weights on-chain. You can find your hotkey address with:
+**Need testnet TAO?** Get free testnet TAO from the Bittensor Discord
+faucet bot:
+- Join: https://discord.gg/bittensor
+- Channel: `#testnet-faucet`
+- Command: `!faucet <your-coldkey-ss58>` (paste your coldkey ss58 from
+  `btcli wallet list --wallet.name my_miner`)
+
+Registration on testnet currently costs ~0.0005 TAO; mainnet pricing
+varies — see `btcli subnet register` output for the live cost.
+
+### Step 3: Generate an ed25519 signing key (required, one-time)
+
+The validator's chain reads your AES-encrypted predictions and
+verifies an ed25519 inner signature against the hotkey↔key binding
+you publish on chain. You need a separate ed25519 PEM file:
 
 ```bash
-btcli wallet list --wallet.name my_miner
+python scripts/sn21_keys.py generate \
+    --role miner \
+    --output ~/sn21-miner.pem
+# Prints the ed25519 public key (safe to share). The private PEM
+# stays on disk at ~/sn21-miner.pem (mode 0600). Save the file or
+# its contents in a password manager — losing it means you can't
+# sign new submissions.
 ```
 
-**Requirements:**
-- TAO in your wallet (testnet: ask in Discord for testnet TAO, mainnet: purchase TAO)
-- Registration costs ~τ1-3 (burned to the subnet)
-- You get a UID on the metagraph after registration
+### Step 4: Register the ed25519 binding on chain (one-time)
 
-### Step 3: Train on historical data (recommended)
-
-Before predicting on live epochs, train a model on past episodes with known outcomes:
+Tells the chain: "ed25519 public key X belongs to my hotkey." Without
+this, validators reject your prediction signatures.
 
 ```bash
-# Download training data (10 episodes with measured t7/t14 outcomes)
-python scripts/generate_training_data.py
-
-# Train an example XGBoost model and compare with baseline
-python scripts/train_example_model.py --data-file data/training/training_episodes.json
+python scripts/sn21_keys.py register \
+    --role miner --network test --netuid 466 \
+    --wallet-name my_miner --wallet-hotkey default \
+    --key ~/sn21-miner.pem
+# Prompts for your coldkey password. Look for `success: True`.
 ```
 
-The training set is bundled in `data/training/training_episodes.json`. Each example has:
+### Step 5: Train on historical data (recommended)
+
+Before predicting on live epochs, train a model on past episodes
+with known outcomes:
+
+```bash
+# Train the example XGBoost model on the bundled sample dataset
+python scripts/train_example_model.py \
+    --data-file data/training/training_episodes.json
+```
+
+The training set is bundled at `data/training/training_episodes.json`
+(10 episodes with measured t7/t14 outcomes). Each example has:
 - `input` — the full episode payload (what you receive during a live epoch)
 - `outcome` — the actual t7/t14 deltas (what really happened)
 
@@ -79,43 +115,74 @@ The training set is bundled in `data/training/training_episodes.json`. Each exam
 > `hope/constants.py:LAUNCH_ACTION_TYPES`
 > (`BUDGET_CHANGE`, `BID_STRATEGY_CHANGE`, `TARGET_VALUE_CHANGE`,
 > `CAMPAIGN_PAUSE`). `CAMPAIGN_ENABLE` will **not** appear in live
-> epochs; `TARGET_VALUE_CHANGE` will. Pull a fresh release with
-> `scripts/generate_training_data.py` once mainnet opens to get
-> launch-enum data.
+> epochs; `TARGET_VALUE_CHANGE` will.
 
-### Step 4: Run the miner
+### Step 6: Run the miner
+
+The complete command for testnet 466:
 
 ```bash
-# Connect to the validator and submit predictions
-hope-miner --wallet-name my_miner --validator-url <validator-url>
-
-# Or specify an epoch explicitly
-hope-miner --wallet-name my_miner --validator-url <validator-url> --epoch WR-2026-W18-PUB-E1
-
-# Or run continuously (polls validator for new epochs every 30s)
-hope-miner --wallet-name my_miner --validator-url <validator-url> --continuous
+hope-miner --validator-url https://validator.adtao.io \
+    --wallet-name my_miner --wallet-hotkey default \
+    --epoch WR-2026-W18-PUB-E1 \
+    --bt-network test --netuid 466 \
+    --archive-tier-2 https://adtao-deploy.onrender.com \
+    --archive-tier-3 https://adtao-deploy.onrender.com \
+    --ed25519-key-file ~/sn21-miner.pem
 ```
 
-**Validator URL:** provided by the operator at registration.
+**What each flag does:**
 
-If no `--epoch` is provided, the miner auto-discovers the current epoch from the validator's `/health` endpoint.
+| Flag | Purpose |
+|---|---|
+| `--validator-url` | Where the miner fetches episodes from. Points at the operator's validator HTTP API. |
+| `--epoch` | Current epoch identifier. Look it up at https://validator.adtao.io/health → `current_epoch` field. |
+| `--archive-tier-2` | Operator-redundancy archive — your AES_ct lands here too. For testnet bootstrap, use the operator's archive at `adtao-deploy.onrender.com`. |
+| `--archive-tier-3` | Your "self-archive" URL — this is the URL announced on chain inside your bundled commit. For testnet bootstrap, sharing the operator's archive is fine. For production, run your own with `hope-archive-server` (see §10). |
+| `--ed25519-key-file` | The PEM you generated in Step 3. |
 
-### Step 5: Check your score
+**Expected output (success):**
 
-After an epoch is scored, check your results:
+```
+Loaded wallet my_miner/default: 5G7Aweu9tqG3QxV...
+Results:
+  ok: True
+  failure_reason: None
+  bundle_block: <chain block where commit landed>
+  reveal_round: 28457883
+  uploads_ok: [(2, True), (3, True)]
+```
+
+The miner submits exactly **one TimelockEncrypted commit per epoch** —
+a CBOR bundle carrying { AES key K, sha256(ciphertext), self-archive
+URL }. The chain auto-decrypts the bundle at the drand reveal round
+(after the prediction deadline passes), then validators read all three
+values atomically.
+
+If the run fails, see §11 (Troubleshooting).
+
+### Step 7: Check your score
+
+The validator scores miners post-deadline at the next subnet
+tempo step (~72 min after the bundle's reveal round on testnet 466).
 
 ```bash
-# Check scores via the validator API
-curl <validator-url>/v1/epochs/WR-2026-W18-PUB-E1/scores
+# Live API: scores once scoring has run for this epoch
+curl https://validator.adtao.io/v1/epochs/WR-2026-W18-PUB-E1/scores
 
-# Or score yourself offline (exact same scoring the validator uses)
+# Independently re-derive scoring from chain state alone
+python scripts/verify_epoch.py \
+    --epoch-id WR-2026-W18-PUB-E1 \
+    --validator-hotkey 5ChwLaQa5TRhboq47eHmw4AHfg6AbGUL4jB26mUxM5n1Zsm1 \
+    --tier-2-base https://adtao-deploy.onrender.com
+
+# Score yourself offline (exact same scoring code the validator uses)
 python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
-
-# Verify the validator didn't cheat (commitment verification)
-curl <validator-url>/v1/epochs/WR-2026-W18-PUB-E1/verification
 ```
 
-The `/scores` endpoint shows your raw score, null penalty, and final score. The `/verification` endpoint reveals outcomes + salt so you can independently verify the commitment hash.
+If `/scores` returns `409 Scoring not yet complete`, the validator's
+on-chain scoring run hasn't fired yet — wait for the next subnet tempo
+step (or check `https://validator.adtao.io/health`).
 
 ---
 
@@ -550,7 +617,8 @@ This runs the exact same scoring pipeline the validator uses.
 
 ## 10. Validator API Reference
 
-All interaction with the validator is via HTTP:
+All interaction with the validator is via HTTP at
+**`https://validator.adtao.io`**.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
@@ -560,10 +628,13 @@ All interaction with the validator is via HTTP:
 | `GET` | `/v1/epochs/{id}/episodes` | Hotkey | List episode metadata |
 | `GET` | `/v1/epochs/{id}/episodes/{ep_id}` | Hotkey | Single episode payload |
 | `GET` | `/v1/epochs/{id}/episodes_batch` | Hotkey | All episodes in one request |
-| `POST` | `/v1/epochs/{id}/predictions` | Hotkey | Submit predictions |
 | `GET` | `/v1/epochs/{id}/commitment` | None | Commitment proof |
 | `GET` | `/v1/epochs/{id}/scores` | None | Per-miner scores (post-scoring) |
 | `GET` | `/v1/epochs/{id}/verification` | None | Revealed outcomes (post-scoring) |
+
+Predictions are submitted **on chain** via your bundled
+TimelockEncrypted commit (Layer 9.B), not via an HTTP POST. The
+`hope-miner` CLI handles this for you.
 
 **Authentication.** When `REQUIRE_SIGNATURES=true` on the validator
 (the launch default), every authenticated request must carry three
@@ -586,15 +657,110 @@ truth.
 If `REQUIRE_SIGNATURES=false` (development only), only `X-Miner-Hotkey`
 is required.
 
-**Validator URL:** provided at registration.
+---
+
+## 11. Troubleshooting
+
+### `bittensor.MaxRetriesExceeded` / `keepalive ping timeout`
+
+The public testnet RPC at `wss://test.finney.opentensor.ai:443` is
+load-balanced across multiple nodes. If the connection times out or
+metadata fetch hangs (~30s), the chain is briefly slow or syncing.
+Retry the same `hope-miner` command 2-3 times — each invocation opens
+a fresh WebSocket and may land on a different backend.
+
+### `wallet hotkey is not ed25519; supply --ed25519-key-file`
+
+You forgot `--ed25519-key-file ~/sn21-miner.pem` on the command. The
+inner_sig requires the ed25519 PEM you generated in Step 3.
+
+### `Subtensor returned: SpaceLimitExceeded(Module)`
+
+Your hotkey hit the per-pallet-epoch byte budget on the Commitments
+pallet (~3100 bytes per `(netuid, hotkey)`). One miner submission
+costs ~600B, and the budget resets per pallet-epoch. If you get this
+error:
+- Don't retry immediately — wait for the next pallet-epoch
+- Or spin up a fresh miner hotkey
+
+This typically only hits if you're scripting many submissions in a
+short window. Normal once-per-epoch operation never sees this.
+
+### `Subnet mechanism 466.0 does not exist`
+
+`--bt-network` and `--netuid` are inconsistent. For testnet use
+`--bt-network test --netuid 466`; for mainnet use
+`--bt-network finney --netuid 21`.
+
+### `validator returns 403 Hotkey not registered on subnet`
+
+You haven't run `btcli subnet register` yet, or the registration
+hasn't propagated to the metagraph. Re-run:
+```bash
+btcli subnet metagraph --netuid 466 --subtensor.network test
+```
+Confirm your hotkey appears in the list.
+
+### `validator returns 422 missing X-Miner-Hotkey`
+
+The miner CLI builds these headers automatically. If you're seeing
+this, you're hitting the API directly with `curl` without signing.
+Use the CLI, or implement the auth headers per §10.
+
+### `hope-miner runs but reveal never happens`
+
+After submitting your bundle, the chain auto-decrypts at the configured
+drand round (default ~1 hour after submission, via
+`--blocks-until-reveal 300`). The chain only processes drand pulses at
+the next subnet tempo step (~72 min on testnet 466), so the bundle's
+plaintext shows up in `RevealedCommitments` shortly after the next
+tempo step boundary. To check directly:
+```python
+import bittensor as bt
+sub = bt.Subtensor(network='test')
+revealed = sub.substrate.query("Commitments", "RevealedCommitments",
+                                [466, "<your-hotkey-ss58>"])
+print(revealed)
+```
+
+### `archive POST returns 5xx`
+
+The Tier-2 / Tier-3 archive endpoint is briefly down. Retry the miner
+run; the archive is restartable and recovers quickly. If persistent,
+report in the SN21 Discord channel.
 
 ---
 
-## 11. Quick Reference
+## 12. Running your own Tier-3 archive (production)
+
+For testnet bootstrap, sharing the operator's archive at
+`https://adtao-deploy.onrender.com` for both Tier-2 and Tier-3 is
+fine. For production, you should run your own:
+
+```bash
+# On a small VM or a Render Web Service
+hope-archive-server --port 8080 --base-dir /var/data/sn21-archive
+```
+
+Your archive must:
+- Accept POSTs to `/archive/{epoch}/{miner_identity}/{sha256_hex}`
+- Serve the same path back via GET
+- Be HTTPS-reachable from the public internet
+
+Then point the miner at your URL via `--archive-tier-3
+https://miner.yourdomain.example`. The chain commit will announce
+this URL inside your bundled TimelockEncrypted plaintext, and
+validators will fetch from there at scoring time.
+
+---
+
+## 13. Quick Reference
 
 | Item | Value |
 |------|-------|
-| Subnet | SN21 (testnet netuid: 466) |
+| Subnet | SN21 (testnet netuid 466 / mainnet netuid 21) |
+| Validator URL | https://validator.adtao.io |
+| Operator archive (Tier-2 / Tier-3 fallback) | https://adtao-deploy.onrender.com |
 | Schema version | v1.9 |
 | Horizons | 7-day, 14-day |
 | Campaign types | SEARCH only (Phase 1) |
@@ -608,7 +774,9 @@ is required.
 | Null penalty | Ramps from 40% to 85% near-zero predictions, max 60% penalty |
 | **Weekly cadence** | Mining: Monday noon EST → Sunday midnight EST (6.5 days) |
 | **Scoring window** | Sunday midnight EST → Monday noon EST (12 hours) |
-| HTTP rate limit | 500 predictions per epoch per miner (`MAX_PREDICTIONS_PER_MINER` in `hope/validator/api/predictions.py`) |
-| Chain commit limit | ~3,100 bytes per (netuid, hotkey) per ~4-hour MaxSpace window (Bittensor pallet level) |
+| Chain commit per epoch | ONE TimelockEncrypted bundle (CBOR `{K, sha256(ct), url}`); decrypted by chain at the drand reveal round |
+| Bittensor pallet budget | 3,100 bytes per (netuid, hotkey) per pallet-epoch — comfortably above one bundle (~110 B) |
 | Training data | `data/training/training_episodes.json` (10 examples) |
 | Offline scoring | `python scripts/score_predictions.py --run-baseline` |
+| Public verifier | `python scripts/verify_epoch.py --epoch-id <id> --validator-hotkey <ss58>` |
+| Faucet (testnet TAO) | https://discord.gg/bittensor → `#testnet-faucet` channel |
