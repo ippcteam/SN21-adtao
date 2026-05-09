@@ -1,0 +1,45 @@
+[Unit]
+Description=SN21 Archive Server (Tier-2 / Tier-3)
+Documentation=https://github.com/hope-protocol/sn21
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sn21
+Group=sn21
+WorkingDirectory=/opt/sn21
+Environment="PYTHONPATH=/opt/sn21"
+Environment="SN21_ARCHIVE_HOST=0.0.0.0"
+Environment="SN21_ARCHIVE_PORT=8080"
+Environment="SN21_ARCHIVE_DIR=/var/lib/sn21-archive"
+Environment="SN21_ARCHIVE_REQUIRE_SIGNED=true"
+Environment="SN21_ARCHIVE_MAX_BODY_BYTES=1048576"
+ExecStart=/opt/sn21/.venv/bin/python /opt/sn21/deploy/archive_server/entrypoint.py
+Restart=on-failure
+RestartSec=5
+
+# Security hardening — uploads are isolated per-archive-dir and the process
+# only needs read/write access to that dir.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/sn21-archive
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+# Resource limits — AES_ct uploads are small + sparse.
+MemoryMax=512M
+CPUQuota=100%
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

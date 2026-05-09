@@ -1,0 +1,66 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg
+.venv/
+venv/
+
+# Environment files — never commit
+.env
+.env.local
+.env.production
+.env.staging
+.envrc
+
+# Cryptographic material — never commit
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+wallet.json
+*.wallet
+
+# ML artifacts (operators may want these locally; not for public repo)
+wandb/
+runs/
+models/
+!hope/miner/models/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+
+# Generated training data — uncomment if your pipeline overwrites the
+# bundled samples; otherwise leave commented to ship the launch sample set.
+# data/training/
+
+# Internal test files (kept locally, not in public repo)
+tests/unit/test_auth_signatures.py
+tests/unit/test_validator_api.py
+tests/unit/test_weight_setter.py
+tests/integration/test_data_client.py
+
+# Internal architecture drafts (iteration only, not in public repo)
+docs/verifiable_scoring_architecture.md
+docs/auditor_review_brief_v0_7.md
+docs/verifiable_scoring_protocol_v1.md
+
+# Phase 0 testnet diagnostic results (per-environment outputs)
+scripts/phase0/results/
+
+# OS + tooling
+.DS_Store
+.claude/
+
+# Operator-local secrets record (paths + pubkeys; PEMs live in ~/.sn21/keys/)
+docs/local_keys.md
+.coverage
