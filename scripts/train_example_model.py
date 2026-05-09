@@ -25,104 +25,11 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-
-def extract_features(episode: dict) -> dict:
-    """Extract predictive features from an episode.
-
-    This is where the real miner value-add is. Better features = better model.
-    """
-    acct = episode.get("account_state", {})
-    pw = episode.get("pre_window", {})
-    ab = episode.get("action_bundle", {})
-    agg = pw.get("account_aggregates", {})
-
-    # Campaign time series (first campaign)
-    campaigns = pw.get("campaigns", {})
-    camp = list(campaigns.values())[0] if campaigns else {}
-    cost = np.array(camp.get("cost_micros", [0] * 60), dtype=float)
-    conv = np.array(camp.get("conversions", [0.0] * 60), dtype=float)
-    imp_share = np.array(camp.get("impression_share", [0.0] * 60), dtype=float)
-
-    # Active days (non-zero cost)
-    active_mask = cost > 0
-    active_days = active_mask.sum()
-
-    # --- TREND FEATURES ---
-    if active_days >= 14:
-        cost_recent = cost[-14:][cost[-14:] > 0]
-        cost_early = cost[:14][cost[:14] > 0]
-        cost_trend = (cost_recent.mean() - cost_early.mean()) / max(cost_early.mean(), 1) if len(cost_early) > 0 and len(cost_recent) > 0 else 0
-    else:
-        cost_trend = 0
-
-    # --- VOLATILITY FEATURES ---
-    active_cost = cost[active_mask]
-    cost_cv = float(np.std(active_cost) / np.mean(active_cost)) if len(active_cost) > 1 and np.mean(active_cost) > 0 else 0
-    active_conv = conv[conv > 0]
-    conv_cv = float(np.std(active_conv) / np.mean(active_conv)) if len(active_conv) > 1 and np.mean(active_conv) > 0 else 0
-
-    # --- ACTION FEATURES ---
-    actions = ab.get("actions", [])
-    action = actions[0] if actions else {}
-    action_type = action.get("type", "UNKNOWN")
-    summary = ab.get("bundle_summary", {})
-
-    # Magnitude
-    magnitude = action.get("magnitude", {})
-    spend_change_expected = 0.0
-    if isinstance(magnitude, dict):
-        scp = magnitude.get("spend_change_pct", {})
-        if isinstance(scp, dict):
-            spend_change_expected = scp.get("expected", 0.0)
-        elif isinstance(scp, (int, float)):
-            spend_change_expected = float(scp)
-
-    # --- ACCOUNT FEATURES ---
-    goal = acct.get("goal", {})
-    goal_deviation = goal.get("deviation", 0) if goal else 0
-    goal_target = goal.get("target", 0) if goal else 0
-
-    # Encode action type as numeric
-    action_type_map = {
-        "BUDGET_CHANGE": 0,
-        "BID_STRATEGY_CHANGE": 1,
-        "TARGET_VALUE_CHANGE": 2,
-        "CAMPAIGN_PAUSE": 3,
-        "CAMPAIGN_ENABLE": 4,
-    }
-
-    features = {
-        # Time series stats
-        "avg_daily_cost": float(np.mean(active_cost)) if len(active_cost) > 0 else 0,
-        "avg_daily_conv": float(np.mean(active_conv)) if len(active_conv) > 0 else 0,
-        "cost_trend": cost_trend,
-        "cost_cv": cost_cv,
-        "conv_cv": conv_cv,
-        "active_days": int(active_days),
-        "avg_imp_share": float(np.mean(imp_share[imp_share > 0])) if np.any(imp_share > 0) else 0,
-
-        # Account aggregates
-        "agg_spend_cv": agg.get("spend_cv", 0),
-        "agg_cpc_trend": agg.get("cpc_trend", 0),
-        "agg_avg_roas": agg.get("avg_roas", 0),
-
-        # Action
-        "action_type": action_type_map.get(action_type, -1),
-        "spend_change_expected": spend_change_expected,
-        "has_destructive": int(summary.get("has_destructive", False)),
-        "has_improvement": int(summary.get("has_improvement", False)),
-        "max_risk_score": summary.get("max_risk_score", 0),
-        "action_count": summary.get("action_count", 0),
-
-        # Account
-        "goal_deviation": goal_deviation,
-        "goal_target": goal_target,
-        "spend_bucket": {"micro": 0, "low": 1, "mid": 2, "high": 3}.get(
-            acct.get("spend_bucket", "mid"), 2
-        ),
-    }
-
-    return features
+# Use the shared feature extractor — same code path runs at training time
+# (here) and at inference time (hope-miner --model trained). Drift between
+# the two is what causes "trained model performs differently in production"
+# bugs, so we keep one implementation.
+from hope.miner.models.feature_extraction import extract_features  # noqa: E402
 
 
 def extract_targets(outcome: dict) -> dict:
@@ -153,6 +60,9 @@ def main():
                         help="Path to training_episodes.json")
     parser.add_argument("--validator-url", type=str, default=None,
                         help="Validator URL to fetch training data")
+    parser.add_argument("--save-model", type=str, default=None,
+                        help="Save the trained model to this path "
+                             "(loadable via `hope-miner --model trained --model-file <path>`)")
     args = parser.parse_args()
 
     # Load training data
@@ -367,6 +277,28 @@ def main():
     print(f"  {'Trained XGBoost':<20} {trained.raw_score:>8.4f} {trained.null_penalty:>8.4f} {trained.final_score:>8.4f} {trained.episodes_scored:>8}")
     print(f"  {'Baseline':<20} {base.raw_score:>8.4f} {base.null_penalty:>8.4f} {base.final_score:>8.4f} {base.episodes_scored:>8}")
     print(f"\n  Trained model is {trained.final_score / max(base.final_score, 0.0001):.1f}x the baseline score")
+
+    # =====================================================
+    # STEP 5: Save model (so the miner can use it)
+    # =====================================================
+    if args.save_model:
+        try:
+            import joblib
+        except ImportError:
+            print("\nERROR: --save-model requires joblib. Install with: pip install joblib")
+            sys.exit(1)
+        from pathlib import Path
+        out = Path(args.save_model).expanduser()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump({
+            "version": 1,
+            "feature_names": feature_names,
+            "model_cost": model_cost,
+            "model_conv": model_conv,
+        }, out)
+        print(f"\n  ✓ Saved model to {out}")
+        print("    Use it with:")
+        print(f"      hope-miner --model trained --model-file {out} ...")
 
 
 if __name__ == "__main__":

@@ -197,7 +197,12 @@ def main():
     parser.add_argument("--epoch", type=str, required=True,
                         help="Epoch ID (release_key) to submit predictions for")
     parser.add_argument("--model", type=str, default="baseline",
-                        choices=["baseline"], help="Prediction model")
+                        choices=["baseline", "trained"],
+                        help="Prediction model. 'baseline' = bundled reference model. "
+                             "'trained' = load a model file produced by "
+                             "`scripts/train_example_model.py --save-model <path>`.")
+    parser.add_argument("--model-file", type=str, default=None,
+                        help="Path to a saved model file (required when --model trained).")
     parser.add_argument("--netuid", type=int, default=21,
                         help="Subtensor netuid (default: 21 mainnet; testnet is 466)")
     parser.add_argument("--bt-network", default="finney",
@@ -222,14 +227,30 @@ def main():
     hotkey = wallet.hotkey.ss58_address
     logger.info(f"Loaded wallet {args.wallet_name}/{args.wallet_hotkey}: {hotkey[:16]}...")
 
+    if args.model == "trained":
+        if not args.model_file:
+            parser.error("--model trained requires --model-file <path>")
+        from hope.miner.models.trained import TrainedXGBoostModel
+        model_instance = TrainedXGBoostModel(args.model_file)
+    else:
+        model_instance = BaselineModel()
+
     runner = MinerRunner(
-        model=BaselineModel(),
+        model=model_instance,
         hotkey=hotkey,
         wallet=wallet,
         validator_url=args.validator_url,
     )
 
-    result = _run_epoch_onchain_cli(args, runner, wallet)
+    try:
+        result = _run_epoch_onchain_cli(args, runner, wallet)
+    except RuntimeError as e:
+        # episode_client raises RuntimeError with a translated message for
+        # validator HTTP errors (401/403/404/422). Surface it cleanly so
+        # the miner sees actionable text instead of a traceback.
+        import sys as _sys
+        print(f"\n❌ {e}", file=_sys.stderr)
+        _sys.exit(1)
     print("\nResults:")
     for k, v in result.items():
         print(f"  {k}: {v}")

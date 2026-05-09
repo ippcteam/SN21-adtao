@@ -30,6 +30,31 @@ from hope.protocol.outcomes import Outcome
 from hope.scoring import EpochScorer, ScoringWeights
 
 
+def load_from_training_file(path: str):
+    """Load episodes + outcomes from a `training_episodes.json` bundle.
+
+    The training file is a list of `{"input": <episode>, "outcome": {...}}`.
+    We synthesise an Outcome per example whose t7 / t14 fields carry the
+    measured deltas. Returns `(episodes, file_predictions, outcomes)` to
+    match the shape of `load_from_files` so the calling code is uniform.
+    """
+    with open(path) as f:
+        examples = json.load(f)
+    episodes: list[Episode] = []
+    outcomes: list[Outcome] = []
+    for ex in examples:
+        ep = Episode.model_validate(ex["input"])
+        episodes.append(ep)
+        oc = ex.get("outcome") or {}
+        # Outcome.model_validate is permissive about missing horizons.
+        outcomes.append(Outcome.model_validate({
+            "episode_id": ep.episode_metadata.episode_id,
+            "t7": oc.get("t7"),
+            "t14": oc.get("t14"),
+        }))
+    return episodes, {}, outcomes
+
+
 def load_from_files(episodes_path: str, predictions_path: str, outcomes_path: str):
     """Load episodes, predictions, and outcomes from JSON files."""
     with open(episodes_path) as f:
@@ -82,14 +107,26 @@ def run_baseline(episodes: list[Episode]) -> dict[str, list[Prediction]]:
 
 def main():
     parser = argparse.ArgumentParser(description="the operator SN21 Offline Scoring Tool")
-    parser.add_argument("--release", type=str, help="Release key to fetch from data API")
+    parser.add_argument("--release", type=str,
+                        help="Release key to fetch from operator data API. "
+                             "Requires HOPE_API_KEY (operator-issued) — see --help for "
+                             "the offline-only path that skips this.")
     parser.add_argument("--episodes", type=str, help="Path to episodes JSON file")
     parser.add_argument("--predictions", type=str, help="Path to predictions JSON file")
     parser.add_argument("--outcomes", type=str, help="Path to outcomes JSON file")
-    parser.add_argument("--run-baseline", action="store_true", help="Run baseline model and score it")
+    parser.add_argument("--run-baseline", action="store_true",
+                        help="Run baseline model and score it")
+    parser.add_argument("--training-data", type=str, default=None,
+                        help="Path to training_episodes.json — uses bundled offline "
+                             "data instead of fetching from the operator API. "
+                             "Default fallback: data/training/training_episodes.json "
+                             "when --release is given without HOPE_API_KEY.")
     parser.add_argument("--api-key", type=str, default=os.environ.get("HOPE_API_KEY", ""),
-                        help="data API key (or set HOPE_API_KEY env var)")
-    parser.add_argument("--api-url", type=str, default=None, help="Override data API base URL")
+                        help="Operator data API key (or HOPE_API_KEY env var). "
+                             "ONLY needed for --release fetches against the live API. "
+                             "Most miner self-scoring should use --training-data instead.")
+    parser.add_argument("--api-url", type=str, default=None,
+                        help="Override data API base URL")
     parser.add_argument("--verbose", action="store_true", help="Show per-episode scores")
     args = parser.parse_args()
 
@@ -98,8 +135,38 @@ def main():
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
+    # Resolve a sensible training_data fallback for offline scoring when
+    # --release is given without an API key. Miners shouldn't need an
+    # operator-issued key to self-score against the bundled examples.
+    if args.release and not args.api_key and not args.training_data:
+        from pathlib import Path
+        bundled = Path(__file__).resolve().parent.parent / "data" / "training" / "training_episodes.json"
+        if bundled.exists():
+            print(
+                f"\n⚠️  No HOPE_API_KEY set — falling back to bundled training data "
+                f"at {bundled}.\n"
+                f"   This scores against the {len(json.load(open(bundled)))}-example "
+                f"sample dataset, not the live release.\n"
+                f"   Pass --training-data <path> to override or set HOPE_API_KEY for "
+                f"live data.\n"
+            )
+            args.training_data = str(bundled)
+            args.release = None  # consumed; switch to local-file path
+
     # Load data
-    if args.release:
+    if args.training_data:
+        print(f"Loading offline training data from {args.training_data}...")
+        episodes, file_predictions, outcomes = load_from_training_file(args.training_data)
+        print(f"  Episodes: {len(episodes)}, outcomes: {len(outcomes)}")
+    elif args.release:
+        if not args.api_key:
+            print(
+                "Error: --release fetches from the operator API, which requires HOPE_API_KEY.\n"
+                "       For miner self-scoring, use --training-data <path> instead "
+                "(or omit it to use the bundled fallback).",
+                file=sys.stderr,
+            )
+            sys.exit(2)
         print(f"Fetching data from data API for {args.release}...")
         loop = asyncio.new_event_loop()
         episodes, outcomes = loop.run_until_complete(
@@ -114,7 +181,7 @@ def main():
             args.episodes, args.predictions or args.episodes, args.outcomes
         )
     else:
-        print("Error: provide --release or --episodes/--outcomes")
+        print("Error: provide --release, --episodes/--outcomes, or --training-data")
         sys.exit(1)
 
     # Get predictions

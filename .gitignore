@@ -33,6 +33,7 @@ wallet.json
 wandb/
 runs/
 models/
+!hope/miner/models/
 checkpoints/
 *.ckpt
 *.pt

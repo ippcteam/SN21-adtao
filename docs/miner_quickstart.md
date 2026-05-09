@@ -37,21 +37,51 @@ You **must** register on-chain to participate and earn emissions.
 Registration burns a small amount of TAO.
 
 ```bash
-# Create a wallet (if you don't have one)
+# Create a coldkey (the keys-of-keys for your wallet)
 btcli wallet new_coldkey --wallet.name my_miner
+```
 
-# Create a hotkey for mining
+`btcli` will prompt you for three things — what to enter:
+
+| Prompt | What to enter |
+|---|---|
+| `Enter the path to the wallets directory:` | Press **Enter** to accept the default `~/.bittensor/wallets/` |
+| `Choose the number of words [12/15/18/21/24]:` | Type `12` and Enter (12 is the default; gives 128 bits of entropy) |
+| `Specify password for key encryption:` | Pick a strong password and **save it in your password manager**. You'll need it for every chain transaction. |
+| `Retype your password:` | Same password again |
+
+**The mnemonic prints to your terminal.** Read it from the screen and
+write it directly into your password manager. **Never copy/paste it
+anywhere else** — terminal output goes to scrollback, screenshot tools,
+clipboard managers. After saving, run `clear` to wipe scrollback.
+
+```bash
+# Create a hotkey under that coldkey (the per-purpose signing key)
 btcli wallet new_hotkey --wallet.name my_miner --wallet.hotkey default
-# (Save the mnemonic in your password manager — never paste it anywhere.)
+```
 
+Same flow — choose `12` words, save the mnemonic in your password
+manager, run `clear`. The hotkey is stored unencrypted (no password
+prompt), which is intentional — it's for automated signing.
+
+```bash
 # Register on SN21 (testnet 466)
 btcli subnet register --netuid 466 \
     --wallet.name my_miner --wallet.hotkey default \
     --subtensor.network test
+```
 
+This shows the registration cost (~0.0005 τ on testnet), asks
+`Do you want to continue? [y/n]:` (type `y`), then prompts
+`Enter your password:` — that's the **coldkey password** from the
+first command above.
+
+```bash
 # Verify registration
 btcli subnet metagraph --netuid 466 --subtensor.network test
 ```
+
+Your hotkey ss58 should appear in the list with a UID assigned.
 
 **Need testnet TAO?** Get free testnet TAO from the Bittensor Discord
 faucet bot:
@@ -59,6 +89,10 @@ faucet bot:
 - Channel: `#testnet-faucet`
 - Command: `!faucet <your-coldkey-ss58>` (paste your coldkey ss58 from
   `btcli wallet list --wallet.name my_miner`)
+
+**SN21-specific community channel:**
+[adtao SN21 #general](https://discord.com/channels/799672011265015819/1489651673944297472)
+— for protocol questions, announcements, and operator support.
 
 Registration on testnet currently costs ~0.0005 TAO; mainnet pricing
 varies — see `btcli subnet register` output for the live cost.
@@ -170,15 +204,28 @@ tempo step (~72 min after the bundle's reveal round on testnet 466).
 # Live API: scores once scoring has run for this epoch
 curl https://validator.adtao.io/v1/epochs/WR-2026-W18-PUB-E1/scores
 
-# Independently re-derive scoring from chain state alone
+# Independently re-derive scoring from chain state alone (testnet)
 python scripts/verify_epoch.py \
     --epoch-id WR-2026-W18-PUB-E1 \
+    --network test --netuid 466 \
     --validator-hotkey 5ChwLaQa5TRhboq47eHmw4AHfg6AbGUL4jB26mUxM5n1Zsm1 \
     --tier-2-base https://adtao-deploy.onrender.com
 
-# Score yourself offline (exact same scoring code the validator uses)
-python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
+# Score yourself offline against the bundled sample data
+python scripts/score_predictions.py \
+    --training-data data/training/training_episodes.json \
+    --run-baseline
 ```
+
+This runs the exact same scoring code the validator uses, against the
+10-example sample dataset bundled in the repo.
+
+> Note: you might see references to `HOPE_API_KEY` and a `--release`
+> mode in the script's `--help`. Those are operator-only — `HOPE_API_KEY`
+> is the operator's credential to the data backend that produces
+> releases, and there's no way (or reason) for a miner to obtain one.
+> Your real epoch score lives at `/v1/epochs/{id}/scores` on the validator
+> once scoring runs; offline self-scoring uses `--training-data`.
 
 If `/scores` returns `409 Scoring not yet complete`, the validator's
 on-chain scoring run hasn't fired yet — wait for the next subnet tempo
@@ -568,7 +615,26 @@ prediction = Prediction(
 
 Ordered by expected impact:
 
-1. **Use the training data.** `data/training/training_episodes.json` has 10 examples with known outcomes. `scripts/train_example_model.py` shows how to build a 1.5x baseline model with XGBoost.
+1. **Train a model and run it.** Use the bundled training data + reference
+   trainer, save the result, and load it into the miner runner:
+   ```bash
+   # Train + save (one line, end-to-end)
+   python scripts/train_example_model.py \
+       --data-file data/training/training_episodes.json \
+       --save-model ~/sn21-miner-trained.pkl
+
+   # Run the miner with the saved model (substitute for --model baseline)
+   hope-miner --model trained --model-file ~/sn21-miner-trained.pkl \
+       --validator-url https://validator.adtao.io \
+       --wallet-name my_miner --wallet-hotkey default \
+       --epoch WR-2026-W18-PUB-E1 \
+       --bt-network test --netuid 466 \
+       --archive-tier-2 https://adtao-deploy.onrender.com \
+       --archive-tier-3 https://adtao-deploy.onrender.com \
+       --ed25519-key-file ~/sn21-miner.pem
+   ```
+   The bundled trainer gets ~1.5× the baseline score on the sample
+   dataset. Better features and more data will compound from there.
 
 2. **Learn portfolio redistribution.** The interaction between constraint_level, redistribution_likelihood, and action type is the biggest gap in baseline estimates.
 
@@ -608,10 +674,14 @@ assert computed == verification["commitment_hash"], "Validator changed outcomes!
 ### Score yourself locally
 
 ```bash
-python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
+python scripts/score_predictions.py \
+    --training-data data/training/training_episodes.json --run-baseline
 ```
 
-This runs the exact same scoring pipeline the validator uses.
+This runs the exact same scoring pipeline the validator uses, against
+the 10-example sample dataset bundled in the repo. Public miners do
+not need any operator credentials for this — the `--release` /
+`HOPE_API_KEY` path in the script is operator-only.
 
 ---
 
@@ -777,6 +847,6 @@ validators will fetch from there at scoring time.
 | Chain commit per epoch | ONE TimelockEncrypted bundle (CBOR `{K, sha256(ct), url}`); decrypted by chain at the drand reveal round |
 | Bittensor pallet budget | 3,100 bytes per (netuid, hotkey) per pallet-epoch — comfortably above one bundle (~110 B) |
 | Training data | `data/training/training_episodes.json` (10 examples) |
-| Offline scoring | `python scripts/score_predictions.py --run-baseline` |
+| Offline scoring | `python scripts/score_predictions.py --training-data data/training/training_episodes.json --run-baseline` |
 | Public verifier | `python scripts/verify_epoch.py --epoch-id <id> --validator-hotkey <ss58>` |
 | Faucet (testnet TAO) | https://discord.gg/bittensor → `#testnet-faucet` channel |

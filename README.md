@@ -262,8 +262,9 @@ hope-miner --validator-url https://validator.adtao.io \
     --archive-tier-3 https://adtao-deploy.onrender.com \
     --ed25519-key-file ~/sn21-miner.pem
 
-# Score yourself offline against any release
-python scripts/score_predictions.py --release WR-2026-W18-PUB-E1 --run-baseline
+# Score yourself offline against the bundled sample dataset (no API key needed)
+python scripts/score_predictions.py \
+    --training-data data/training/training_episodes.json --run-baseline
 ```
 
 Full guide with troubleshooting: [miner quickstart](docs/miner_quickstart.md).

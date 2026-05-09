@@ -646,11 +646,25 @@ def _build_argparser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    args = _build_argparser().parse_args(argv)
+    parser = _build_argparser()
+    # Detect when the user is implicitly using mainnet defaults so we can warn
+    # before silently hitting the wrong chain. ``argv``-aware so we don't
+    # false-positive when the user passed `--network finney` explicitly.
+    raw_argv = argv if argv is not None else sys.argv[1:]
+    network_explicit = any(a == "--network" or a.startswith("--network=") for a in raw_argv)
+    netuid_explicit = any(a == "--netuid" or a.startswith("--netuid=") for a in raw_argv)
+    args = parser.parse_args(argv)
 
     print("verify_epoch.py — SN21 public verifier", file=sys.stderr)
     print(f"  epoch_id={args.epoch_id}", file=sys.stderr)
     print(f"  netuid={args.netuid} network={args.network}", file=sys.stderr)
+    if not network_explicit and not netuid_explicit:
+        print(
+            "  ⚠️  Using default mainnet (network=finney, netuid=21).\n"
+            "     For testnet, pass --network test --netuid 466.\n"
+            "     For mainnet, pass --network finney --netuid 21 to silence this notice.",
+            file=sys.stderr,
+        )
 
     # Validate the validator hotkey early so a typo produces a clean error
     # rather than a noisy ValueError from inside the SCALE codec.
