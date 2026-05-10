@@ -315,6 +315,13 @@ python scripts/verify_epoch.py \
 # Add --truth-file path/to/truth.json for full score recomputation
 ```
 
+The chain-integrity mode requires only chain access + a Tier-2 URL.
+The full-recompute mode additionally needs a `--truth-file` derived
+from the operator's 9.A.2 reveal blob; that artifact is operator-published
+post-deadline and isn't yet hosted at a stable public URL on testnet 466.
+Until that lands, the chain-integrity check is the practical
+miner-runnable verifier path.
+
 For block-pinned reads of past epochs, the chain RPC must be an
 **archive node**. Standard `finney` RPCs only retain the last ~256
 blocks.

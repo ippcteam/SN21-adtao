@@ -81,7 +81,14 @@ first command above.
 btcli subnet metagraph --netuid 466 --subtensor.network test
 ```
 
-Your hotkey ss58 should appear in the list with a UID assigned.
+The Rich-formatted table truncates the SS58 column to `5…` on most
+terminals. To confirm your full hotkey is registered, drop into Python:
+```python
+import bittensor as bt
+mg = bt.Subtensor(network='test').metagraph(netuid=466)
+print('your hotkey present:', '<your-ss58>' in mg.hotkeys)
+print('your UID:', mg.hotkeys.index('<your-ss58>') if '<your-ss58>' in mg.hotkeys else 'NOT REGISTERED')
+```
 
 **Need testnet TAO?** Get free testnet TAO from the Bittensor Discord
 faucet bot:
@@ -633,8 +640,14 @@ Ordered by expected impact:
        --archive-tier-3 https://adtao-deploy.onrender.com \
        --ed25519-key-file ~/sn21-miner.pem
    ```
-   The bundled trainer gets ~1.5× the baseline score on the sample
-   dataset. Better features and more data will compound from there.
+   The bundled trainer gets **~1.5× the baseline score on the bundled
+   10-example sample dataset** — driven mostly by the calibration term,
+   not point-estimate accuracy. The reference XGBoost regressor
+   underperforms the mean predictor on R² (`Cost R² ≈ -1.6`,
+   `Conv R² ≈ -13.0`); that's expected with N=10. Don't read negative
+   R² as a broken trainer — the score that matters in production is
+   the validator's full epoch score, where calibration carries 20% and
+   compounds rapidly with more training data.
 
 2. **Learn portfolio redistribution.** The interaction between constraint_level, redistribution_likelihood, and action type is the biggest gap in baseline estimates.
 
@@ -693,8 +706,8 @@ All interaction with the validator is via HTTP at
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | `GET` | `/health` | None | Current epoch, episode count |
-| `GET` | `/training/episodes` | None | Training data (episodes + outcomes) |
-| `GET` | `/training/summary` | None | Training data stats |
+| `GET` | `/training/episodes` | Hotkey | Training data (episodes + outcomes) |
+| `GET` | `/training/summary` | Hotkey | Training data stats |
 | `GET` | `/v1/epochs/{id}/episodes` | Hotkey | List episode metadata |
 | `GET` | `/v1/epochs/{id}/episodes/{ep_id}` | Hotkey | Single episode payload |
 | `GET` | `/v1/epochs/{id}/episodes_batch` | Hotkey | All episodes in one request |
@@ -730,6 +743,35 @@ is required.
 ---
 
 ## 11. Troubleshooting
+
+### `verify_epoch.py` exits with `bundle has no plaintext yet`
+
+You ran the verifier between bundle submission and the chain's drand
+auto-decrypt. The bundle's plaintext is empty until the next subnet
+tempo step processes the drand pulse for your `reveal_round`. Wait
+~30-72 minutes after the miner success and retry. The verifier no
+longer crashes with `CBORDecodeEOF` — it returns a clean reason.
+
+### `verify-reg` says "no Raw payload at the latest block"
+
+Substrate's `Commitments::CommitmentOf` is **single-slot, last-write-wins**
+per `(netuid, hotkey)`. After your first `hope-miner` bundle commit,
+the slot stores a TimelockEncrypted bundle and the registration
+`Raw{N}` payload is no longer at chain head. Either:
+- Pass `--block-hash <0x...>` of the original `sn21_keys.py register`
+  extrinsic (printed on success — capture it from the `block:` /
+  `extrinsic_hash:` lines), against an **archive node** RPC, OR
+- Trust the validator's metagraph as the proof of registration.
+
+This is by design — verifiers capture the binding once at hotkey-first-seen
+and store the block hash for future audit.
+
+### "do I need my coldkey password every time?"
+
+No. Only `btcli subnet register` and other coldkey-signed extrinsics
+prompt for it. The actual mining flow (`hope-miner`) signs with the
+**hotkey** only — hotkey files are stored unencrypted by default and
+no password prompt fires during prediction submission.
 
 ### `bittensor.MaxRetriesExceeded` / `keepalive ping timeout`
 

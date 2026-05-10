@@ -222,6 +222,27 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+    # Bittensor's own logging wrapper (loguru-based) attaches a colored
+    # handler to the root logger by default, which causes (a) every log
+    # line to appear twice and (b) raw ANSI escapes to leak into piped
+    # output (e.g. `hope-miner ... | tee miner.log`). Force `propagate=False`
+    # on the bittensor loggers and disable ANSI when stdout isn't a TTY.
+    import sys as _sys
+    try:
+        import bittensor as _bt  # noqa: F401
+        for name in ("bittensor", "btlogging", "loguru"):
+            lg = logging.getLogger(name)
+            lg.propagate = False
+        if not _sys.stdout.isatty():
+            try:
+                from bittensor.utils import btlogging as _btlog  # type: ignore
+                if hasattr(_btlog, "logging") and hasattr(_btlog.logging, "set_config"):
+                    _btlog.logging.set_config(colors=False)
+            except Exception:
+                pass
+    except ImportError:
+        pass
+
     import bittensor as bt
     wallet = bt.Wallet(name=args.wallet_name, hotkey=args.wallet_hotkey)
     hotkey = wallet.hotkey.ss58_address
@@ -254,6 +275,19 @@ def main():
     print("\nResults:")
     for k, v in result.items():
         print(f"  {k}: {v}")
+
+    # Submission already landed and was logged to chain; bypass the slow
+    # interpreter shutdown path that bittensor + xgboost + httpx
+    # generators trigger via finalize_modules → _PyGC_CollectNoFail (~12
+    # min on a fresh wallet). os._exit returns the success code without
+    # running atexit / __del__ chains. Safe here because all critical
+    # state (chain commits, archive uploads) is durable; no buffered
+    # writes are still pending. stdout/stderr are flushed first.
+    import os as _os
+    import sys as _sys
+    _sys.stdout.flush()
+    _sys.stderr.flush()
+    _os._exit(0)
 
 
 def _avg(it) -> float:

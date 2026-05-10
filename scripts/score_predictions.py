@@ -193,7 +193,13 @@ def main():
     elif args.predictions:
         all_predictions = file_predictions
     else:
-        print("Error: provide --predictions or --run-baseline")
+        print(
+            "Error: nothing to score.\n"
+            "  Pass --run-baseline to score the bundled baseline model against\n"
+            "  the loaded outcomes, or --predictions /path/to/preds.json to\n"
+            "  score your own predictions file.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # Score

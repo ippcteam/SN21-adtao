@@ -114,20 +114,43 @@ def read_commitment_of(
         return []
 
     # `fields` is a tuple-of-tuple-of-dict. Each inner dict has one key
-    # (the variant name) with a value that is a tuple of byte ints.
+    # (the variant name) with a value whose shape varies by variant:
+    #   - Raw{N}:            tuple-of-byte-ints OR (tuple-of-byte-ints,) (1-tuple wrap)
+    #   - Sha256:            tuple-of-byte-ints (32 bytes)
+    #   - TimelockEncrypted: dict {'encrypted': ..., 'reveal_round': N}
+    #   - BlakeTwo256 etc.:  same tuple-of-bytes shape as Raw
+    # We normalise all of these to bytes (or empty for non-byte variants
+    # like TimelockEncrypted) so callers get a consistent RawCommitField
+    # list and don't crash on unexpected payload types.
     out: list[RawCommitField] = []
     for outer in fields:
         for entry in outer:
             if not isinstance(entry, dict) or len(entry) != 1:
                 continue
             variant, payload = next(iter(entry.items()))
-            if isinstance(payload, (tuple, list)):
-                out.append(RawCommitField(
-                    variant=variant,
-                    bytes_=bytes(payload) if payload else b"",
-                ))
-            elif isinstance(payload, (bytes, bytearray)):
+            # Unwrap 1-tuples that wrap a tuple-of-ints (some Substrate
+            # SCALE codecs nest the bytes one level deep).
+            if (isinstance(payload, tuple)
+                    and len(payload) == 1
+                    and isinstance(payload[0], (tuple, list))):
+                payload = payload[0]
+            if isinstance(payload, (bytes, bytearray)):
                 out.append(RawCommitField(variant=variant, bytes_=bytes(payload)))
+            elif isinstance(payload, (tuple, list)):
+                # Empty tuple → empty bytes; tuple-of-ints → bytes(...);
+                # if it's still nested (unexpected), guard against TypeError.
+                try:
+                    out.append(RawCommitField(
+                        variant=variant,
+                        bytes_=bytes(payload) if payload else b"",
+                    ))
+                except TypeError:
+                    out.append(RawCommitField(variant=variant, bytes_=b""))
+            elif isinstance(payload, dict):
+                # TimelockEncrypted / other structured variants — bytes are
+                # not directly accessible from CommitmentOf. Emit an empty
+                # marker so callers can see that the variant was present.
+                out.append(RawCommitField(variant=variant, bytes_=b""))
     return out
 
 

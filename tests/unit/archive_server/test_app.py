@@ -44,7 +44,8 @@ def digest_hex(digest):
 def test_healthz(client_unauthed):
     r = client_unauthed.get("/healthz")
     assert r.status_code == 200
-    assert r.json() == {"ok": True}
+    body = r.json()
+    assert body["ok"] is True
 
 
 # ---------- POST (unauth) ----------

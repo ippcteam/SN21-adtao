@@ -402,8 +402,20 @@ def parse_miner_onchain_bundle(plaintext: bytes) -> dict[str, Any]:
     an unrecognised version.
     """
     if not isinstance(plaintext, (bytes, bytearray)) or not plaintext:
-        raise ValueError("empty or non-bytes plaintext")
-    obj = canonical_cbor_loads(plaintext)
+        raise ValueError(
+            "empty plaintext: bundle commit hasn't been auto-decrypted yet "
+            "(drand reveal_round not reached, or chain hasn't pulled the "
+            "drand pulse since the round). Wait for the next subnet tempo "
+            "step and retry."
+        )
+    try:
+        obj = canonical_cbor_loads(plaintext)
+    except Exception as e:
+        raise ValueError(
+            f"failed to CBOR-decode bundle plaintext ({type(e).__name__}: "
+            f"{str(e)[:80]}). The plaintext may be corrupted or this isn't "
+            f"a Layer 9.B bundle commit."
+        ) from e
     if not isinstance(obj, dict):
         raise ValueError(f"bundle is not a CBOR map: {type(obj).__name__}")
     version = obj.get("v")

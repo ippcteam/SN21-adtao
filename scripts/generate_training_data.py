@@ -106,12 +106,40 @@ async def generate(release_key: str, output_dir: str, api_key: str):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Generate training data for miners")
+    parser = argparse.ArgumentParser(
+        description=(
+            "OPERATOR-ONLY: Pull a release from the data backend and write a "
+            "training_episodes.json bundle. Public miners do not need this — "
+            "use the bundled data/training/training_episodes.json instead."
+        ),
+    )
     parser.add_argument("--release", type=str, default=os.environ.get("RELEASE_KEY", ""),
                         help="Release key (or set RELEASE_KEY env var)")
-    parser.add_argument("--output", type=str, default="data/training")
-    parser.add_argument("--api-key", type=str, default=os.environ.get("HOPE_API_KEY", ""))
+    parser.add_argument("--output", type=str, default="data/training",
+                        help="Output directory for training files (default: data/training)")
+    parser.add_argument("--api-key", type=str, default=os.environ.get("HOPE_API_KEY", ""),
+                        help="Operator-only data API key (or HOPE_API_KEY env var). "
+                             "Public miners cannot obtain this — see "
+                             "docs/miner_quickstart.md for the bundled-data path.")
     args = parser.parse_args()
+
+    if not args.api_key:
+        print(
+            "ERROR: HOPE_API_KEY is operator-only and required by this script.\n"
+            "       Public miners do not need this script — the bundled\n"
+            "       data/training/training_episodes.json covers the supported\n"
+            "       miner flow. See docs/miner_quickstart.md §5.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    if not args.release:
+        print(
+            "ERROR: --release REQUIRED (or set RELEASE_KEY env var). "
+            "Pass the release_key for the release you want to bundle, e.g. "
+            "WR-2026-W18-PUB-E1.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     logging.basicConfig(level=logging.WARNING)
     asyncio.run(generate(args.release, args.output, args.api_key))

@@ -134,9 +134,22 @@ def build_app(
     app.state.metrics_registry = registry
     app.state.metrics = metrics
 
+    @app.get("/")
+    async def root():
+        return {"ok": True, "service": "sn21-archive",
+                "endpoints": {"health": "/healthz",
+                              "objects": "/archive/{epoch_id}/{miner_identity}/{sha256_hex}",
+                              "metrics": "/metrics"}}
+
     @app.get("/healthz")
     async def healthz():
-        return {"ok": True}
+        return {"ok": True, "service": "sn21-archive"}
+
+    @app.get("/health")
+    async def health():
+        # Alias for /healthz so a miner probing the conventional /health
+        # path doesn't get a 404 and assume the archive is down.
+        return {"ok": True, "service": "sn21-archive"}
 
     @app.get("/metrics")
     async def metrics_endpoint():

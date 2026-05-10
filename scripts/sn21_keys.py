@@ -207,6 +207,47 @@ def cmd_register(args) -> int:
     msg = str(getattr(response, "message", ""))[:200]
     print(f"success: {success}")
     print(f"message: {msg}")
+    if success:
+        # Surface the block + extrinsic hash so the miner can later pass
+        # --block-hash to scripts/verify_epoch.py for a block-pinned read
+        # of the registration (the Commitments slot gets overwritten by
+        # the first hope-miner bundle, so head-of-chain reads won't find
+        # the registration after that point).
+        block = None
+        for path in [
+            ("block_number",), ("block_num",), ("block",),
+            ("extrinsic_receipt", "block_number"),
+            ("extrinsic_receipt", "block_num"),
+        ]:
+            obj = response
+            for attr in path:
+                obj = getattr(obj, attr, None)
+                if obj is None:
+                    break
+            if obj is not None:
+                block = obj
+                break
+        if block is None:
+            try:
+                commit = st.substrate.query(
+                    "Commitments", "CommitmentOf",
+                    [args.netuid, wallet.hotkey.ss58_address],
+                )
+                v = commit.value if hasattr(commit, "value") else commit
+                if isinstance(v, dict):
+                    block = v.get("block")
+            except Exception:
+                pass
+        if block is not None:
+            print(f"block: {block}")
+        ext_hash = getattr(response, "extrinsic_hash", None) or getattr(
+            getattr(response, "extrinsic_receipt", None) or object(),
+            "extrinsic_hash", None,
+        )
+        if ext_hash:
+            if isinstance(ext_hash, (bytes, bytearray)):
+                ext_hash = "0x" + ext_hash.hex()
+            print(f"extrinsic_hash: {ext_hash}")
     return 0 if success else 3
 
 

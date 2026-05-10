@@ -154,7 +154,10 @@ def submit_sha256_commit(
         raise_error=raise_error,
     )
 
-    return _to_commit_result(response, reveal_round=None)
+    return _resolve_block_via_chain(
+        _to_commit_result(response, reveal_round=None),
+        subtensor=subtensor, netuid=netuid, wallet=wallet,
+    )
 
 
 def submit_timelock_commit(
@@ -219,7 +222,10 @@ def submit_timelock_commit(
         raise_error=raise_error,
     )
 
-    return _to_commit_result(response, reveal_round=reveal_round)
+    return _resolve_block_via_chain(
+        _to_commit_result(response, reveal_round=reveal_round),
+        subtensor=subtensor, netuid=netuid, wallet=wallet,
+    )
 
 
 def read_revealed_commitments(
@@ -423,7 +429,10 @@ def submit_raw_url_commit_layer_9b(
         wait_for_finalization=wait_for_finalization,
         raise_error=raise_error,
     )
-    return _to_commit_result(response, reveal_round=None)
+    return _resolve_block_via_chain(
+        _to_commit_result(response, reveal_round=None),
+        subtensor=subtensor, netuid=netuid, wallet=miner_wallet,
+    )
 
 
 def submit_layer_9b_multi_field(
@@ -576,19 +585,74 @@ def submit_retry_log_attestation_layer_9c6(
 # ============================================================================
 
 
+def _resolve_block_via_chain(result: "CommitResult", *, subtensor, netuid, wallet) -> "CommitResult":
+    """If the SDK didn't surface a block_number, recover it from CommitmentOf.
+
+    ``set_commitment`` updates a single (netuid, hotkey) slot whose stored
+    value includes the block of the latest write. After a successful
+    commit, the slot's ``block`` field is the block we just landed on.
+    Cheap chain query, runs only when the receipt lost the info.
+    """
+    if not result.success or result.block_number is not None:
+        return result
+    try:
+        ss58 = wallet.hotkey.ss58_address
+        commit = subtensor.substrate.query("Commitments", "CommitmentOf", [netuid, ss58])
+        val = commit.value if hasattr(commit, "value") else commit
+        if isinstance(val, dict) and val.get("block") is not None:
+            from dataclasses import replace
+            return replace(result, block_number=int(val["block"]))
+    except Exception:
+        pass
+    return result
+
+
 def _to_commit_result(response, *, reveal_round: Optional[int]) -> CommitResult:
-    """Map a Bittensor SDK ExtrinsicResponse to our CommitResult type."""
+    """Map a Bittensor SDK ExtrinsicResponse to our CommitResult type.
+
+    The SDK shape varies across versions — some expose block info directly
+    on the response, some on a nested ``extrinsic_receipt``, some on
+    neither. We try every known path and fall through to ``None`` when the
+    block isn't surfaced; callers can recover it with a chain query (see
+    ``submit_timelock_commit`` / friends, which post-fetch as a fallback).
+    """
     success = bool(getattr(response, "success", False))
     message = str(getattr(response, "message", ""))[:200]
+
+    def _first_int(obj, *names):
+        # Only accept actual ints; MagicMock attributes auto-resolve to
+        # mock objects truthy under `is not None`, so in tests we'd pick
+        # up bogus values. Real bittensor SDK returns plain ints.
+        for n in names:
+            v = getattr(obj, n, None)
+            if isinstance(v, int) and not isinstance(v, bool):
+                return v
+        return None
+
+    def _first_str_or_bytes(obj, *names):
+        for n in names:
+            v = getattr(obj, n, None)
+            if isinstance(v, (str, bytes, bytearray)):
+                return v
+        return None
+
+    # Preferred path: extrinsic_receipt (matches existing test fixtures
+    # and bittensor 8.x/9.x SDK shape).
+    receipt = getattr(response, "extrinsic_receipt", None)
     block_number = None
     extrinsic_hash = None
-
-    receipt = getattr(response, "extrinsic_receipt", None)
     if receipt is not None:
-        block_number = getattr(receipt, "block_number", None)
-        extrinsic_hash = getattr(receipt, "extrinsic_hash", None)
-        if extrinsic_hash and isinstance(extrinsic_hash, (bytes, bytearray)):
-            extrinsic_hash = "0x" + extrinsic_hash.hex()
+        block_number = _first_int(receipt, "block_number", "block_num", "block")
+        extrinsic_hash = _first_str_or_bytes(receipt, "extrinsic_hash", "tx_hash", "hash")
+
+    # Fallback: top-level on response (newer SDK shapes flatten this).
+    if block_number is None:
+        block_number = _first_int(response, "block_number", "block_num", "block")
+    if extrinsic_hash is None:
+        extrinsic_hash = _first_str_or_bytes(response, "extrinsic_hash", "tx_hash", "hash")
+
+    if extrinsic_hash and isinstance(extrinsic_hash, (bytes, bytearray)):
+        extrinsic_hash = "0x" + extrinsic_hash.hex()
 
     return CommitResult(
         success=success,
