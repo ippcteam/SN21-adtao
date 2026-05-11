@@ -6,9 +6,14 @@ state dict built from:
   - the deadline computed as now + PREDICTION_DEADLINE_HOURS,
   - registered miner hotkeys read from the metagraph.
 
+A background task refreshes `registered_miners` and `uid_map` from the
+metagraph every METAGRAPH_REFRESH_INTERVAL_SECONDS — without this, miners
+registered after the validator started would be rejected with 403 until the
+service is restarted (which would block every new miner from submitting
+their first epoch).
+
 Miners hit this server for `/v1/epochs/{id}/episodes` etc. On-chain scoring
-(`hope-validator`) runs as a separate per-epoch process — see
-`scripts/start_validator.sh`.
+(`hope-validator`) runs as a separate per-epoch process.
 """
 
 from __future__ import annotations
@@ -25,6 +30,11 @@ from hope.validator.api.server import create_app
 from hope.validator.data_client import HopeDataClient
 
 logger = logging.getLogger(__name__)
+
+# How often the background task re-reads the metagraph. Two minutes balances
+# "new miner appears in metagraph within a tempo step" against "don't hammer
+# the chain RPC every few seconds for a relatively static set".
+METAGRAPH_REFRESH_INTERVAL_SECONDS = 120
 
 
 def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
@@ -53,7 +63,7 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
         except Exception as e:
             logger.warning("Could not load metagraph (%s); auth will reject all miners", e)
 
-    return {
+    state: dict = {
         "current_epoch_id": release_key,
         "episodes": epoch_data.episodes,
         "deadline": deadline,
@@ -62,14 +72,66 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
         "prediction_receipts": {},
         "registered_miners": registered_miners,
         "uid_map": uid_map,
+        # Stashed so the FastAPI lifespan can refresh the metagraph
+        # periodically without re-parsing CLI args.
+        "_chain_config": {
+            "no_chain": no_chain,
+            "network": network,
+            "netuid": netuid,
+        },
     }
+    return state
+
+
+def _refresh_metagraph(state: dict) -> None:
+    """Re-read the metagraph and replace the registered_miners + uid_map.
+
+    Called periodically by the FastAPI lifespan task so newly-registered
+    miners become visible to auth without a service restart. Swaps the
+    set/dict atomically — readers (FastAPI request handlers) see either
+    the old or the new copy, never a partial update.
+    """
+    cfg = state.get("_chain_config", {})
+    if cfg.get("no_chain"):
+        return
+    try:
+        import bittensor as bt
+        subtensor = bt.Subtensor(network=cfg["network"])
+        metagraph = subtensor.metagraph(netuid=cfg["netuid"])
+        new_miners = set(metagraph.hotkeys)
+        new_uid_map = {metagraph.hotkeys[uid]: uid for uid in range(metagraph.n)}
+        added = new_miners - state["registered_miners"]
+        removed = state["registered_miners"] - new_miners
+        state["registered_miners"] = new_miners
+        state["uid_map"] = new_uid_map
+        if added or removed:
+            logger.info(
+                "metagraph refresh: n=%d (added %d, removed %d hotkey(s))",
+                len(new_miners), len(added), len(removed),
+            )
+    except Exception as e:
+        logger.warning("metagraph refresh failed: %s", e)
+
+
+async def _metagraph_refresh_loop(state: dict) -> None:
+    """Background task: refresh metagraph every METAGRAPH_REFRESH_INTERVAL_SECONDS."""
+    while True:
+        try:
+            await asyncio.sleep(METAGRAPH_REFRESH_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            return
+        _refresh_metagraph(state)
 
 
 def main():
     """CLI entry point: `hope-validator-api`."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="SN21 Validator HTTP API (episode serving)")
+    from hope._cli_help import SafeHelpFormatter
+    parser = argparse.ArgumentParser(
+        description="SN21 Validator HTTP API (episode serving)",
+        formatter_class=SafeHelpFormatter,
+    )
     parser.add_argument("--release", default=os.environ.get("RELEASE_KEY", ""),
                         help="Release key (epoch ID) to serve")
     parser.add_argument("--port", type=int,
@@ -101,6 +163,9 @@ def main():
         wallet_name=args.wallet_name,
         wallet_hotkey=args.wallet_hotkey,
     )
+    # Hand the FastAPI lifespan a reference to the background refresh
+    # coroutine so it gets started on app boot and cancelled on shutdown.
+    state["_metagraph_refresh_coro"] = _metagraph_refresh_loop
     app = create_app(state)
 
     logger.info("Starting episode-serving API on %s:%d", args.host, args.port)

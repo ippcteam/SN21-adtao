@@ -84,7 +84,10 @@ def main():
     """CLI entry point for the validator — Layers 9.B–9.C on-chain only."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="SN21 Validator")
+    from hope._cli_help import SafeHelpFormatter
+    parser = argparse.ArgumentParser(
+        description="SN21 Validator", formatter_class=SafeHelpFormatter,
+    )
     parser.add_argument("--release", type=str,
                         default=os.environ.get("RELEASE_KEY", ""),
                         help="Release key (epoch ID) to score (or set RELEASE_KEY env var)")

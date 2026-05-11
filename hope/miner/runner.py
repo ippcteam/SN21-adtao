@@ -186,7 +186,10 @@ def main():
     """CLI entry point for the miner — Layer 9.B on-chain only."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="SN21 Miner")
+    from hope._cli_help import SafeHelpFormatter
+    parser = argparse.ArgumentParser(
+        description="SN21 Miner", formatter_class=SafeHelpFormatter,
+    )
     parser.add_argument("--validator-url", type=str, default="http://localhost:8080",
                         help="Validator HTTP API URL (used to fetch episodes only — "
                              "Phase D)")

@@ -148,7 +148,21 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logger.info("Validator HTTP API starting")
+        # If the caller stashed a metagraph refresh coroutine in state,
+        # spin it up as a background task for the API's lifetime so
+        # newly-registered miners become visible without restarting.
+        refresh_task = None
+        refresh_fn = state.get("_metagraph_refresh_coro")
+        if refresh_fn is not None:
+            import asyncio
+            refresh_task = asyncio.create_task(refresh_fn(state))
         yield
+        if refresh_task is not None:
+            refresh_task.cancel()
+            try:
+                await refresh_task
+            except BaseException:
+                pass
         logger.info("Validator HTTP API shutting down")
 
     app = FastAPI(

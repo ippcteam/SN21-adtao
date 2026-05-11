@@ -40,6 +40,11 @@ miner = [
     "xgboost>=2.0",
     "pandas>=2.0",
     "scikit-learn>=1.3",
+    "joblib>=1.3",
+    # bittensor (the SDK) and bittensor-cli (the `btcli` command) are
+    # separate PyPI packages. New miners run `btcli wallet new_coldkey`
+    # in Step 2 of the quickstart, so pull it in here.
+    "bittensor-cli>=8.0",
 ]
 
 [project.scripts]

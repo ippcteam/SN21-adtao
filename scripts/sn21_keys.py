@@ -186,12 +186,17 @@ def cmd_register(args) -> int:
     print(f"network:     {args.network}")
     print(f"netuid:      {args.netuid}")
     print()
-    if not args.yes:
+    # Auto-confirm when stdin isn't an interactive terminal (cron, CI,
+    # docker run, etc.) — otherwise the script silently aborts on an
+    # empty readline(), which looks like a hang to a scripted miner.
+    if not args.yes and sys.stdin.isatty():
         sys.stderr.write("Submit registration commit? [y/N] ")
         sys.stderr.flush()
         if sys.stdin.readline().strip().lower() != "y":
             print("aborted.")
             return 1
+    elif not args.yes:
+        print("(stdin is not a TTY — auto-confirming. Pass --yes to silence this.)")
 
     st = bt.Subtensor(network=args.network)
     from bittensor.core.extrinsics.serving import publish_metadata_extrinsic
