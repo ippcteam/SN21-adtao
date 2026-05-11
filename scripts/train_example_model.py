@@ -169,8 +169,10 @@ def main():
         cost_pred = float(model_cost.predict(x)[0])
         conv_pred = float(model_conv.predict(x)[0])
 
-        # Estimate spread from training residuals
-        spread = max(5.0, abs(cost_pred) * 0.3)
+        # Spread heuristic in fractional units; floor at MIN_INTERVAL_WIDTH
+        # so predictions clear the null detector.
+        from hope.constants import MIN_INTERVAL_WIDTH
+        spread = max(MIN_INTERVAL_WIDTH, abs(cost_pred) * 0.3)
 
         predictions.append({
             "cost_p50": cost_pred,

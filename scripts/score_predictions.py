@@ -37,9 +37,13 @@ def load_from_training_file(path: str):
     We synthesise an Outcome per example whose t7 / t14 fields carry the
     measured deltas. Returns `(episodes, file_predictions, outcomes)` to
     match the shape of `load_from_files` so the calling code is uniform.
+
+    Outcome deltas are fractional ratios (e.g. ``-0.05`` means -5%);
+    miner predictions must use the same fractional convention.
     """
     with open(path) as f:
         examples = json.load(f)
+
     episodes: list[Episode] = []
     outcomes: list[Outcome] = []
     for ex in examples:

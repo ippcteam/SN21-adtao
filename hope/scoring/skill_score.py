@@ -69,7 +69,8 @@ class SkillScoreCalculator:
         prior: ConditionalPriorBaseline,
     ) -> Prediction:
         def envelope(p50: float) -> QuantilePrediction:
-            half_width = max(abs(p50) * 1.0, 5.0)
+            from hope.constants import MIN_INTERVAL_WIDTH
+            half_width = max(abs(p50) * 1.0, MIN_INTERVAL_WIDTH)
             return QuantilePrediction(p10=p50 - half_width, p50=p50, p90=p50 + half_width)
 
         h7 = HorizonPrediction(

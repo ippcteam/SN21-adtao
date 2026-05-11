@@ -68,26 +68,35 @@ class BaselineModel(PredictionEngine):
         mag = action.magnitude
 
         if action.type == "BUDGET_CHANGE":
+            # `spend_change_pct.expected` is expressed in percent on the
+            # episode payload (e.g. 20 means +20%). Outcome deltas are
+            # fractional, so divide by 100 to convert to the matching
+            # fractional scale. Field is often null on live releases —
+            # treat that as no point-estimate signal (caller derives one
+            # from the pre-window trend; see miner_quickstart.md §6).
             spend_pct = mag.get("spend_change_pct", {})
             if isinstance(spend_pct, dict):
-                cost_p50 = spend_pct.get("expected", 0.0)
+                cost_p50 = (spend_pct.get("expected") or 0.0) / 100.0
             else:
-                cost_p50 = float(spend_pct)
+                cost_p50 = float(spend_pct or 0.0) / 100.0
             # Budget increase → proportional conversion increase (simplified)
             conv_p50 = cost_p50 * 0.7  # Diminishing returns
             eff_p50 = conv_p50 - cost_p50  # Efficiency = conv gain - cost gain
 
         elif action.type == "CAMPAIGN_PAUSE":
-            cost_p50 = -100.0
-            conv_p50 = -100.0
+            # Deterministic — campaign paused means spend and conversions
+            # go to zero, a -1.0 fractional delta from the pre-window.
+            cost_p50 = -1.0
+            conv_p50 = -1.0
             eff_p50 = 0.0  # CPA undefined when both zero
 
         elif action.type == "CAMPAIGN_ENABLE":
+            # Deprecated action type — kept for legacy episode handling
+            # only; not part of LAUNCH_ACTION_TYPES.
             pause_days = mag.get("prior_pause_duration_days", 7)
-            # Recovery depends on pause duration
             recovery = min(0.8, 0.5 + pause_days * 0.02)
-            cost_p50 = recovery * 80  # Spend recovers partially
-            conv_p50 = recovery * 60  # Conversions recover slower
+            cost_p50 = recovery * 0.80  # Fractional: 80% partial recovery
+            conv_p50 = recovery * 0.60
             eff_p50 = conv_p50 - cost_p50
 
         elif action.type == "BID_STRATEGY_CHANGE":
@@ -116,8 +125,13 @@ class BaselineModel(PredictionEngine):
         return cost_p50, conv_p50
 
     def _compute_spread(self, spend_cv: float, resolution: str) -> float:
-        """Compute prediction interval spread."""
-        base = 5.0
+        """Compute prediction interval half-width in fractional units.
+
+        Returns a base that's added to / subtracted from p50 to set the
+        p10 / p90 bounds. 0.05 is "±5 percentage points around the
+        point estimate".
+        """
+        base = 0.05
 
         # Wider for volatile accounts
         if spend_cv > 0.3:
@@ -138,8 +152,10 @@ class BaselineModel(PredictionEngine):
         spread: float, episode: Episode,
     ) -> HorizonPrediction:
         """Build a HorizonPrediction with symmetric spread."""
-        # Ensure minimum interval width (spec requires p90 - p10 >= 0.5)
-        spread = max(spread, 0.5)
+        # Floor on the half-width so p90 - p10 always exceeds the
+        # spec-defined MIN_INTERVAL_WIDTH (see hope/constants.py).
+        from hope.constants import MIN_INTERVAL_WIDTH
+        spread = max(spread, MIN_INTERVAL_WIDTH)
 
         # Compute goal miss probability
         goal_miss = self._estimate_goal_miss(episode, cost_p50, conv_p50)

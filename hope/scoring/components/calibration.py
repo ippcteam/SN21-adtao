@@ -65,9 +65,14 @@ class Calibration(ScoringComponent):
         """
         low_res = context.measurement_resolution == "low"
 
-        is_cost = self._score_metric(outcome.cost_delta_pct, prediction.cost_delta_pct, low_res)
-        is_conv = self._score_metric(outcome.conversions_delta_pct, prediction.conversions_delta_pct, low_res)
-        is_eff = self._score_metric(outcome.efficiency_delta_pct, prediction.efficiency_delta_pct, low_res)
+        metric_scores = [
+            self._score_metric(outcome.cost_delta_pct, prediction.cost_delta_pct, low_res),
+            self._score_metric(outcome.conversions_delta_pct, prediction.conversions_delta_pct, low_res),
+        ]
+        if outcome.efficiency_delta_pct is not None:
+            metric_scores.append(
+                self._score_metric(outcome.efficiency_delta_pct, prediction.efficiency_delta_pct, low_res)
+            )
 
-        avg_is = (is_cost + is_conv + is_eff) / 3.0
+        avg_is = sum(metric_scores) / len(metric_scores)
         return max(0.0, min(1.0, 1.0 - avg_is))

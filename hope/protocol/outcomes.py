@@ -8,11 +8,20 @@ from pydantic import BaseModel
 
 
 class HorizonOutcome(BaseModel):
-    """Measured outcome for a single time horizon."""
+    """Measured outcome for a single time horizon.
+
+    ``efficiency_delta_pct`` is the goal-relative efficiency change (CPA or
+    ROAS depending on goal_metric). It is undefined for episodes where
+    measured conversions or cost are zero, and the operator data API emits
+    ``null`` in that case. When None, scoring components skip this metric
+    and average over the remaining (cost, conversions) deltas. Miner
+    predictions still include the efficiency quantile — it just doesn't
+    contribute to the score for that horizon.
+    """
 
     cost_delta_pct: float
     conversions_delta_pct: float
-    efficiency_delta_pct: float  # CPA or ROAS delta depending on goal
+    efficiency_delta_pct: Optional[float] = None
     goal_miss: Literal[0, 1]  # 1 = goal was missed during this horizon
 
 

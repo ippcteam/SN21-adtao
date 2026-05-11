@@ -160,10 +160,19 @@ class EpochScorer:
         baseline_score = self._compute_baseline_score(pred_list, episodes, outcomes)
         skill = self.skill_calc.compute_skill_score(raw_score, baseline_score)
 
-        # C5: Null penalty computed over ALL episodes, not just submitted ones
-        # Skipped episodes count as near-zero
+        # C5: Null penalty computed over ALL episodes, not just submitted ones.
+        # Skipped episodes count as near-zero. No-action (control) episodes
+        # are exempted — their true outcome is ~0 by definition, so a
+        # miner predicting near-zero on them is being honest, not lazy.
+        no_action_ids = {
+            ep.episode_metadata.episode_id
+            for ep in episodes
+            if not ep.action_bundle.actions
+        }
         nz_fraction = self.null_penalty_calc.compute_near_zero_fraction(
-            pred_list, total_episodes=total_scorable,
+            pred_list,
+            total_episodes=total_scorable,
+            no_action_episode_ids=no_action_ids,
         )
         penalty = self.null_penalty_calc.compute_penalty(nz_fraction)
 

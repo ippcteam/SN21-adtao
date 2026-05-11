@@ -50,6 +50,12 @@ btcli wallet new_coldkey --wallet.name my_miner
 | `Specify password for key encryption:` | Pick a strong password and **save it in your password manager**. You'll need it for every chain transaction. |
 | `Retype your password:` | Same password again |
 
+**Scripting / CI tip:** to avoid the wallet-path prompt entirely, pass
+`--wallet-path ~/.bittensor/wallets` explicitly on every `btcli wallet`
+and `btcli subnet` command. The default works for interactive users; the
+explicit flag is the only reliable form under `cron`, `docker run -i`,
+or any non-TTY environment where stdin is closed.
+
 **The mnemonic prints to your terminal.** Read it from the screen and
 write it directly into your password manager. **Never copy/paste it
 anywhere else** — terminal output goes to scrollback, screenshot tools,
@@ -89,6 +95,14 @@ mg = bt.Subtensor(network='test').metagraph(netuid=466)
 print('your hotkey present:', '<your-ss58>' in mg.hotkeys)
 print('your UID:', mg.hotkeys.index('<your-ss58>') if '<your-ss58>' in mg.hotkeys else 'NOT REGISTERED')
 ```
+
+> **Validator-side delay.** The validator's authentication cache refreshes
+> the metagraph every ~2 minutes. Brand-new registrations may see a
+> `403 Hotkey not registered on subnet` from the validator for up to
+> that long after the on-chain registration lands. If you're hitting
+> `hope-miner` immediately after registering, wait 2-3 minutes and
+> retry. (The cache used to be set-once-at-startup, which permanently
+> rejected new miners until validator restart — this is fixed.)
 
 **Need testnet TAO?** Get free testnet TAO from the Bittensor Discord
 faucet bot:
@@ -130,8 +144,18 @@ python scripts/sn21_keys.py register \
     --role miner --network test --netuid 466 \
     --wallet-name my_miner --wallet-hotkey default \
     --key ~/sn21-miner.pem
-# Prompts for your coldkey password. Look for `success: True`.
+# Prompts:
+#   "Submit registration commit? [y/N]" → type 'y'   (or pass --yes)
+#   coldkey password (the one you set in Step 2)
+# On success, prints `success: True`, `block: <N>`, and `extrinsic_hash:
+# 0x...`. Save the block number — useful if you ever need to re-audit
+# the registration with `verify_epoch.py --block-hash`.
 ```
+
+**Scripting / cron note:** add `--yes` to skip the interactive prompt.
+The script also auto-confirms when stdin isn't a TTY, so it works under
+`docker run -i` and similar non-interactive invocations without
+hanging.
 
 ### Step 5: Train on historical data (recommended)
 
@@ -145,18 +169,42 @@ python scripts/train_example_model.py \
 ```
 
 The training set is bundled at `data/training/training_episodes.json`
-(10 episodes with measured t7/t14 outcomes). Each example has:
+(an operator-harvested snapshot of episodes with measured t7/t14 outcomes).
+Each example has:
 - `input` — the full episode payload (what you receive during a live epoch)
 - `outcome` — the actual t7/t14 deltas (what really happened)
 
-> **Sample data caveat.** This is pre-launch sample data drawn from
-> `WR-2026-W17-PUB-E1`. It contains `BID_STRATEGY_CHANGE` and
-> `CAMPAIGN_ENABLE` actions but **no** `TARGET_VALUE_CHANGE` examples.
+> **Sample data caveat — important.** The bundled dataset is harvested
+> from real episodes and is the same shape as a live epoch, but the
+> sample is small and the action-type mix is skewed toward whichever
+> categories matured first. Counts as of the most recent refresh:
+>
+> | Action type | Bundled sample | Live distribution |
+> |---|---:|---|
+> | `BID_STRATEGY_CHANGE` | ~79% | varies by epoch |
+> | `CAMPAIGN_PAUSE` | ~11% | varies by epoch |
+> | `BUDGET_CHANGE` | ~11% | varies by epoch |
+> | `TARGET_VALUE_CHANGE` | 0% | not yet matured |
+>
+> The bundled set is enough to validate your pipeline end-to-end (the
+> trainer + scorer round-trips on every action type it contains). To
+> train a model that's competitive across the full action enum, harvest
+> additional examples from live epochs: snapshot `/episodes_batch`
+> during the prediction window and capture `/verification` after the
+> reveal. Coverage of `TARGET_VALUE_CHANGE` improves as that action
+> type matures in production.
+>
 > The launch action enum is the four types in
 > `hope/constants.py:LAUNCH_ACTION_TYPES`
 > (`BUDGET_CHANGE`, `BID_STRATEGY_CHANGE`, `TARGET_VALUE_CHANGE`,
-> `CAMPAIGN_PAUSE`). `CAMPAIGN_ENABLE` will **not** appear in live
-> epochs; `TARGET_VALUE_CHANGE` will.
+> `CAMPAIGN_PAUSE`). `CAMPAIGN_ENABLE` is deprecated and will not
+> appear in live epochs.
+>
+> Outcome `efficiency_delta_pct` is `null` on many horizons when the
+> measured CPA / ROAS is undefined (zero conversions or zero cost).
+> The scorer skips that metric for those horizons and averages over
+> the remaining (cost, conversions) deltas — see
+> `docs/SN21_REWARD_MECHANISM.md` for the full rule.
 
 ### Step 6: Run the miner
 
@@ -373,16 +421,16 @@ For each episode, predict across both horizons (7 and 14 days):
   "episode_id": "37b646dcdf02bd6e",
   "horizons": {
     "7": {
-      "cost_delta_pct": {"p10": -5.0, "p50": -2.5, "p90": 1.0},
-      "conversions_delta_pct": {"p10": -6.0, "p50": -3.5, "p90": 0.5},
-      "efficiency_delta_pct": {"p10": -3.0, "p50": 1.0, "p90": 4.0},
+      "cost_delta_pct": {"p10": -0.05, "p50": -0.025, "p90": 0.01},
+      "conversions_delta_pct": {"p10": -0.06, "p50": -0.035, "p90": 0.005},
+      "efficiency_delta_pct": {"p10": -0.03, "p50": 0.01, "p90": 0.04},
       "goal_miss_probability": 0.30,
       "instability_risk": 0.15
     },
     "14": {
-      "cost_delta_pct": {"p10": -6.0, "p50": -3.0, "p90": 0.0},
-      "conversions_delta_pct": {"p10": -7.0, "p50": -4.0, "p90": -0.5},
-      "efficiency_delta_pct": {"p10": -4.0, "p50": 0.5, "p90": 3.5},
+      "cost_delta_pct": {"p10": -0.06, "p50": -0.03, "p90": 0.0},
+      "conversions_delta_pct": {"p10": -0.07, "p50": -0.04, "p90": -0.005},
+      "efficiency_delta_pct": {"p10": -0.04, "p50": 0.005, "p90": 0.035},
       "goal_miss_probability": 0.35,
       "instability_risk": 0.10
     }
@@ -390,15 +438,23 @@ For each episode, predict across both horizons (7 and 14 days):
 }
 ```
 
-### What "Delta Percent" Means
+### What "Delta" Means
 
-All deltas are relative percentage change from the pre-window baseline:
+All deltas are fractional ratios of relative change from the
+pre-window baseline:
 
 ```
-delta_pct = ((post_window_avg - pre_window_avg) / pre_window_avg) * 100
+delta = (post_window_avg - pre_window_avg) / pre_window_avg
 ```
 
-A prediction of `cost_delta_pct.p50 = -5.0` means "I expect daily cost to drop 5% compared to the 60-day average."
+A prediction of `cost_delta_pct.p50 = -0.05` means "I expect daily
+cost to drop 5% compared to the 60-day average." The field name
+`*_delta_pct` is a historical artifact — values are fractional ratios
+(e.g. `-0.05`), **not** percent integers.
+
+Outcome values on the chain and from the validator use the same
+fractional convention, so predictions and outcomes are on identical
+scales for scoring purposes.
 
 ### Validation Rules
 
@@ -408,7 +464,7 @@ A prediction of `cost_delta_pct.p50 = -5.0` means "I expect daily cost to drop 5
 | Both horizons required | `"7"` and `"14"` must be present | Rejected |
 | All three metrics required | cost, conversions, efficiency | Rejected |
 | Probabilities in [0, 1] | goal_miss and instability_risk | Rejected |
-| Minimum interval width | `p90 - p10 > 3.0` (per `MIN_INTERVAL_WIDTH` in `hope/constants.py`) | Counted as null per the penalty rule below |
+| Minimum interval width | `p90 - p10 > MIN_INTERVAL_WIDTH` (see `hope/constants.py`; expressed in fractional units) | Counted as null per the penalty rule below |
 | No NaN/Inf | All values finite | Rejected |
 
 ### Efficiency Delta
@@ -524,7 +580,23 @@ For `measurement_resolution = "high"`:
 
 1. **Beat the predict-zero baseline.** Your skill score compares you against a model that predicts zero for everything. The bar is low — any signal you extract gives positive skill score.
 
-2. **Use the magnitude field.** For budget changes, `magnitude.spend_change_pct.expected` is the system's estimate. Start from it, then improve.
+2. **Derive a direction signal from the pre-window for `BUDGET_CHANGE`.**
+   In live epochs the `action.magnitude.spend_change_pct.expected` field
+   is often `null` for budget changes (only `TARGET_VALUE_CHANGE` reliably
+   populates magnitude). For `BUDGET_CHANGE`, derive your own signal from
+   the pre-window time series:
+   ```python
+   import numpy as np
+   cost = np.array(pre_window["campaigns"][cid]["cost_micros"], dtype=float)
+   recent = cost[-14:][cost[-14:] > 0]
+   early  = cost[:14][cost[:14] > 0]
+   trend_pct = ((recent.mean() - early.mean()) / max(early.mean(), 1)) * 100
+   # trend_pct ≈ percent change in daily spend over the last 14 days vs
+   # the first 14 days; use sign + magnitude as a P50 prior.
+   ```
+   Then combine with `bundle_summary.has_destructive` / `has_improvement`
+   to refine the sign. The baseline model in `hope/miner/models/baseline.py`
+   shows this pattern.
 
 3. **Use the training data.** Run `python scripts/train_example_model.py` — it shows how to extract 19 features, train XGBoost, and score 1.5x better than baseline.
 
@@ -567,20 +639,27 @@ spend_cv = agg.spend_cv  # Volatility signal
 ### Extract magnitude estimates
 
 ```python
+# Predictions are in the same fractional units as outcome deltas:
+# -0.05 means -5%, -1.0 is the floor (full removal).
 mag = action.magnitude
 
 if action_type == "BUDGET_CHANGE":
-    cost_p50 = mag["spend_change_pct"]["expected"]  # e.g., 20.0 (= +20%)
+    # `spend_change_pct.expected` is in percent on the episode payload
+    # (e.g. 20 means +20%). Outcome deltas are fractional, so divide
+    # by 100 to convert to the matching scale.
+    spend_pct = mag.get("spend_change_pct") or {}
+    expected = (spend_pct.get("expected") if isinstance(spend_pct, dict) else spend_pct) or 0.0
+    cost_p50 = float(expected) / 100.0
     conv_p50 = cost_p50 * 0.7  # Diminishing returns
 
 elif action_type == "CAMPAIGN_PAUSE":
-    cost_p50 = -100.0  # Deterministic
-    conv_p50 = -100.0
+    cost_p50 = -1.0  # Deterministic — spend goes to zero
+    conv_p50 = -1.0
 
 elif action_type == "TARGET_VALUE_CHANGE":
-    # target_vs_current_pct tells you the gap
-    pct_change = mag.get("target_vs_current_pct", 0)
-    cost_p50 = pct_change * 0.5  # Partial adjustment expected
+    # target_vs_current_pct is also in percent on the payload
+    pct_change = mag.get("target_vs_current_pct", 0) or 0
+    cost_p50 = float(pct_change) / 100.0 * 0.5  # Partial adjustment expected
 
 elif action_type == "BID_STRATEGY_CHANGE":
     cost_p50 = 0.0  # Direction uncertain during learning
@@ -590,11 +669,16 @@ elif action_type == "BID_STRATEGY_CHANGE":
 ### Format and submit
 
 ```python
+from hope.constants import MIN_INTERVAL_WIDTH
 from hope.protocol.prediction import Prediction, HorizonPrediction, QuantilePrediction
 
-spread = 5.0
+# Spread is half-width in fractional units. 0.05 = ±5 percentage points
+# around the p50. Floor with MIN_INTERVAL_WIDTH so narrow predictions
+# don't trip the null detector (see hope/constants.py).
+spread = 0.05
 if spend_cv > 0.3:
     spread *= 1.5  # Wider for volatile accounts
+spread = max(spread, MIN_INTERVAL_WIDTH)
 
 prediction = Prediction(
     episode_id=ep.episode_metadata.episode_id,
@@ -772,6 +856,19 @@ No. Only `btcli subnet register` and other coldkey-signed extrinsics
 prompt for it. The actual mining flow (`hope-miner`) signs with the
 **hotkey** only — hotkey files are stored unencrypted by default and
 no password prompt fires during prediction submission.
+
+### `btcli ... --quiet` returns no output — did it work?
+
+`btcli` swallows its success output under `--quiet`, which is
+indistinguishable from a silent crash. We don't recommend `--quiet`
+in this quickstart — it makes "did the registration land?" hard to
+answer. If you've already run a `--quiet` command, verify by:
+```bash
+btcli wallet overview --wallet.name my_miner --subtensor.network test
+# Coldkey balance debited by ~0.0005 τ ⇒ registration landed
+btcli subnet metagraph --netuid 466 --subtensor.network test
+# Your hotkey ss58 in the list ⇒ visible to validators
+```
 
 ### `bittensor.MaxRetriesExceeded` / `keepalive ping timeout`
 

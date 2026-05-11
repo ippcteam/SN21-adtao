@@ -46,8 +46,13 @@ class DirectionalAccuracy(ScoringComponent):
 
         Returns value in [0.0, 1.0] where 1.0 is perfect.
         """
-        d_cost = self._score_metric(outcome.cost_delta_pct, prediction.cost_delta_pct.p50)
-        d_conv = self._score_metric(outcome.conversions_delta_pct, prediction.conversions_delta_pct.p50)
-        d_eff = self._score_metric(outcome.efficiency_delta_pct, prediction.efficiency_delta_pct.p50)
+        metric_scores = [
+            self._score_metric(outcome.cost_delta_pct, prediction.cost_delta_pct.p50),
+            self._score_metric(outcome.conversions_delta_pct, prediction.conversions_delta_pct.p50),
+        ]
+        if outcome.efficiency_delta_pct is not None:
+            metric_scores.append(
+                self._score_metric(outcome.efficiency_delta_pct, prediction.efficiency_delta_pct.p50)
+            )
 
-        return (d_cost + d_conv + d_eff) / 3.0
+        return sum(metric_scores) / len(metric_scores)

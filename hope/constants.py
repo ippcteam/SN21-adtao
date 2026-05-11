@@ -51,8 +51,13 @@ HORIZON_WEIGHTS = {
 NULL_PENALTY_RAMP_START = 0.40
 NULL_PENALTY_RAMP_END = 0.85
 NULL_PENALTY_MAX = 0.60
-NEAR_ZERO_THRESHOLD = 2.0  # |p50| must exceed this to not be near-zero
-MIN_INTERVAL_WIDTH = 3.0   # p90-p10 must exceed this to carry information
+# Null-detector thresholds expressed in the same fractional units as
+# outcome deltas (e.g. 0.02 means 2 percentage points). Miner predictions
+# must use matching fractional units (`p50 = -0.05` means -5%). The
+# specific values are governance-tuned via the spec doc — see
+# SN21_REWARD_MECHANISM.md §4.3.
+NEAR_ZERO_THRESHOLD = 0.02
+MIN_INTERVAL_WIDTH = 0.03
 
 # Calibration parameters
 CALIBRATION_WIDTH_EXPONENT = 1.3
@@ -60,7 +65,7 @@ CALIBRATION_MISS_MULTIPLIER = 2.5
 CALIBRATION_LOW_RES_REDUCTION = 0.50
 
 # Directional accuracy
-DIRECTIONAL_NEAR_ZERO_THRESHOLD = 1.0
+DIRECTIONAL_NEAR_ZERO_THRESHOLD = 0.01
 
 # Epoch timing — weekly cadence:
 #   Mining open:    Monday 12:00 noon EST (17:00 UTC) → Sunday 23:59 EST (Monday 04:59 UTC)

@@ -59,22 +59,36 @@ class NullPenalty:
         self,
         predictions: list[Prediction],
         total_episodes: int | None = None,
+        no_action_episode_ids: set[str] | None = None,
     ) -> float:
         """Fraction of episodes that are near-zero or skipped.
 
         If total_episodes is provided, skipped episodes count as near-zero.
         This prevents cherry-picking: submitting only for easy episodes.
-        """
-        if total_episodes is not None and total_episodes > 0:
-            near_zero_submitted = sum(1 for p in predictions if self.is_near_zero(p))
-            skipped = max(0, total_episodes - len(predictions))
-            return (near_zero_submitted + skipped) / total_episodes
 
-        # Fallback: count over submitted predictions only
-        if not predictions:
+        ``no_action_episode_ids`` are episodes whose action_bundle is empty
+        (control episodes; true outcome is ~0 by definition). They're
+        exempted from both numerator and denominator so an honest p50≈0
+        prediction on a no-action episode doesn't count against the
+        miner. Without this exemption, miners are systematically
+        incentivised to lie on control episodes.
+        """
+        no_action = no_action_episode_ids or set()
+        relevant_preds = [p for p in predictions if p.episode_id not in no_action]
+
+        if total_episodes is not None and total_episodes > 0:
+            adjusted_total = max(0, total_episodes - len(no_action))
+            if adjusted_total == 0:
+                return 0.0
+            near_zero_submitted = sum(1 for p in relevant_preds if self.is_near_zero(p))
+            skipped = max(0, adjusted_total - len(relevant_preds))
+            return (near_zero_submitted + skipped) / adjusted_total
+
+        # Fallback: count over submitted (non-control) predictions only
+        if not relevant_preds:
             return 0.0
-        near_zero_count = sum(1 for p in predictions if self.is_near_zero(p))
-        return near_zero_count / len(predictions)
+        near_zero_count = sum(1 for p in relevant_preds if self.is_near_zero(p))
+        return near_zero_count / len(relevant_preds)
 
     def compute_penalty(self, near_zero_fraction: float) -> float:
         """Compute the penalty multiplier from near-zero fraction.

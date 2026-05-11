@@ -50,9 +50,17 @@ class QuantileAccuracy(ScoringComponent):
 
         Returns value in [0.0, 1.0] where 1.0 is perfect.
         """
-        crps_cost = self._score_metric(outcome.cost_delta_pct, prediction.cost_delta_pct)
-        crps_conv = self._score_metric(outcome.conversions_delta_pct, prediction.conversions_delta_pct)
-        crps_eff = self._score_metric(outcome.efficiency_delta_pct, prediction.efficiency_delta_pct)
+        metric_scores = [
+            self._score_metric(outcome.cost_delta_pct, prediction.cost_delta_pct),
+            self._score_metric(outcome.conversions_delta_pct, prediction.conversions_delta_pct),
+        ]
+        # Efficiency is undefined when conversions or cost are zero on the
+        # measured horizon; the operator API emits null in that case. Skip
+        # the metric rather than scoring against a fabricated value.
+        if outcome.efficiency_delta_pct is not None:
+            metric_scores.append(
+                self._score_metric(outcome.efficiency_delta_pct, prediction.efficiency_delta_pct)
+            )
 
-        normalized_crps = (crps_cost + crps_conv + crps_eff) / 3.0
+        normalized_crps = sum(metric_scores) / len(metric_scores)
         return max(0.0, min(1.0, 1.0 - normalized_crps))

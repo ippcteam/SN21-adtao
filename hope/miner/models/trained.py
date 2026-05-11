@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -84,11 +83,14 @@ class TrainedXGBoostModel(PredictionEngine):
         cost_p50 = float(self.model_cost.predict(x)[0])
         conv_p50 = float(self.model_conv.predict(x)[0])
 
-        # Spread heuristic: scales with prediction magnitude. Miners should
-        # tune this — calibration is a major scoring component.
-        spread = max(5.0, abs(cost_p50) * 0.3)
+        # Spread heuristic in fractional units — scales with prediction
+        # magnitude, floored by the spec-defined MIN_INTERVAL_WIDTH so
+        # narrow-around-zero predictions don't trip the null detector.
+        # Miners should tune this — calibration is a major scoring component.
+        from hope.constants import MIN_INTERVAL_WIDTH
+        spread = max(MIN_INTERVAL_WIDTH, abs(cost_p50) * 0.3)
         eff_p50 = 0.0
-        eff_spread = max(3.0, spread / 2)
+        eff_spread = max(MIN_INTERVAL_WIDTH, spread / 2)
 
         h7 = HorizonPrediction(
             cost_delta_pct=QuantilePrediction(
