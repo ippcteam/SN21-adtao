@@ -513,8 +513,8 @@
             "timestamp": "2026-04-14T15:52:25.660636",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "TARGET_SPEND",
               "learning_period_days": 14
             }
           }
@@ -1070,8 +1070,8 @@
             "timestamp": "2026-04-14T08:36:42.233991",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           },
@@ -1096,8 +1096,8 @@
             "timestamp": "2026-04-14T08:37:03.916441",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -2216,8 +2216,8 @@
             "timestamp": "2026-04-21T19:06:30.824611",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -2773,8 +2773,8 @@
             "timestamp": "2026-04-14T08:55:52.501154",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -3914,7 +3914,7 @@
             "source": "system",
             "magnitude": {
               "from": "unknown",
-              "to": "unknown",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -5053,8 +5053,8 @@
             "timestamp": "2026-04-13T09:37:29.428106",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -5610,8 +5610,8 @@
             "timestamp": "2026-04-13T09:37:38.790288",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -6167,8 +6167,8 @@
             "timestamp": "2026-04-13T09:37:43.213165",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -6244,7 +6244,7 @@
         "customer_id_hash": "28d1a50e3489694af9b9a9ceb3ccb1c27a6a8603128bd794054875fcbff5e8b2",
         "currency_code": "USD",
         "account_type": "lead",
-        "spend_bucket": "low",
+        "spend_bucket": "mid",
         "tracking_reliability": "high",
         "goal": {
           "type": "conversions",
@@ -7314,7 +7314,7 @@
             "source": "system",
             "magnitude": {
               "from": "unknown",
-              "to": "unknown",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -7870,8 +7870,8 @@
             "timestamp": "2026-04-15T10:18:58.416599",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -8427,8 +8427,8 @@
             "timestamp": "2026-04-20T10:48:36.440000",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -8984,8 +8984,8 @@
             "timestamp": "2026-04-13T09:25:59.413705",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -9541,8 +9541,8 @@
             "timestamp": "2026-04-15T05:59:06.985210",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -10099,7 +10099,7 @@
             "source": "system",
             "magnitude": {
               "from": "unknown",
-              "to": "unknown",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           },
@@ -10124,8 +10124,8 @@
             "timestamp": "2026-04-21T12:05:49.355264",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           },
@@ -10150,8 +10150,8 @@
             "timestamp": "2026-04-21T12:06:22.348264",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -10707,8 +10707,8 @@
             "timestamp": "2026-04-14T10:12:30.799280",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -11264,8 +11264,8 @@
             "timestamp": "2026-04-20T11:40:08.641652",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -11821,8 +11821,8 @@
             "timestamp": "2026-04-20T11:40:26.497523",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -12378,8 +12378,8 @@
             "timestamp": "2026-04-20T11:40:54.302785",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -12936,7 +12936,7 @@
             "source": "system",
             "magnitude": {
               "from": "unknown",
-              "to": "unknown",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -13492,8 +13492,8 @@
             "timestamp": "2026-04-17T06:53:51.531025",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -14049,8 +14049,8 @@
             "timestamp": "2026-04-21T06:53:39.368864",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -14606,8 +14606,8 @@
             "timestamp": "2026-04-13T10:48:07.619614",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -15163,8 +15163,8 @@
             "timestamp": "2026-04-17T06:53:52.509424",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -15720,8 +15720,8 @@
             "timestamp": "2026-04-21T06:53:39.929541",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -16277,8 +16277,8 @@
             "timestamp": "2026-04-13T10:48:08.768046",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -16834,8 +16834,8 @@
             "timestamp": "2026-04-17T06:53:53.829409",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -17391,8 +17391,8 @@
             "timestamp": "2026-04-21T06:53:40.740028",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -17948,8 +17948,8 @@
             "timestamp": "2026-04-13T10:48:10.751636",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -18505,8 +18505,8 @@
             "timestamp": "2026-04-17T06:53:55.526339",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -19062,8 +19062,8 @@
             "timestamp": "2026-04-21T06:53:42.454122",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -19619,8 +19619,8 @@
             "timestamp": "2026-04-14T06:52:42.917833",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -20176,8 +20176,8 @@
             "timestamp": "2026-04-18T06:53:14.481782",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -20733,8 +20733,8 @@
             "timestamp": "2026-04-14T06:52:44.759102",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -21290,8 +21290,8 @@
             "timestamp": "2026-04-18T06:53:15.691904",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -21847,8 +21847,8 @@
             "timestamp": "2026-04-14T06:52:46.018182",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -22404,8 +22404,8 @@
             "timestamp": "2026-04-18T06:53:16.685325",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -22961,8 +22961,8 @@
             "timestamp": "2026-04-14T06:52:47.219868",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -23518,8 +23518,8 @@
             "timestamp": "2026-04-18T06:53:17.776813",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSION_VALUE",
+              "to": "MAXIMIZE_CONVERSION_VALUE",
               "learning_period_days": 14
             }
           }
@@ -24075,8 +24075,8 @@
             "timestamp": "2026-04-15T16:22:18.063614",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "TARGET_SPEND",
+              "to": "TARGET_SPEND",
               "learning_period_days": 14
             }
           }
@@ -24633,7 +24633,7 @@
             "source": "system",
             "magnitude": {
               "from": "unknown",
-              "to": "unknown",
+              "to": "TARGET_SPEND",
               "learning_period_days": 14
             }
           }
@@ -26361,8 +26361,8 @@
             "timestamp": "2026-04-16T12:18:54.782075",
             "source": "system",
             "magnitude": {
-              "from": "unknown",
-              "to": "unknown",
+              "from": "MAXIMIZE_CONVERSIONS",
+              "to": "MAXIMIZE_CONVERSIONS",
               "learning_period_days": 14
             }
           }
@@ -26919,7 +26919,7 @@
             "source": "system",
             "magnitude": {
               "from": "unknown",
-              "to": "unknown",
+              "to": "TARGET_SPEND",
               "learning_period_days": 14
             }
           }
@@ -26963,6 +26963,1182 @@
         "cost_delta_pct": -0.229683,
         "conversions_delta_pct": -0.760398,
         "efficiency_delta_pct": null,
+        "goal_miss": 0
+      }
+    }
+  },
+  {
+    "episode_id": "f0ce3b00e9898c8e",
+    "input": {
+      "episode_metadata": {
+        "episode_id": "f0ce3b00e9898c8e",
+        "release_key": "",
+        "schema_version": "v1.9",
+        "phase": 1,
+        "epoch": 1,
+        "coverage_status": "trust_enriched",
+        "measurement_resolution": "high",
+        "action_window_start": "2026-04-25T02:00:03.948581+00:00",
+        "action_window_end": "2026-04-25T02:00:03.948581+00:00",
+        "outcome_horizons_days": [
+          7,
+          14
+        ],
+        "environmental_context": {
+          "seasonality_index": 1.0,
+          "auction_pressure_trend": 0.0,
+          "spend_volatility_cv": 0.0,
+          "week_over_week_delta": 0.0
+        }
+      },
+      "account_state": {
+        "customer_id_hash": "ab8f967669ba160b7a23d20eb9b5ffc0f9674ba973f33519b57db9b3c393c42d",
+        "currency_code": "USD",
+        "account_type": "lead",
+        "spend_bucket": "low",
+        "tracking_reliability": "high",
+        "goal": {
+          "type": "cost_per_conversion",
+          "target": 150.0,
+          "deviation": 0,
+          "tolerance": 0.1
+        },
+        "archetypes": [
+          {
+            "archetype_id": "SPEND_PACING_OFF_V1",
+            "severity_score": 50,
+            "confidence": 0.5,
+            "blast_radius": "medium",
+            "primary_q": "Q1",
+            "base_risk": "medium"
+          }
+        ],
+        "health": {
+          "compliance_score": 85,
+          "issues_count": 1,
+          "compliance_trend": "stable",
+          "status_counts": {
+            "detected": 0,
+            "resolved": 0,
+            "monitoring": 0
+          }
+        },
+        "guardrails": [],
+        "portfolio_context": {
+          "active_campaign_count": 2,
+          "total_monthly_spend_micros": 4247319594
+        }
+      },
+      "date_index": [
+        "2026-02-24",
+        "2026-02-25",
+        "2026-02-26",
+        "2026-02-27",
+        "2026-02-28",
+        "2026-03-01",
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05",
+        "2026-03-06",
+        "2026-03-07",
+        "2026-03-08",
+        "2026-03-09",
+        "2026-03-10",
+        "2026-03-11",
+        "2026-03-12",
+        "2026-03-13",
+        "2026-03-14",
+        "2026-03-15",
+        "2026-03-16",
+        "2026-03-17",
+        "2026-03-18",
+        "2026-03-19",
+        "2026-03-20",
+        "2026-03-21",
+        "2026-03-22",
+        "2026-03-23",
+        "2026-03-24",
+        "2026-03-25",
+        "2026-03-26",
+        "2026-03-27",
+        "2026-03-28",
+        "2026-03-29",
+        "2026-03-30",
+        "2026-03-31",
+        "2026-04-01",
+        "2026-04-02",
+        "2026-04-03",
+        "2026-04-04",
+        "2026-04-05",
+        "2026-04-06",
+        "2026-04-07",
+        "2026-04-08",
+        "2026-04-09",
+        "2026-04-10",
+        "2026-04-11",
+        "2026-04-12",
+        "2026-04-13",
+        "2026-04-14",
+        "2026-04-15",
+        "2026-04-16",
+        "2026-04-17",
+        "2026-04-18",
+        "2026-04-19",
+        "2026-04-20",
+        "2026-04-21",
+        "2026-04-22",
+        "2026-04-23",
+        "2026-04-24"
+      ],
+      "pre_window": {
+        "campaigns": {
+          "98c0a8dcbc66be45e7f9f8c02efa393ff48e65f921914401c132d60884fbdd5e": {
+            "campaign_type": "SEARCH",
+            "bid_strategy_type": "PAGE_ONE_PROMOTED",
+            "impressions": [
+              79,
+              23,
+              41,
+              0,
+              0,
+              0,
+              126,
+              77,
+              30,
+              46,
+              71,
+              0,
+              0,
+              76,
+              38,
+              50,
+              103,
+              23,
+              0,
+              0,
+              157,
+              141,
+              85,
+              182,
+              64,
+              0,
+              0,
+              38,
+              35,
+              128,
+              16,
+              61,
+              0,
+              0,
+              50,
+              39,
+              56,
+              102,
+              47,
+              0,
+              0,
+              19,
+              16,
+              56,
+              34,
+              64,
+              0,
+              0,
+              33,
+              109,
+              112,
+              77,
+              27,
+              0,
+              0,
+              47,
+              58,
+              16,
+              90,
+              34
+            ],
+            "clicks": [
+              4,
+              3,
+              2,
+              0,
+              0,
+              0,
+              2,
+              1,
+              4,
+              5,
+              3,
+              0,
+              0,
+              2,
+              3,
+              2,
+              5,
+              1,
+              0,
+              0,
+              6,
+              7,
+              3,
+              3,
+              3,
+              0,
+              0,
+              3,
+              1,
+              4,
+              4,
+              0,
+              0,
+              0,
+              4,
+              1,
+              2,
+              4,
+              3,
+              0,
+              0,
+              1,
+              2,
+              2,
+              4,
+              0,
+              0,
+              0,
+              3,
+              6,
+              2,
+              3,
+              1,
+              0,
+              0,
+              3,
+              2,
+              3,
+              4,
+              4
+            ],
+            "cost_micros": [
+              164124418,
+              114120000,
+              98570000,
+              0,
+              0,
+              0,
+              18630000,
+              69620000,
+              229690832,
+              186603530,
+              93650000,
+              0,
+              0,
+              103710000,
+              116470000,
+              71040000,
+              153473021,
+              136211584,
+              0,
+              0,
+              91385401,
+              124358517,
+              112020000,
+              35000000,
+              111720000,
+              0,
+              0,
+              267520000,
+              100630000,
+              59470000,
+              213097872,
+              0,
+              0,
+              0,
+              227300000,
+              56670000,
+              135620000,
+              104076621,
+              117285708,
+              0,
+              0,
+              119533720,
+              232185920,
+              89927379,
+              91010000,
+              0,
+              0,
+              0,
+              241025474,
+              73088172,
+              53060000,
+              101079479,
+              86160000,
+              0,
+              0,
+              203886482,
+              107117930,
+              124020000,
+              122580000,
+              98220000
+            ],
+            "conversions": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              3.0,
+              2.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              2.0,
+              0.0,
+              0.0,
+              3.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            "conversion_value_micros": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              90,
+              90,
+              0,
+              0,
+              0,
+              30,
+              0,
+              0,
+              0,
+              30,
+              0,
+              0,
+              0,
+              0,
+              30,
+              0,
+              0,
+              0,
+              0,
+              90,
+              0,
+              0,
+              90,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              30,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "impression_share": [
+              0.4684,
+              0.4848,
+              0.3889,
+              0.0,
+              0.0,
+              0.0,
+              0.8193,
+              0.9167,
+              0.7857,
+              0.4194,
+              0.3933,
+              0.0,
+              0.0,
+              0.4388,
+              0.3788,
+              0.4615,
+              0.7011,
+              0.3636,
+              0.0,
+              0.0,
+              0.7521,
+              0.6591,
+              0.475,
+              0.6587,
+              0.7959,
+              0.0,
+              0.0,
+              0.4219,
+              0.4032,
+              0.6772,
+              0.3333,
+              0.8636,
+              0.0,
+              0.0,
+              0.4306,
+              0.3443,
+              0.325,
+              0.5214,
+              0.4459,
+              0.0,
+              0.0,
+              0.4138,
+              0.3235,
+              0.4045,
+              0.2299,
+              0.5417,
+              0.0,
+              0.0,
+              0.375,
+              0.4065,
+              0.6429,
+              0.5465,
+              0.76,
+              0.0,
+              0.0,
+              0.4048,
+              0.4286,
+              0.2759,
+              0.7188,
+              0.3134
+            ]
+          }
+        },
+        "account_aggregates": {
+          "avg_daily_spend_micros": 123291757,
+          "avg_daily_conversions": 0.37,
+          "avg_cpa_micros": 336997470,
+          "avg_roas": 0.0,
+          "spend_cv": 0.4791,
+          "conversion_cv": 0.5196,
+          "impression_share_trend": -0.1802,
+          "cpc_trend": 0.185
+        }
+      },
+      "action_bundle": {
+        "window_start": "2026-04-25T02:00:03.948581+00:00",
+        "window_end": "2026-04-25T02:00:03.948581+00:00",
+        "actions": [
+          {
+            "type": "CAMPAIGN_PAUSE",
+            "scope": "campaign",
+            "entity_level": "campaign",
+            "entity_id_hash": "98c0a8dcbc66be45e7f9f8c02efa393ff48e65f921914401c132d60884fbdd5e",
+            "campaign_id_hash": "98c0a8dcbc66be45e7f9f8c02efa393ff48e65f921914401c132d60884fbdd5e",
+            "impact_class": "destructive",
+            "risk_tier": "high",
+            "reversibility": "reversible",
+            "blast_radius": {
+              "tier": "parent_equivalent",
+              "impact_ratio": 1.0,
+              "entity_count": 1,
+              "spend_contribution": 1.0,
+              "conversion_contribution": 1.0,
+              "impression_contribution": 1.0,
+              "is_default": false
+            },
+            "timestamp": "2026-04-25T02:00:03.948581",
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": -100,
+              "conversions_change_pct": -100,
+              "certainty": 1.0
+            }
+          }
+        ],
+        "bundle_summary": {
+          "action_count": 1,
+          "action_count_by_scope": {
+            "campaign": 1
+          },
+          "max_blast_radius_tier": "parent_equivalent",
+          "weighted_impact_ratio": 1.0,
+          "dominant_scope": "campaign",
+          "has_destructive": true,
+          "has_improvement": false,
+          "max_risk_score": 85,
+          "net_efficiency_delta": 0.0,
+          "net_capacity_delta": -1.0,
+          "source_mix": {
+            "system": 1,
+            "user": 0
+          }
+        }
+      },
+      "campaign_metadata": [
+        {
+          "campaign_id_hash": "98c0a8dcbc66be45e7f9f8c02efa393ff48e65f921914401c132d60884fbdd5e",
+          "campaign_type": "SEARCH",
+          "bid_strategy_type": "PAGE_ONE_PROMOTED",
+          "status": "ENABLED"
+        }
+      ]
+    },
+    "outcome": {
+      "t7": {
+        "cost_delta_pct": -0.204213,
+        "conversions_delta_pct": -1.0,
+        "efficiency_delta_pct": 1.0,
+        "goal_miss": 0
+      },
+      "t14": {
+        "cost_delta_pct": 0.406608,
+        "conversions_delta_pct": -0.316667,
+        "efficiency_delta_pct": -1.05845,
+        "goal_miss": 0
+      }
+    }
+  },
+  {
+    "episode_id": "48c122a6a13bd5dd",
+    "input": {
+      "episode_metadata": {
+        "episode_id": "48c122a6a13bd5dd",
+        "release_key": "",
+        "schema_version": "v1.9",
+        "phase": 1,
+        "epoch": 1,
+        "coverage_status": "trust_enriched",
+        "measurement_resolution": "high",
+        "action_window_start": "2026-04-25T02:00:04.742588+00:00",
+        "action_window_end": "2026-04-25T02:00:04.742588+00:00",
+        "outcome_horizons_days": [
+          7,
+          14
+        ],
+        "environmental_context": {
+          "seasonality_index": 1.0,
+          "auction_pressure_trend": 0.0,
+          "spend_volatility_cv": 0.0,
+          "week_over_week_delta": 0.0
+        }
+      },
+      "account_state": {
+        "customer_id_hash": "ab8f967669ba160b7a23d20eb9b5ffc0f9674ba973f33519b57db9b3c393c42d",
+        "currency_code": "USD",
+        "account_type": "lead",
+        "spend_bucket": "low",
+        "tracking_reliability": "high",
+        "goal": {
+          "type": "cost_per_conversion",
+          "target": 150.0,
+          "deviation": 0,
+          "tolerance": 0.1
+        },
+        "archetypes": [
+          {
+            "archetype_id": "SPEND_PACING_OFF_V1",
+            "severity_score": 50,
+            "confidence": 0.5,
+            "blast_radius": "medium",
+            "primary_q": "Q1",
+            "base_risk": "medium"
+          }
+        ],
+        "health": {
+          "compliance_score": 85,
+          "issues_count": 1,
+          "compliance_trend": "stable",
+          "status_counts": {
+            "detected": 0,
+            "resolved": 0,
+            "monitoring": 0
+          }
+        },
+        "guardrails": [],
+        "portfolio_context": {
+          "active_campaign_count": 2,
+          "total_monthly_spend_micros": 4247319594
+        }
+      },
+      "date_index": [
+        "2026-02-24",
+        "2026-02-25",
+        "2026-02-26",
+        "2026-02-27",
+        "2026-02-28",
+        "2026-03-01",
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05",
+        "2026-03-06",
+        "2026-03-07",
+        "2026-03-08",
+        "2026-03-09",
+        "2026-03-10",
+        "2026-03-11",
+        "2026-03-12",
+        "2026-03-13",
+        "2026-03-14",
+        "2026-03-15",
+        "2026-03-16",
+        "2026-03-17",
+        "2026-03-18",
+        "2026-03-19",
+        "2026-03-20",
+        "2026-03-21",
+        "2026-03-22",
+        "2026-03-23",
+        "2026-03-24",
+        "2026-03-25",
+        "2026-03-26",
+        "2026-03-27",
+        "2026-03-28",
+        "2026-03-29",
+        "2026-03-30",
+        "2026-03-31",
+        "2026-04-01",
+        "2026-04-02",
+        "2026-04-03",
+        "2026-04-04",
+        "2026-04-05",
+        "2026-04-06",
+        "2026-04-07",
+        "2026-04-08",
+        "2026-04-09",
+        "2026-04-10",
+        "2026-04-11",
+        "2026-04-12",
+        "2026-04-13",
+        "2026-04-14",
+        "2026-04-15",
+        "2026-04-16",
+        "2026-04-17",
+        "2026-04-18",
+        "2026-04-19",
+        "2026-04-20",
+        "2026-04-21",
+        "2026-04-22",
+        "2026-04-23",
+        "2026-04-24"
+      ],
+      "pre_window": {
+        "campaigns": {
+          "b2f72eaae27291ff7d785b287d1e3960e1a2733d66f7363636ee9b9e2d9fc0d1": {
+            "campaign_type": "SEARCH",
+            "bid_strategy_type": "PAGE_ONE_PROMOTED",
+            "impressions": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              4,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              6,
+              0,
+              0,
+              0,
+              0,
+              3,
+              1,
+              23,
+              0
+            ],
+            "clicks": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              2,
+              0
+            ],
+            "cost_micros": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              33600000,
+              0
+            ],
+            "conversions": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "conversion_value_micros": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "impression_share": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.25,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0999,
+              0.9231,
+              0.0
+            ]
+          }
+        },
+        "account_aggregates": {
+          "avg_daily_spend_micros": 33600000,
+          "avg_daily_conversions": 0.0,
+          "avg_cpa_micros": 33600000000,
+          "avg_roas": 0.0,
+          "spend_cv": 0.0,
+          "conversion_cv": 0.0,
+          "impression_share_trend": 0.0,
+          "cpc_trend": 0.0
+        }
+      },
+      "action_bundle": {
+        "window_start": "2026-04-25T02:00:04.742588+00:00",
+        "window_end": "2026-04-25T02:00:04.742588+00:00",
+        "actions": [
+          {
+            "type": "CAMPAIGN_PAUSE",
+            "scope": "campaign",
+            "entity_level": "campaign",
+            "entity_id_hash": "b2f72eaae27291ff7d785b287d1e3960e1a2733d66f7363636ee9b9e2d9fc0d1",
+            "campaign_id_hash": "b2f72eaae27291ff7d785b287d1e3960e1a2733d66f7363636ee9b9e2d9fc0d1",
+            "impact_class": "destructive",
+            "risk_tier": "high",
+            "reversibility": "reversible",
+            "blast_radius": {
+              "tier": "parent_equivalent",
+              "impact_ratio": 1.0,
+              "entity_count": 1,
+              "spend_contribution": 1.0,
+              "conversion_contribution": 1.0,
+              "impression_contribution": 1.0,
+              "is_default": false
+            },
+            "timestamp": "2026-04-25T02:00:04.742588",
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": -100,
+              "conversions_change_pct": -100,
+              "certainty": 1.0
+            }
+          }
+        ],
+        "bundle_summary": {
+          "action_count": 1,
+          "action_count_by_scope": {
+            "campaign": 1
+          },
+          "max_blast_radius_tier": "parent_equivalent",
+          "weighted_impact_ratio": 1.0,
+          "dominant_scope": "campaign",
+          "has_destructive": true,
+          "has_improvement": false,
+          "max_risk_score": 85,
+          "net_efficiency_delta": 0.0,
+          "net_capacity_delta": -1.0,
+          "source_mix": {
+            "system": 1,
+            "user": 0
+          }
+        }
+      },
+      "campaign_metadata": [
+        {
+          "campaign_id_hash": "b2f72eaae27291ff7d785b287d1e3960e1a2733d66f7363636ee9b9e2d9fc0d1",
+          "campaign_type": "SEARCH",
+          "bid_strategy_type": "MAXIMIZE_CONVERSION_VALUE",
+          "status": "ENABLED"
+        }
+      ]
+    },
+    "outcome": {
+      "t7": {
+        "cost_delta_pct": -0.773512,
+        "conversions_delta_pct": 0.0,
+        "efficiency_delta_pct": -0.0,
+        "goal_miss": 0
+      },
+      "t14": {
+        "cost_delta_pct": -0.880298,
+        "conversions_delta_pct": 0.0,
+        "efficiency_delta_pct": -0.0,
         "goal_miss": 0
       }
     }
@@ -27482,7 +28658,7 @@
             "source": "system",
             "magnitude": {
               "from": "unknown",
-              "to": "unknown",
+              "to": "TARGET_SPEND",
               "learning_period_days": 14
             }
           }
@@ -27589,7 +28765,7 @@
         "guardrails": [],
         "portfolio_context": {
           "active_campaign_count": 5,
-          "total_monthly_spend_micros": 4729683215
+          "total_monthly_spend_micros": 4757373215
         }
       },
       "date_index": [
@@ -28070,7 +29246,7 @@
             "source": "system",
             "magnitude": {
               "from": "unknown",
-              "to": "unknown",
+              "to": "TARGET_SPEND",
               "learning_period_days": 14
             }
           }
@@ -28630,7 +29806,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-13T06:00:34.244079",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 25500000,
+              "new_amount_micros": 30600000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -28651,7 +29837,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-14T06:00:32.046703",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 30600000,
+              "new_amount_micros": 36720000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -28672,7 +29868,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-15T06:00:36.543071",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 36720000,
+              "new_amount_micros": 44060000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -28693,7 +29899,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-16T06:00:34.490223",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 44060000,
+              "new_amount_micros": 52870000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -28714,7 +29930,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-17T06:00:59.108959",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 52870000,
+              "new_amount_micros": 63440000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -28735,7 +29961,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-18T06:01:40.475295",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 63440000,
+              "new_amount_micros": 76130000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -28756,7 +29992,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-19T06:01:53.784159",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 76130000,
+              "new_amount_micros": 91360000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -28777,7 +30023,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-20T08:23:37.010447",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": -56.8,
+                "max": -85.2,
+                "expected": -71.0
+              },
+              "previous_amount_micros": 91360000,
+              "new_amount_micros": 26500000,
+              "certainty": 0.85
+            }
           }
         ],
         "bundle_summary": {
@@ -28792,7 +30048,7 @@
           "has_improvement": true,
           "max_risk_score": 50,
           "net_efficiency_delta": 0.0,
-          "net_capacity_delta": 0.0,
+          "net_capacity_delta": 0.69,
           "source_mix": {
             "system": 8,
             "user": 0
@@ -29335,7 +30591,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-13T06:00:34.634591",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 1200000,
+              "new_amount_micros": 1440000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -29356,7 +30622,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-14T06:00:32.499791",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.1,
+                "max": 24.2,
+                "expected": 20.1
+              },
+              "previous_amount_micros": 1440000,
+              "new_amount_micros": 1730000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -29377,7 +30653,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-15T06:00:36.977039",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.2,
+                "max": 24.3,
+                "expected": 20.2
+              },
+              "previous_amount_micros": 1730000,
+              "new_amount_micros": 2080000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -29398,7 +30684,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-16T06:00:34.983951",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.2,
+                "max": 24.2,
+                "expected": 20.2
+              },
+              "previous_amount_micros": 2080000,
+              "new_amount_micros": 2500000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -29419,7 +30715,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-17T06:00:59.561087",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 2500000,
+              "new_amount_micros": 3000000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -29440,7 +30746,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-18T06:01:40.827055",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 3000000,
+              "new_amount_micros": 3600000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -29461,7 +30777,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-19T06:01:54.182047",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 3600000,
+              "new_amount_micros": 4320000,
+              "certainty": 0.85
+            }
           }
         ],
         "bundle_summary": {
@@ -29476,7 +30802,7 @@
           "has_improvement": true,
           "max_risk_score": 50,
           "net_efficiency_delta": 0.0,
-          "net_capacity_delta": 0.0,
+          "net_capacity_delta": 1.405,
           "source_mix": {
             "system": 7,
             "user": 0
@@ -30019,7 +31345,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-13T06:00:35.012207",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 55200000,
+              "new_amount_micros": 66240000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -30040,7 +31376,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-14T06:00:32.903391",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 66240000,
+              "new_amount_micros": 79490000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -30061,7 +31407,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-15T06:00:37.369375",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 79490000,
+              "new_amount_micros": 95390000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -30082,7 +31438,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-16T06:00:35.467535",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 95390000,
+              "new_amount_micros": 114470000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -30103,7 +31469,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-17T06:00:59.924111",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 114470000,
+              "new_amount_micros": 137360000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -30124,7 +31500,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-18T06:01:41.477567",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 137360000,
+              "new_amount_micros": 164830000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -30145,7 +31531,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-19T06:01:54.554495",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 16.0,
+                "max": 24.0,
+                "expected": 20.0
+              },
+              "previous_amount_micros": 164830000,
+              "new_amount_micros": 197800000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -30166,7 +31562,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-20T08:23:05.683871",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": -73.5,
+                "max": -110.3,
+                "expected": -91.9
+              },
+              "previous_amount_micros": 197800000,
+              "new_amount_micros": 16030000,
+              "certainty": 0.85
+            }
           }
         ],
         "bundle_summary": {
@@ -30181,7 +31587,7 @@
           "has_improvement": true,
           "max_risk_score": 50,
           "net_efficiency_delta": 0.0,
-          "net_capacity_delta": 0.0,
+          "net_capacity_delta": 0.481,
           "source_mix": {
             "system": 8,
             "user": 0
@@ -30718,7 +32124,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-20T11:49:00.176767",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": -60.5,
+                "max": -90.8,
+                "expected": -75.7
+              },
+              "previous_amount_micros": 8220000,
+              "new_amount_micros": 2000000,
+              "certainty": 0.85
+            }
           },
           {
             "type": "BUDGET_CHANGE",
@@ -30739,7 +32155,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-20T11:49:09.900383",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": 80.0,
+                "max": 120.0,
+                "expected": 100.0
+              },
+              "previous_amount_micros": 2000000,
+              "new_amount_micros": 4000000,
+              "certainty": 0.85
+            }
           }
         ],
         "bundle_summary": {
@@ -30754,7 +32180,7 @@
           "has_improvement": true,
           "max_risk_score": 50,
           "net_efficiency_delta": 0.0,
-          "net_capacity_delta": 0.0,
+          "net_capacity_delta": 0.243,
           "source_mix": {
             "system": 2,
             "user": 0
@@ -31291,7 +32717,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-20T11:49:22.922879",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": -55.7,
+                "max": -83.5,
+                "expected": -69.6
+              },
+              "previous_amount_micros": 13160000,
+              "new_amount_micros": 4000000,
+              "certainty": 0.85
+            }
           }
         ],
         "bundle_summary": {
@@ -31306,7 +32742,7 @@
           "has_improvement": true,
           "max_risk_score": 50,
           "net_efficiency_delta": 0.0,
-          "net_capacity_delta": 0.0,
+          "net_capacity_delta": -0.696,
           "source_mix": {
             "system": 1,
             "user": 0
@@ -31849,7 +33285,17 @@
               "is_default": false
             },
             "timestamp": "2026-04-18T11:09:10.015327",
-            "source": "system"
+            "source": "system",
+            "magnitude": {
+              "spend_change_pct": {
+                "min": -8.6,
+                "max": -13.0,
+                "expected": -10.8
+              },
+              "previous_amount_micros": 185000000,
+              "new_amount_micros": 165000000,
+              "certainty": 0.85
+            }
           }
         ],
         "bundle_summary": {
@@ -31864,7 +33310,7 @@
           "has_improvement": true,
           "max_risk_score": 50,
           "net_efficiency_delta": 0.0,
-          "net_capacity_delta": 0.0,
+          "net_capacity_delta": -0.108,
           "source_mix": {
             "system": 1,
             "user": 0

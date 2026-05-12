@@ -177,14 +177,18 @@ Each example has:
 > **Sample data caveat — important.** The bundled dataset is harvested
 > from real episodes and is the same shape as a live epoch, but the
 > sample is small and the action-type mix is skewed toward whichever
-> categories matured first. Counts as of the most recent refresh:
+> categories matured first. Composition as of the most recent refresh:
 >
 > | Action type | Bundled sample | Live distribution |
 > |---|---:|---|
-> | `BID_STRATEGY_CHANGE` | ~79% | varies by epoch |
-> | `CAMPAIGN_PAUSE` | ~11% | varies by epoch |
-> | `BUDGET_CHANGE` | ~11% | varies by epoch |
+> | `BID_STRATEGY_CHANGE` | ~76% | varies by epoch |
+> | `CAMPAIGN_PAUSE` | ~14% | varies by epoch |
+> | `BUDGET_CHANGE` | ~10% | varies by epoch |
 > | `TARGET_VALUE_CHANGE` | 0% | not yet matured |
+>
+> Every example carries a populated `action_bundle.actions[*].magnitude`
+> for the action types it covers, so the baseline + trained miner
+> models can drive their point estimates directly from the payload.
 >
 > The bundled set is enough to validate your pipeline end-to-end (the
 > trainer + scorer round-trips on every action type it contains). To
@@ -580,11 +584,17 @@ For `measurement_resolution = "high"`:
 
 1. **Beat the predict-zero baseline.** Your skill score compares you against a model that predicts zero for everything. The bar is low — any signal you extract gives positive skill score.
 
-2. **Derive a direction signal from the pre-window for `BUDGET_CHANGE`.**
-   In live epochs the `action.magnitude.spend_change_pct.expected` field
-   is often `null` for budget changes (only `TARGET_VALUE_CHANGE` reliably
-   populates magnitude). For `BUDGET_CHANGE`, derive your own signal from
-   the pre-window time series:
+2. **Use `action.magnitude` first, then refine with the pre-window.**
+   For `BUDGET_CHANGE` the magnitude carries
+   `spend_change_pct.{min,max,expected}` plus
+   `previous_amount_micros` / `new_amount_micros`; for `CAMPAIGN_PAUSE`
+   the magnitude pins `spend_change_pct = -100`; for
+   `BID_STRATEGY_CHANGE` it gives `from` / `to` / `learning_period_days`.
+   Coverage in the operator data has been improving — most live episodes
+   now carry full magnitudes — but live epochs can still occasionally
+   ship without one (e.g. when the changelog row lacks a `previous_state`
+   record), so always handle the null case. Fall back to a pre-window
+   trend signal when magnitude is missing:
    ```python
    import numpy as np
    cost = np.array(pre_window["campaigns"][cid]["cost_micros"], dtype=float)
