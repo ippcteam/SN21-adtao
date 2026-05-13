@@ -8,6 +8,13 @@ SUBNET_NAME = "hope-impact-prediction"
 EPISODE_SCHEMA_VERSION = "v1.9"
 PREDICTION_SCHEMA_VERSION = "1.0"
 
+# Scoring formula version — mirrors the `**Version**` row in
+# docs/SN21_REWARD_MECHANISM.md. Bump in lockstep with the spec when the
+# launch formula changes. Carried into every leaderboard report's
+# `scoring_formula_version` field; paired with the git commit SHA so any
+# reader can pin both the human-readable version and the exact code.
+SCORING_FORMULA_VERSION = "1.2.1"
+
 # Horizons
 HORIZONS = [7, 14]  # Launch: 7 + 14 only. 28-day added post-launch.
 
@@ -39,6 +46,22 @@ LAUNCH_ACTION_TYPES = [
     "TARGET_VALUE_CHANGE",
     "CAMPAIGN_PAUSE",
 ]
+
+# Epoch-type classification table — per SN21_REWARD_MECHANISM.md
+# §"Component 3 — Epoch type multiplier". Each row maps a release's
+# (campaign_type, action_scope) onto the public-facing
+# (epoch_type, epoch_subtype, multiplier) triple used in leaderboard
+# reports. Phase 1 ships only the SEARCH/CAMPAIGN row; the other rows are
+# spec-defined for forward compatibility but not yet active in scope.
+EPOCH_TYPE_TABLE: tuple[tuple[str, str | None, str, str | None, float], ...] = (
+    # (campaign_type,  action_scope,    epoch_type,      epoch_subtype,    multiplier)
+    ("SEARCH",         "CAMPAIGN",      "Search",        "campaign-level", 1.0),
+    ("SEARCH",         "SUB_CAMPAIGN",  "Search",        "sub-campaign",   1.2),
+    ("PMAX",           None,            "PMax",          None,             1.5),
+    ("SHOPPING",       None,            "Shopping",      None,             1.3),
+    ("CONSOLIDATION",  None,            "Consolidation", None,             2.0),
+    ("CHAMPIONSHIP",   None,            "Championship",  None,             3.0),
+)
 
 # Horizon weights by measurement resolution
 HORIZON_WEIGHTS = {
