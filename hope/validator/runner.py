@@ -268,7 +268,14 @@ def _run_validator_onchain_cli(args, runner):
 
     scorer = make_scorer(truth_by_horizon)
     submitted_round = drand_round_at(int(_time.time()))
-    return run_epoch_scoring(
+
+    # Stamp chain_fetch_timestamp BEFORE the run starts — closest moment
+    # to when the validator observed chain state. Used by the reporter
+    # if SN21_LEADERBOARD_REPORTER is enabled.
+    from datetime import datetime as _dt, timezone as _tz
+    chain_fetch_timestamp = _dt.now(_tz.utc).isoformat()
+
+    result = run_epoch_scoring(
         subtensor=runner.subtensor,
         validator_wallet=runner.wallet,
         netuid=runner.netuid,
@@ -288,6 +295,26 @@ def _run_validator_onchain_cli(args, runner):
         blocks_until_post_scoring_reveal=args.blocks_until_post_reveal,
         blocks_until_weights_reveal=args.blocks_until_weights_reveal,
     )
+
+    # Reporter hook — writes the operator-private epoch artifact when
+    # SN21_LEADERBOARD_REPORTER=1. Wrapped in try/except so a reporter
+    # failure can never bring down the scoring run itself.
+    from hope.reporting.flags import reporter_enabled
+    if reporter_enabled():
+        try:
+            from hope.reporting.epoch_artifact import build_and_write_artifact
+            total_uids = runner.metagraph.n if runner.metagraph else len(miner_ss58s)
+            artifact_path = build_and_write_artifact(
+                outcome=result,
+                epoch_id=args.release,
+                total_registered_uids=int(total_uids),
+                chain_fetch_timestamp=chain_fetch_timestamp,
+            )
+            logger.info("epoch artifact written: %s", artifact_path)
+        except Exception as e:
+            logger.warning("epoch artifact write failed (scoring unaffected): %s", e)
+
+    return result
 
 
 if __name__ == "__main__":
