@@ -297,22 +297,34 @@ def _run_validator_onchain_cli(args, runner):
     )
 
     # Reporter hook — writes the operator-private epoch artifact when
-    # SN21_LEADERBOARD_REPORTER=1. Wrapped in try/except so a reporter
-    # failure can never bring down the scoring run itself.
+    # SN21_LEADERBOARD_REPORTER=1 AND the scoring run actually completed
+    # successfully. Aborted runs (no_miner_reveals_visible,
+    # insufficient_budget, weights_commit_failed, ...) are operational
+    # issues rather than "zero qualifying miners"; they should NOT
+    # produce a leaderboard placeholder report. Wrapped in try/except so
+    # a reporter failure can never bring down the scoring run itself.
     from hope.reporting.flags import reporter_enabled
     if reporter_enabled():
-        try:
-            from hope.reporting.epoch_artifact import build_and_write_artifact
-            total_uids = runner.metagraph.n if runner.metagraph else len(miner_ss58s)
-            artifact_path = build_and_write_artifact(
-                outcome=result,
-                epoch_id=args.release,
-                total_registered_uids=int(total_uids),
-                chain_fetch_timestamp=chain_fetch_timestamp,
+        if not result.ok:
+            logger.warning(
+                "epoch artifact skipped: scoring run did not complete cleanly "
+                "(aborted_reason=%s). Re-trigger the cron to retry; no leaderboard "
+                "POST will be made until a successful run produces an artifact.",
+                result.aborted_reason,
             )
-            logger.info("epoch artifact written: %s", artifact_path)
-        except Exception as e:
-            logger.warning("epoch artifact write failed (scoring unaffected): %s", e)
+        else:
+            try:
+                from hope.reporting.epoch_artifact import build_and_write_artifact
+                total_uids = runner.metagraph.n if runner.metagraph else len(miner_ss58s)
+                artifact_path = build_and_write_artifact(
+                    outcome=result,
+                    epoch_id=args.release,
+                    total_registered_uids=int(total_uids),
+                    chain_fetch_timestamp=chain_fetch_timestamp,
+                )
+                logger.info("epoch artifact written: %s", artifact_path)
+            except Exception as e:
+                logger.warning("epoch artifact write failed (scoring unaffected): %s", e)
 
     return result
 
