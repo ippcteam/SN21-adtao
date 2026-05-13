@@ -39,11 +39,13 @@ v1 is intentionally simple. Complexity deters miners who need to model returns b
 
 SN21 is centrally governed by the subnet operator at launch. Parameter changes are published with rationale and lead time. Decentralisation is on the Review 4 agenda. Governance is transparent and structured, but centralised until then.
 
+What is centralised at v1 is the canonical scoring spec and the operator-run canonical primary + shadow validators — not the on-chain consensus that determines emissions. Weight aggregation on SN21 is already multi-validator: every registered validator submits its own weight vector and Yuma stake-weighted median combines them. Convergence of registered validators on the canonical scoring code is what Phase 3 of the validator architecture (see whitepaper §10.2) is about.
+
 ## Validator architecture
 
-**At launch, third-party validator registration on SN21 is closed.** The subnet operator runs the primary validator (and a shadow validator on a separate hotkey, separate host) using this codebase. Opening validator registration to additional operators is on the Review 4 agenda.
+Validator registration on SN21 is **open by Bittensor protocol** — any operator meeting the chain's permit and stake requirements can register and submit weights. At launch, the AdTAO operator runs the canonical primary and shadow validators against the published scoring specification, and is coordinating with other registered validator operators to converge on canonical scoring. Validator decentralisation criteria — what a formal third-party operator programme looks like — is on the Review 4 agenda.
 
-The scoring implementation is open source: anyone can clone `tao-discovery`, run the validator binary against the chain, and reproduce scoring locally. **Running the code locally is open; submitting weights to the chain as a registered SN21 validator is not.** This is a deliberate launch-phase choice — see Review 4.
+The scoring implementation is open source: anyone can clone the repo and run the validator binary locally against the chain to reproduce scoring. A formal third-party validator programme (deployment guide, scoring spec reference implementation, operator coordination channels) is tracked at Review 4.
 
 ### Open-source scoring code
 

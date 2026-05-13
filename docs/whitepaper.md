@@ -17,7 +17,7 @@ Bittensor Subnet 21 · MIT-licensed · Public verifier ships at launch
 | Mainnet netuid | **21** (Bittensor `finney`) | Subnet registration |
 | Testnet netuid | **466** (Bittensor `test`) | testnet validation |
 | Current phase | Pre-mainnet — testnet validation complete | Appendix B |
-| Validator registration | **Closed at launch.** Operator runs primary + shadow. Opening is on the Review 4 agenda | `docs/SN21_REWARD_MECHANISM.md` |
+| Validator registration | **Open by Bittensor protocol.** AdTAO operator runs the canonical primary + shadow validators and coordinates convergence to canonical scoring with other registered operators. Formal third-party validator programme tracked at Review 4 | `docs/SN21_REWARD_MECHANISM.md` |
 | Miner registration | Open on testnet 466 today; mainnet 21 opens when launch announces | `docs/miner_quickstart.md` |
 | Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
 | Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is being pursued as an upstream Bittensor change | §14.1 + adversarial test |
@@ -238,7 +238,7 @@ later sections shorter.
 | **Episode** | A single prediction challenge. "What will the cost-per-conversion of this campaign be over the next 7 days?" |
 | **Epoch** | A batch of episodes released together. Typically 4-24 hours from open to deadline. |
 | **Miner** | A Bittensor neuron that predicts outcomes. Anonymous, registered by hotkey. |
-| **Validator** | A Bittensor neuron that scores predictions and submits weights. The operator runs the primary; a shadow runs in parallel. |
+| **Validator** | A Bittensor neuron that scores predictions and submits weights. The AdTAO operator runs the canonical primary and shadow. |
 | **Prediction** | The miner's answer for one episode and one horizon: P10/P50/P90 quantiles + goal-miss probability + instability risk. |
 | **Outcome** | What actually happened: cost delta, conversion delta, efficiency delta, did the goal miss. |
 | **Commit-reveal** | A two-step protocol: post a hash now, post the bytes that hash to it later. Standard cryptographic pattern. |
@@ -765,15 +765,19 @@ collude with itself. The architecture mitigates this with three layers:
 2. **Phase 2**: operator primary + INDEPENDENT third-party shadow (a
    contracted audit firm or a validator-as-a-service operator) with a
    different operator key.
-3. **Phase 3+**: External validators register on netuid 21
-   organically. Yuma stake-weighted median consensus naturally clips
-   any 1-of-N malicious actor.
+3. **Phase 3+**: a critical mass of registered validators run
+   canonical scoring, naturally clipping any 1-of-N dishonest actor
+   through Yuma stake-weighted median consensus. Validator
+   registration is already open by Bittensor protocol; what Phase 3
+   adds is convergence on the canonical scoring spec across registered
+   operators, supported by the formal third-party validator programme
+   tracked at Review 4.
 
 The shadow buys us cryptographic-level defenses against
 single-validator dishonesty. It does NOT buy us protection against
 the operator-as-an-organization being dishonest. That requires Phase
-3's external validators or, ultimately, an upstream chain runtime
-change (see §14).
+3's critical mass of canonical-scoring validators or, ultimately, an
+upstream chain runtime change (see §14).
 
 ---
 
@@ -1215,10 +1219,12 @@ protocol is otherwise unchanged.
   (Google Ads + Meta + e-commerce) could be scored by a cross-subnet
   validator; their TAO emission would aggregate. Requires Bittensor
   multi-subnet weight protocols, currently exploratory.
-- **External validator participation**: Phase 3 of the architecture
-  opens validator slots to third-party operators. The operator runbook
-  is designed to make this a pure runtime operation — no special
-  privileges required.
+- **Convergence of registered validators on canonical scoring**: Phase
+  3 of the architecture is reached when a critical mass of the
+  validators already registered on the subnet are running the canonical
+  scoring code. The operator runbook is designed to make running the
+  canonical code a pure runtime operation — no special privileges
+  required.
 
 ---
 

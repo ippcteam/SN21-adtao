@@ -230,7 +230,7 @@ ships and what's deferred. Every "live at launch" entry has a test in
 * **Mainnet TAO fee measurement** — Q13 was 0 µTAO on testnet; mainnet may differ
 * **Q26 upstream RFC** — submit the `external_anchor` patch to the Subtensor maintainers when the on-chain protocol has run cleanly for one operational cycle
 * **Review 1 (after epoch 4)** — re-tune tier boundaries, baseline, Elite floor based on real data
-* **Review 4 (after epoch 16)** — open third-party validator registration
+* **Review 4 (after epoch 16)** — formal third-party validator programme (deployment guides, scoring spec reference implementation, operator coordination channels). Validator registration on SN21 is already open by Bittensor protocol; the programme is about convergence of registered operators on canonical scoring.
 
 ---
 

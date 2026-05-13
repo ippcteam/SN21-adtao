@@ -3,6 +3,15 @@
 **For:** Running the SN21 validator
 **Prerequisite:** Python 3.10+, Bittensor wallet (for testnet/mainnet)
 
+> **Note on registration.** Validator registration on SN21 itself is open
+> by Bittensor protocol — any operator meeting the chain's permit and
+> stake requirements can register and submit weights. To run the
+> canonical scoring against published episodes and outcomes, a validator
+> additionally needs operator-issued data API credentials
+> (`HOPE_API_KEY`, `HOPE_API_URL`). Operators wishing to obtain
+> credentials at launch should contact the operator team; a formal
+> third-party validator programme is tracked at Review 4.
+
 ---
 
 ## 1. Installation

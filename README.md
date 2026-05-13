@@ -273,7 +273,7 @@ Full guide with troubleshooting: [miner quickstart](docs/miner_quickstart.md).
 
 ## Running a validator
 
-Third-party validator registration is **not open at launch** — the operator runs the canonical primary + shadow validators. The codebase is the same one a third-party validator would run; the Review 4 milestone tracks readiness.
+Multiple validators are registered on SN21 — Bittensor's protocol allows open validator registration. The AdTAO operator runs canonical primary and shadow validators against the published scoring specification, and is coordinating with other validator operators to align on the same scoring logic. The Review 4 milestone tracks readiness for a formal third-party validator programme — deployment guides, scoring spec reference implementation, and operator coordination channels.
 
 If you want to run the validator code locally for testing or to mirror what the operator runs:
 

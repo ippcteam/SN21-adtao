@@ -2,7 +2,7 @@
 
 **For:** Miners joining the Impact Prediction Subnet on Bittensor
 **Subnet:** SN21 (testnet netuid 466 / mainnet netuid 21)
-**Validator URL:** https://validator.adtao.io
+**Validator URL:** https://validator.adtao.io — the operator-run canonical validator endpoint, provided when you register interest with the AdTAO team. Once a formal third-party validator programme is in place (tracked at Review 4), other validators running canonical scoring will be discoverable too.
 **Schema:** v1.9 (Phase 1 Epoch 1 — Search campaigns, campaign-level actions)
 **Horizons:** 7-day and 14-day predictions
 
@@ -582,7 +582,7 @@ For `measurement_resolution = "high"`:
 
 ### What Wins
 
-1. **Beat the predict-zero baseline.** Your skill score compares you against a model that predicts zero for everything. The bar is low — any signal you extract gives positive skill score.
+1. **Beat the conditional-prior baseline.** Per `SN21_REWARD_MECHANISM.md` v1.2.1, your skill score compares you against the conditional prior — the historical mean actual outcome for the same `(campaign_type, action_type)` over a rolling training window. Predict-zero is too easy with trivial heuristics, so it isn't the baseline. To clear the participation gate you have to beat this conditional prior; any episode-specific signal you extract on top of category-mean behaviour gives positive skill score.
 
 2. **Use `action.magnitude` first, then refine with the pre-window.**
    For `BUDGET_CHANGE` the magnitude carries
@@ -794,8 +794,13 @@ not need any operator credentials for this — the `--release` /
 
 ## 10. Validator API Reference
 
-All interaction with the validator is via HTTP at
-**`https://validator.adtao.io`**.
+All interaction with the AdTAO operator-run canonical validator is via
+HTTP at **`https://validator.adtao.io`**. This endpoint is provided when
+you register interest with the AdTAO team. Once a formal third-party
+validator programme is in place (tracked at Review 4), other validators
+running canonical scoring will publish their endpoints too — the HTTP
+shape below is the canonical API surface every such validator
+implements.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
