@@ -99,6 +99,12 @@ class EpochScoringOutcome:
     miner_reads: list[MinerReadResult] = field(default_factory=list)
     score_map: dict[bytes, int] = field(default_factory=dict)
     aborted_reason: Optional[str] = None
+    # On-chain footprint of this epoch — used by the leaderboard reporter
+    # and external verifiers to scope their chain queries. Derived from
+    # the earliest miner K-commit (or this validator's 9.C.1 when no
+    # miners are visible) through the validator's 9.C.3 weights commit.
+    block_range_start: Optional[int] = None
+    block_range_end: Optional[int] = None
 
     @property
     def ok(self) -> bool:
@@ -108,6 +114,48 @@ class EpochScoringOutcome:
             and self.weights_commit is not None and self.weights_commit.success
             and self.post_scoring_commit is not None and self.post_scoring_commit.success
         )
+
+
+def compute_block_range(
+    miner_inputs: list["MinerOnChainInputs"],
+    pre_scoring_commit: Optional[CommitResult],
+    weights_commit: Optional[WeightsCommitResult],
+) -> tuple[Optional[int], Optional[int]]:
+    """Compute (block_range_start, block_range_end) for an epoch.
+
+    Convention per the leaderboard data contract:
+
+        block_range_start = earliest on-chain mining-window activity
+                            for this epoch on this RPC view.
+                            Falls back to the validator's 9.C.1 block
+                            when no miner K-commits are visible.
+
+        block_range_end   = the validator's 9.C.3 weights commit block.
+                            None when the run aborted before weights
+                            were submitted.
+
+    Both can be None on a fully-aborted run (e.g. insufficient budget,
+    no reveals visible). The reporter pipeline treats None as "skip the
+    block range fields in the payload" and surfaces the abort reason
+    out of band.
+    """
+    end: Optional[int] = None
+    if weights_commit is not None and weights_commit.success:
+        end = weights_commit.block_number
+
+    miner_blocks = [
+        inp.chain_block_at_k_commit
+        for inp in miner_inputs
+        if inp.chain_block_at_k_commit is not None and inp.chain_block_at_k_commit > 0
+    ]
+    if miner_blocks:
+        start: Optional[int] = min(miner_blocks)
+    elif pre_scoring_commit is not None and pre_scoring_commit.success:
+        start = pre_scoring_commit.block_number
+    else:
+        start = None
+
+    return start, end
 
 
 def run_epoch_scoring(
@@ -371,6 +419,7 @@ def run_epoch_scoring(
         blocks_until_reveal=blocks_until_post_scoring_reveal,
     )
     if not post_commit.success:
+        start, end = compute_block_range(miner_inputs, pre_commit, weights_commit)
         return EpochScoringOutcome(
             pre_scoring_commit=pre_commit,
             weights_commit=weights_commit,
@@ -378,6 +427,8 @@ def run_epoch_scoring(
             miner_reads=miner_reads,
             score_map=score_map,
             aborted_reason=f"post_scoring_commit_failed: {post_commit.message}",
+            block_range_start=start,
+            block_range_end=end,
         )
 
     # ---- 6. optional 9.C.6 retry log ----
@@ -404,6 +455,7 @@ def run_epoch_scoring(
         epoch_id, len(score_map), len(excluded), retry_commit is not None,
         weights_commit.block_number,
     )
+    start, end = compute_block_range(miner_inputs, pre_commit, weights_commit)
     return EpochScoringOutcome(
         pre_scoring_commit=pre_commit,
         weights_commit=weights_commit,
@@ -412,4 +464,6 @@ def run_epoch_scoring(
         retry_log_blob=retry_blob,
         miner_reads=miner_reads,
         score_map=score_map,
+        block_range_start=start,
+        block_range_end=end,
     )
