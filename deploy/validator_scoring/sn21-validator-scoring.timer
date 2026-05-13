@@ -1,0 +1,27 @@
+[Unit]
+Description=SN21 Scoring Runner — weekly trigger
+Documentation=https://github.com/ippcteam/SN21-adtao
+Requires=sn21-validator-scoring.service
+
+[Timer]
+# Scoring window per hope/constants.py:
+#   Mining open:   Monday 17:00 UTC → next Monday 05:00 UTC
+#   Scoring open:  Monday 05:00 UTC → Monday 17:00 UTC  (~12 hours)
+#
+# Default firing: Monday 12:00 UTC — mid-window. Well after the miner
+# deadline (Monday 05:00 UTC), well before the next epoch opens
+# (Monday 17:00 UTC). Adjust if the operator's release cadence shifts.
+OnCalendar=Mon *-*-* 12:00:00 UTC
+
+# Spread the start across a few seconds so multiple operator validators
+# don't hit the chain RPC simultaneously. Optional but polite.
+RandomizedDelaySec=120
+
+# If the host was off when the timer should have fired (rare for a
+# cloud service, common for self-hosted), run as soon as it comes back.
+Persistent=true
+
+Unit=sn21-validator-scoring.service
+
+[Install]
+WantedBy=timers.target
