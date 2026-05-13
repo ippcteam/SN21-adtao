@@ -6,12 +6,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-
 from hope.commitment.on_chain import CommitResult
 from hope.reporting.epoch_artifact import (
     DEFAULT_ARTIFACT_DIR_ENV,
-    EpochArtifact,
     artifact_path_for,
     build_and_write_artifact,
     build_artifact,
@@ -112,7 +109,7 @@ def test_write_artifact_auto_creates_dir_and_is_atomic(tmp_path):
 
 
 def test_round_trip(tmp_path):
-    written = build_and_write_artifact(
+    build_and_write_artifact(
         outcome=_outcome(5),
         epoch_id="WR-2026-W18-PUB-E1",
         total_registered_uids=15,

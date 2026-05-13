@@ -20,7 +20,6 @@ import sys
 from pathlib import Path
 
 import httpx
-import pytest
 
 # scripts/ isn't a package in older test setups; ensure it's importable.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))

@@ -30,7 +30,7 @@ from typing import Any, Callable, Optional
 import httpx
 
 from hope.reporting.aggregator import aggregate
-from hope.reporting.epoch_artifact import EpochArtifact, read_artifact
+from hope.reporting.epoch_artifact import EpochArtifact
 from hope.reporting.payload import EpochReportPayload
 
 
