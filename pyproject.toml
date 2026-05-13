@@ -53,6 +53,7 @@ hope-validator = "hope.validator.runner:main"
 hope-validator-api = "hope.validator.serve:main"
 hope-archive-server = "hope.archive_server.serve:main"
 hope-score = "scripts.score_predictions:main"
+post-epoch-report = "scripts.post_epoch_report:main"
 
 [tool.setuptools.packages.find]
 include = ["hope*", "scripts"]
