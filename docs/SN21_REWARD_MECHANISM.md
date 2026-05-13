@@ -216,7 +216,7 @@ Assume **7,200 α/day** → **50,400 α per week** at subnet level; **41%** to m
 | Epoch multipliers | Active | 1.0–3.0 | 2 |
 | Diversity bonus | Active | 0–0.05 | 3 |
 | Min pool for tiers | Active | 15 | 1 |
-| Open-source code | Active | tao-discovery | — |
+| Open-source code | Active | SN21-adtao | — |
 | External audit program | **Not committed** | TBD / intentional | — |
 | Red-team simulation | Pre-launch goal | 9-strategy bar | — |
 | Epoch-local accounting | Active | rescore / drop / cancel | — |
@@ -228,4 +228,4 @@ Assume **7,200 α/day** → **50,400 α per week** at subnet level; **41%** to m
 | 1.0 | 2026-04-16 | Initial |
 | 1.1 | 2026-04-16 | Validator section; EMA; tiers; diversity; economics example |
 | 1.2 | 2026-04-17 | Conditional prior; Elite floor; Championship scope; collusion/epoch rules; **repo** |
-| 1.2.1 | 2026-04-27 | Repo copy: third-party **audit program descoped** to transparency + TBD; canonical link tao-discovery |
+| 1.2.1 | 2026-04-27 | Repo copy: third-party **audit program descoped** to transparency + TBD; canonical link SN21-adtao |

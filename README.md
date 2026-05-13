@@ -149,7 +149,7 @@ Full spec: [SN21_REWARD_MECHANISM.md](docs/SN21_REWARD_MECHANISM.md).
 ## Repository structure
 
 ```
-tao-discovery/
+SN21-adtao/
 ├── docs/
 │   ├── whitepaper.md             Protocol design + trust model + adversarial matrix
 │   ├── miner_quickstart.md       Miner onboarding tutorial

@@ -18,7 +18,7 @@
 
 ```bash
 git clone <repo-url>
-cd tao-discovery
+cd SN21-adtao
 pip install -e .
 ```
 
