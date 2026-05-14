@@ -63,6 +63,18 @@ from hope.validator.weights_commit import (
 logger = logging.getLogger(__name__)
 
 
+def _pubkey_bytes_to_ss58(pubkey: bytes) -> str:
+    """Encode a 32-byte ed25519 hotkey pubkey as an SS58 address.
+
+    The miner side (`hope/miner/onchain_submitter.py`) uploads archive
+    objects under `/archive/{epoch_id}/{ss58}/{sha256}`. The validator
+    therefore must query the same SS58 path — passing the raw hex pubkey
+    silently 404s every miner.
+    """
+    from bittensor_wallet.bittensor_wallet import Keypair  # type: ignore
+    return Keypair(public_key="0x" + pubkey.hex(), ss58_format=42).ss58_address
+
+
 # Caller-supplied scorer signature: (epoch_id, plaintext_per_miner_hotkey)
 # → {miner_hotkey_bytes: score_micro_uint}.
 ScorerFn = Callable[[str, dict[bytes, dict[str, Any]]], dict[bytes, int]]
@@ -300,7 +312,7 @@ def run_epoch_scoring(
             epoch_id=epoch_id,
             timing=timing,
             miner_uid=inp.miner_uid,
-            miner_identity_for_archive=inp.miner_hotkey.hex(),
+            miner_identity_for_archive=_pubkey_bytes_to_ss58(inp.miner_hotkey),
         )
         miner_reads.append(result)
 
