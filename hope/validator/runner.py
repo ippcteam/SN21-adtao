@@ -266,26 +266,29 @@ def _fetch_chain_view_with_rpc_rotation(
             require_validator_reveals=False,
         )
 
+    # Diagnostics use print() rather than logger so they can never be
+    # suppressed by Bittensor's loguru-vs-stdlib logging configuration.
+    # The cron's log capture grabs stdout directly.
     initial_url = _subtensor_endpoint_description(initial_subtensor)
     initial_block = _current_block_or_none(initial_subtensor)
     best_view = _read(initial_subtensor)
     best_subtensor = initial_subtensor
     best_count = _count_visible_miners(best_view)
-    logger.info(
-        "RPC initial read: url=%s block=%s visible=%d/%d",
-        initial_url, initial_block, best_count, len(miner_hotkey_ss58_list),
+    print(
+        f"[RPC-DIAG] initial read: url={initial_url} block={initial_block} "
+        f"visible={best_count}/{len(miner_hotkey_ss58_list)}",
+        flush=True,
     )
 
     if best_count > 0 or not miner_hotkey_ss58_list:
         return best_view, best_subtensor
 
-    logger.warning(
-        "no miners visible on initial chain read (0 of %d); RPC backend "
-        "may be stale. Retrying on fresh Subtensor connections (up to %d "
-        "rotations, ~%.0fs between attempts).",
-        len(miner_hotkey_ss58_list),
-        _RPC_ROTATION_MAX_ATTEMPTS - 1,
-        _RPC_ROTATION_SLEEP_SECONDS,
+    print(
+        f"[RPC-DIAG] no miners visible on initial read (0 of "
+        f"{len(miner_hotkey_ss58_list)}). Rotating up to "
+        f"{_RPC_ROTATION_MAX_ATTEMPTS - 1} fresh Subtensor connections "
+        f"with {_RPC_ROTATION_SLEEP_SECONDS:.0f}s between attempts.",
+        flush=True,
     )
 
     for attempt in range(1, _RPC_ROTATION_MAX_ATTEMPTS):
@@ -293,9 +296,10 @@ def _fetch_chain_view_with_rpc_rotation(
         try:
             fresh = _make_fresh_subtensor(bt_network)
         except Exception as e:
-            logger.warning(
-                "RPC rotation attempt %d/%d: Subtensor connect failed: %s",
-                attempt, _RPC_ROTATION_MAX_ATTEMPTS - 1, e,
+            print(
+                f"[RPC-DIAG] rotation {attempt}/{_RPC_ROTATION_MAX_ATTEMPTS - 1}: "
+                f"connect failed: {e}",
+                flush=True,
             )
             continue
 
@@ -303,10 +307,11 @@ def _fetch_chain_view_with_rpc_rotation(
         count = _count_visible_miners(view)
         url = _subtensor_endpoint_description(fresh)
         block = _current_block_or_none(fresh)
-        logger.info(
-            "RPC rotation attempt %d/%d: url=%s block=%s visible=%d/%d",
-            attempt, _RPC_ROTATION_MAX_ATTEMPTS - 1,
-            url, block, count, len(miner_hotkey_ss58_list),
+        print(
+            f"[RPC-DIAG] rotation {attempt}/{_RPC_ROTATION_MAX_ATTEMPTS - 1}: "
+            f"url={url} block={block} "
+            f"visible={count}/{len(miner_hotkey_ss58_list)}",
+            flush=True,
         )
 
         if count > best_count:
@@ -314,19 +319,19 @@ def _fetch_chain_view_with_rpc_rotation(
             best_subtensor = fresh
             best_count = count
             if best_count > 0:
-                logger.info(
-                    "RPC rotation succeeded on attempt %d (%d miners visible)",
-                    attempt, best_count,
+                print(
+                    f"[RPC-DIAG] rotation succeeded on attempt {attempt} "
+                    f"({best_count} miners visible)",
+                    flush=True,
                 )
                 return best_view, best_subtensor
 
-    logger.warning(
-        "RPC rotation exhausted (%d attempts); accepting final 0-miner view. "
-        "Either the chain genuinely has no visible bundles for this epoch, "
-        "or the RPC pool reachable from this network is uniformly lagging. "
-        "If you have a known-current endpoint, set SN21_SUBTENSOR_URL to "
-        "pin to it (e.g. SN21_SUBTENSOR_URL=wss://test.finney.opentensor.ai:443).",
-        _RPC_ROTATION_MAX_ATTEMPTS,
+    print(
+        f"[RPC-DIAG] rotation exhausted ({_RPC_ROTATION_MAX_ATTEMPTS} attempts); "
+        f"accepting final 0-miner view. If you have a known-current endpoint, "
+        f"set SN21_SUBTENSOR_URL to pin (e.g. "
+        f"SN21_SUBTENSOR_URL=wss://test.finney.opentensor.ai:443).",
+        flush=True,
     )
     return best_view, best_subtensor
 
