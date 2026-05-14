@@ -6,7 +6,15 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "bittensor>=8.0.0",
+    # Pinned to 10.2.x: bittensor==10.3.1 has a regression in how
+    # `Commitments::RevealedCommitments` storage queries decode — it returns
+    # an empty list where 10.2.x correctly returns the auto-decrypted
+    # plaintexts. Confirmed by running the same chain_reader.py path
+    # against the same testnet 466 chain state on both versions:
+    # 10.2.1 → 8 of 15 miners with parseable v1 bundles; 10.3.1 → 0 of 15.
+    # Re-evaluate when upstream ships a fix or when our reader code is
+    # updated to match the new decode contract.
+    "bittensor>=10.2.0,<10.3.0",
     "pydantic>=2.0",
     "numpy>=1.24",
     "fastapi>=0.100",
