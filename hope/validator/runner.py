@@ -123,6 +123,24 @@ def main():
     parser.add_argument("--ed25519-key-file", default=None,
                         help="Path to ed25519 PEM private key for inner_sig; "
                              "if omitted and the wallet hotkey is ed25519, that key is used")
+    parser.add_argument("--reg-index-lookback-blocks", type=int, default=600,
+                        help="How many blocks back from chain head to scan for "
+                             "miner ed25519 registration commits (default: 600 "
+                             "≈ 2 hours on 12s testnet blocks — enough to catch "
+                             "registrations published right before this scoring "
+                             "run). Per-block scans cost ~1 RPC second on testnet, "
+                             "so wider lookbacks are impractical to run inline "
+                             "with the cron. For initial backfill, run "
+                             "`scripts/diag/probe_registration_index.py` against "
+                             "an archive-node RPC and persist the result. Set to 0 "
+                             "to skip the in-cron scan entirely.")
+    parser.add_argument("--reg-index-prebuilt", type=str, default=None,
+                        help="Optional path to a JSON file containing a prebuilt "
+                             "registration index from an offline backfill run. "
+                             "When present, its entries are merged into the index "
+                             "BEFORE the in-cron incremental scan. Format: a JSON "
+                             "list of {hotkey_ss58, hotkey_pk_hex, ed25519_pk_hex, "
+                             "block_number} objects.")
 
     args = parser.parse_args()
 
@@ -445,6 +463,68 @@ def _run_validator_onchain_cli(args, runner):
     for url in args.archive_tier_2:
         archive_endpoints.append(ArchiveEndpoint(tier=2, base_url=url, name="tier-2"))
 
+    # Build the SS58 ↔ ed25519 registration index. Miners with an sr25519
+    # hotkey publish their ed25519 signing pubkey once via `sn21_keys.py
+    # register`; that Raw{N} commit gets overwritten in CommitmentOf the
+    # moment they submit their first TLE bundle, so we recover it from
+    # Commitments-pallet event history. The index returns None for any
+    # hotkey without a verified registration, in which case the scorer
+    # falls back to the raw chain hotkey bytes (works for ed25519 hotkeys;
+    # rejects sr25519 hotkeys on inner_sig.hotkey_mismatch).
+    from typing import Optional as _Optional
+    from hope.validator.registration_index import RegistrationIndex
+    registration_index: _Optional[RegistrationIndex] = None
+    if args.reg_index_lookback_blocks > 0:
+        try:
+            head_block = int(runner.subtensor.get_current_block())
+            start_block = max(0, head_block - args.reg_index_lookback_blocks)
+            print(
+                f"[REG-INDEX] scanning blocks [{start_block}, {head_block}] "
+                f"(lookback={args.reg_index_lookback_blocks})",
+                flush=True,
+            )
+            registration_index = RegistrationIndex(runner.subtensor, runner.netuid)
+            if args.reg_index_prebuilt:
+                try:
+                    import json as _json
+                    with open(args.reg_index_prebuilt) as _f:
+                        prebuilt = _json.load(_f)
+                    merged = registration_index.merge_json(prebuilt)
+                    print(
+                        f"[REG-INDEX] merged {merged} entries from "
+                        f"prebuilt index at {args.reg_index_prebuilt}",
+                        flush=True,
+                    )
+                except Exception as _e:
+                    print(
+                        f"[REG-INDEX] prebuilt index load failed "
+                        f"({type(_e).__name__}: {str(_e)[:120]}); continuing "
+                        f"with in-cron scan only",
+                        flush=True,
+                    )
+            found = registration_index.scan_range(start_block, head_block)
+            stats = registration_index.stats
+            print(
+                f"[REG-INDEX] indexed {registration_index.size} registrations "
+                f"(found {found} in this scan); "
+                f"blocks_scanned={stats['blocks_scanned']} "
+                f"events_seen={stats['events_seen']} "
+                f"candidates={stats['candidates_found']} "
+                f"verified={stats['verified']}",
+                flush=True,
+            )
+        except Exception as e:
+            print(
+                f"[REG-INDEX] scan failed ({type(e).__name__}: {str(e)[:200]}); "
+                f"proceeding without registration index — miners with sr25519 "
+                f"hotkeys + separate ed25519 PEMs will be excluded as "
+                f"inner_sig.hotkey_mismatch.",
+                flush=True,
+            )
+            registration_index = None
+    else:
+        print("[REG-INDEX] disabled by --reg-index-lookback-blocks=0", flush=True)
+
     scorer = make_scorer(truth_by_horizon)
     submitted_round = drand_round_at(int(_time.time()))
 
@@ -473,6 +553,7 @@ def _run_validator_onchain_cli(args, runner):
         blocks_until_pre_scoring_reveal=args.blocks_until_pre_reveal,
         blocks_until_post_scoring_reveal=args.blocks_until_post_reveal,
         blocks_until_weights_reveal=args.blocks_until_weights_reveal,
+        registration_index=registration_index,
     )
 
     # Reporter hook — writes the operator-private epoch artifact when

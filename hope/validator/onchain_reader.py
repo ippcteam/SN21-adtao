@@ -85,6 +85,7 @@ def read_miner_for_epoch(
     timing: TimingBounds,
     miner_uid: int,
     miner_identity_for_archive: str,
+    inner_sig_pubkey: Optional[bytes] = None,
 ) -> MinerReadResult:
     """Read one miner's full Layer 9.B submission and run scoreability.
 
@@ -101,6 +102,16 @@ def read_miner_for_epoch(
         miner_identity_for_archive: SS58 of the miner hotkey (used in archive
             paths for Tier-2/Tier-3) — Tier-1 may use the UID instead but
             this single identity simplifies the path scheme.
+        inner_sig_pubkey: optional override for the inner_sig anchor. When
+            provided (e.g. the registered ed25519 pubkey from
+            `hope/validator/registration_index.py`), it replaces the raw
+            chain hotkey pubkey for the inner_sig verification + the
+            `plaintext['miner_hotkey']` equality check. Required for
+            sr25519-hotkey miners who publish a separate ed25519 binding
+            via `sn21_keys.py register`; sr25519 hotkeys cannot themselves
+            sign ed25519 inner_sigs. None ⇒ fall back to
+            `chain_commits.miner_hotkey` (works only when the chain hotkey
+            is ed25519, which the current Bittensor stack does not produce).
 
     Returns:
         MinerReadResult with `ok=True` only if the prediction passed all 8
@@ -166,7 +177,7 @@ def read_miner_for_epoch(
         aes_ct=fetch.aes_ct,
         aes_key=chain_commits.timelock_k_revealed,
         epoch_id=epoch_id,
-        miner_hotkey_from_chain=chain_commits.miner_hotkey,
+        miner_hotkey_from_chain=inner_sig_pubkey or chain_commits.miner_hotkey,
         on_chain=triple,
         timing=timing,
     )

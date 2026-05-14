@@ -54,6 +54,7 @@ from hope.validator.onchain_reader import (
     assemble_chain_commits,
     read_miner_for_epoch,
 )
+from hope.validator.registration_index import RegistrationIndex
 from hope.validator.weights_commit import (
     WeightsCommitResult,
     commit_weights_layer_9c3,
@@ -190,6 +191,7 @@ def run_epoch_scoring(
     blocks_until_pre_scoring_reveal: int,
     blocks_until_post_scoring_reveal: int,
     blocks_until_weights_reveal: int,
+    registration_index: Optional["RegistrationIndex"] = None,
 ) -> EpochScoringOutcome:
     """Run the full Layer 9.C orchestration for one validator-epoch.
 
@@ -305,6 +307,11 @@ def run_epoch_scoring(
             chain_block_at_k_commit=inp.chain_block_at_k_commit,
             miner_hotkey=inp.miner_hotkey,
         )
+        inner_sig_pk = (
+            registration_index.lookup(inp.miner_hotkey)
+            if registration_index is not None
+            else None
+        )
         result = read_miner_for_epoch(
             chain_commits=cc,
             archive_client=archive_client,
@@ -313,6 +320,7 @@ def run_epoch_scoring(
             timing=timing,
             miner_uid=inp.miner_uid,
             miner_identity_for_archive=_pubkey_bytes_to_ss58(inp.miner_hotkey),
+            inner_sig_pubkey=inner_sig_pk,
         )
         miner_reads.append(result)
 
