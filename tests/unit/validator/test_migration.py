@@ -138,13 +138,14 @@ class TestStashIntoArchive:
         inputs, ct_map = replay_http_predictions_as_chain_inputs(
             epoch_id="EP-A", http_predictions=http_preds, miner_signing_keys=keys,
         )
+        from hope.validator.onchain_runner import _pubkey_bytes_to_ss58
         store = InMemoryStore()
         stash_into_archive(store, epoch_id="EP-A",
                            ct_by_sha256=ct_map, miner_inputs=inputs)
         for inp in inputs:
             got = store.get(
                 epoch_id="EP-A",
-                miner_identity=inp.miner_hotkey.hex(),
+                miner_identity=_pubkey_bytes_to_ss58(inp.miner_hotkey),
                 sha256=inp.sha256_ct_commit,
             )
             assert got is not None
