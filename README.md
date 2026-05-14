@@ -233,34 +233,29 @@ git clone https://github.com/ippcteam/SN21-adtao.git
 cd SN21-adtao
 pip install -e ".[miner]"
 
-# Create + register a Bittensor wallet (one-time)
+# Create + register a Bittensor wallet (one-time).
+# --crypto-type Ed25519 is required: the validator anchors inner_sig
+# verification to the hotkey itself, which only works for ed25519 hotkeys.
 btcli wallet new_coldkey --wallet.name my_miner
-btcli wallet new_hotkey --wallet.name my_miner --wallet.hotkey default
+btcli wallet new_hotkey \
+    --wallet.name my_miner --wallet.hotkey default \
+    --crypto-type Ed25519
 btcli subnet register --netuid 466 \
     --wallet.name my_miner --wallet.hotkey default \
     --subtensor.network test
 # Need testnet TAO? Bittensor Discord faucet: https://discord.gg/bittensor
 
-# Generate an ed25519 key for inner_sig (one-time, separate from the wallet hotkey)
-python scripts/sn21_keys.py generate --role miner --output ~/sn21-miner.pem
-
-# Register the hotkey ↔ ed25519 binding on chain (one-time)
-python scripts/sn21_keys.py register --role miner \
-    --network test --netuid 466 \
-    --wallet-name my_miner --wallet-hotkey default \
-    --key ~/sn21-miner.pem
-
 # Train on bundled sample data (optional — 10 episodes, known outcomes)
 python scripts/train_example_model.py --data-file data/training/training_episodes.json
 
-# Run miner against the live validator
+# Run miner against the live validator (no separate ed25519 PEM needed —
+# the miner derives its signing key from the ed25519 hotkey above)
 hope-miner --validator-url https://validator.adtao.io \
     --wallet-name my_miner --wallet-hotkey default \
     --epoch WR-2026-W18-PUB-E1 \
     --bt-network test --netuid 466 \
     --archive-tier-2 https://adtao-deploy.onrender.com \
-    --archive-tier-3 https://adtao-deploy.onrender.com \
-    --ed25519-key-file ~/sn21-miner.pem
+    --archive-tier-3 https://adtao-deploy.onrender.com
 
 # Score yourself offline against the bundled sample dataset (no API key needed)
 python scripts/score_predictions.py \

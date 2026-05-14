@@ -62,13 +62,27 @@ anywhere else** — terminal output goes to scrollback, screenshot tools,
 clipboard managers. After saving, run `clear` to wipe scrollback.
 
 ```bash
-# Create a hotkey under that coldkey (the per-purpose signing key)
-btcli wallet new_hotkey --wallet.name my_miner --wallet.hotkey default
+# Create a hotkey under that coldkey (the per-purpose signing key).
+# IMPORTANT: --crypto-type Ed25519 is required for SN21. The miner's
+# on-chain prediction commits carry an ed25519 inner signature that
+# the validator verifies against the hotkey itself — that only works
+# if the hotkey IS an ed25519 key. The btcli default is sr25519, which
+# the validator cannot use as an inner_sig anchor.
+btcli wallet new_hotkey \
+    --wallet.name my_miner --wallet.hotkey default \
+    --crypto-type Ed25519
 ```
 
 Same flow — choose `12` words, save the mnemonic in your password
 manager, run `clear`. The hotkey is stored unencrypted (no password
 prompt), which is intentional — it's for automated signing.
+
+**Already created an sr25519 hotkey by mistake?** Delete it
+(`rm -r ~/.bittensor/wallets/my_miner/hotkeys/default`) and recreate
+with `--crypto-type Ed25519`. You can keep the coldkey. You'll need
+to re-register the new hotkey with `btcli subnet register`. Validators
+cannot verify inner signatures from sr25519 hotkeys, so any miner
+running with one is silently excluded from scoring.
 
 ```bash
 # Register on SN21 (testnet 466)
@@ -118,46 +132,32 @@ faucet bot:
 Registration on testnet currently costs ~0.0005 TAO; mainnet pricing
 varies — see `btcli subnet register` output for the live cost.
 
-### Step 3: Generate an ed25519 signing key (required, one-time)
+### Step 3: Confirm your hotkey is ed25519 (no separate key needed)
 
-The validator's chain reads your AES-encrypted predictions and
-verifies an ed25519 inner signature against the hotkey↔key binding
-you publish on chain. You need a separate ed25519 PEM file:
+Because you created the hotkey with `--crypto-type Ed25519` in Step 2,
+the hotkey itself is the ed25519 key that signs your predictions. No
+separate PEM file is needed and no on-chain key-binding registration
+step is required.
 
-```bash
-python scripts/sn21_keys.py generate \
-    --role miner \
-    --output ~/sn21-miner.pem
-# Prints the ed25519 public key (safe to share). The private PEM
-# stays on disk at ~/sn21-miner.pem (mode 0600). Save the file or
-# its contents in a password manager — losing it means you can't
-# sign new submissions.
-```
-
-### Step 4: Register the ed25519 binding on chain (one-time)
-
-Tells the chain: "ed25519 public key X belongs to my hotkey." Without
-this, validators reject your prediction signatures.
+Quick sanity check before running the miner:
 
 ```bash
-python scripts/sn21_keys.py register \
-    --role miner --network test --netuid 466 \
-    --wallet-name my_miner --wallet-hotkey default \
-    --key ~/sn21-miner.pem
-# Prompts:
-#   "Submit registration commit? [y/N]" → type 'y'   (or pass --yes)
-#   coldkey password (the one you set in Step 2)
-# On success, prints `success: True`, `block: <N>`, and `extrinsic_hash:
-# 0x...`. Save the block number — useful if you ever need to re-audit
-# the registration with `verify_epoch.py --block-hash`.
+python -c "
+import bittensor as bt
+w = bt.Wallet(name='my_miner', hotkey='default')
+ct = int(getattr(w.hotkey, 'crypto_type', 1))
+print('hotkey ss58:        ', w.hotkey.ss58_address)
+print('crypto_type:        ', ct, '(0 = ed25519, 1 = sr25519)')
+print('inner_sig viable:   ', ct == 0)
+"
 ```
 
-**Scripting / cron note:** add `--yes` to skip the interactive prompt.
-The script also auto-confirms when stdin isn't a TTY, so it works under
-`docker run -i` and similar non-interactive invocations without
-hanging.
+`crypto_type: 0` ⇒ you are good to mine. `crypto_type: 1` ⇒ the
+hotkey is sr25519; delete it and recreate it per the note in Step 2
+before running `hope-miner`. The miner client will refuse to submit
+otherwise.
 
-### Step 5: Train on historical data (recommended)
+### Step 4: Train on historical data (recommended)
 
 Before predicting on live epochs, train a model on past episodes
 with known outcomes:
@@ -210,7 +210,7 @@ Each example has:
 > the remaining (cost, conversions) deltas — see
 > `docs/SN21_REWARD_MECHANISM.md` for the full rule.
 
-### Step 6: Run the miner
+### Step 5: Run the miner
 
 The complete command for testnet 466:
 
@@ -220,8 +220,7 @@ hope-miner --validator-url https://validator.adtao.io \
     --epoch WR-2026-W18-PUB-E1 \
     --bt-network test --netuid 466 \
     --archive-tier-2 https://adtao-deploy.onrender.com \
-    --archive-tier-3 https://adtao-deploy.onrender.com \
-    --ed25519-key-file ~/sn21-miner.pem
+    --archive-tier-3 https://adtao-deploy.onrender.com
 ```
 
 **What each flag does:**
@@ -232,7 +231,13 @@ hope-miner --validator-url https://validator.adtao.io \
 | `--epoch` | Current epoch identifier. Look it up at https://validator.adtao.io/health → `current_epoch` field. |
 | `--archive-tier-2` | Operator-redundancy archive — your AES_ct lands here too. For testnet bootstrap, use the operator's archive at `adtao-deploy.onrender.com`. |
 | `--archive-tier-3` | Your "self-archive" URL — this is the URL announced on chain inside your bundled commit. For testnet bootstrap, sharing the operator's archive is fine. For production, run your own with `hope-archive-server` (see §10). |
-| `--ed25519-key-file` | The PEM you generated in Step 3. |
+
+The miner derives its ed25519 signing key directly from the wallet
+hotkey (which is ed25519 thanks to `--crypto-type Ed25519` in Step 2),
+so no `--ed25519-key-file` flag is needed. The flag still exists for
+advanced setups (e.g., an HSM-held key); if you supply it, the miner
+will refuse to submit unless its pubkey exactly matches the wallet
+hotkey pubkey, since otherwise validators will reject every bundle.
 
 **Expected output (success):**
 
@@ -254,7 +259,7 @@ values atomically.
 
 If the run fails, see §11 (Troubleshooting).
 
-### Step 7: Check your score
+### Step 6: Check your score
 
 The validator scores miners post-deadline at the next subnet
 tempo step (~72 min after the bundle's reveal round on testnet 466).
@@ -731,8 +736,7 @@ Ordered by expected impact:
        --epoch WR-2026-W18-PUB-E1 \
        --bt-network test --netuid 466 \
        --archive-tier-2 https://adtao-deploy.onrender.com \
-       --archive-tier-3 https://adtao-deploy.onrender.com \
-       --ed25519-key-file ~/sn21-miner.pem
+       --archive-tier-3 https://adtao-deploy.onrender.com
    ```
    The bundled trainer gets **~1.5× the baseline score on the bundled
    10-example sample dataset** — driven mostly by the calibration term,
@@ -851,19 +855,21 @@ tempo step processes the drand pulse for your `reveal_round`. Wait
 ~30-72 minutes after the miner success and retry. The verifier no
 longer crashes with `CBORDecodeEOF` — it returns a clean reason.
 
-### `verify-reg` says "no Raw payload at the latest block"
+### Earlier docs mentioned a `sn21_keys.py register` step — do I need it?
 
-Substrate's `Commitments::CommitmentOf` is **single-slot, last-write-wins**
-per `(netuid, hotkey)`. After your first `hope-miner` bundle commit,
-the slot stores a TimelockEncrypted bundle and the registration
-`Raw{N}` payload is no longer at chain head. Either:
-- Pass `--block-hash <0x...>` of the original `sn21_keys.py register`
-  extrinsic (printed on success — capture it from the `block:` /
-  `extrinsic_hash:` lines), against an **archive node** RPC, OR
-- Trust the validator's metagraph as the proof of registration.
+No. Earlier revisions of this quickstart instructed miners to publish
+an SS58↔ed25519 binding via `sn21_keys.py register`. That step has been
+removed because Substrate's `Commitments::CommitmentOf` is single-slot,
+last-write-wins per `(netuid, hotkey)` — the very first `hope-miner`
+bundle commit overwrites the registration. The current path skips
+registration entirely: create your hotkey with `--crypto-type Ed25519`
+(Step 2), and the validator uses the hotkey itself as the inner_sig
+anchor.
 
-This is by design — verifiers capture the binding once at hotkey-first-seen
-and store the block hash for future audit.
+If you previously created an sr25519 hotkey and registered an external
+PEM, that registration is no longer at chain head and the validator
+cannot verify your submissions. Recreate the hotkey with
+`--crypto-type Ed25519`, re-register on the subnet, and you are good.
 
 ### "do I need my coldkey password every time?"
 
@@ -893,10 +899,34 @@ metadata fetch hangs (~30s), the chain is briefly slow or syncing.
 Retry the same `hope-miner` command 2-3 times — each invocation opens
 a fresh WebSocket and may land on a different backend.
 
-### `wallet hotkey is not ed25519; supply --ed25519-key-file`
+### `wallet hotkey is not ed25519` (preflight abort)
 
-You forgot `--ed25519-key-file ~/sn21-miner.pem` on the command. The
-inner_sig requires the ed25519 PEM you generated in Step 3.
+Your hotkey was created without `--crypto-type Ed25519` and is therefore
+sr25519 by default. The validator can only verify ed25519 inner signatures
+against an ed25519 hotkey, so the miner client aborts before submitting
+rather than letting you silently fail scoring. Recreate the hotkey:
+
+```bash
+rm -r ~/.bittensor/wallets/my_miner/hotkeys/default
+btcli wallet new_hotkey \
+    --wallet.name my_miner --wallet.hotkey default \
+    --crypto-type Ed25519
+btcli subnet register --netuid 466 \
+    --wallet.name my_miner --wallet.hotkey default \
+    --subtensor.network test
+```
+
+The coldkey is untouched; you only re-register the new hotkey on the
+subnet.
+
+### `--ed25519-key-file pubkey does not match wallet hotkey` (preflight abort)
+
+You passed `--ed25519-key-file <path>`, but the PEM's public key
+differs from the wallet hotkey's public key. The validator anchors
+inner_sig verification to the wallet hotkey, so a mismatch guarantees
+every submission is rejected. Either drop the flag (the miner derives
+the signing key from the wallet hotkey automatically) or replace the
+PEM with one whose pubkey equals the wallet hotkey pubkey.
 
 ### `Subtensor returned: SpaceLimitExceeded(Module)`
 
