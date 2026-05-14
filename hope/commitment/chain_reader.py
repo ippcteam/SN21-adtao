@@ -266,6 +266,13 @@ def read_events_at_block(
             continue
 
         # Best-effort extract netuid + hotkey from the event attributes.
+        # Substrate event attributes come in two shapes depending on the
+        # active substrate-interface / cyscale version:
+        #   - older list-of-dicts: [{"name": "netuid", "type": ..., "value": N}, ...]
+        #   - newer named-dict:    {"netuid": N, "who": "5..."}
+        # We handle both. The named-dict form is what runtime-decoded
+        # events look like under cyscale (bittensor>=10) and was missed
+        # by the original parser.
         attributes = ev_event.get("attributes") or ev_event.get("params") or []
         netuid: Optional[int] = None
         hotkey_ss58: Optional[str] = None
@@ -277,6 +284,25 @@ def read_events_at_block(
                         netuid = val
                     elif isinstance(val, str) and hotkey_ss58 is None and val.startswith("5"):
                         hotkey_ss58 = val
+        elif isinstance(attributes, dict):
+            # Try common Commitments-pallet attribute names first.
+            net_val = attributes.get("netuid")
+            if isinstance(net_val, int):
+                netuid = net_val
+            who_val = (
+                attributes.get("who")
+                or attributes.get("hotkey")
+                or attributes.get("account")
+            )
+            if isinstance(who_val, str) and who_val.startswith("5"):
+                hotkey_ss58 = who_val
+            # Fall back to a generic walk if the named keys didn't match.
+            if netuid is None or hotkey_ss58 is None:
+                for v in attributes.values():
+                    if isinstance(v, int) and netuid is None:
+                        netuid = v
+                    elif isinstance(v, str) and hotkey_ss58 is None and v.startswith("5"):
+                        hotkey_ss58 = v
         if netuid is None or hotkey_ss58 is None:
             # Skip events we can't attribute; probably not a commit event.
             continue
