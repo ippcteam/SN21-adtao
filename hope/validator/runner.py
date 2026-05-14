@@ -155,6 +155,128 @@ def main():
         print(f"  9.C.6 block: {outcome.retry_log_commit.block_number}")
 
 
+_RPC_ROTATION_MAX_ATTEMPTS = 4
+_RPC_ROTATION_SLEEP_SECONDS = 5.0
+
+
+def _count_visible_miners(chain_view) -> int:
+    """Return the number of miners with a non-None timelock_k_revealed."""
+    return sum(
+        1
+        for ms in chain_view.miner_states.values()
+        if ms.timelock_k_revealed is not None
+    )
+
+
+def _fetch_chain_view_with_rpc_rotation(
+    *,
+    initial_subtensor,
+    netuid: int,
+    epoch_id: str,
+    validator_hotkey_ss58: str,
+    miner_hotkey_ss58_list: list[str],
+    timing,
+    bt_network: str,
+):
+    """Read on-chain miner state, retrying on fresh Subtensor connections
+    when 0 miners are visible.
+
+    The Bittensor testnet RPC pool is DNS-load-balanced. A given Subtensor
+    connection may land on a backend that hasn't yet replicated recent
+    RevealedCommitments state — and on the operator's compute (Render),
+    DNS may stick to a backend that consistently lags. To avoid burning
+    Commitments-pallet byte budget on a stale read, we:
+
+      1. Try with the caller-supplied subtensor.
+      2. If 0 miners are visible AND the metagraph has miners, drop the
+         connection and instantiate a fresh `bt.Subtensor(network=...)`,
+         which forces a new DNS resolution + TCP handshake — potentially
+         landing on a different backend.
+      3. Repeat up to _RPC_ROTATION_MAX_ATTEMPTS - 1 retries with a
+         _RPC_ROTATION_SLEEP_SECONDS pause between attempts.
+      4. Return whichever chain_view shows the most visible miners (and
+         the matching subtensor so subsequent calls reuse the
+         most-current connection).
+
+    Returns the (chain_view, subtensor) pair. If all attempts return 0,
+    the final answer is accepted and run_epoch_scoring's existing
+    `no_miner_reveals_visible` abort will fire downstream.
+    """
+    import bittensor as bt
+    import time as _time
+    from scripts import verify_epoch as ve  # type: ignore
+
+    def _read(sub):
+        return ve.fetch_chain_view(
+            subtensor=sub,
+            netuid=netuid,
+            epoch_id=epoch_id,
+            validator_hotkey_ss58=validator_hotkey_ss58,
+            miner_hotkey_ss58_list=miner_hotkey_ss58_list,
+            timing=timing,
+            # First-scoring path: validator hasn't published 9.C.1/9.C.2
+            # yet — this run is about to CREATE them. The audit verifier
+            # (verify_epoch.py) uses the default require_validator_reveals=True.
+            require_validator_reveals=False,
+        )
+
+    best_view = _read(initial_subtensor)
+    best_subtensor = initial_subtensor
+    best_count = _count_visible_miners(best_view)
+
+    if best_count > 0 or not miner_hotkey_ss58_list:
+        return best_view, best_subtensor
+
+    logger.warning(
+        "no miners visible on initial chain read (0 of %d); RPC backend "
+        "may be stale. Retrying on fresh Subtensor connections (up to %d "
+        "rotations, ~%.0fs between attempts).",
+        len(miner_hotkey_ss58_list),
+        _RPC_ROTATION_MAX_ATTEMPTS - 1,
+        _RPC_ROTATION_SLEEP_SECONDS,
+    )
+
+    for attempt in range(1, _RPC_ROTATION_MAX_ATTEMPTS):
+        _time.sleep(_RPC_ROTATION_SLEEP_SECONDS)
+        try:
+            fresh = bt.Subtensor(network=bt_network)
+        except Exception as e:
+            logger.warning(
+                "RPC rotation attempt %d/%d: Subtensor connect failed: %s",
+                attempt, _RPC_ROTATION_MAX_ATTEMPTS - 1, e,
+            )
+            continue
+
+        view = _read(fresh)
+        count = _count_visible_miners(view)
+        logger.info(
+            "RPC rotation attempt %d/%d: %d of %d miners visible",
+            attempt, _RPC_ROTATION_MAX_ATTEMPTS - 1,
+            count, len(miner_hotkey_ss58_list),
+        )
+
+        if count > best_count:
+            best_view = view
+            best_subtensor = fresh
+            best_count = count
+            if best_count > 0:
+                # Any non-zero count means the abort downstream won't fire
+                # and scoring proceeds; no need to keep rotating.
+                logger.info(
+                    "RPC rotation succeeded on attempt %d (%d miners visible)",
+                    attempt, best_count,
+                )
+                return best_view, best_subtensor
+
+    logger.warning(
+        "RPC rotation exhausted (%d attempts); accepting final 0-miner view. "
+        "Either the chain genuinely has no visible bundles for this epoch, "
+        "or the entire RPC pool is lagging.",
+        _RPC_ROTATION_MAX_ATTEMPTS,
+    )
+    return best_view, best_subtensor
+
+
 def _run_validator_onchain_cli(args, runner):
     """Bridge from CLI flags to `run_epoch_scoring`.
 
@@ -191,8 +313,9 @@ def _run_validator_onchain_cli(args, runner):
         sk = _derive_ed25519_from_wallet(runner.wallet)
     val_pk = sk.public_key().public_bytes_raw()
 
-    # Read on-chain miner state via the live verifier helper.
-    from scripts import verify_epoch as ve  # type: ignore
+    # Read on-chain miner state via the live verifier helper. The actual
+    # `ve.fetch_chain_view` call lives inside _fetch_chain_view_with_rpc_rotation;
+    # this comment marks the conceptual step for readers of the runner.
 
     miner_ss58s = list(runner.metagraph.hotkeys) if runner.metagraph else []
     timing = TimingBounds(
@@ -201,17 +324,14 @@ def _run_validator_onchain_cli(args, runner):
         chain_window_min_block=0,
         chain_window_max_block=2**63 - 1,
     )
-    chain_view = ve.fetch_chain_view(
-        subtensor=runner.subtensor,
+    chain_view, runner.subtensor = _fetch_chain_view_with_rpc_rotation(
+        initial_subtensor=runner.subtensor,
         netuid=runner.netuid,
         epoch_id=args.release,
         validator_hotkey_ss58=runner.wallet.hotkey.ss58_address,
         miner_hotkey_ss58_list=miner_ss58s,
         timing=timing,
-        # First-scoring path: validator hasn't published 9.C.1/9.C.2 yet —
-        # this run is about to CREATE them. The audit verifier (verify_epoch.py)
-        # uses the default require_validator_reveals=True.
-        require_validator_reveals=False,
+        bt_network=args.bt_network,
     )
 
     miner_inputs: list[MinerOnChainInputs] = []
