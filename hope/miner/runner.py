@@ -314,29 +314,6 @@ def _run_epoch_onchain_cli(args, runner: "MinerRunner", wallet) -> dict:
 
     subtensor = bt.Subtensor(network=args.bt_network)
 
-    # Preflight: the validator anchors inner_sig verification to the chain
-    # hotkey pubkey, so the hotkey itself MUST be ed25519. Substrate's
-    # Commitments::CommitmentOf is single-slot last-write-wins, which means
-    # the alternative path (publish an SS58↔ed25519 binding once) cannot
-    # survive subsequent bundle commits — every miner who tries it is
-    # silently excluded from scoring after their first submission. We catch
-    # the misconfiguration here, before the chain commit burns budget.
-    hotkey = getattr(wallet, "hotkey", None)
-    if hotkey is None:
-        raise SystemExit("wallet has no hotkey")
-    crypto_type = getattr(hotkey, "crypto_type", None)
-    if crypto_type is not None and int(crypto_type) != 0:
-        raise SystemExit(
-            "wallet hotkey is not ed25519 (crypto_type="
-            f"{int(crypto_type)}). The validator can only verify ed25519 "
-            "inner signatures against an ed25519 hotkey, so submissions "
-            "from this hotkey will be silently excluded from scoring. "
-            "Delete the hotkey and recreate it with "
-            "`btcli wallet new_hotkey --crypto-type Ed25519`, then "
-            "re-register on the subnet. See docs/miner_quickstart.md "
-            "Step 2 for the full command."
-        )
-
     # Load (or derive) the ed25519 inner_sig signing key.
     if args.ed25519_key_file:
         with open(args.ed25519_key_file, "rb") as f:
@@ -346,27 +323,6 @@ def _run_epoch_onchain_cli(args, runner: "MinerRunner", wallet) -> dict:
     else:
         sk = _derive_ed25519_from_wallet(wallet)
     miner_pk = sk.public_key().public_bytes_raw()
-
-    # Preflight: the inner_sig pubkey must equal the wallet hotkey pubkey.
-    # When --ed25519-key-file is omitted this is guaranteed by construction
-    # (we derive sk from the wallet). When it IS supplied, a mismatched PEM
-    # is a fast path to permanent scoring exclusion — bail loudly.
-    hotkey_pk = getattr(hotkey, "public_key", None)
-    if isinstance(hotkey_pk, str):
-        hotkey_pk = bytes.fromhex(hotkey_pk.removeprefix("0x"))
-    if isinstance(hotkey_pk, (bytes, bytearray)) and bytes(hotkey_pk) != miner_pk:
-        source = args.ed25519_key_file or "<derived from wallet>"
-        raise SystemExit(
-            "--ed25519-key-file pubkey does not match wallet hotkey pubkey:\n"
-            f"  wallet hotkey pubkey: {bytes(hotkey_pk).hex()}\n"
-            f"  inner_sig pubkey:     {miner_pk.hex()}\n"
-            f"  key source:           {source}\n"
-            "Validators anchor inner_sig verification to the wallet "
-            "hotkey, so this miner will be excluded from scoring. Either "
-            "drop --ed25519-key-file (the miner derives the signing key "
-            "from the wallet automatically) or replace the PEM with one "
-            "whose pubkey equals the wallet hotkey pubkey."
-        )
 
     # Episode discovery still goes via HTTP (Phase D).
     episodes = asyncio.run(
