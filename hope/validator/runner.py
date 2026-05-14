@@ -331,7 +331,7 @@ def _run_validator_onchain_cli(args, runner):
         validator_hotkey_ss58=runner.wallet.hotkey.ss58_address,
         miner_hotkey_ss58_list=miner_ss58s,
         timing=timing,
-        bt_network=args.bt_network,
+        bt_network=args.network,
     )
 
     miner_inputs: list[MinerOnChainInputs] = []
