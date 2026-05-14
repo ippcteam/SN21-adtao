@@ -157,6 +157,7 @@ def main():
 
 _RPC_ROTATION_MAX_ATTEMPTS = 4
 _RPC_ROTATION_SLEEP_SECONDS = 5.0
+_SUBTENSOR_URL_OVERRIDE_ENV = "SN21_SUBTENSOR_URL"
 
 
 def _count_visible_miners(chain_view) -> int:
@@ -166,6 +167,52 @@ def _count_visible_miners(chain_view) -> int:
         for ms in chain_view.miner_states.values()
         if ms.timelock_k_revealed is not None
     )
+
+
+def _subtensor_endpoint_description(subtensor) -> str:
+    """Best-effort description of which RPC URL this Subtensor is talking to.
+
+    Bittensor wraps an async_substrate_interface SubstrateInterface; the URL
+    is on the underlying instance. Schema may shift between SDK versions, so
+    fall back to '<unknown>' rather than crashing.
+    """
+    try:
+        substrate = getattr(subtensor, "substrate", None)
+        url = (
+            getattr(substrate, "url", None)
+            or getattr(substrate, "_url", None)
+            or getattr(subtensor, "chain_endpoint", None)
+        )
+        if url:
+            return str(url)
+    except Exception:
+        pass
+    return "<unknown>"
+
+
+def _current_block_or_none(subtensor) -> int | None:
+    """Read the current head block via this RPC. Returns None on failure."""
+    try:
+        return int(subtensor.get_current_block())
+    except Exception as e:
+        logger.warning("get_current_block failed: %s", e)
+        return None
+
+
+def _make_fresh_subtensor(bt_network: str):
+    """Create a new Subtensor connection.
+
+    If `SN21_SUBTENSOR_URL` is set in env, that value takes precedence over
+    the named network — letting operators pin to a known-current node when
+    the default DNS-load-balanced pool serves stale state.
+    """
+    import os as _os
+    import bittensor as bt
+
+    override = _os.environ.get(_SUBTENSOR_URL_OVERRIDE_ENV, "").strip()
+    if override:
+        return bt.Subtensor(network=override)
+    return bt.Subtensor(network=bt_network)
 
 
 def _fetch_chain_view_with_rpc_rotation(
@@ -202,7 +249,6 @@ def _fetch_chain_view_with_rpc_rotation(
     the final answer is accepted and run_epoch_scoring's existing
     `no_miner_reveals_visible` abort will fire downstream.
     """
-    import bittensor as bt
     import time as _time
     from scripts import verify_epoch as ve  # type: ignore
 
@@ -220,9 +266,15 @@ def _fetch_chain_view_with_rpc_rotation(
             require_validator_reveals=False,
         )
 
+    initial_url = _subtensor_endpoint_description(initial_subtensor)
+    initial_block = _current_block_or_none(initial_subtensor)
     best_view = _read(initial_subtensor)
     best_subtensor = initial_subtensor
     best_count = _count_visible_miners(best_view)
+    logger.info(
+        "RPC initial read: url=%s block=%s visible=%d/%d",
+        initial_url, initial_block, best_count, len(miner_hotkey_ss58_list),
+    )
 
     if best_count > 0 or not miner_hotkey_ss58_list:
         return best_view, best_subtensor
@@ -239,7 +291,7 @@ def _fetch_chain_view_with_rpc_rotation(
     for attempt in range(1, _RPC_ROTATION_MAX_ATTEMPTS):
         _time.sleep(_RPC_ROTATION_SLEEP_SECONDS)
         try:
-            fresh = bt.Subtensor(network=bt_network)
+            fresh = _make_fresh_subtensor(bt_network)
         except Exception as e:
             logger.warning(
                 "RPC rotation attempt %d/%d: Subtensor connect failed: %s",
@@ -249,10 +301,12 @@ def _fetch_chain_view_with_rpc_rotation(
 
         view = _read(fresh)
         count = _count_visible_miners(view)
+        url = _subtensor_endpoint_description(fresh)
+        block = _current_block_or_none(fresh)
         logger.info(
-            "RPC rotation attempt %d/%d: %d of %d miners visible",
+            "RPC rotation attempt %d/%d: url=%s block=%s visible=%d/%d",
             attempt, _RPC_ROTATION_MAX_ATTEMPTS - 1,
-            count, len(miner_hotkey_ss58_list),
+            url, block, count, len(miner_hotkey_ss58_list),
         )
 
         if count > best_count:
@@ -260,8 +314,6 @@ def _fetch_chain_view_with_rpc_rotation(
             best_subtensor = fresh
             best_count = count
             if best_count > 0:
-                # Any non-zero count means the abort downstream won't fire
-                # and scoring proceeds; no need to keep rotating.
                 logger.info(
                     "RPC rotation succeeded on attempt %d (%d miners visible)",
                     attempt, best_count,
@@ -271,7 +323,9 @@ def _fetch_chain_view_with_rpc_rotation(
     logger.warning(
         "RPC rotation exhausted (%d attempts); accepting final 0-miner view. "
         "Either the chain genuinely has no visible bundles for this epoch, "
-        "or the entire RPC pool is lagging.",
+        "or the RPC pool reachable from this network is uniformly lagging. "
+        "If you have a known-current endpoint, set SN21_SUBTENSOR_URL to "
+        "pin to it (e.g. SN21_SUBTENSOR_URL=wss://test.finney.opentensor.ai:443).",
         _RPC_ROTATION_MAX_ATTEMPTS,
     )
     return best_view, best_subtensor
