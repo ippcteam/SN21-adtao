@@ -135,18 +135,23 @@ configuration.
 
 ## 4. API Endpoints
 
-Once running, the validator exposes:
+Once `hope-validator-api` is running, the daemon exposes:
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `GET` | `/health` | None | Validator status |
+| `GET` | `/health` | None | Daemon status / current epoch |
+| `GET` | `/` | None | Service banner |
 | `GET` | `/v1/epochs/{id}/episodes` | Hotkey | List episode metadata |
 | `GET` | `/v1/epochs/{id}/episodes/{ep_id}` | Hotkey | Single episode payload |
 | `GET` | `/v1/epochs/{id}/episodes_batch` | Hotkey | All episodes in one request |
-| `POST` | `/v1/epochs/{id}/predictions` | Hotkey | Submit predictions |
-| `GET` | `/v1/epochs/{id}/commitment` | None | Commitment proof |
+| `GET` | `/v1/epochs/{id}/episode-commitment` | None | Per-episode commitment hash |
+| `GET` | `/v1/epochs/{id}/commitment` | None | Epoch commitment proof |
+| `POST` | `/v1/epochs/{id}/predictions` | Hotkey | Submit predictions (dev/local; production miners submit on chain via Layer 9.B) |
+| `GET` | `/v1/epochs/{id}/my-predictions` | Hotkey | Inspect predictions previously POSTed by the caller |
 | `GET` | `/v1/epochs/{id}/verification` | None | Revealed outcomes (post-scoring) |
 | `GET` | `/v1/epochs/{id}/scores` | None | Per-miner scores (post-scoring) |
+| `GET` | `/v1/training/episodes` | None | Historical training episodes |
+| `GET` | `/v1/training/summary` | None | Training-set composition stats |
 
 ### Authentication
 
@@ -260,9 +265,15 @@ scores = scorer.score_epoch(
 for miner_id, score in scores.items():
     print(f"{miner_id}: raw={score.raw_score:.4f} "
           f"skill={score.skill_score:.4f} "
-          f"penalty={score.null_penalty:.4f} "
+          f"null_pen={score.null_penalty:.4f} "
+          f"cov_pen={score.coverage_penalty:.4f} "
+          f"covered={score.episodes_scored}/{score.episodes_total} "
           f"final={score.final_score:.4f}")
 ```
+
+`MinerScore` carries the additional `coverage_penalty`,
+`coverage_fraction`, `episodes_scored`, `episodes_total`, and
+`episode_scores` fields that the older example omitted.
 
 ### Scoring weights (launch defaults)
 
