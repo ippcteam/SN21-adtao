@@ -49,7 +49,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from hope.commitment.chain_reader import (
     RawCommitField,
@@ -151,17 +151,33 @@ class RegistrationIndex:
         """Iterate over all valid registrations (one per hotkey)."""
         return self._entries.values()
 
-    def scan_range(self, start_block: int, end_block: int) -> int:
+    def scan_range(
+        self,
+        start_block: int,
+        end_block: int,
+        *,
+        progress_callback: Optional[Callable[[int, int, int, dict[str, int], int], None]] = None,
+        progress_every: int = 200,
+    ) -> int:
         """Scan blocks [start_block, end_block] inclusive for registrations.
 
         Returns the number of valid registrations found in this range (not
         cumulative). The internal cache is updated in-place; later
         registrations within the range overwrite earlier ones for the same
         hotkey.
+
+        Args:
+            progress_callback: optional `(block_num, start, end, stats, indexed_size)`
+                callback invoked every `progress_every` blocks plus once at
+                completion. Use for long-running backfill visibility.
+            progress_every: emit a progress callback every N blocks scanned.
+                Default 200 ≈ ~5 min cadence at the observed ~1.5s/block
+                testnet scan rate.
         """
         if start_block > end_block:
             return 0
         found_this_range = 0
+        n_scanned = 0
         for block_num in range(start_block, end_block + 1):
             try:
                 block_hash = self._subtensor.substrate.get_block_hash(block_num)
@@ -179,19 +195,38 @@ class RegistrationIndex:
                 logger.warning("events at block %d failed: %s", block_num, exc)
                 continue
             self._stats["blocks_scanned"] += 1
-            if not events:
-                continue
+            n_scanned += 1
 
-            for ev in events:
-                self._stats["events_seen"] += 1
-                if ev.netuid != self._netuid:
-                    continue
-                entry = self._try_index_event(ev.hotkey_ss58, block_hash, block_num)
-                if entry is not None:
-                    found_this_range += 1
+            if events:
+                for ev in events:
+                    self._stats["events_seen"] += 1
+                    if ev.netuid != self._netuid:
+                        continue
+                    entry = self._try_index_event(ev.hotkey_ss58, block_hash, block_num)
+                    if entry is not None:
+                        found_this_range += 1
 
             if self._last_scanned_block is None or block_num > self._last_scanned_block:
                 self._last_scanned_block = block_num
+
+            if progress_callback is not None and n_scanned % max(1, progress_every) == 0:
+                try:
+                    progress_callback(
+                        block_num, start_block, end_block,
+                        self._stats.copy(), len(self._entries),
+                    )
+                except Exception as exc:
+                    logger.debug("progress_callback raised: %s", exc)
+
+        # Always emit a final progress tick at completion.
+        if progress_callback is not None and n_scanned > 0:
+            try:
+                progress_callback(
+                    end_block, start_block, end_block,
+                    self._stats.copy(), len(self._entries),
+                )
+            except Exception as exc:
+                logger.debug("progress_callback raised: %s", exc)
 
         return found_this_range
 

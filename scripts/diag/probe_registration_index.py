@@ -54,6 +54,11 @@ def main() -> int:
                         "run this against an archive RPC, then ship the JSON "
                         "to the cron container so it doesn't re-scan history "
                         "on every run.")
+    p.add_argument("--progress-every", type=int, default=200,
+                   help="Print a progress heartbeat every N successfully-"
+                        "scanned blocks (default 200 ≈ ~5 min cadence at the "
+                        "observed ~1.5s/block testnet rate). Set to 0 to "
+                        "disable heartbeats.")
     args = p.parse_args()
 
     url = os.environ.get("SN21_SUBTENSOR_URL")
@@ -74,7 +79,38 @@ def main() -> int:
         "outcome_signer": RegistrationRole.OUTCOME_SIGNER,
     }
     index = RegistrationIndex(sub, args.netuid, expected_role=role_map[args.role])
-    found = index.scan_range(args.start_block, end)
+
+    import time as _time
+    scan_start_ts = _time.time()
+
+    def _on_progress(block_num, start_block, end_block, stats, indexed_size):
+        span = max(1, end_block - start_block + 1)
+        done = block_num - start_block + 1
+        pct = 100.0 * done / span
+        elapsed = _time.time() - scan_start_ts
+        rate = done / elapsed if elapsed > 0 else 0.0
+        remaining = (span - done) / rate if rate > 0 else float("inf")
+        eta_min = remaining / 60 if remaining != float("inf") else None
+        print(
+            f"[probe] @block {block_num} ({done}/{span} = {pct:.1f}%) "
+            f"elapsed={elapsed:.0f}s rate={rate:.2f}b/s "
+            f"eta={eta_min:.0f}m " if eta_min is not None else
+            f"[probe] @block {block_num} ({done}/{span} = {pct:.1f}%) ",
+            flush=True,
+        )
+        print(
+            f"        events_seen={stats['events_seen']} "
+            f"candidates={stats['candidates_found']} "
+            f"verified={stats['verified']} indexed={indexed_size}",
+            flush=True,
+        )
+
+    callback = _on_progress if args.progress_every > 0 else None
+    found = index.scan_range(
+        args.start_block, end,
+        progress_callback=callback,
+        progress_every=max(1, args.progress_every),
+    )
     stats = index.stats
 
     print()
