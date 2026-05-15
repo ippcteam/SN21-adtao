@@ -12,6 +12,23 @@
 > credentials at launch should contact the operator team; a formal
 > third-party validator programme is tracked at Review 4.
 
+> **Architecture note (read this first).** SN21's validator code ships as
+> **two separate binaries** that run independently:
+>
+> - **`hope-validator-api`** — long-lived **HTTP daemon** that serves
+>   episodes to miners and accepts their public-facing health checks.
+>   This is the binary that takes `--port` and `--host`.
+> - **`hope-validator`** — one-shot **scoring pass** invoked once per
+>   epoch after the miner deadline (typically from cron). It reads
+>   on-chain miner submissions, evaluates scoreability, commits weights,
+>   and exits. **No `--port` flag** — it is not an HTTP server.
+>
+> The two were a single binary in earlier revisions of this guide; many
+> examples below have been updated accordingly. If you see a reference
+> to `hope-validator --port`, treat it as a documentation drift and use
+> `hope-validator-api --port` for HTTP and plain `hope-validator` for
+> scoring.
+
 ---
 
 ## 1. Installation
@@ -26,88 +43,93 @@ pip install -e .
 
 ## 2. Quick Start (Local Testing)
 
-Run a single epoch against the live data API:
+Two commands you'll typically run, in two separate terminals or as two
+services:
 
 ```bash
-hope-validator --release WR-2026-W18-PUB-E1 --port 8080 --score-now
+# Terminal A — episode-serving HTTP daemon (long-lived)
+hope-validator-api \
+    --release WR-2026-W19-PUB-E1 \
+    --host 0.0.0.0 --port 8080 \
+    --network test --netuid 466 \
+    --wallet-name my_validator --wallet-hotkey default
 ```
 
-This will:
-1. Fetch 101 episodes from the data API
-2. Compute commitment hash
-3. Score immediately (no miner interaction)
-4. Print results
+```bash
+# Terminal B — one-shot scoring pass (run AFTER the miner deadline)
+hope-validator \
+    --release WR-2026-W19-PUB-E1 \
+    --network test --netuid 466 \
+    --wallet-name my_validator --wallet-hotkey default \
+    --archive-tier-2 https://adtao-deploy.onrender.com \
+    --ed25519-key-file ~/.sn21/keys/validator-ed25519.pem
+```
 
-Output:
-```
-Epoch started: WR-2026-W18-PUB-E1
-Episodes: 101
-Commitment: 2c55f687a5dedf81...
-Deadline: 2026-04-25T11:15:23+00:00
-```
+`hope-validator-api` exposes the same endpoints under `/v1/...` as
+before (see §4); `hope-validator` produces the on-chain
+`9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` scoring artifact sequence.
+
+For testnet, swap `--network test --netuid 466`; for mainnet use
+`--network finney --netuid 21` (the defaults).
 
 ---
 
 ## 3. Running with Miners
 
-### Start the validator
+### Start the episode API daemon
 
 ```bash
-hope-validator --release WR-2026-W18-PUB-E1 --port 8080
+hope-validator-api \
+    --release WR-2026-W19-PUB-E1 \
+    --host 0.0.0.0 --port 8080 \
+    --network test --netuid 466 \
+    --wallet-name my_validator --wallet-hotkey default
 ```
 
-This starts the FastAPI server and waits for miners to connect. The validator:
-- Fetches episodes from the data API
-- Commits outcome hash before distributing
+This starts the FastAPI server and waits for miners to connect. The daemon:
+- Fetches episodes from the data API at startup
 - Serves episodes at `<validator-url>/v1/epochs/{epoch_id}/episodes`
-- Accepts predictions at `POST /v1/epochs/{epoch_id}/predictions`
+- Authenticates miner requests against the on-chain metagraph
+- Does **not** accept HTTP-posted predictions — production miners submit
+  via on-chain commits (see [Layer 9.B](whitepaper.md)). The
+  `POST /v1/epochs/{id}/predictions` endpoint still exists for dev/local
+  workflows but is not part of the canonical scoring path.
 
 ### Tell miners your endpoint
 
 Miners connect with:
 
 ```bash
-hope-miner --validator-url <validator-url> --epoch WR-2026-W18-PUB-E1
+hope-miner --validator-url <validator-url> --epoch WR-2026-W19-PUB-E1 ...
 ```
+
+See `docs/miner_quickstart.md` for the full miner-side command.
 
 ### Score after deadline
 
-Once miners have submitted predictions, trigger scoring:
+Run the one-shot scorer once per epoch, after the miner deadline AND
+after drand auto-reveal has fired (~60 minutes past the deadline at
+default reveal-block settings):
 
-```python
-from hope.validator.runner import ValidatorRunner
-
-runner = ValidatorRunner()
-result = runner.score_epoch()
-print(result)
+```bash
+hope-validator \
+    --release WR-2026-W19-PUB-E1 \
+    --network test --netuid 466 \
+    --wallet-name my_validator --wallet-hotkey default \
+    --archive-tier-2 https://adtao-deploy.onrender.com \
+    --ed25519-key-file ~/.sn21/keys/validator-ed25519.pem
 ```
 
-Or programmatically in a script:
+The scorer reads on-chain miner submissions, fetches AES ciphertext
+from the archive, decrypts with the chain-revealed key, runs the
+8-check scoreability rule, computes scores, and writes the
+`9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` artifact sequence on chain. It is
+idempotent against chain state: a re-run for an already-scored
+(validator, epoch) pair exits cleanly without re-committing.
 
-```python
-import asyncio
-from hope.validator.runner import ValidatorRunner
-
-async def run():
-    runner = ValidatorRunner(port=8080)
-
-    # Start epoch
-    await runner.run_epoch("WR-2026-W18-PUB-E1")
-
-    # Start API server for miners
-    runner.start_api_server()
-
-    # Wait for predictions (in production: wait until deadline)
-    import time
-    time.sleep(300)  # 5 minutes for testing
-
-    # Score and reveal
-    result = runner.score_epoch()
-    for miner_id, score in result["scores"].items():
-        print(f"{miner_id}: {score['final_score']:.4f}")
-
-asyncio.run(run())
-```
+Typical operator deployment runs `hope-validator` from a weekly cron;
+see `deploy/validator_scoring/README.md` for the canonical Render
+configuration.
 
 ---
 
@@ -145,51 +167,47 @@ FastAPI auto-generates interactive API docs at:
 
 ## 5. Epoch Lifecycle
 
-The validator manages epochs through these states:
+The protocol's epoch lifecycle is **chain-anchored** rather than driven
+by an in-process state machine. The validator side splits naturally
+across two phases that map to the two binaries:
 
 ```
-IDLE → PREPARING → COMMITTED → DISTRIBUTING → COLLECTING → SCORING → REVEALING → COMPLETE
+Phase 1 (open):  EPISODE_API_LIVE → MINER_DEADLINE
+Phase 2 (close): DRAND_REVEAL    → SCORING_RUN → ON_CHAIN_ARTIFACTS
 ```
 
-| State | What Happens |
-|-------|-------------|
-| **PREPARING** | Fetch episodes + outcomes from the data API, verify package hash |
-| **COMMITTED** | Compute SHA-256 hash of outcomes + salt + weights |
-| **DISTRIBUTING** | Start serving episodes to miners via HTTP |
-| **COLLECTING** | Accept predictions until deadline (156 hours / ~6.5 days, per `PREDICTION_DEADLINE_HOURS` in `hope/constants.py`) |
-| **SCORING** | Run scoring pipeline on all submitted predictions |
-| **REVEALING** | Publish outcomes + salt for verification |
-| **COMPLETE** | Log summary, archive epoch |
+| Stage | Driven by | What happens |
+|-------|-----------|--------------|
+| **Episode API live** | `hope-validator-api` | Daemon serves the current epoch's episodes to authenticated miners. Lifetime = ~6.5 days per epoch (`PREDICTION_DEADLINE_HOURS = 156` in `hope/constants.py`). |
+| **Miner deadline** | drand schedule | Miners stop accepting their bundles into chain TLE commits at the configured cutoff. |
+| **Drand reveal** | drand quicknet | ~60 minutes after each miner's submission, the chain auto-decrypts the TLE'd K. Bundles become parseable in `Commitments::RevealedCommitments`. |
+| **Scoring run** | `hope-validator` (one-shot, cron) | Reads chain, fetches archive, runs scoreability, computes scores. Commits `9.C.1` pre-scoring state, `9.C.3` weights, `9.C.2` post-scoring artifacts, and `9.C.6` retry log (when miners are excluded). Idempotent per (validator, epoch). |
+| **Consensus** | Yuma | At the next subnet tempo step, the validator's weights influence the network's consensus output and emissions. |
+
+The older in-process state machine
+(`IDLE → PREPARING → COMMITTED → ...`) is no longer load-bearing —
+state lives on chain, not in validator memory.
 
 ---
 
 ## 6. Commitment Verification
 
-Before distributing episodes, the validator commits:
+In the chain-anchored model, commitment verification is performed
+**against on-chain artifacts**, not against the validator's
+`/verification` HTTP endpoint. The canonical reproducible verifier is
+[`scripts/verify_epoch.py`](../scripts/verify_epoch.py); it reads the
+validator's `9.C.1`, `9.C.3`, and `9.C.2` commits at chain head (or
+at a pinned block hash, against an archive node), re-fetches each
+miner's AES_ct from the archive, re-runs the scoring code, and either
+confirms or contradicts the validator's claim.
 
-```
-commitment_hash = SHA256(outcomes_json + salt + weights_json)
-```
+The HTTP `/v1/epochs/{id}/verification` endpoint remains available for
+operator-published outcome + salt material and is unchanged from
+earlier revisions; it is now a convenience layer over what's already
+provable from chain state alone.
 
-After scoring, it reveals the salt and outcomes. Anyone can verify:
-
-```python
-import hashlib, json
-
-# The revealed data
-outcomes = [...]  # from /v1/epochs/{id}/verification
-salt = "abc..."   # from /v1/epochs/{id}/verification
-weights = "{...}" # from /v1/epochs/{id}/verification
-
-# Recompute
-payload = json.dumps(outcomes, sort_keys=True) + salt + weights
-computed = hashlib.sha256(payload.encode()).hexdigest()
-
-# Compare with commitment
-assert computed == commitment_hash
-```
-
-This proves the validator did not change outcomes after seeing miner predictions.
+See the [Whitepaper](whitepaper.md) §"Trust model" for the full
+threat model and what each commit binds.
 
 ---
 
@@ -263,28 +281,55 @@ Weights must sum to 1.0 and stay within published ranges.
 
 ### Environment variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HOPE_API_KEY` | *(required)* | data API key — provided on validator registration |
-| `HOPE_API_URL` | *(required)* | data API base URL — provided on validator registration |
-| `REQUIRE_SIGNATURES` | `true` | Require signed miner requests (set to `false` only for development) |
+| Variable | Default | Used by | Description |
+|----------|---------|---------|-------------|
+| `HOPE_API_KEY` | *(required)* | both | Data API key — provided on validator registration |
+| `HOPE_API_URL` | *(required)* | both | Data API base URL — provided on validator registration |
+| `RELEASE_KEY` | `--release` | both | Epoch ID to serve/score (CLI flag wins if both set) |
+| `REQUIRE_SIGNATURES` | `true` | `-api` | Require signed miner requests (set to `false` only for dev) |
+| `SN21_SUBTENSOR_URL` | *(unset)* | scorer | Override the substrate RPC URL (e.g. for archive-node reads) |
+| `SN21_LEADERBOARD_REPORTER` | `0` | scorer | When `1`, POSTs the post-scoring artifact to the CMS after a successful run |
+| `SN21_LEADERBOARD_API_KEY` | *(unset)* | scorer | API key for the leaderboard reporter (only used when reporter is enabled) |
+| `SN21_EPOCH_ARTIFACT_DIR` | `~/.sn21/epoch_artifacts` | scorer | Where the per-epoch artifact JSON is written before the optional POST |
 
 The miner submission deadline is **156 hours** (~6.5 days), pinned in
 `hope/constants.py:PREDICTION_DEADLINE_HOURS` to match the weekly
 mining window in `docs/SN21_EPOCH_STRUCTURE.md`. It is not configured
 via env var.
 
-The HTTP port is set via `--port` (default `8080`) on the CLI, not
-via an env var.
+The episode-API HTTP port is set via `--port` (default `8080`) on
+`hope-validator-api`, not via an env var. `hope-validator` (the scorer)
+has no HTTP surface.
 
 ### CLI arguments
 
 ```
-hope-validator
-  --release KEY          Release key to process (e.g., WR-2026-W18-PUB-E1)
-  --api-key KEY          data API key
-  --port PORT            API server port (default: 8080)
-  --score-now            Score immediately without waiting for miners
+hope-validator-api  (long-running episode HTTP daemon)
+  --release KEY              Release key to serve (e.g., WR-2026-W19-PUB-E1)
+  --port PORT                HTTP port (default: 8080)
+  --host HOST                Bind host (default: 0.0.0.0)
+  --network {test,finney}    Bittensor network (default: finney mainnet)
+  --netuid NETUID            Subnet netuid (default: 21 mainnet; 466 testnet)
+  --wallet-name NAME
+  --wallet-hotkey HOTKEY
+  --no-chain                 Skip metagraph load (no auth — dev/local only)
+
+hope-validator  (one-shot post-deadline scoring pass)
+  --release KEY              Epoch ID to score
+  --api-key KEY              Data API key (or HOPE_API_KEY env var)
+  --network {test,finney}
+  --netuid NETUID
+  --wallet-name NAME
+  --wallet-hotkey HOTKEY
+  --archive-tier-1 URL       Tier-1 archive base URL (repeatable)
+  --archive-tier-2 URL       Tier-2 archive base URL (repeatable)
+  --ed25519-key-file PATH    PEM private key for inner_sig
+  --reg-index-lookback-blocks N   Blocks scanned for miner registrations
+                                  (default: 600 ≈ 2h testnet activity)
+  --reg-index-prebuilt PATH       Optional prebuilt registration index JSON
+  --blocks-until-pre-reveal N     9.C.1 reveal delay (default 300 ≈ 1h)
+  --blocks-until-post-reveal N    9.C.2 reveal delay (default 600 ≈ 2h)
+  --blocks-until-weights-reveal N  9.C.3 reveal delay (default 360)
 ```
 
 ---
@@ -300,23 +345,45 @@ hope-validator
 
 ### Recommended setup
 
-```bash
-# Use a process manager
-pip install -e .
-nohup hope-validator --release WR-2026-W18-PUB-E1 --port 8080 > validator.log 2>&1 &
+Run the episode daemon as a long-lived service, and the scorer as a
+post-deadline cron job:
 
-# Monitor
-tail -f validator.log
+```bash
+pip install -e .
+
+# Long-lived episode daemon
+nohup hope-validator-api \
+    --release WR-2026-W19-PUB-E1 \
+    --host 0.0.0.0 --port 8080 \
+    --network test --netuid 466 \
+    --wallet-name my_validator --wallet-hotkey default \
+    > validator-api.log 2>&1 &
+
+# One-shot scorer (run from cron Monday morning, after deadline + reveal)
+hope-validator \
+    --release WR-2026-W19-PUB-E1 \
+    --network test --netuid 466 \
+    --wallet-name my_validator --wallet-hotkey default \
+    --archive-tier-2 https://adtao-deploy.onrender.com \
+    --ed25519-key-file ~/.sn21/keys/validator-ed25519.pem
+
+tail -f validator-api.log
 ```
+
+The operator's canonical Render deployment of the cron lives at
+`deploy/validator_scoring/` and pulls the latest source from this
+repo on every trigger, so production stays in lockstep with `main`.
 
 ### Weekly epoch cycle
 
 Each Monday:
 1. A new release is available from the operator (e.g., `WR-2026-W19-PUB-E1`)
-2. Restart the validator with the new release key
+2. Restart `hope-validator-api` with the new release key
 3. Miners have until the weekly deadline (~6.5 days) to submit predictions
-4. Trigger scoring after deadline
-5. Outcomes revealed, weights set
+4. Drand auto-reveal fires ~60 minutes after each miner's submission
+5. Run `hope-validator` (one-shot) after the deadline + reveal window
+6. Scoring artifacts (`9.C.1 → 9.C.3 → 9.C.2 → 9.C.6`) land on chain;
+   weights take effect at the next Yuma consensus step
 
 ---
 
@@ -324,8 +391,11 @@ Each Monday:
 
 | Issue | Solution |
 |-------|----------|
-| `Package hash verification failed` | Network issue — retry fetch |
-| `Epoch not found` (404 from miners) | Miner using wrong epoch_id |
-| `Prediction deadline has passed` | Miner submitted too late |
-| `No valid tokens` from data API | Check API key |
-| Low miner scores | Expected for baseline model — miners should build better models |
+| `--port` rejected by `hope-validator` | You want `hope-validator-api` instead. See §2 — `--port` lives on the HTTP daemon, not the scorer. |
+| `no_miner_reveals_visible` (scorer aborts) | Drand auto-reveal hasn't fired yet. Wait ~60 min past each miner's submission and rerun. |
+| `already_scored` (scorer aborts) | This (validator, epoch) pair already has a 9.C.1 commit on chain. Use a fresh validator hotkey to retry. |
+| `insufficient_budget` (scorer aborts) | The validator hotkey hit the Commitments-pallet byte budget for the current pallet-epoch. Wait for the pallet-epoch to roll (~72 min) or rotate to a fresh hotkey. |
+| Miners are excluded as `inner_sig.hotkey_mismatch` | Miner published their ed25519 binding outside the validator's `--reg-index-lookback-blocks` window. Increase the lookback, or supply `--reg-index-prebuilt` from an offline backfill against an archive RPC. |
+| Miners are excluded as `plaintext_unavailable` | The archive served 404 for their bundle. Either they didn't submit for this epoch, or their self-archive URL is unreachable from the scorer's vantage. |
+| Network errors fetching from the data API | Check `HOPE_API_KEY` and `HOPE_API_URL`; verify connectivity from the validator host. |
+| Low miner scores | Expected for the baseline model — miners should train their own. |
