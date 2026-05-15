@@ -88,6 +88,39 @@ class HopeDataClient:
             data = resp.json()
             return data.get("releases", [])
 
+    async def discover_latest_release(self) -> str:
+        """Return the release_key of the most recently created release.
+
+        Sorts the operator's `/releases` listing by `created_at` descending
+        and returns the first record's `release_key`. Raises RuntimeError
+        if no releases are available or the latest record has no
+        `release_key` field — both indicate a misconfigured data backend
+        rather than a transient error.
+
+        Used by `hope-validator-api --release auto` and any other caller
+        that wants to track the current weekly release without manual
+        env-var updates. The cron-side equivalent in
+        `deploy/validator_scoring/scoring_trigger.sh` implements the same
+        algorithm in bash for environments where a Python import isn't
+        cheap.
+        """
+        releases = await self.list_releases()
+        if not releases:
+            raise RuntimeError(
+                "no releases returned from the operator data backend; "
+                "cannot resolve auto-release. Verify HOPE_API_URL points "
+                "at the live backend and HOPE_API_KEY is authorised."
+            )
+        releases.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+        key = releases[0].get("release_key")
+        if not key:
+            raise RuntimeError(
+                "latest release returned by the operator data backend has "
+                "no `release_key` field; cannot resolve auto-release. "
+                "Backend response shape may have changed."
+            )
+        return str(key)
+
     async def fetch_release_metadata(self, release_key: str) -> dict:
         """Fetch metadata for a specific release."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:

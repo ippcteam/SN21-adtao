@@ -133,7 +133,13 @@ def main():
         formatter_class=SafeHelpFormatter,
     )
     parser.add_argument("--release", default=os.environ.get("RELEASE_KEY", ""),
-                        help="Release key (epoch ID) to serve")
+                        help="Release key (epoch ID) to serve. Pass 'auto' "
+                             "(or leave RELEASE_KEY=auto in env) to discover "
+                             "the latest published release from the operator "
+                             "data backend at startup — useful for "
+                             "third-party validators who want a set-and-"
+                             "forget weekly rotation without manual env-var "
+                             "edits.")
     parser.add_argument("--port", type=int,
                         default=int(os.environ.get("PORT", "8080")),
                         help="Port to bind the HTTP server")
@@ -152,8 +158,28 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    if not args.release:
-        parser.error("--release is required (or set RELEASE_KEY)")
+    if not args.release or args.release.strip().lower() == "auto":
+        # Auto-discovery: query the operator data backend for the most
+        # recently created release. Mirrors what deploy/validator_scoring/
+        # scoring_trigger.sh does for the scoring cron — the helper lives
+        # in HopeDataClient so a single algorithm serves both paths.
+        from hope.validator.data_client import HopeDataClient
+        try:
+            client = HopeDataClient()
+        except ValueError as exc:
+            parser.error(
+                f"--release auto requires HOPE_API_KEY and HOPE_API_URL to "
+                f"be set; {exc}"
+            )
+        try:
+            args.release = asyncio.run(client.discover_latest_release())
+        except Exception as exc:
+            parser.error(
+                f"--release auto failed to resolve: {type(exc).__name__}: "
+                f"{exc}. Either pass --release <EPOCH_ID> explicitly or "
+                f"check the operator data backend at {client.base_url}."
+            )
+        logger.info("--release auto resolved to %s", args.release)
 
     state = _build_state(
         release_key=args.release,

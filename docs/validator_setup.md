@@ -316,7 +316,12 @@ has no HTTP surface.
 
 ```
 hope-validator-api  (long-running episode HTTP daemon)
-  --release KEY              Release key to serve (e.g., WR-2026-W19-PUB-E1)
+  --release KEY              Release key to serve (e.g., WR-2026-W19-PUB-E1).
+                             Pass 'auto' (or set RELEASE_KEY=auto in env) to
+                             discover the latest published release from the
+                             operator data backend at startup — useful for
+                             third-party validators who want set-and-forget
+                             weekly rotation without manual env-var edits.
   --port PORT                HTTP port (default: 8080)
   --host HOST                Bind host (default: 0.0.0.0)
   --network {test,finney}    Bittensor network (default: finney mainnet)
