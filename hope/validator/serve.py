@@ -24,8 +24,10 @@ available for live RSS leak analysis. Default off because tracemalloc adds
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 
 import uvicorn
@@ -58,21 +60,37 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
     registered_miners: set[str] = set()
     uid_map: dict[str, int] = {}
     if not no_chain:
+        # Same subprocess pattern as _refresh_metagraph below — the
+        # initial chain read would otherwise leave 30-100 MB of
+        # substrate-interface state pinned in the parent daemon for the
+        # rest of its lifetime, even before the first refresh runs.
+        import subprocess as _subprocess
+        cmd = [
+            sys.executable, "-m", "hope.validator.metagraph_dump",
+            "--network", network,
+            "--netuid", str(netuid),
+        ]
         try:
-            import bittensor as bt
-            # Context-manager form ensures the websocket closes once we've
-            # extracted what we need; otherwise the Subtensor instance
-            # would survive the function return without ever closing
-            # (no __del__ exists on bt.Subtensor). See _refresh_metagraph
-            # for the same pattern + the memory-growth analysis.
-            with bt.Subtensor(network=network) as subtensor:
-                metagraph = subtensor.metagraph(netuid=netuid)
-                registered_miners = set(metagraph.hotkeys)
-                uid_map = {metagraph.hotkeys[uid]: uid for uid in range(metagraph.n)}
-                logger.info("Metagraph loaded: netuid=%d, n=%d", netuid, metagraph.n)
-                del metagraph
+            result = _subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60,
+            )
+            if result.returncode == 0:
+                payload = json.loads(result.stdout)
+                hotkeys = list(payload["hotkeys"])
+                registered_miners = set(hotkeys)
+                uid_map = {hk: uid for uid, hk in enumerate(hotkeys)}
+                logger.info("Metagraph loaded: netuid=%d, n=%d", netuid, len(hotkeys))
+            else:
+                logger.warning(
+                    "Could not load metagraph (subprocess exit %d: %s); "
+                    "auth will reject all miners until first refresh",
+                    result.returncode, result.stderr.strip(),
+                )
         except Exception as e:
-            logger.warning("Could not load metagraph (%s); auth will reject all miners", e)
+            logger.warning(
+                "Could not load metagraph (%s); auth will reject all "
+                "miners until first refresh", e,
+            )
 
     state: dict = {
         "current_epoch_id": release_key,
@@ -102,35 +120,55 @@ def _refresh_metagraph(state: dict) -> None:
     set/dict atomically — readers (FastAPI request handlers) see either
     the old or the new copy, never a partial update.
 
-    Memory: `bittensor.Subtensor` opens a websocket + substrate-interface
-    client and has no __del__, so naively going-out-of-scope does not
-    release those resources. We use the context-manager form so the
-    websocket closes deterministically, drop the metagraph reference
-    before returning, and run an explicit `gc.collect()` to break any
-    reference cycles the substrate-interface async event loop tasks
-    may have created. Without this, a starter-plan Render container
-    OOMs within ~30 refreshes (~1 hour) because the leaked Subtensor
-    + metagraph snapshots accumulate ~5-15 MB each per refresh.
+    Memory: the chain read happens in a short-lived subprocess
+    (`hope.validator.metagraph_dump`) which exits after printing the
+    hotkey list as JSON. Any objects bittensor / substrate-interface
+    retained internally — websocket buffers, ScaleType caches, async
+    task references — die with the subprocess. Doing this in-process
+    (even with Subtensor close() + explicit gc.collect()) accumulates
+    30-100 MB of RSS per refresh that the daemon can never reclaim;
+    the subprocess approach keeps daemon RSS flat across an unlimited
+    number of refresh cycles. The cost is ~1-2s of subprocess startup
+    every refresh interval, which is fine for the 120s cadence we
+    operate at.
     """
     cfg = state.get("_chain_config", {})
     if cfg.get("no_chain"):
         return
 
-    new_miners: set[str] | None = None
-    new_uid_map: dict[str, int] | None = None
+    import subprocess as _subprocess
+    cmd = [
+        sys.executable, "-m", "hope.validator.metagraph_dump",
+        "--network", cfg["network"],
+        "--netuid", str(cfg["netuid"]),
+    ]
     try:
-        import bittensor as bt
-        with bt.Subtensor(network=cfg["network"]) as subtensor:
-            metagraph = subtensor.metagraph(netuid=cfg["netuid"])
-            new_miners = set(metagraph.hotkeys)
-            new_uid_map = {metagraph.hotkeys[uid]: uid for uid in range(metagraph.n)}
-            # Drop the metagraph reference before exiting the `with`
-            # block; the metagraph holds a back-reference to subtensor
-            # internals, so without this it would survive __exit__.
-            del metagraph
-    except Exception as e:
-        logger.warning("metagraph refresh failed: %s", e)
+        result = _subprocess.run(
+            cmd, capture_output=True, text=True, timeout=60,
+        )
+    except _subprocess.TimeoutExpired:
+        logger.warning("metagraph refresh subprocess timed out after 60s")
         return
+    except Exception as e:
+        logger.warning("metagraph refresh subprocess failed to start: %s", e)
+        return
+
+    if result.returncode != 0:
+        logger.warning(
+            "metagraph refresh subprocess exited %d: %s",
+            result.returncode, result.stderr.strip(),
+        )
+        return
+
+    try:
+        payload = json.loads(result.stdout)
+        hotkeys = list(payload["hotkeys"])
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.warning("metagraph refresh subprocess output unparseable: %s", e)
+        return
+
+    new_miners = set(hotkeys)
+    new_uid_map = {hk: uid for uid, hk in enumerate(hotkeys)}
 
     added = new_miners - state["registered_miners"]
     removed = state["registered_miners"] - new_miners
@@ -141,14 +179,6 @@ def _refresh_metagraph(state: dict) -> None:
             "metagraph refresh: n=%d (added %d, removed %d hotkey(s))",
             len(new_miners), len(added), len(removed),
         )
-
-    # Break any ref cycles substrate-interface left behind in async tasks.
-    # Without this, even with .close() called, large heap allocations
-    # (~5-15 MB per refresh) persist until Python's automatic cycle
-    # collector eventually runs — which is too slow to keep up with a
-    # 2-minute refresh cadence under a 512 MB Render starter-plan cap.
-    import gc
-    gc.collect()
 
 
 async def _metagraph_refresh_loop(state: dict) -> None:
