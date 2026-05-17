@@ -165,13 +165,14 @@ def main():
     """CLI entry point: `hope-validator-api`."""
     # Start tracemalloc BEFORE any non-stdlib imports so it captures allocations
     # made by FastAPI, bittensor, substrate-interface, httpx, etc. — gives us
-    # accurate attribution for the live RSS-leak investigation. Default OFF
-    # because tracking every allocation costs 10-30% memory and a small CPU
-    # tax; only enable when SN21_TRACEMALLOC=1 is set in the deployment env.
-    if os.environ.get("SN21_TRACEMALLOC") == "1":
+    # accurate attribution for the live RSS-leak investigation. Costs 10-30%
+    # memory + small CPU tax. Default ON while the leak is being chased; set
+    # SN21_TRACEMALLOC=0 in the deployment env once the source is identified
+    # and a fix has been confirmed in production.
+    if os.environ.get("SN21_TRACEMALLOC", "1") != "0":
         import tracemalloc
         tracemalloc.start(15)  # 15 stack frames per allocation site
-        logger.warning("tracemalloc enabled (SN21_TRACEMALLOC=1)")
+        logger.warning("tracemalloc enabled (default on; set SN21_TRACEMALLOC=0 to disable)")
 
     import argparse
 
