@@ -55,11 +55,17 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
     if not no_chain:
         try:
             import bittensor as bt
-            subtensor = bt.Subtensor(network=network)
-            metagraph = subtensor.metagraph(netuid=netuid)
-            registered_miners = set(metagraph.hotkeys)
-            uid_map = {metagraph.hotkeys[uid]: uid for uid in range(metagraph.n)}
-            logger.info("Metagraph loaded: netuid=%d, n=%d", netuid, metagraph.n)
+            # Context-manager form ensures the websocket closes once we've
+            # extracted what we need; otherwise the Subtensor instance
+            # would survive the function return without ever closing
+            # (no __del__ exists on bt.Subtensor). See _refresh_metagraph
+            # for the same pattern + the memory-growth analysis.
+            with bt.Subtensor(network=network) as subtensor:
+                metagraph = subtensor.metagraph(netuid=netuid)
+                registered_miners = set(metagraph.hotkeys)
+                uid_map = {metagraph.hotkeys[uid]: uid for uid in range(metagraph.n)}
+                logger.info("Metagraph loaded: netuid=%d, n=%d", netuid, metagraph.n)
+                del metagraph
         except Exception as e:
             logger.warning("Could not load metagraph (%s); auth will reject all miners", e)
 
@@ -90,27 +96,54 @@ def _refresh_metagraph(state: dict) -> None:
     miners become visible to auth without a service restart. Swaps the
     set/dict atomically — readers (FastAPI request handlers) see either
     the old or the new copy, never a partial update.
+
+    Memory: `bittensor.Subtensor` opens a websocket + substrate-interface
+    client and has no __del__, so naively going-out-of-scope does not
+    release those resources. We use the context-manager form so the
+    websocket closes deterministically, drop the metagraph reference
+    before returning, and run an explicit `gc.collect()` to break any
+    reference cycles the substrate-interface async event loop tasks
+    may have created. Without this, a starter-plan Render container
+    OOMs within ~30 refreshes (~1 hour) because the leaked Subtensor
+    + metagraph snapshots accumulate ~5-15 MB each per refresh.
     """
     cfg = state.get("_chain_config", {})
     if cfg.get("no_chain"):
         return
+
+    new_miners: set[str] | None = None
+    new_uid_map: dict[str, int] | None = None
     try:
         import bittensor as bt
-        subtensor = bt.Subtensor(network=cfg["network"])
-        metagraph = subtensor.metagraph(netuid=cfg["netuid"])
-        new_miners = set(metagraph.hotkeys)
-        new_uid_map = {metagraph.hotkeys[uid]: uid for uid in range(metagraph.n)}
-        added = new_miners - state["registered_miners"]
-        removed = state["registered_miners"] - new_miners
-        state["registered_miners"] = new_miners
-        state["uid_map"] = new_uid_map
-        if added or removed:
-            logger.info(
-                "metagraph refresh: n=%d (added %d, removed %d hotkey(s))",
-                len(new_miners), len(added), len(removed),
-            )
+        with bt.Subtensor(network=cfg["network"]) as subtensor:
+            metagraph = subtensor.metagraph(netuid=cfg["netuid"])
+            new_miners = set(metagraph.hotkeys)
+            new_uid_map = {metagraph.hotkeys[uid]: uid for uid in range(metagraph.n)}
+            # Drop the metagraph reference before exiting the `with`
+            # block; the metagraph holds a back-reference to subtensor
+            # internals, so without this it would survive __exit__.
+            del metagraph
     except Exception as e:
         logger.warning("metagraph refresh failed: %s", e)
+        return
+
+    added = new_miners - state["registered_miners"]
+    removed = state["registered_miners"] - new_miners
+    state["registered_miners"] = new_miners
+    state["uid_map"] = new_uid_map
+    if added or removed:
+        logger.info(
+            "metagraph refresh: n=%d (added %d, removed %d hotkey(s))",
+            len(new_miners), len(added), len(removed),
+        )
+
+    # Break any ref cycles substrate-interface left behind in async tasks.
+    # Without this, even with .close() called, large heap allocations
+    # (~5-15 MB per refresh) persist until Python's automatic cycle
+    # collector eventually runs — which is too slow to keep up with a
+    # 2-minute refresh cadence under a 512 MB Render starter-plan cap.
+    import gc
+    gc.collect()
 
 
 async def _metagraph_refresh_loop(state: dict) -> None:
