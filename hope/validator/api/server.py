@@ -216,4 +216,64 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
     app.include_router(verification_router, prefix="/v1/epochs", tags=["verification"])
     app.include_router(training_router, tags=["training"])
 
+    # Debug endpoints — only attached when SN21_TRACEMALLOC=1. Exposes
+    # process memory + tracemalloc top-allocation-sites for live leak
+    # investigation. Not authenticated because the data is non-sensitive
+    # (file:line statistics) and we want to be able to curl it directly
+    # from operator terminals. The endpoint is invisible (404) when the
+    # env var isn't set.
+    import os as _os
+    if _os.environ.get("SN21_TRACEMALLOC") == "1":
+        import gc as _gc
+        import tracemalloc as _tm
+
+        @app.get("/debug/memory")
+        async def debug_memory():
+            """Cheap process-memory snapshot. Always safe to call."""
+            current, peak = _tm.get_traced_memory() if _tm.is_tracing() else (0, 0)
+            return {
+                "tracemalloc_enabled": _tm.is_tracing(),
+                "tracemalloc_traced_bytes": current,
+                "tracemalloc_peak_bytes": peak,
+                "gc_counts": _gc.get_count(),
+                "gc_threshold": _gc.get_threshold(),
+                "gc_objects": len(_gc.get_objects()),
+            }
+
+        @app.get("/debug/tracemalloc")
+        async def debug_tracemalloc(limit: int = 20, group_by: str = "lineno"):
+            """Top allocation sites by current tracked size.
+
+            Args:
+                limit: number of top sites to return (default 20).
+                group_by: 'lineno' for per-line stats (concise), 'traceback'
+                    for full stack-trace clustering (verbose; useful when
+                    the leaking allocation site has multiple callers).
+            """
+            if not _tm.is_tracing():
+                return {"error": "tracemalloc not enabled"}
+            snap = _tm.take_snapshot()
+            snap = snap.filter_traces((
+                _tm.Filter(False, "<frozen importlib._bootstrap>"),
+                _tm.Filter(False, "<frozen importlib._bootstrap_external>"),
+                _tm.Filter(False, _tm.__file__),
+            ))
+            stats = snap.statistics(group_by if group_by in ("lineno", "traceback", "filename") else "lineno")
+            out = []
+            for stat in stats[:limit]:
+                tb_lines = list(stat.traceback.format()) if group_by == "traceback" else None
+                out.append({
+                    "size_kb": round(stat.size / 1024, 1),
+                    "count": stat.count,
+                    "avg_bytes": stat.size // max(1, stat.count),
+                    "location": str(stat.traceback[0]),
+                    **({"traceback": tb_lines} if tb_lines else {}),
+                })
+            current, peak = _tm.get_traced_memory()
+            return {
+                "tracemalloc_traced_mb": round(current / 1024 / 1024, 1),
+                "tracemalloc_peak_mb": round(peak / 1024 / 1024, 1),
+                "top": out,
+            }
+
     return app

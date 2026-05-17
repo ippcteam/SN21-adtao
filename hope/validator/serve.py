@@ -14,6 +14,11 @@ their first epoch).
 
 Miners hit this server for `/v1/epochs/{id}/episodes` etc. On-chain scoring
 (`hope-validator`) runs as a separate per-epoch process.
+
+Memory diagnostics: when env var SN21_TRACEMALLOC=1, tracemalloc is enabled
+at process startup and /debug/memory + /debug/tracemalloc endpoints become
+available for live RSS leak analysis. Default off because tracemalloc adds
+10-30% memory overhead.
 """
 
 from __future__ import annotations
@@ -158,6 +163,16 @@ async def _metagraph_refresh_loop(state: dict) -> None:
 
 def main():
     """CLI entry point: `hope-validator-api`."""
+    # Start tracemalloc BEFORE any non-stdlib imports so it captures allocations
+    # made by FastAPI, bittensor, substrate-interface, httpx, etc. — gives us
+    # accurate attribution for the live RSS-leak investigation. Default OFF
+    # because tracking every allocation costs 10-30% memory and a small CPU
+    # tax; only enable when SN21_TRACEMALLOC=1 is set in the deployment env.
+    if os.environ.get("SN21_TRACEMALLOC") == "1":
+        import tracemalloc
+        tracemalloc.start(15)  # 15 stack frames per allocation site
+        logger.warning("tracemalloc enabled (SN21_TRACEMALLOC=1)")
+
     import argparse
 
     from hope._cli_help import SafeHelpFormatter
