@@ -401,6 +401,40 @@ Each Monday:
 6. Scoring artifacts (`9.C.1 → 9.C.3 → 9.C.2 → 9.C.6`) land on chain;
    weights take effect at the next Yuma consensus step
 
+### Activity-floor heartbeat (`hope-validator-heartbeat`)
+
+Bittensor's per-subnet `ActivityCutoff` hyperparameter caps how long a
+validator can go without submitting `set_weights` before its weights
+drop out of consensus computation. SN21's authoritative scoring runs
+weekly — well over the cutoff — so a third short-lived binary fills
+the gap by **re-asserting whatever weights the latest scoring run
+already committed**:
+
+```bash
+hope-validator-heartbeat \
+    --network finney --netuid 21 \
+    --wallet-name my_validator --wallet-hotkey default
+```
+
+Run it from a cron at ~3-4h cadence. The binary self-throttles:
+
+- Reads `SubtensorModule.LastUpdate[netuid][validator_uid]`.
+- If `current_block - LastUpdate < --threshold-blocks` (default 1500),
+  exits with action `skipped_recent_activity` — no submission.
+- Otherwise reads `SubtensorModule.Weights[netuid][validator_uid]` and
+  re-submits the same `(uids, weights)` tuple via the same
+  `set_weights(commit_reveal_version=4)` extrinsic the scoring cron uses.
+
+The heartbeat **cannot** score, cannot fabricate weights, and does not
+produce 9.C.* audit records. It can only re-emit what the chain itself
+reports for the validator's last revealed weights commit. Auditors
+checking that every published epoch has matching 9.C.* records continue
+to see exactly one set per week, tied to the Monday scoring run.
+
+`--dry-run` logs what would be submitted without calling `set_weights`
+— recommended for the first week of cron operation. Threshold is also
+configurable via `SN21_HEARTBEAT_THRESHOLD_BLOCKS` env var.
+
 ---
 
 ## 11. Troubleshooting
