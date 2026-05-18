@@ -489,6 +489,58 @@ def read_commitments_budget(
     return used, max_space, last_epoch
 
 
+def _max_other_last_epoch(
+    subtensor,
+    netuid: int,
+    own_hotkey_ss58: str,
+    *,
+    block_hash: Optional[str] = None,
+    max_samples: int = 32,
+) -> Optional[int]:
+    """Conservative lower bound for the current pallet-epoch.
+
+    The Commitments pallet stores `(used_space, last_epoch)` per (netuid,
+    hotkey) and resets `used_space` on the FIRST commit landed in a new
+    pallet-epoch. There is no chain-side query for "what is the current
+    pallet-epoch" — the RateLimit constant that defines it is not
+    surfaced in metadata. But every active validator's `last_epoch`
+    field IS observable, and the maximum across the subnet is a tight
+    lower bound on the current pallet-epoch (it's the most recently
+    committed epoch). If our own `last_epoch` is strictly less than
+    that, the pallet-epoch HAS rolled over since our last commit and
+    `used_space` is stale — our next commit will reset it to 0.
+
+    Returns the max last_epoch observed across other hotkeys on the
+    subnet, or None if the metagraph read fails (caller falls back to
+    pessimistic behavior in that case).
+    """
+    try:
+        metagraph = subtensor.metagraph(netuid=netuid)
+        hotkeys = [hk for hk in metagraph.hotkeys if hk != own_hotkey_ss58]
+    except Exception:
+        return None
+    # Sample up to `max_samples` hotkeys to bound RPC cost
+    hotkeys = hotkeys[:max_samples]
+    max_epoch: Optional[int] = None
+    for hk in hotkeys:
+        try:
+            query_kwargs = {
+                "module": "Commitments", "storage_function": "UsedSpaceOf",
+                "params": [netuid, hk],
+            }
+            if block_hash is not None:
+                query_kwargs["block_hash"] = block_hash
+            raw = subtensor.substrate.query(**query_kwargs)
+            val = raw.value if hasattr(raw, "value") else raw
+            if isinstance(val, dict):
+                le = int(val.get("last_epoch", 0) or 0)
+                if le and (max_epoch is None or le > max_epoch):
+                    max_epoch = le
+        except Exception:
+            continue
+    return max_epoch
+
+
 def commitments_budget_sufficient(
     subtensor,
     netuid: int,
@@ -499,11 +551,30 @@ def commitments_budget_sufficient(
 ) -> tuple[bool, int, int]:
     """Return ``(sufficient, remaining_bytes, last_epoch)``.
 
-    ``sufficient`` is True iff ``max_space - used_space >= needed_bytes``.
+    ``sufficient`` is True iff the validator either:
+      a) has the bytes free in the current pallet-epoch, OR
+      b) has a stale `last_epoch` (older than the current pallet-epoch),
+         in which case `used_space` will reset to 0 on the next commit
+         and the full `max_space` will be available.
+
+    Without (b), validators get falsely blocked after the first re-run
+    of the cron in the same pallet-epoch even when the epoch has long
+    since rolled over — the pallet's stale (used_space, last_epoch)
+    storage does not update until they commit again.
     """
     used, max_space, last_epoch = read_commitments_budget(
         subtensor, netuid, hotkey_ss58, block_hash=block_hash,
     )
+
+    # Detect stale used_space: if any other validator has committed in
+    # a strictly newer pallet-epoch, the chain will reset our budget
+    # on our next commit. Treat it as if it's already reset.
+    current_epoch_lb = _max_other_last_epoch(
+        subtensor, netuid, hotkey_ss58, block_hash=block_hash,
+    )
+    if current_epoch_lb is not None and last_epoch < current_epoch_lb:
+        return True, max_space, current_epoch_lb
+
     remaining = max_space - used
     return remaining >= needed_bytes, remaining, last_epoch
 
