@@ -92,6 +92,24 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
                 "miners until first refresh", e,
             )
 
+    # Load the validator's own hotkey ss58 so the /verification endpoint
+    # can query the right RevealedCommitments entries. Wallet load is
+    # read-only (no decryption, no password); only the public ss58 is
+    # needed by chain-state endpoints. Failure is non-fatal — endpoints
+    # that depend on it will return 404 with a clear message.
+    validator_hotkey_ss58: str = ""
+    if not no_chain:
+        try:
+            import bittensor as bt
+            wallet = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
+            validator_hotkey_ss58 = str(wallet.hotkey.ss58_address)
+            logger.info("Validator hotkey ss58: %s", validator_hotkey_ss58)
+        except Exception as e:
+            logger.warning(
+                "Could not load validator wallet (%s); chain-state endpoints "
+                "(/verification etc.) will return 404 until configured.", e,
+            )
+
     state: dict = {
         "current_epoch_id": release_key,
         "episodes": epoch_data.episodes,
@@ -101,6 +119,7 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
         "prediction_receipts": {},
         "registered_miners": registered_miners,
         "uid_map": uid_map,
+        "validator_hotkey_ss58": validator_hotkey_ss58,
         # Stashed so the FastAPI lifespan can refresh the metagraph
         # periodically without re-parsing CLI args.
         "_chain_config": {
