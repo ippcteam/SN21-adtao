@@ -541,6 +541,45 @@ def _max_other_last_epoch(
     return max_epoch
 
 
+# Empirically-derived Commitments-pallet RateLimit (blocks per pallet-epoch)
+# on Subtensor. The pallet's `RateLimit` config constant is NOT exposed in
+# chain metadata, so we cannot query it. Derivation:
+#   `current_pallet_epoch ≈ block_number // RATE_LIMIT_BLOCKS`
+# Verified against testnet 466 at multiple sample points: the implied
+# RateLimit lands at 360-361 blocks (matches Bittensor's standard subnet
+# tempo of 360). We use 360 as a conservative lower bound — if the true
+# RateLimit is slightly higher, we'd very occasionally over-estimate the
+# current pallet-epoch by 1 and treat a still-fresh used_space as stale,
+# which is harmless (chain just won't reset on commit since the epoch
+# actually matches, and the existing 1300/3100 byte budget would still
+# pass on a fresh validator). The opposite error (under-estimating) would
+# wrongly block scoring, so we err on the higher side.
+_PALLET_EPOCH_BLOCKS = 360
+
+
+def _current_pallet_epoch_from_block(subtensor) -> Optional[int]:
+    """Estimate the current pallet-epoch from `block_number // RateLimit`.
+
+    Independent of the max-other-last-epoch heuristic — needed for the
+    case where the calling validator is the ONLY recent committer on
+    the subnet (testnet conditions, or any subnet where most hotkeys
+    are inactive). In that case, the validator's own `last_epoch` is
+    the max across all hotkeys, so `_max_other_last_epoch` returns a
+    stale value and can't detect the rollover.
+
+    Returns the estimated current pallet-epoch, or None if the block-
+    number query fails (caller falls back to the other-validator signal).
+    """
+    try:
+        block = subtensor.substrate.get_block()
+        block_num = block["header"]["number"] if isinstance(block, dict) else None
+        if block_num is None:
+            return None
+        return int(block_num) // _PALLET_EPOCH_BLOCKS
+    except Exception:
+        return None
+
+
 def commitments_budget_sufficient(
     subtensor,
     netuid: int,
@@ -557,23 +596,38 @@ def commitments_budget_sufficient(
          in which case `used_space` will reset to 0 on the next commit
          and the full `max_space` will be available.
 
-    Without (b), validators get falsely blocked after the first re-run
-    of the cron in the same pallet-epoch even when the epoch has long
-    since rolled over — the pallet's stale (used_space, last_epoch)
+    Stale-epoch detection uses two independent signals; either is enough
+    to conclude the budget is fresh:
+
+      1. **max-other-last-epoch:** if any OTHER validator has committed
+         in a strictly newer pallet-epoch than us, the epoch has rolled
+         over since our last commit.
+      2. **block-derived current-epoch:** `block_number // _PALLET_EPOCH_BLOCKS`
+         gives an independent estimate of the current pallet-epoch.
+         Needed for subnets where we're the only recent committer
+         (testnet conditions), since signal #1 trivially fails there.
+
+    Without both signals, validators get falsely blocked after the first
+    re-run of the cron in the same pallet-epoch even when the epoch has
+    long since rolled over — the pallet's stale (used_space, last_epoch)
     storage does not update until they commit again.
     """
     used, max_space, last_epoch = read_commitments_budget(
         subtensor, netuid, hotkey_ss58, block_hash=block_hash,
     )
 
-    # Detect stale used_space: if any other validator has committed in
-    # a strictly newer pallet-epoch, the chain will reset our budget
-    # on our next commit. Treat it as if it's already reset.
+    # Signal 1: other validators in newer epochs prove rollover happened.
     current_epoch_lb = _max_other_last_epoch(
         subtensor, netuid, hotkey_ss58, block_hash=block_hash,
     )
     if current_epoch_lb is not None and last_epoch < current_epoch_lb:
         return True, max_space, current_epoch_lb
+
+    # Signal 2: block-number-based current-epoch estimate. Catches the
+    # "we're the only active validator" case where signal 1 is degenerate.
+    block_epoch_est = _current_pallet_epoch_from_block(subtensor)
+    if block_epoch_est is not None and last_epoch < block_epoch_est:
+        return True, max_space, block_epoch_est
 
     remaining = max_space - used
     return remaining >= needed_bytes, remaining, last_epoch
