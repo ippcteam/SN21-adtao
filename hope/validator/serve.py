@@ -201,13 +201,26 @@ def _refresh_metagraph(state: dict) -> None:
 
 
 async def _metagraph_refresh_loop(state: dict) -> None:
-    """Background task: refresh metagraph every METAGRAPH_REFRESH_INTERVAL_SECONDS."""
+    """Background task: refresh metagraph every METAGRAPH_REFRESH_INTERVAL_SECONDS.
+
+    `_refresh_metagraph` calls `subprocess.run(...)` which is synchronous and
+    blocks the calling thread for the subprocess's whole lifetime — up to 60s
+    on subnets with large metagraphs (e.g. ~30-60s on mainnet netuid 21 with
+    256 hotkeys). Running it inline in this async coroutine froze the entire
+    FastAPI event loop during each refresh, making every /health, /debug/*,
+    and /v1/* request time out at Render's load-balancer ceiling. Wrapping
+    in `asyncio.to_thread` runs the sync call in a thread pool so the event
+    loop keeps serving HTTP requests while the chain read is in flight.
+    """
     while True:
         try:
             await asyncio.sleep(METAGRAPH_REFRESH_INTERVAL_SECONDS)
         except asyncio.CancelledError:
             return
-        _refresh_metagraph(state)
+        try:
+            await asyncio.to_thread(_refresh_metagraph, state)
+        except Exception as e:
+            logger.warning("metagraph refresh task error: %s", e)
 
 
 def main():
