@@ -18,6 +18,7 @@ verification path until reimplemented for two-binary operation.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import subprocess
@@ -78,8 +79,15 @@ async def get_verification(epoch_id: str, request: Request):
         "--validator-hotkey", validator_ss58,
         "--epoch-id", epoch_id,
     ]
+    # Wrap the synchronous subprocess in asyncio.to_thread so the FastAPI
+    # event loop continues serving other requests while the chain read is
+    # in flight. Without this, a flood of /verification polls froze the
+    # whole daemon for up to _VERIFICATION_SUBPROCESS_TIMEOUT_SECS per
+    # call — every other request (including /health) timed out at Render's
+    # load-balancer ceiling.
     try:
-        result = subprocess.run(
+        result = await asyncio.to_thread(
+            subprocess.run,
             cmd, capture_output=True, text=True,
             timeout=_VERIFICATION_SUBPROCESS_TIMEOUT_SECS,
         )
