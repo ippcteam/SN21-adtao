@@ -146,6 +146,33 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+    if not args.release or args.release.strip().lower() == "auto":
+        # Mirror `hope-validator-api`'s --release=auto behavior: query the
+        # operator data backend for the most recently created release and
+        # use that as the scoring target. Without this branch, passing
+        # "--release auto" sent the literal string "auto" to the backend
+        # as the path component, which 404'd. Operators running the scorer
+        # directly (without the deploy-repo scoring_trigger.sh shell
+        # wrapper that resolves "auto" via curl beforehand) hit this.
+        from hope.validator.data_client import HopeDataClient
+        import asyncio as _asyncio
+        try:
+            client = HopeDataClient()
+        except ValueError as exc:
+            parser.error(
+                f"--release auto requires HOPE_API_KEY and HOPE_API_URL to "
+                f"be set; {exc}"
+            )
+        try:
+            args.release = _asyncio.run(client.discover_latest_release())
+        except Exception as exc:
+            parser.error(
+                f"--release auto failed to resolve: {type(exc).__name__}: "
+                f"{exc}. Either pass --release <EPOCH_ID> explicitly or "
+                f"check the operator data backend at {client.base_url}."
+            )
+        logger.info("--release auto resolved to %s", args.release)
+
     if not args.release:
         parser.error("--release is required")
 
