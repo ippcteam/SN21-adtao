@@ -47,7 +47,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Dump SN21 validator's 9.C.2 post-scoring artifact for an epoch.",
     )
-    parser.add_argument("--network", required=True, choices=["test", "finney", "local"])
+    from hope.validator._subtensor import network_arg
+    parser.add_argument("--network", required=True, type=network_arg,
+                        help="Bittensor network: 'test', 'finney', 'local', "
+                             "or a wss:// URL.")
     parser.add_argument("--netuid", type=int, required=True)
     parser.add_argument("--validator-hotkey", required=True,
                         help="ss58 of the validator hotkey whose 9.C.2 to fetch")

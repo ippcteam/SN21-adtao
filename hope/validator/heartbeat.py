@@ -259,7 +259,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="SN21 validator activity-floor heartbeat (re-assert latest weights).",
     )
-    parser.add_argument("--network", default="finney", choices=["test", "finney", "local"])
+    from hope.validator._subtensor import network_arg
+    parser.add_argument("--network", default="finney", type=network_arg,
+                        help="Bittensor network: 'test', 'finney', 'local', "
+                             "or a wss:// URL (default: finney).")
     parser.add_argument("--netuid", type=int,
                         default=int(os.environ.get("NETUID", "21")))
     parser.add_argument("--wallet-name", default=os.environ.get("WALLET_NAME", ""))

@@ -49,3 +49,29 @@ def test_env_whitespace_treated_as_unset(monkeypatch, captured_network):
 
     make_subtensor("test")
     assert captured_network["network"] == "test"
+
+
+class TestNetworkArg:
+    def test_named_networks_accepted(self):
+        from hope.validator._subtensor import network_arg
+        assert network_arg("test") == "test"
+        assert network_arg("finney") == "finney"
+        assert network_arg("local") == "local"
+
+    def test_wss_url_accepted(self):
+        from hope.validator._subtensor import network_arg
+        assert network_arg("wss://archive.example:443") == "wss://archive.example:443"
+
+    def test_ws_url_accepted(self):
+        from hope.validator._subtensor import network_arg
+        assert network_arg("ws://localhost:9944") == "ws://localhost:9944"
+
+    def test_invalid_value_raises(self):
+        import argparse
+        from hope.validator._subtensor import network_arg
+        with pytest.raises(argparse.ArgumentTypeError, match="invalid network"):
+            network_arg("https://example.com")
+        with pytest.raises(argparse.ArgumentTypeError):
+            network_arg("mainnet")
+        with pytest.raises(argparse.ArgumentTypeError):
+            network_arg("")

@@ -256,9 +256,11 @@ def main():
                         help="Port to bind the HTTP server")
     parser.add_argument("--host", default="0.0.0.0",  # noqa: S104 — bound by Render's TLS reverse proxy
                         help="Bind host (default 0.0.0.0)")
-    parser.add_argument("--network", default="finney",
-                        choices=["test", "finney", "local"],
-                        help="Bittensor network (for metagraph; ignored under --no-chain)")
+    from hope.validator._subtensor import network_arg
+    parser.add_argument("--network", default="finney", type=network_arg,
+                        help="Bittensor network: 'test', 'finney', 'local', "
+                             "or a wss:// URL (default: finney). "
+                             "Ignored under --no-chain.")
     parser.add_argument("--netuid", type=int,
                         default=int(os.environ.get("NETUID", "21")))
     parser.add_argument("--wallet-name", default=os.environ.get("WALLET_NAME", ""))

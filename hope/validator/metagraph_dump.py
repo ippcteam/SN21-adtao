@@ -25,8 +25,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Dump SN21 metagraph hotkeys as JSON (single line).",
     )
-    parser.add_argument("--network", required=True,
-                        choices=["test", "finney", "local"])
+    from hope.validator._subtensor import network_arg
+    parser.add_argument("--network", required=True, type=network_arg,
+                        help="Bittensor network: 'test', 'finney', 'local', "
+                             "or a wss:// URL.")
     parser.add_argument("--netuid", type=int, required=True)
     args = parser.parse_args()
 

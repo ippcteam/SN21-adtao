@@ -25,10 +25,37 @@ plus arbitrary wss:// URLs — the SDK normalises both.
 
 from __future__ import annotations
 
+import argparse
 import os
 
 
 SUBTENSOR_URL_OVERRIDE_ENV = "SN21_SUBTENSOR_URL"
+
+_NAMED_NETWORKS = ("test", "finney", "local")
+
+
+def network_arg(value: str) -> str:
+    """``argparse`` ``type=`` validator for the ``--network`` flag.
+
+    Accepts the three Bittensor named networks (``test``, ``finney``,
+    ``local``) plus arbitrary ``wss://`` / ``ws://`` URLs. The Bittensor
+    SDK's ``Subtensor(network=...)`` already accepts both shapes; this
+    function just teaches ``argparse`` the same vocabulary so operators
+    can pass ``--network wss://archive.example:443`` directly instead of
+    going through ``SN21_SUBTENSOR_URL``.
+
+    Raises:
+        argparse.ArgumentTypeError: when ``value`` is neither a known
+            named network nor a ``wss://``/``ws://`` URL.
+    """
+    if value in _NAMED_NETWORKS:
+        return value
+    if value.startswith("wss://") or value.startswith("ws://"):
+        return value
+    raise argparse.ArgumentTypeError(
+        f"invalid network: {value!r} "
+        f"(expected one of {', '.join(_NAMED_NETWORKS)}, or a wss:// URL)"
+    )
 
 
 def make_subtensor(network: str):

@@ -95,10 +95,14 @@ def main():
     parser.add_argument("--api-key", type=str,
                         default=os.environ.get("HOPE_API_KEY", ""),
                         help="data API key (or set HOPE_API_KEY env var)")
-    parser.add_argument("--network", type=str, default="finney",
-                        choices=["test", "finney", "local"],
-                        help="Bittensor network (default: finney mainnet; "
-                             "use 'test' for testnet, which uses netuid 466)")
+    from hope.validator._subtensor import network_arg
+    parser.add_argument("--network", type=network_arg, default="finney",
+                        help="Bittensor network: 'test', 'finney', 'local', "
+                             "or a wss:// URL (e.g. wss://archive.example:443). "
+                             "Default: finney mainnet; use 'test' for testnet "
+                             "(netuid 466). For a custom archive RPC, prefer "
+                             "the SN21_SUBTENSOR_URL env var so every binary "
+                             "in the stack picks it up uniformly.")
     parser.add_argument("--netuid", type=int,
                         default=int(os.environ.get("NETUID", "21")),
                         help="Subnet netuid (default: 21 mainnet; testnet "

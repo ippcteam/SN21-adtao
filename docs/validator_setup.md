@@ -324,7 +324,8 @@ hope-validator-api  (long-running episode HTTP daemon)
                              weekly rotation without manual env-var edits.
   --port PORT                HTTP port (default: 8080)
   --host HOST                Bind host (default: 0.0.0.0)
-  --network {test,finney}    Bittensor network (default: finney mainnet)
+  --network NETWORK          Bittensor network: 'test', 'finney', 'local',
+                             or a wss:// URL (default: finney mainnet)
   --netuid NETUID            Subnet netuid (default: 21 mainnet; 466 testnet)
   --wallet-name NAME
   --wallet-hotkey HOTKEY
@@ -333,7 +334,7 @@ hope-validator-api  (long-running episode HTTP daemon)
 hope-validator  (one-shot post-deadline scoring pass)
   --release KEY              Epoch ID to score
   --api-key KEY              Data API key (or HOPE_API_KEY env var)
-  --network {test,finney}
+  --network NETWORK          (same as above — named or wss:// URL)
   --netuid NETUID
   --wallet-name NAME
   --wallet-hotkey HOTKEY
