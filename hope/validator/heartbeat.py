@@ -284,6 +284,7 @@ def main() -> int:
         return 2
 
     import bittensor as bt
+    from hope.validator._subtensor import make_subtensor
     wallet = bt.Wallet(name=args.wallet_name, hotkey=args.wallet_hotkey)
     # Trigger an early-failure path if the hotkey is missing rather than
     # waiting until the extrinsic submission. Accessing .ss58_address forces
@@ -294,7 +295,7 @@ def main() -> int:
         logger.error("[heartbeat] could not load wallet hotkey: %s", e)
         return 2
 
-    with bt.Subtensor(network=args.network) as subtensor:
+    with make_subtensor(args.network) as subtensor:
         result = run_heartbeat(
             subtensor=subtensor,
             validator_wallet=wallet,

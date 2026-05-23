@@ -113,10 +113,18 @@ class RegistrationIndex:
         netuid: int,
         *,
         expected_role: RegistrationRole = RegistrationRole.MINER,
+        reconnect_network: Optional[str] = None,
+        reconnect_after_failures: int = 5,
     ) -> None:
         self._subtensor = subtensor
         self._netuid = netuid
         self._expected_role = expected_role
+        # When reconnect_network is set, the scanner will rebuild the
+        # underlying Subtensor instance after `reconnect_after_failures`
+        # consecutive per-block read errors — covers system-sleep-induced
+        # socket drops and transient RPC outages during long backfills.
+        self._reconnect_network = reconnect_network
+        self._reconnect_after_failures = max(1, int(reconnect_after_failures))
         # Keyed by raw 32-byte hotkey pubkey; latest valid registration wins.
         self._entries: dict[bytes, RegistrationEntry] = {}
         self._last_scanned_block: Optional[int] = None
@@ -125,6 +133,7 @@ class RegistrationIndex:
             "events_seen": 0,
             "candidates_found": 0,
             "verified": 0,
+            "reconnects": 0,
         }
 
     # -- public API ---------------------------------------------------------
@@ -151,6 +160,20 @@ class RegistrationIndex:
         """Iterate over all valid registrations (one per hotkey)."""
         return self._entries.values()
 
+    def _try_reconnect(self) -> bool:
+        """Rebuild self._subtensor from reconnect_network. Returns success."""
+        if not self._reconnect_network:
+            return False
+        try:
+            from hope.validator._subtensor import make_subtensor
+            self._subtensor = make_subtensor(self._reconnect_network)
+            self._stats["reconnects"] = self._stats.get("reconnects", 0) + 1
+            logger.info("reconnected to %s", self._reconnect_network)
+            return True
+        except Exception as exc:
+            logger.warning("reconnect attempt failed: %s", exc)
+            return False
+
     def scan_range(
         self,
         start_block: int,
@@ -158,6 +181,8 @@ class RegistrationIndex:
         *,
         progress_callback: Optional[Callable[[int, int, int, dict[str, int], int], None]] = None,
         progress_every: int = 200,
+        checkpoint_callback: Optional[Callable[[int, list[dict]], None]] = None,
+        checkpoint_every: int = 500,
     ) -> int:
         """Scan blocks [start_block, end_block] inclusive for registrations.
 
@@ -178,11 +203,17 @@ class RegistrationIndex:
             return 0
         found_this_range = 0
         n_scanned = 0
+        consecutive_errors = 0
         for block_num in range(start_block, end_block + 1):
             try:
                 block_hash = self._subtensor.substrate.get_block_hash(block_num)
+                consecutive_errors = 0
             except Exception as exc:
                 logger.warning("get_block_hash(%d) failed: %s", block_num, exc)
+                consecutive_errors += 1
+                if consecutive_errors >= self._reconnect_after_failures:
+                    if self._try_reconnect():
+                        consecutive_errors = 0
                 continue
             if not isinstance(block_hash, str):
                 continue
@@ -191,8 +222,13 @@ class RegistrationIndex:
                 events = read_events_at_block(
                     self._subtensor, block_hash, module_filter="Commitments",
                 )
+                consecutive_errors = 0
             except Exception as exc:
                 logger.warning("events at block %d failed: %s", block_num, exc)
+                consecutive_errors += 1
+                if consecutive_errors >= self._reconnect_after_failures:
+                    if self._try_reconnect():
+                        consecutive_errors = 0
                 continue
             self._stats["blocks_scanned"] += 1
             n_scanned += 1
@@ -218,6 +254,12 @@ class RegistrationIndex:
                 except Exception as exc:
                     logger.debug("progress_callback raised: %s", exc)
 
+            if checkpoint_callback is not None and n_scanned % max(1, checkpoint_every) == 0:
+                try:
+                    checkpoint_callback(block_num, self.to_json())
+                except Exception as exc:
+                    logger.debug("checkpoint_callback raised: %s", exc)
+
         # Always emit a final progress tick at completion.
         if progress_callback is not None and n_scanned > 0:
             try:
@@ -227,6 +269,14 @@ class RegistrationIndex:
                 )
             except Exception as exc:
                 logger.debug("progress_callback raised: %s", exc)
+
+        # Always emit a final checkpoint at completion so the on-disk file
+        # matches the in-memory state.
+        if checkpoint_callback is not None:
+            try:
+                checkpoint_callback(end_block, self.to_json())
+            except Exception as exc:
+                logger.debug("checkpoint_callback raised: %s", exc)
 
         return found_this_range
 

@@ -66,7 +66,8 @@ class ValidatorRunner:
             )
             logger.info(f"Wallet loaded: {self.wallet_name}/{self.wallet_hotkey}")
 
-            self.subtensor = bt.Subtensor(network=self.network)
+            from hope.validator._subtensor import make_subtensor
+            self.subtensor = make_subtensor(self.network)
             logger.info(f"Connected to subtensor: {self.network}")
 
             self.metagraph = self.subtensor.metagraph(netuid=self.netuid)
@@ -202,7 +203,6 @@ def main():
 
 _RPC_ROTATION_MAX_ATTEMPTS = 4
 _RPC_ROTATION_SLEEP_SECONDS = 5.0
-_SUBTENSOR_URL_OVERRIDE_ENV = "SN21_SUBTENSOR_URL"
 
 
 def _count_visible_miners(chain_view) -> int:
@@ -245,19 +245,9 @@ def _current_block_or_none(subtensor) -> int | None:
 
 
 def _make_fresh_subtensor(bt_network: str):
-    """Create a new Subtensor connection.
-
-    If `SN21_SUBTENSOR_URL` is set in env, that value takes precedence over
-    the named network — letting operators pin to a known-current node when
-    the default DNS-load-balanced pool serves stale state.
-    """
-    import os as _os
-    import bittensor as bt
-
-    override = _os.environ.get(_SUBTENSOR_URL_OVERRIDE_ENV, "").strip()
-    if override:
-        return bt.Subtensor(network=override)
-    return bt.Subtensor(network=bt_network)
+    """Create a new Subtensor connection, honoring SN21_SUBTENSOR_URL."""
+    from hope.validator._subtensor import make_subtensor
+    return make_subtensor(bt_network)
 
 
 def _fetch_chain_view_with_rpc_rotation(

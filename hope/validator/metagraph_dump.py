@@ -31,8 +31,8 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        import bittensor as bt
-        with bt.Subtensor(network=args.network) as subtensor:
+        from hope.validator._subtensor import make_subtensor
+        with make_subtensor(args.network) as subtensor:
             metagraph = subtensor.metagraph(netuid=args.netuid)
             hotkeys = list(metagraph.hotkeys)
     except Exception as exc:

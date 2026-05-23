@@ -59,6 +59,16 @@ def main() -> int:
                         "scanned blocks (default 200 ≈ ~5 min cadence at the "
                         "observed ~1.5s/block testnet rate). Set to 0 to "
                         "disable heartbeats.")
+    p.add_argument("--checkpoint-every", type=int, default=500,
+                   help="Rewrite --output-json every N successfully-scanned "
+                        "blocks (default 500 ≈ ~12 min). Lets long-running "
+                        "backfills survive process kills / system sleep with "
+                        "only partial work lost. No effect when --output-json "
+                        "isn't set.")
+    p.add_argument("--reconnect", action="store_true",
+                   help="Rebuild the substrate connection after 5 consecutive "
+                        "per-block read failures. Recommended for overnight "
+                        "backfill runs where the laptop may sleep mid-scan.")
     args = p.parse_args()
 
     url = os.environ.get("SN21_SUBTENSOR_URL")
@@ -78,10 +88,55 @@ def main() -> int:
         "validator": RegistrationRole.VALIDATOR,
         "outcome_signer": RegistrationRole.OUTCOME_SIGNER,
     }
-    index = RegistrationIndex(sub, args.netuid, expected_role=role_map[args.role])
+    reconnect_target = (url or args.network) if args.reconnect else None
+    index = RegistrationIndex(
+        sub, args.netuid,
+        expected_role=role_map[args.role],
+        reconnect_network=reconnect_target,
+    )
 
+    import json as _json
+    import os as _os
+
+    # Resume support: if --output-json points at an existing non-empty file,
+    # load its entries into the index BEFORE scanning. Lets us safely restart
+    # a long-running backfill from a higher --start-block without losing the
+    # registrations already recovered. Combined with --checkpoint-every, this
+    # means a killed scan can be resumed from the last checkpointed block.
+    if args.output_json and _os.path.exists(args.output_json):
+        try:
+            with open(args.output_json) as _f:
+                _existing = _json.load(_f)
+            if _existing:
+                merged = index.merge_json(_existing)
+                print(
+                    f"[probe] resumed: merged {merged} entries from existing "
+                    f"{args.output_json}",
+                    flush=True,
+                )
+        except Exception as _e:
+            print(
+                f"[probe] could not load existing {args.output_json} "
+                f"({type(_e).__name__}: {str(_e)[:120]}); proceeding without "
+                f"resume.",
+                flush=True,
+            )
     import time as _time
     scan_start_ts = _time.time()
+
+    def _checkpoint(block_num, entries):
+        """Atomically rewrite --output-json with the running index state."""
+        if not args.output_json:
+            return
+        tmp = args.output_json + ".tmp"
+        with open(tmp, "w") as f:
+            _json.dump(entries, f, indent=2, sort_keys=True)
+        _os.replace(tmp, args.output_json)
+        print(
+            f"[probe] checkpoint @block {block_num}: wrote {len(entries)} "
+            f"entries to {args.output_json}",
+            flush=True,
+        )
 
     def _on_progress(block_num, start_block, end_block, stats, indexed_size):
         span = max(1, end_block - start_block + 1)
@@ -106,10 +161,13 @@ def main() -> int:
         )
 
     callback = _on_progress if args.progress_every > 0 else None
+    checkpoint_cb = _checkpoint if (args.output_json and args.checkpoint_every > 0) else None
     found = index.scan_range(
         args.start_block, end,
         progress_callback=callback,
         progress_every=max(1, args.progress_every),
+        checkpoint_callback=checkpoint_cb,
+        checkpoint_every=max(1, args.checkpoint_every),
     )
     stats = index.stats
 
