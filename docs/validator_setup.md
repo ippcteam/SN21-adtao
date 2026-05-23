@@ -298,7 +298,7 @@ Weights must sum to 1.0 and stay within published ranges.
 | `HOPE_API_URL` | *(required)* | both | Data API base URL — provided on validator registration |
 | `RELEASE_KEY` | `--release` | both | Epoch ID to serve/score (CLI flag wins if both set) |
 | `REQUIRE_SIGNATURES` | `true` | `-api` | Require signed miner requests (set to `false` only for dev) |
-| `SN21_SUBTENSOR_URL` | *(unset)* | scorer | Override the substrate RPC URL (e.g. for archive-node reads) |
+| `SN21_SUBTENSOR_URL` | *(unset)* | all | Pin every validator-side chain connection to a wss:// URL (e.g. an archive node you operate). When set, takes precedence over `--network` and applies uniformly across `hope-validator`, `hope-validator-api`, `hope-validator-heartbeat`, the registration-index module, and the diag dump scripts. |
 | `SN21_LEADERBOARD_REPORTER` | `0` | scorer | When `1`, POSTs the post-scoring artifact to the CMS after a successful run |
 | `SN21_LEADERBOARD_API_KEY` | *(unset)* | scorer | API key for the leaderboard reporter (only used when reporter is enabled) |
 | `SN21_EPOCH_ARTIFACT_DIR` | `~/.sn21/epoch_artifacts` | scorer | Where the per-epoch artifact JSON is written before the optional POST |
@@ -446,6 +446,7 @@ configurable via `SN21_HEARTBEAT_THRESHOLD_BLOCKS` env var.
 | `already_scored` (scorer aborts) | This (validator, epoch) pair already has a 9.C.1 commit on chain. Use a fresh validator hotkey to retry. |
 | `insufficient_budget` (scorer aborts) | The validator hotkey hit the Commitments-pallet byte budget for the current pallet-epoch. Wait for the pallet-epoch to roll (~72 min) or rotate to a fresh hotkey. |
 | Miners are excluded as `inner_sig.hotkey_mismatch` | Miner published their ed25519 binding outside the validator's `--reg-index-lookback-blocks` window. Increase the lookback, or supply `--reg-index-prebuilt` from an offline backfill against an archive RPC. |
+| `block_hash` lookups failing with "block out of reach" / "State discarded" / pruned-state errors | Your subtensor node is not an archive node (default finney peers retain only the most recent ~256 blocks of state). The registration-index 600-block default lookback will hit this on a non-archive node. Two fixes, pick one: (a) run the diag probe against an archive RPC out of band and pass the resulting JSON via `--reg-index-prebuilt`, while setting `--reg-index-lookback-blocks 0` in the scorer to skip the in-process scan; (b) point the validator at your own archive node by setting `SN21_SUBTENSOR_URL=wss://<your-archive-host>:443` — this now applies to every validator binary uniformly. |
 | Miners are excluded as `plaintext_unavailable` | The archive served 404 for their bundle. Either they didn't submit for this epoch, or their self-archive URL is unreachable from the scorer's vantage. |
 | Network errors fetching from the data API | Check `HOPE_API_KEY` and `HOPE_API_URL`; verify connectivity from the validator host. |
 | Low miner scores | Expected for the baseline model — miners should train their own. |
