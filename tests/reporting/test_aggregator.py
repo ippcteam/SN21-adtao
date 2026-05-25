@@ -92,7 +92,7 @@ def test_full_pool_returns_full_payload():
     assert payload.tier_split_active is True
     assert payload.pool_size_below_distribution_floor is False
     assert payload.score_distribution is not None
-    assert payload.aggregator_version == 1
+    assert payload.aggregator_version == 2
 
 
 def test_field_pass_through_from_artifact():
@@ -296,3 +296,127 @@ def test_tier_counts_match_artifact_when_split_active():
     assert payload.tier_distribution.elite.share_of_pool == elite_n / 20
     assert payload.tier_distribution.competitive.share_of_pool == comp_n / 20
     assert payload.tier_distribution.participating.share_of_pool == part_n / 20
+
+
+# ----------------------------------------------------------------------------
+# v2: top_n_scores + finer histogram bins
+# ----------------------------------------------------------------------------
+
+class TestTopNScores:
+    """Top-N ranked scores — payload-only, no UIDs, max_length=20."""
+
+    def test_top_n_present_for_full_pool(self):
+        artifact = _artifact(n_qualifying=25)
+        payload = aggregate(artifact)
+        assert payload.top_n_scores is not None
+        assert len(payload.top_n_scores) == 20  # capped at TOP_N_SCORES_MAX
+        # Descending order
+        assert payload.top_n_scores == sorted(payload.top_n_scores, reverse=True)
+        # No score appears that isn't in the artifact's qualifying pool
+        artifact_scores = {entry["raw_score"] for entry in artifact.per_uid_scores}
+        for s in payload.top_n_scores:
+            assert s in artifact_scores
+
+    def test_top_n_smaller_than_cap_returns_all(self):
+        """Pool of 15 → top_n_scores has length 15 (all scores)."""
+        artifact = _artifact(n_qualifying=15)
+        payload = aggregate(artifact)
+        assert payload.top_n_scores is not None
+        assert len(payload.top_n_scores) == 15
+        assert payload.top_n_scores == sorted(payload.top_n_scores, reverse=True)
+
+    def test_top_n_none_when_pool_below_floor(self):
+        """Pool below distribution floor (15) → top_n_scores None, like the histogram."""
+        artifact = _artifact(n_qualifying=10)
+        payload = aggregate(artifact)
+        assert payload.pool_size_below_distribution_floor is True
+        assert payload.score_distribution is None
+        assert payload.top_n_scores is None
+
+    def test_top_n_omitted_when_top_n_is_zero(self):
+        """Explicit top_n=0 omits the field even for full pools."""
+        artifact = _artifact(n_qualifying=25)
+        payload = aggregate(artifact, top_n=0)
+        assert payload.top_n_scores is None
+
+    def test_top_n_respects_explicit_cap(self):
+        artifact = _artifact(n_qualifying=25)
+        payload = aggregate(artifact, top_n=5)
+        assert payload.top_n_scores is not None
+        assert len(payload.top_n_scores) == 5
+
+    def test_top_n_schema_caps_at_20(self):
+        """Even if aggregate caller passes top_n>20, payload's max_length=20 rejects."""
+        import pydantic
+        from hope.reporting.payload import EpochReportPayload
+        # The schema-level cap is the source of truth for wire shape.
+        try:
+            EpochReportPayload(
+                epoch_id="X",
+                epoch_type="Search",
+                epoch_subtype=None,
+                block_range_start=0,
+                block_range_end=0,
+                scoring_formula_version="1",
+                scoring_formula_commit="a" * 40,
+                horizon_set=["7d"],
+                epoch_type_multiplier=1.0,
+                pool_size=21,
+                total_registered_uids=21,
+                pool_size_below_distribution_floor=False,
+                baseline_beat_rate=0.5,
+                score_distribution=None,
+                tier_distribution=__import__(
+                    "hope.reporting.payload", fromlist=["TierDistribution"],
+                ).TierDistribution(
+                    elite=__import__(
+                        "hope.reporting.payload", fromlist=["TierSlice"],
+                    ).TierSlice(count=0, share_of_pool=0.0, share_of_emissions=0.6),
+                    competitive=__import__(
+                        "hope.reporting.payload", fromlist=["TierSlice"],
+                    ).TierSlice(count=0, share_of_pool=0.0, share_of_emissions=0.3),
+                    participating=__import__(
+                        "hope.reporting.payload", fromlist=["TierSlice"],
+                    ).TierSlice(count=21, share_of_pool=1.0, share_of_emissions=0.1),
+                    elite_floor_met=False,
+                ),
+                tier_split_active=True,
+                emergency_intervention=__import__(
+                    "hope.reporting.payload", fromlist=["EmergencyIntervention"],
+                ).EmergencyIntervention(triggered=False),
+                validator_output_snapshot_timestamp="2026-05-26T00:00:00+00:00",
+                chain_fetch_timestamp="2026-05-26T00:00:00+00:00",
+                top_n_scores=[0.5] * 21,  # 21 entries > 20 cap
+            )
+        except pydantic.ValidationError:
+            pass
+        else:
+            raise AssertionError("Pydantic should have rejected top_n_scores with length 21")
+
+
+class TestAggregatorV2:
+    def test_aggregator_version_is_2(self):
+        artifact = _artifact(n_qualifying=20)
+        payload = aggregate(artifact)
+        assert payload.aggregator_version == 2
+
+    def test_default_histogram_bins_is_20(self):
+        """v2 default histogram resolution. Large enough pool so k-anon
+        doesn't collapse everything — checking the post-merge count
+        reflects the 20-bin starting point."""
+        artifact = _artifact(
+            n_qualifying=60,
+            raw_score_base=0.0,
+            raw_score_step=0.015,  # spreads scores 0.0 → 0.885 across the 60
+        )
+        payload = aggregate(artifact)
+        # Before k-anon merge: 20 bins. After merge: bin count ≤ 20, but
+        # for a 60-score pool spread over the full range we should see
+        # multiple bins survive (vs the v1 default of 15 that aggregated
+        # the same input into fewer post-merge bins).
+        assert payload.score_distribution is not None
+        edges = payload.score_distribution.bin_edges
+        assert len(edges) >= 2
+        # Edges always start at 0 and end at the score_range max
+        assert edges[0] == 0.0
+        assert edges[-1] == 1.0

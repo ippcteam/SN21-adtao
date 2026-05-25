@@ -44,7 +44,8 @@ The contract §4 example reads:
   "validator_output_snapshot_timestamp": "2026-05-12T14:32:18Z",
   "chain_fetch_timestamp": "2026-05-12T14:33:02Z",
   "commentary_markdown": null,
-  "aggregator_version": 1
+  "top_n_scores": [0.94, 0.91, 0.88, 0.85, 0.82, 0.80, 0.77, 0.74, 0.71, 0.68],
+  "aggregator_version": 2
 }
 ```
 """
@@ -195,6 +196,14 @@ class EpochReportPayload(BaseModel):
     # Optional human commentary; null in routine epochs.
     commentary_markdown: Optional[str] = None
 
+    # Top-N anonymized scores in descending order. Lets miners with chain-
+    # side knowledge of their own score self-locate against ranked peers
+    # without us republishing UIDs (IA D-05 compliant). Capped at 20 by
+    # design — the dashboard's rank-stack widget shows the top of the
+    # qualifying pool, not the full leaderboard. None when pool is below
+    # the distribution floor (matches score_distribution's gating).
+    top_n_scores: Optional[list[float]] = Field(default=None, max_length=20)
+
     # Aggregator wire-shape version. Bump when output changes for the
     # same input. The CMS pins each published row to this number.
-    aggregator_version: int = Field(default=1, ge=1)
+    aggregator_version: int = Field(default=2, ge=1)

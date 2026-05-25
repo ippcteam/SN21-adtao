@@ -134,21 +134,27 @@ def _build_tier_distribution(
     )
 
 
+TOP_N_SCORES_MAX = 20
+
+
 def aggregate(
     artifact: EpochArtifact,
     *,
-    n_bins: int = 15,
+    n_bins: int = 20,
     score_range: tuple[float, float] = (0.0, 1.0),
     k_anon_floor: int = 5,
     pool_size_floor: int = POOL_SIZE_DISTRIBUTION_FLOOR,
     commentary_markdown: str | None = None,
+    top_n: int = TOP_N_SCORES_MAX,
 ) -> EpochReportPayload:
     """Aggregate a private artifact into the public payload.
 
     Args:
         artifact: the operator-private record produced by
             `hope.reporting.epoch_artifact.build_artifact`.
-        n_bins: histogram resolution (default 15 per Q2).
+        n_bins: histogram resolution. Default 20 (v2 — finer than v1's 15
+            per the §8 Q1 contract follow-up; bins of width 0.05 over
+            [0, 1] show distribution shape better for medium pools).
         score_range: histogram domain (default `(0.0, 1.0)` per Q3).
         k_anon_floor: k-anonymity floor (default 5 per contract §3.2).
         pool_size_floor: pool-size threshold below which the histogram
@@ -157,6 +163,9 @@ def aggregate(
         commentary_markdown: optional human commentary. Default None
             for routine epochs (Q20). Operator can override via the
             writer to pre-populate for special epochs.
+        top_n: maximum number of ranked top scores to surface in
+            ``top_n_scores`` (v2 field). Default 20; capped by the
+            schema's ``max_length=20``. Set to 0 to omit.
 
     Returns:
         A fully-populated `EpochReportPayload` ready to POST.
@@ -169,6 +178,7 @@ def aggregate(
 
     if pool_below_floor:
         score_distribution: ScoreDistribution | None = None
+        top_n_scores: list[float] | None = None
     else:
         score_distribution = _build_score_distribution(
             qualifying_scores,
@@ -176,6 +186,14 @@ def aggregate(
             score_range=score_range,
             k_anon_floor=k_anon_floor,
         )
+        # Top-N ranked scores (descending) — payload-only, no UIDs.
+        # If the pool is smaller than top_n, the list is just len(pool).
+        # If top_n is 0 the field is omitted entirely.
+        if top_n > 0:
+            ranked = sorted(qualifying_scores, reverse=True)
+            top_n_scores = ranked[: min(top_n, len(ranked))]
+        else:
+            top_n_scores = None
 
     tier_distribution = _build_tier_distribution(
         artifact.tier_result,
@@ -208,5 +226,6 @@ def aggregate(
         validator_output_snapshot_timestamp=artifact.validator_output_snapshot_timestamp,
         chain_fetch_timestamp=artifact.chain_fetch_timestamp,
         commentary_markdown=commentary_markdown,
-        aggregator_version=1,
+        top_n_scores=top_n_scores,
+        aggregator_version=2,
     )

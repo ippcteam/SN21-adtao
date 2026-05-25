@@ -69,11 +69,22 @@ def test_contract_example_validates():
     assert payload.score_distribution.bin_counts == [5, 7, 9, 11, 8, 5, 0, 2]
 
 
-def test_aggregator_version_defaults_to_one():
+def test_aggregator_version_defaults_to_two():
+    """v2 hard bump — the default is now 2. v1 payloads continue to
+    validate when constructed with `aggregator_version=1` explicitly
+    (covered by test_contract_example_validates)."""
     minimal = {**_VALID_PAYLOAD}
     minimal.pop("aggregator_version")
     payload = EpochReportPayload(**minimal)
+    assert payload.aggregator_version == 2
+
+
+def test_v1_payload_still_validates():
+    """Backwards-compat — historic v1 payloads must continue to parse."""
+    v1_payload = {**_VALID_PAYLOAD, "aggregator_version": 1}
+    payload = EpochReportPayload(**v1_payload)
     assert payload.aggregator_version == 1
+    assert payload.top_n_scores is None  # v1 had no top_n_scores
 
 
 def test_score_distribution_may_be_null():
