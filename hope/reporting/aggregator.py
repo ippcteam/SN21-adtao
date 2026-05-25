@@ -146,6 +146,7 @@ def aggregate(
     pool_size_floor: int = POOL_SIZE_DISTRIBUTION_FLOOR,
     commentary_markdown: str | None = None,
     top_n: int = TOP_N_SCORES_MAX,
+    supersedes: str | None = None,
 ) -> EpochReportPayload:
     """Aggregate a private artifact into the public payload.
 
@@ -227,5 +228,6 @@ def aggregate(
         chain_fetch_timestamp=artifact.chain_fetch_timestamp,
         commentary_markdown=commentary_markdown,
         top_n_scores=top_n_scores,
+        supersedes=supersedes,
         aggregator_version=2,
     )

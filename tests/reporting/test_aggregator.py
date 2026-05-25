@@ -394,6 +394,21 @@ class TestTopNScores:
             raise AssertionError("Pydantic should have rejected top_n_scores with length 21")
 
 
+class TestSupersedes:
+    """Correction pointer — passes through to the payload's supersedes field."""
+
+    def test_supersedes_defaults_to_none(self):
+        artifact = _artifact(n_qualifying=20)
+        payload = aggregate(artifact)
+        assert payload.supersedes is None
+
+    def test_supersedes_passed_through(self):
+        artifact = _artifact(n_qualifying=20, epoch_id="WR-2026-W21-COR-1")
+        payload = aggregate(artifact, supersedes="WR-2026-W21-PUB-E1")
+        assert payload.supersedes == "WR-2026-W21-PUB-E1"
+        assert payload.epoch_id == "WR-2026-W21-COR-1"
+
+
 class TestAggregatorV2:
     def test_aggregator_version_is_2(self):
         artifact = _artifact(n_qualifying=20)

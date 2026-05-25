@@ -188,6 +188,15 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="Validate + print payload JSON; do not POST.")
     parser.add_argument("--commentary", default=None,
                         help="Optional commentary_markdown override.")
+    parser.add_argument("--supersedes", default=None,
+                        help="Optional release_key of a published row this "
+                             "POST corrects (e.g. 'WR-2026-W21-PUB-E1'). "
+                             "Triggers the CMS correction flow: published "
+                             "rows stay frozen; the corrected row appears "
+                             "as a new entry with a `supersedes` pointer "
+                             "back to the original. The dashboard renders "
+                             "the most-recent correction as the canonical "
+                             "view of an epoch slot.")
     parser.add_argument("--log-level", default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args(argv)
@@ -212,7 +221,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         logger.error("cannot load artifact: %s", e)
         return EXIT_MISCONFIG
 
-    payload = aggregate(artifact, commentary_markdown=args.commentary)
+    payload = aggregate(
+        artifact,
+        commentary_markdown=args.commentary,
+        supersedes=args.supersedes,
+    )
 
     if args.dry_run:
         print(json.dumps(payload.model_dump(mode="json"), indent=2, sort_keys=True))

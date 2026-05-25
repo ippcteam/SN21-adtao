@@ -204,6 +204,15 @@ class EpochReportPayload(BaseModel):
     # the distribution floor (matches score_distribution's gating).
     top_n_scores: Optional[list[float]] = Field(default=None, max_length=20)
 
+    # Optional pointer to a published epoch this row corrects. Per the
+    # CMS contract (IA D-13): published rows are frozen; mutations land
+    # as NEW rows with a `-COR-N` suffix in their epoch_id and a
+    # `supersedes` pointer back to the original. The dashboard renders
+    # the most recent correction as the canonical view of an epoch slot;
+    # the original stays at its permanent URL with a "corrected by"
+    # banner.
+    supersedes: Optional[str] = None
+
     # Aggregator wire-shape version. Bump when output changes for the
     # same input. The CMS pins each published row to this number.
     aggregator_version: int = Field(default=2, ge=1)
