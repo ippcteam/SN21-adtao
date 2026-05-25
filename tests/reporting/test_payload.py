@@ -69,14 +69,14 @@ def test_contract_example_validates():
     assert payload.score_distribution.bin_counts == [5, 7, 9, 11, 8, 5, 0, 2]
 
 
-def test_aggregator_version_defaults_to_three():
-    """v3 hard bump — the default is now 3. Historic v1/v2 payloads
+def test_aggregator_version_defaults_to_four():
+    """v4 hard bump — the default is now 4. Historic v1/v2/v3 payloads
     continue to validate when constructed with the explicit version
     (covered by the backwards-compat tests below)."""
     minimal = {**_VALID_PAYLOAD}
     minimal.pop("aggregator_version")
     payload = EpochReportPayload(**minimal)
-    assert payload.aggregator_version == 3
+    assert payload.aggregator_version == 4
 
 
 def test_v1_payload_still_validates():
@@ -99,6 +99,54 @@ def test_v2_payload_still_validates():
     assert payload.aggregator_version == 2
     assert payload.top_n_scores == [0.9, 0.8, 0.7, 0.6, 0.5]
     assert payload.miner_results is None
+
+
+def test_v3_payload_still_validates():
+    """Backwards-compat — v3 payloads (miner_results, status enum without
+    the v4 additions: not_registered, late_submission)."""
+    v3_payload = {
+        **_VALID_PAYLOAD,
+        "aggregator_version": 3,
+        "miner_results": [
+            {
+                "uid": 11,
+                "hotkey": "5" + "a" * 47,
+                "score": 0.85,
+                "status": "scored",
+                "tier": "elite",
+            },
+        ],
+    }
+    payload = EpochReportPayload(**v3_payload)
+    assert payload.aggregator_version == 3
+    assert len(payload.miner_results) == 1
+
+
+def test_v4_new_status_values_validate():
+    """v4 adds disqualified_not_registered + disqualified_late_submission."""
+    v4_payload = {
+        **_VALID_PAYLOAD,
+        "miner_results": [
+            {
+                "uid": 50,
+                "hotkey": "5" + "b" * 47,
+                "score": 0.0,
+                "status": "disqualified_not_registered",
+                "tier": None,
+            },
+            {
+                "uid": 51,
+                "hotkey": "5" + "c" * 47,
+                "score": 0.0,
+                "status": "disqualified_late_submission",
+                "tier": None,
+            },
+        ],
+    }
+    payload = EpochReportPayload(**v4_payload)
+    assert len(payload.miner_results) == 2
+    assert payload.miner_results[0].status == "disqualified_not_registered"
+    assert payload.miner_results[1].status == "disqualified_late_submission"
 
 
 def test_score_distribution_may_be_null():

@@ -153,6 +153,10 @@ class MinerResult(BaseModel):
         "disqualified_missing_snapshot",
         "disqualified_invalid_commit",
         "disqualified_plaintext_unavailable",
+        # v4 additions (CMS Disqualifier panel surfaces these with their own
+        # heading + explainer, so miners can self-diagnose):
+        "disqualified_not_registered",      # uid wasn't registered on netuid at epoch close
+        "disqualified_late_submission",     # bundle landed after the close-window cutoff
         "disqualified_other",
     ]
     tier: Optional[Literal["elite", "competitive", "participating"]] = None
@@ -252,4 +256,4 @@ class EpochReportPayload(BaseModel):
 
     # Aggregator wire-shape version. Bump when output changes for the
     # same input. The CMS pins each published row to this number.
-    aggregator_version: int = Field(default=3, ge=1)
+    aggregator_version: int = Field(default=4, ge=1)

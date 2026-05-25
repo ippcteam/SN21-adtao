@@ -92,7 +92,7 @@ def test_full_pool_returns_full_payload():
     assert payload.tier_split_active is True
     assert payload.pool_size_below_distribution_floor is False
     assert payload.score_distribution is not None
-    assert payload.aggregator_version == 3
+    assert payload.aggregator_version == 4
 
 
 def test_field_pass_through_from_artifact():
@@ -499,11 +499,74 @@ class TestMinerResults:
         assert excluded_rows[0].status == "disqualified_invalid_commit"
 
 
-class TestAggregatorV3:
-    def test_aggregator_version_is_3(self):
+class TestAggregatorV4:
+    def test_aggregator_version_is_4(self):
         artifact = _artifact(n_qualifying=20)
         payload = aggregate(artifact)
-        assert payload.aggregator_version == 3
+        assert payload.aggregator_version == 4
+
+    def test_synthesized_dq_row_via_per_uid_status_field(self):
+        """When a per_uid_scores entry carries an explicit `status` field,
+        the aggregator emits a DQ row with tier=None and the mapped enum."""
+        artifact = _artifact(n_qualifying=20)
+        # Add a disqualified row directly in per_uid_scores with status set
+        # — simulates a synthesized DQ entry from chain reconstruction.
+        artifact.per_uid_scores.append({
+            "uid": 200,
+            "hotkey": ("d" * 62) + "C8",
+            "score_micro": 0,
+            "raw_score": 0.0,
+            "status": "not_registered",
+        })
+        payload = aggregate(artifact)
+        # Find the synthesized DQ row.
+        dq = next(
+            mr for mr in payload.miner_results if mr.uid == 200
+        )
+        assert dq.status == "disqualified_not_registered"
+        assert dq.tier is None
+        assert dq.score == 0.0
+
+    def test_late_submission_mapping(self):
+        artifact = _artifact(n_qualifying=20)
+        artifact.per_uid_scores.append({
+            "uid": 201,
+            "hotkey": ("e" * 62) + "C9",
+            "score_micro": 0,
+            "raw_score": 0.0,
+            "status": "late_submission",
+        })
+        payload = aggregate(artifact)
+        dq = next(mr for mr in payload.miner_results if mr.uid == 201)
+        assert dq.status == "disqualified_late_submission"
+        assert dq.tier is None
+
+    def test_unknown_status_maps_to_other(self):
+        artifact = _artifact(n_qualifying=20)
+        artifact.per_uid_scores.append({
+            "uid": 202,
+            "hotkey": ("f" * 62) + "CA",
+            "score_micro": 0,
+            "raw_score": 0.0,
+            "status": "some_unknown_new_reason_code",
+        })
+        payload = aggregate(artifact)
+        dq = next(mr for mr in payload.miner_results if mr.uid == 202)
+        assert dq.status == "disqualified_other"
+
+    def test_canonical_status_passes_through_unchanged(self):
+        """Upstream may already emit the canonical `disqualified_*` form."""
+        artifact = _artifact(n_qualifying=20)
+        artifact.per_uid_scores.append({
+            "uid": 203,
+            "hotkey": ("a" * 62) + "CB",
+            "score_micro": 0,
+            "raw_score": 0.0,
+            "status": "disqualified_not_registered",
+        })
+        payload = aggregate(artifact)
+        dq = next(mr for mr in payload.miner_results if mr.uid == 203)
+        assert dq.status == "disqualified_not_registered"
 
     def test_default_histogram_bins_is_20(self):
         """v2 default histogram resolution. Large enough pool so k-anon

@@ -238,7 +238,7 @@ def aggregate(
         top_n_scores=top_n_scores,
         supersedes=supersedes,
         miner_results=miner_results,
-        aggregator_version=3,
+        aggregator_version=4,
     )
 
 
@@ -275,16 +275,26 @@ def _build_miner_results(
             continue
         # Clamp into the wire range — the schema rejects >1.0 / <0.0.
         clamped = max(0.0, min(1.0, raw_score))
-        tier = tier_by_hotkey.get(hotkey) if tier_split_active else None
-        # Validate the tier value against the Literal — defence in depth
-        # against artifact corruption.
-        if tier not in ("elite", "competitive", "participating"):
+        # Per-entry status override (v4) — when present, the entry was a
+        # synthesized disqualification row not produced by normal scoring.
+        # When absent, default to "scored" (the historical aggregator path).
+        raw_status = entry.get("status")
+        if isinstance(raw_status, str) and raw_status:
+            status = _map_exclusion_to_status(raw_status)
+            # DQ rows always have tier=null per Rob's v4 spec.
             tier = None
+        else:
+            status = "scored"
+            tier = tier_by_hotkey.get(hotkey) if tier_split_active else None
+            # Validate the tier value against the Literal — defence in depth
+            # against artifact corruption.
+            if tier not in ("elite", "competitive", "participating"):
+                tier = None
         results.append(MinerResult(
             uid=uid,
             hotkey=hotkey,
             score=clamped,
-            status="scored",
+            status=status,
             tier=tier,
         ))
 
@@ -311,17 +321,38 @@ def _build_miner_results(
 
 
 _EXCLUSION_STATUS_MAP = {
+    "scored": "scored",
+    # Generic disqualification reasons (existing in v3):
     "below_threshold": "disqualified_below_threshold",
     "missing_snapshot": "disqualified_missing_snapshot",
     "invalid_commit": "disqualified_invalid_commit",
     "inner_sig_hotkey_mismatch": "disqualified_invalid_commit",
     "hotkey_mismatch": "disqualified_invalid_commit",
     "plaintext_unavailable": "disqualified_plaintext_unavailable",
+    # v4 additions — the CMS Disqualifier panel renders dedicated cards
+    # for these so miners can self-diagnose.
+    "not_registered": "disqualified_not_registered",
+    "unregistered": "disqualified_not_registered",
+    "no_registration": "disqualified_not_registered",
+    "late_submission": "disqualified_late_submission",
+    "late": "disqualified_late_submission",
+    # Pass-through if upstream already emits the canonical status form:
+    "disqualified_below_threshold": "disqualified_below_threshold",
+    "disqualified_missing_snapshot": "disqualified_missing_snapshot",
+    "disqualified_invalid_commit": "disqualified_invalid_commit",
+    "disqualified_plaintext_unavailable": "disqualified_plaintext_unavailable",
+    "disqualified_not_registered": "disqualified_not_registered",
+    "disqualified_late_submission": "disqualified_late_submission",
+    "disqualified_other": "disqualified_other",
 }
 
 
 def _map_exclusion_to_status(reason: str) -> str:
-    """Map an upstream exclusion code onto Rob's v3 status enum."""
+    """Map an upstream exclusion code onto Rob's v4 status enum.
+
+    Returns ``disqualified_other`` for unmapped reasons so unknown codes
+    surface in the dashboard rather than getting silently dropped.
+    """
     return _EXCLUSION_STATUS_MAP.get(reason, "disqualified_other")
 
 
