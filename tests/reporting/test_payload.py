@@ -69,14 +69,14 @@ def test_contract_example_validates():
     assert payload.score_distribution.bin_counts == [5, 7, 9, 11, 8, 5, 0, 2]
 
 
-def test_aggregator_version_defaults_to_two():
-    """v2 hard bump — the default is now 2. v1 payloads continue to
-    validate when constructed with `aggregator_version=1` explicitly
-    (covered by test_contract_example_validates)."""
+def test_aggregator_version_defaults_to_three():
+    """v3 hard bump — the default is now 3. Historic v1/v2 payloads
+    continue to validate when constructed with the explicit version
+    (covered by the backwards-compat tests below)."""
     minimal = {**_VALID_PAYLOAD}
     minimal.pop("aggregator_version")
     payload = EpochReportPayload(**minimal)
-    assert payload.aggregator_version == 2
+    assert payload.aggregator_version == 3
 
 
 def test_v1_payload_still_validates():
@@ -85,6 +85,20 @@ def test_v1_payload_still_validates():
     payload = EpochReportPayload(**v1_payload)
     assert payload.aggregator_version == 1
     assert payload.top_n_scores is None  # v1 had no top_n_scores
+    assert payload.miner_results is None  # v1 had no miner_results
+
+
+def test_v2_payload_still_validates():
+    """Backwards-compat — v2 payloads (top_n_scores, no miner_results)."""
+    v2_payload = {
+        **_VALID_PAYLOAD,
+        "aggregator_version": 2,
+        "top_n_scores": [0.9, 0.8, 0.7, 0.6, 0.5],
+    }
+    payload = EpochReportPayload(**v2_payload)
+    assert payload.aggregator_version == 2
+    assert payload.top_n_scores == [0.9, 0.8, 0.7, 0.6, 0.5]
+    assert payload.miner_results is None
 
 
 def test_score_distribution_may_be_null():

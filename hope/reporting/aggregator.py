@@ -9,13 +9,18 @@ Pure function discipline:
     function on a chain-reconstructed artifact and produces the same
     payload as the operator, by construction.
 
-Anti-doxxing discipline:
+Anti-doxxing discipline (v1/v2):
   * The return type is `EpochReportPayload`, which forbids extra fields
     (`extra="forbid"`). Per-UID data from the artifact never reaches
     the public payload — only counts, shares, and distribution shape.
-  * The aggregator never returns the artifact, the score map, or any
-    derived list of per-miner values. Only scalar / distribution
-    aggregates flow out.
+
+v3 contract change (CMS-side scope expansion):
+  * `EpochReportPayload.miner_results` now carries per-UID rows
+    (Cacheon-style leaderboard table) when populated. Per the new
+    CMS spec, full UID + hotkey is published in the wire payload;
+    browser-side display truncation is the dashboard's concern.
+  * The aggregate-only fields (score_distribution, tier_distribution,
+    top_n_scores, baseline_beat_rate) remain — both views coexist.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from hope.reporting.payload import (
     ELITE_EMISSION_SHARE,
     EmergencyIntervention,
     EpochReportPayload,
+    MinerResult,
     PARTICIPATING_EMISSION_SHARE,
     POOL_SIZE_DISTRIBUTION_FLOOR,
     ScoreDistribution,
@@ -202,6 +208,8 @@ def aggregate(
         tier_split_active=tier_split_active,
     )
 
+    miner_results = _build_miner_results(artifact, tier_split_active=tier_split_active)
+
     # v1 routine emergency state — always false. Q19 freezes this until
     # trigger-state machines land in SN21_REWARD_MECHANISM.md.
     emergency = EmergencyIntervention(triggered=False)
@@ -229,5 +237,105 @@ def aggregate(
         commentary_markdown=commentary_markdown,
         top_n_scores=top_n_scores,
         supersedes=supersedes,
-        aggregator_version=2,
+        miner_results=miner_results,
+        aggregator_version=3,
     )
+
+
+def _build_miner_results(
+    artifact: EpochArtifact,
+    *,
+    tier_split_active: bool,
+) -> list[MinerResult]:
+    """Build the per-UID Cacheon-style table from artifact.per_uid_scores.
+
+    For each scored miner: status='scored', tier resolved against the
+    artifact's tier_result. Miners that the upstream runner excluded
+    appear in artifact.tier_result['excluded'] (when populated) and
+    are mapped onto Rob's `disqualified_*` status enum.
+    """
+    # Map hotkey → tier from the artifact's tier allocation.
+    tier_by_hotkey: dict[str, str] = {}
+    if tier_split_active:
+        for hk in artifact.tier_result.get("elite", []) or []:
+            tier_by_hotkey[hk] = "elite"
+        for hk in artifact.tier_result.get("competitive", []) or []:
+            tier_by_hotkey[hk] = "competitive"
+        for hk in artifact.tier_result.get("participating", []) or []:
+            tier_by_hotkey[hk] = "participating"
+
+    results: list[MinerResult] = []
+    for entry in artifact.per_uid_scores:
+        # Skip rows lacking the fields we need.
+        try:
+            uid = int(entry["uid"])
+            hotkey = str(entry["hotkey"])
+            raw_score = float(entry["raw_score"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        # Clamp into the wire range — the schema rejects >1.0 / <0.0.
+        clamped = max(0.0, min(1.0, raw_score))
+        tier = tier_by_hotkey.get(hotkey) if tier_split_active else None
+        # Validate the tier value against the Literal — defence in depth
+        # against artifact corruption.
+        if tier not in ("elite", "competitive", "participating"):
+            tier = None
+        results.append(MinerResult(
+            uid=uid,
+            hotkey=hotkey,
+            score=clamped,
+            status="scored",
+            tier=tier,
+        ))
+
+    # Disqualified miners — appear in tier_result['excluded'] when the
+    # runner records them. Shape: dict[hotkey -> reason] where reason
+    # is one of the runner's exclusion codes.
+    excluded = artifact.tier_result.get("excluded", {}) if isinstance(artifact.tier_result, dict) else {}
+    if isinstance(excluded, dict):
+        for hotkey, reason in excluded.items():
+            status = _map_exclusion_to_status(str(reason))
+            # Excluded miners may not have a uid in artifact — skip if absent.
+            uid = _find_uid_for_hotkey(artifact, str(hotkey))
+            if uid is None:
+                continue
+            results.append(MinerResult(
+                uid=uid,
+                hotkey=str(hotkey),
+                score=0.0,
+                status=status,
+                tier=None,
+            ))
+
+    return results
+
+
+_EXCLUSION_STATUS_MAP = {
+    "below_threshold": "disqualified_below_threshold",
+    "missing_snapshot": "disqualified_missing_snapshot",
+    "invalid_commit": "disqualified_invalid_commit",
+    "inner_sig_hotkey_mismatch": "disqualified_invalid_commit",
+    "hotkey_mismatch": "disqualified_invalid_commit",
+    "plaintext_unavailable": "disqualified_plaintext_unavailable",
+}
+
+
+def _map_exclusion_to_status(reason: str) -> str:
+    """Map an upstream exclusion code onto Rob's v3 status enum."""
+    return _EXCLUSION_STATUS_MAP.get(reason, "disqualified_other")
+
+
+def _find_uid_for_hotkey(artifact: EpochArtifact, hotkey: str) -> int | None:
+    """Look up uid for hotkey in artifact.per_uid_scores.
+
+    Excluded miners may not appear in per_uid_scores; if so, we have
+    no uid to publish and skip the row. Future runner versions can
+    populate an `excluded_with_uid` map to fix that.
+    """
+    for entry in artifact.per_uid_scores:
+        if entry.get("hotkey") == hotkey:
+            try:
+                return int(entry["uid"])
+            except (KeyError, TypeError, ValueError):
+                return None
+    return None

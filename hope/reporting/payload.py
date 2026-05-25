@@ -127,6 +127,37 @@ class TierDistribution(BaseModel):
     elite_floor_met: bool
 
 
+class MinerResult(BaseModel):
+    """Per-miner row for the Cacheon-style leaderboard table.
+
+    Per the v3 contract change: the dashboard now publishes per-UID
+    identity (UID + full hotkey + score + status + tier). Supersedes
+    the previous IA D-05 stance that forbade per-UID data.
+
+    ``hotkey`` carries the full SS58. Display truncation (e.g.
+    ``5CVCZw...TBq8``) is a browser-side concern — the wire payload
+    has the full string.
+
+    Extra per-miner metrics can be added in the future via additional
+    fields here (e.g. ``submission_count``, ``validator_agreement``).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    uid: int = Field(ge=0, le=255)
+    hotkey: str
+    score: float = Field(ge=0.0, le=1.0)
+    status: Literal[
+        "scored",
+        "disqualified_below_threshold",
+        "disqualified_missing_snapshot",
+        "disqualified_invalid_commit",
+        "disqualified_plaintext_unavailable",
+        "disqualified_other",
+    ]
+    tier: Optional[Literal["elite", "competitive", "participating"]] = None
+
+
 class EmergencyIntervention(BaseModel):
     """Emergency-intervention state for this epoch.
 
@@ -213,6 +244,12 @@ class EpochReportPayload(BaseModel):
     # banner.
     supersedes: Optional[str] = None
 
+    # Per-miner result rows (Cacheon-style leaderboard). New in v3 — the
+    # dashboard now renders a sortable per-UID table when this field is
+    # present. Optional + forward-compatible: when None, the dashboard
+    # falls back to the aggregate-only view from v1/v2.
+    miner_results: Optional[list[MinerResult]] = None
+
     # Aggregator wire-shape version. Bump when output changes for the
     # same input. The CMS pins each published row to this number.
-    aggregator_version: int = Field(default=2, ge=1)
+    aggregator_version: int = Field(default=3, ge=1)

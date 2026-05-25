@@ -92,7 +92,7 @@ def test_full_pool_returns_full_payload():
     assert payload.tier_split_active is True
     assert payload.pool_size_below_distribution_floor is False
     assert payload.score_distribution is not None
-    assert payload.aggregator_version == 2
+    assert payload.aggregator_version == 3
 
 
 def test_field_pass_through_from_artifact():
@@ -250,21 +250,28 @@ def test_payload_model_dump_is_json_safe():
     assert restored == payload
 
 
-def test_payload_carries_no_uid_or_hotkey():
-    """End-to-end: no UID-shaped substring in any nested dict key
-    (other than the allow-listed `total_registered_uids` aggregate count).
+def test_payload_aggregate_fields_carry_no_per_miner_data():
+    """v3 contract change scope check: per-UID data is allowed in
+    ``miner_results`` (and ONLY there). The aggregate-only fields —
+    score_distribution, tier_distribution, top_n_scores — must remain
+    structurally free of UID/hotkey/per-miner content.
     """
     payload = aggregate(_artifact(n_qualifying=25))
     serialized = payload.model_dump()
 
     forbidden = ("uid", "hotkey", "miner_id", "ss58", "per_miner")
-    allow = {"total_registered_uids"}
+    allow_keys = {"total_registered_uids"}
+    # miner_results is the explicit per-UID surface (v3) — its content
+    # is allowed to carry uid/hotkey/score per Rob's spec.
+    skip_subtrees = {"miner_results"}
 
     def walk(obj, path=""):
         if isinstance(obj, dict):
             for k, v in obj.items():
                 key_path = f"{path}.{k}" if path else k
-                if k not in allow:
+                if k in skip_subtrees:
+                    continue  # don't recurse into the per-UID table
+                if k not in allow_keys:
                     for sub in forbidden:
                         assert sub not in k.lower(), (
                             f"forbidden substring {sub!r} in payload key {key_path!r}"
@@ -409,11 +416,94 @@ class TestSupersedes:
         assert payload.epoch_id == "WR-2026-W21-COR-1"
 
 
-class TestAggregatorV2:
-    def test_aggregator_version_is_2(self):
+class TestMinerResults:
+    """v3 per-UID table — one entry per scored miner."""
+
+    def test_miner_results_present_for_full_pool(self):
         artifact = _artifact(n_qualifying=20)
         payload = aggregate(artifact)
-        assert payload.aggregator_version == 2
+        assert payload.miner_results is not None
+        assert len(payload.miner_results) == 20
+
+    def test_miner_result_fields_populated(self):
+        artifact = _artifact(n_qualifying=20)
+        payload = aggregate(artifact)
+        sample = payload.miner_results[0]
+        assert isinstance(sample.uid, int)
+        assert 0 <= sample.uid <= 255
+        assert isinstance(sample.hotkey, str)
+        assert len(sample.hotkey) == 64  # _hot() returns 64-char hex
+        assert 0.0 <= sample.score <= 1.0
+        assert sample.status == "scored"
+        assert sample.tier in ("elite", "competitive", "participating", None)
+
+    def test_miner_results_tier_mapping(self):
+        """Every scored miner is mapped to a tier when the split is active."""
+        artifact = _artifact(n_qualifying=20)
+        payload = aggregate(artifact)
+        assert payload.tier_split_active is True
+        tiers = [mr.tier for mr in payload.miner_results]
+        assert tiers.count("elite") == 4
+        assert tiers.count("competitive") == 8
+        assert tiers.count("participating") == 8
+        assert tiers.count(None) == 0
+
+    def test_miner_results_tier_none_when_split_inactive(self):
+        """Below-floor pool → tier_split_active=False → all tier=None."""
+        artifact = _artifact(n_qualifying=10)
+        payload = aggregate(artifact)
+        assert payload.pool_size_below_distribution_floor is True
+        assert payload.tier_split_active is False
+        # miner_results still present (per Rob's spec — optional, but
+        # we always emit when we have data). All entries have tier=None.
+        assert payload.miner_results is not None
+        assert len(payload.miner_results) == 10
+        assert all(mr.tier is None for mr in payload.miner_results)
+
+    def test_miner_results_score_clamped_to_range(self):
+        """Schema enforces 0 ≤ score ≤ 1; clamping handles out-of-range
+        artifact entries."""
+        artifact = _artifact(n_qualifying=20)
+        # Tamper with one entry to have a slightly-over-1 raw_score
+        # (simulates floating-point edge cases).
+        artifact.per_uid_scores[0] = dict(artifact.per_uid_scores[0])
+        artifact.per_uid_scores[0]["raw_score"] = 1.00001
+        payload = aggregate(artifact)
+        # Should still produce a valid payload.
+        assert payload.miner_results is not None
+        # The clamped entry exists at score=1.0
+        first_hotkey = artifact.per_uid_scores[0]["hotkey"]
+        match = next(
+            mr for mr in payload.miner_results if mr.hotkey == first_hotkey
+        )
+        assert match.score == 1.0
+
+    def test_excluded_miners_appear_with_disqualified_status(self):
+        """tier_result.excluded entries → disqualified_* rows."""
+        artifact = _artifact(n_qualifying=20)
+        # Add an "excluded" entry pointing at a known hotkey from the
+        # per_uid_scores list (so the uid lookup succeeds).
+        excluded_hotkey = artifact.per_uid_scores[0]["hotkey"]
+        artifact.tier_result["excluded"] = {
+            excluded_hotkey: "inner_sig_hotkey_mismatch",
+        }
+        payload = aggregate(artifact)
+        # The excluded entry adds one MORE row (the scored row stays too
+        # because we don't dedupe — but the tier table accuracy comes
+        # from tier_result, not per_uid_scores).
+        excluded_rows = [
+            mr for mr in payload.miner_results
+            if mr.status != "scored"
+        ]
+        assert len(excluded_rows) == 1
+        assert excluded_rows[0].status == "disqualified_invalid_commit"
+
+
+class TestAggregatorV3:
+    def test_aggregator_version_is_3(self):
+        artifact = _artifact(n_qualifying=20)
+        payload = aggregate(artifact)
+        assert payload.aggregator_version == 3
 
     def test_default_histogram_bins_is_20(self):
         """v2 default histogram resolution. Large enough pool so k-anon
