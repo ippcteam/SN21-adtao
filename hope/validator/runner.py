@@ -503,56 +503,75 @@ def _run_validator_onchain_cli(args, runner):
     from typing import Optional as _Optional
     from hope.validator.registration_index import RegistrationIndex
     registration_index: _Optional[RegistrationIndex] = None
-    if args.reg_index_lookback_blocks > 0:
-        try:
-            head_block = int(runner.subtensor.get_current_block())
-            start_block = max(0, head_block - args.reg_index_lookback_blocks)
+
+    # Build the index if either path is active: a non-zero in-cron lookback,
+    # OR a prebuilt JSON to merge. Without this, --reg-index-lookback-blocks=0
+    # (used on chains where the validator's RPC has pruned historical state)
+    # silently skipped the prebuilt load too, leaving registration_index=None
+    # and excluding every sr25519-hotkey miner on inner_sig.hotkey_mismatch.
+    if args.reg_index_lookback_blocks > 0 or args.reg_index_prebuilt:
+        registration_index = RegistrationIndex(runner.subtensor, runner.netuid)
+
+        if args.reg_index_prebuilt:
+            try:
+                import json as _json
+                with open(args.reg_index_prebuilt) as _f:
+                    prebuilt = _json.load(_f)
+                merged = registration_index.merge_json(prebuilt)
+                print(
+                    f"[REG-INDEX] merged {merged} entries from "
+                    f"prebuilt index at {args.reg_index_prebuilt}",
+                    flush=True,
+                )
+            except Exception as _e:
+                print(
+                    f"[REG-INDEX] prebuilt index load failed "
+                    f"({type(_e).__name__}: {str(_e)[:120]}); continuing "
+                    f"with in-cron scan only (if enabled)",
+                    flush=True,
+                )
+
+        if args.reg_index_lookback_blocks > 0:
+            try:
+                head_block = int(runner.subtensor.get_current_block())
+                start_block = max(0, head_block - args.reg_index_lookback_blocks)
+                print(
+                    f"[REG-INDEX] scanning blocks [{start_block}, {head_block}] "
+                    f"(lookback={args.reg_index_lookback_blocks})",
+                    flush=True,
+                )
+                found = registration_index.scan_range(start_block, head_block)
+                stats = registration_index.stats
+                print(
+                    f"[REG-INDEX] indexed {registration_index.size} registrations "
+                    f"(found {found} in this scan); "
+                    f"blocks_scanned={stats['blocks_scanned']} "
+                    f"events_seen={stats['events_seen']} "
+                    f"candidates={stats['candidates_found']} "
+                    f"verified={stats['verified']}",
+                    flush=True,
+                )
+            except Exception as e:
+                print(
+                    f"[REG-INDEX] scan failed ({type(e).__name__}: {str(e)[:200]}); "
+                    f"proceeding with whatever entries are already in the index "
+                    f"(prebuilt merged earlier, if any). Miners without a known "
+                    f"binding will be excluded as inner_sig.hotkey_mismatch.",
+                    flush=True,
+                )
+        else:
             print(
-                f"[REG-INDEX] scanning blocks [{start_block}, {head_block}] "
-                f"(lookback={args.reg_index_lookback_blocks})",
+                f"[REG-INDEX] in-cron scan disabled by "
+                f"--reg-index-lookback-blocks=0; using prebuilt "
+                f"({registration_index.size} entries) exclusively.",
                 flush=True,
             )
-            registration_index = RegistrationIndex(runner.subtensor, runner.netuid)
-            if args.reg_index_prebuilt:
-                try:
-                    import json as _json
-                    with open(args.reg_index_prebuilt) as _f:
-                        prebuilt = _json.load(_f)
-                    merged = registration_index.merge_json(prebuilt)
-                    print(
-                        f"[REG-INDEX] merged {merged} entries from "
-                        f"prebuilt index at {args.reg_index_prebuilt}",
-                        flush=True,
-                    )
-                except Exception as _e:
-                    print(
-                        f"[REG-INDEX] prebuilt index load failed "
-                        f"({type(_e).__name__}: {str(_e)[:120]}); continuing "
-                        f"with in-cron scan only",
-                        flush=True,
-                    )
-            found = registration_index.scan_range(start_block, head_block)
-            stats = registration_index.stats
-            print(
-                f"[REG-INDEX] indexed {registration_index.size} registrations "
-                f"(found {found} in this scan); "
-                f"blocks_scanned={stats['blocks_scanned']} "
-                f"events_seen={stats['events_seen']} "
-                f"candidates={stats['candidates_found']} "
-                f"verified={stats['verified']}",
-                flush=True,
-            )
-        except Exception as e:
-            print(
-                f"[REG-INDEX] scan failed ({type(e).__name__}: {str(e)[:200]}); "
-                f"proceeding without registration index — miners with sr25519 "
-                f"hotkeys + separate ed25519 PEMs will be excluded as "
-                f"inner_sig.hotkey_mismatch.",
-                flush=True,
-            )
-            registration_index = None
     else:
-        print("[REG-INDEX] disabled by --reg-index-lookback-blocks=0", flush=True)
+        print(
+            "[REG-INDEX] disabled — no prebuilt file given and "
+            "--reg-index-lookback-blocks=0",
+            flush=True,
+        )
 
     scorer = make_scorer(truth_by_horizon)
     submitted_round = drand_round_at(int(_time.time()))
