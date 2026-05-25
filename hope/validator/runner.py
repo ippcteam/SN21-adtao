@@ -146,6 +146,14 @@ def main():
                              "BEFORE the in-cron incremental scan. Format: a JSON "
                              "list of {hotkey_ss58, hotkey_pk_hex, ed25519_pk_hex, "
                              "block_number} objects.")
+    parser.add_argument(
+        "--ignore-already-scored", action="store_true",
+        default=os.environ.get("SN21_IGNORE_ALREADY_SCORED", "").lower() in ("1", "true", "yes"),
+        help="Bypass the per-(validator,epoch) already_scored guard. The byte-"
+             "budget check remains active. Operator opt-in only — intended for "
+             "recovery from runs that landed a 9.C.1 stub without proceeding to "
+             "9.C.3. Settable via SN21_IGNORE_ALREADY_SCORED=1 env.",
+    )
 
     args = parser.parse_args()
 
@@ -575,6 +583,7 @@ def _run_validator_onchain_cli(args, runner):
         blocks_until_post_scoring_reveal=args.blocks_until_post_reveal,
         blocks_until_weights_reveal=args.blocks_until_weights_reveal,
         registration_index=registration_index,
+        ignore_already_scored=args.ignore_already_scored,
     )
 
     # Reporter hook — writes the operator-private epoch artifact when

@@ -192,6 +192,7 @@ def run_epoch_scoring(
     blocks_until_post_scoring_reveal: int,
     blocks_until_weights_reveal: int,
     registration_index: Optional["RegistrationIndex"] = None,
+    ignore_already_scored: bool = False,
 ) -> EpochScoringOutcome:
     """Run the full Layer 9.C orchestration for one validator-epoch.
 
@@ -239,15 +240,24 @@ def run_epoch_scoring(
         )
         validator_ss58 = validator_wallet.hotkey.ss58_address
         if validator_already_scored_epoch(subtensor, netuid, validator_ss58, epoch_id):
-            return EpochScoringOutcome(
-                miner_reads=[],
-                aborted_reason=(
-                    f"already_scored: validator {validator_ss58[:12]}... has a "
-                    f"prior 9.C.1 commit for epoch_id={epoch_id}. Re-running this "
-                    f"epoch would double-spend the Commitments-pallet byte budget. "
-                    f"Skip until the next epoch."
-                ),
-            )
+            if ignore_already_scored:
+                logger.warning(
+                    "ignore_already_scored=True: bypassing already_scored guard "
+                    "for validator %s... epoch_id=%s. The pallet-byte-budget "
+                    "check remains as the second line of defence; if budget is "
+                    "exhausted the run will still abort cleanly.",
+                    validator_ss58[:12], epoch_id,
+                )
+            else:
+                return EpochScoringOutcome(
+                    miner_reads=[],
+                    aborted_reason=(
+                        f"already_scored: validator {validator_ss58[:12]}... has a "
+                        f"prior 9.C.1 commit for epoch_id={epoch_id}. Re-running this "
+                        f"epoch would double-spend the Commitments-pallet byte budget. "
+                        f"Skip until the next epoch."
+                    ),
+                )
         sufficient, remaining, last_epoch = commitments_budget_sufficient(
             subtensor, netuid, validator_ss58,
             needed_bytes=MIN_VALIDATOR_BUDGET_BYTES,
