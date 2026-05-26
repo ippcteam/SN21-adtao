@@ -157,6 +157,33 @@ The script also auto-confirms when stdin isn't a TTY, so it works under
 `docker run -i` and similar non-interactive invocations without
 hanging.
 
+**Verifying you're registered before submitting.** `hope-miner` now
+runs two pre-flight checks at startup against the validator HTTP API:
+
+- **Registration check** — queries `GET /v1/registration-status` and
+  refuses to start with `Hotkey is NOT registered on chain for the
+  miner role` if your hotkey isn't in the validator's loaded index.
+  Fix: run Step 4 above, then re-run `hope-miner`.
+- **Window check** — queries `GET /health` and refuses to start with
+  `Mining window for <epoch> has CLOSED` if the submission deadline
+  has already passed. Fix: wait for the next weekly epoch to open and
+  watch `current_epoch` in the `/health` response update.
+
+You can run these checks directly without invoking `hope-miner`:
+
+```bash
+# Window status (no auth):
+curl https://validator.adtao.io/health | jq '{
+  current_epoch, submission_open, deadline_utc, seconds_until_deadline
+}'
+
+# Registration status (sign with your hotkey — same auth as predictions):
+# hope-miner pre-flight does this for you on every run.
+```
+
+If both checks pass, `hope-miner` proceeds to fetch episodes, generate
+predictions, and submit on chain.
+
 ### Step 5: Train on historical data (recommended)
 
 Before predicting on live epochs, train a model on past episodes

@@ -329,7 +329,15 @@ class TestMinerE2EFlow:
         headers["Content-Type"] = "application/json"
         resp = client.post(path, content=body, headers=headers)
         assert resp.status_code == 403
-        assert "closed" in resp.json()["detail"].lower()
+        # New structured error shape: detail is a dict with an error
+        # code and a human-readable message. Older string-only form
+        # was unhelpful for miners trying to self-diagnose.
+        detail = resp.json()["detail"]
+        if isinstance(detail, dict):
+            assert detail["error"] == "submission_window_closed"
+            assert "closed" in detail["message"].lower()
+        else:
+            assert "closed" in detail.lower()
 
     def test_15_baseline_model_produces_valid_predictions(self, app_and_client):
         """Step 15: The baseline model produces predictions that pass validation."""
