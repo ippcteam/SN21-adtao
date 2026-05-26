@@ -44,8 +44,47 @@ logger = logging.getLogger(__name__)
 METAGRAPH_REFRESH_INTERVAL_SECONDS = 120
 
 
+def _load_registered_hotkeys(reg_index_path: str | None) -> tuple[set[str], int | None]:
+    """Read a prebuilt reg-index JSON and return the set of registered ss58 hotkeys.
+
+    Returns ``(hotkeys, mtime_ns)``. ``hotkeys`` is empty when the path is
+    unset, missing, or unreadable — callers treat that as "no reg-index
+    loaded, fall back to metagraph-only auth". ``mtime_ns`` is the file's
+    last modification time for the refresh loop to detect changes.
+
+    The JSON shape matches ``RegistrationIndex.to_json()``:
+    a list of ``{hotkey_ss58, role, block_number, ...}`` entries.
+    """
+    if not reg_index_path:
+        return set(), None
+    try:
+        mtime_ns = os.stat(reg_index_path).st_mtime_ns
+    except OSError:
+        return set(), None
+    try:
+        with open(reg_index_path) as f:
+            entries = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return set(), mtime_ns
+    if not isinstance(entries, list):
+        return set(), mtime_ns
+    out: set[str] = set()
+    for raw in entries:
+        if not isinstance(raw, dict):
+            continue
+        # Only count miner-role entries — validator / outcome-signer
+        # registrations are unrelated to the prediction-submission gate.
+        if raw.get("role") not in ("M", None):
+            continue
+        ss58 = raw.get("hotkey_ss58")
+        if isinstance(ss58, str) and ss58:
+            out.add(ss58)
+    return out, mtime_ns
+
+
 def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
-                 wallet_name: str, wallet_hotkey: str) -> dict:
+                 wallet_name: str, wallet_hotkey: str,
+                 reg_index_path: str | None) -> dict:
     """Fetch episodes + metagraph state and return the validator-state dict."""
     client = HopeDataClient()
     epoch_data = asyncio.run(client.fetch_episodes_only(release_key))
@@ -110,6 +149,18 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
                 "(/verification etc.) will return 404 until configured.", e,
             )
 
+    reg_hotkeys, reg_mtime = _load_registered_hotkeys(reg_index_path)
+    if reg_index_path:
+        logger.info(
+            "Registration index loaded from %s: %d miner ss58(s)",
+            reg_index_path, len(reg_hotkeys),
+        )
+    else:
+        logger.info(
+            "Registration index path unset — submission gate will fall back "
+            "to metagraph-only auth (no sn21-reg-v1 enforcement)"
+        )
+
     state: dict = {
         "current_epoch_id": release_key,
         "episodes": epoch_data.episodes,
@@ -120,6 +171,12 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
         "registered_miners": registered_miners,
         "uid_map": uid_map,
         "validator_hotkey_ss58": validator_hotkey_ss58,
+        # Hotkeys with a verified sn21-reg-v1 on-chain registration. An
+        # empty set disables the gate (open). Refreshed by the lifespan
+        # task when the underlying JSON's mtime changes.
+        "registered_ed25519_hotkeys": reg_hotkeys,
+        "_reg_index_path": reg_index_path,
+        "_reg_index_mtime_ns": reg_mtime,
         # Stashed so the FastAPI lifespan can refresh the metagraph
         # periodically without re-parsing CLI args.
         "_chain_config": {
@@ -200,6 +257,35 @@ def _refresh_metagraph(state: dict) -> None:
         )
 
 
+def _maybe_refresh_reg_index(state: dict) -> None:
+    """Re-read the reg-index file only when its mtime has changed.
+
+    Cheap path: a single stat() per refresh tick. When the file is
+    rewritten in place (e.g. operator drops a fresh prebuilt JSON over
+    the existing one), the new miner set replaces the old atomically
+    on the next refresh — newly-registered miners are no longer 403'd
+    without restarting the API.
+    """
+    path = state.get("_reg_index_path")
+    if not path:
+        return
+    try:
+        new_mtime = os.stat(path).st_mtime_ns
+    except OSError:
+        return
+    if new_mtime == state.get("_reg_index_mtime_ns"):
+        return
+    new_hotkeys, _ = _load_registered_hotkeys(path)
+    added = new_hotkeys - state.get("registered_ed25519_hotkeys", set())
+    removed = state.get("registered_ed25519_hotkeys", set()) - new_hotkeys
+    state["registered_ed25519_hotkeys"] = new_hotkeys
+    state["_reg_index_mtime_ns"] = new_mtime
+    logger.info(
+        "Registration index refreshed: n=%d (added %d, removed %d)",
+        len(new_hotkeys), len(added), len(removed),
+    )
+
+
 async def _metagraph_refresh_loop(state: dict) -> None:
     """Background task: refresh metagraph every METAGRAPH_REFRESH_INTERVAL_SECONDS.
 
@@ -221,6 +307,10 @@ async def _metagraph_refresh_loop(state: dict) -> None:
             await asyncio.to_thread(_refresh_metagraph, state)
         except Exception as e:
             logger.warning("metagraph refresh task error: %s", e)
+        try:
+            _maybe_refresh_reg_index(state)
+        except Exception as e:
+            logger.warning("reg-index refresh task error: %s", e)
 
 
 def main():
@@ -267,6 +357,16 @@ def main():
     parser.add_argument("--wallet-hotkey", default=os.environ.get("HOTKEY_NAME", "default"))
     parser.add_argument("--no-chain", action="store_true",
                         help="Skip metagraph load (no auth — dev/local only)")
+    parser.add_argument(
+        "--reg-index-prebuilt",
+        default=os.environ.get("SN21_REG_INDEX_PATH", ""),
+        help="Optional path to a prebuilt registration-index JSON "
+             "(same shape as RegistrationIndex.to_json). When set, "
+             "POST /predictions enforces that the submitting hotkey "
+             "appears in the index. Path is re-read on the same cadence "
+             "as the metagraph refresh, so dropping a new file in place "
+             "picks up newly-registered miners without restart.",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -301,6 +401,7 @@ def main():
         netuid=args.netuid,
         wallet_name=args.wallet_name,
         wallet_hotkey=args.wallet_hotkey,
+        reg_index_path=(args.reg_index_prebuilt or None),
     )
     # Hand the FastAPI lifespan a reference to the background refresh
     # coroutine so it gets started on app boot and cancelled on shutdown.
