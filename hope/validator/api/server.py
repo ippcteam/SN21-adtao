@@ -29,6 +29,7 @@ from hope.validator.api.predictions import router as predictions_router
 from hope.validator.api.commitments import router as commitments_router
 from hope.validator.api.verification import router as verification_router
 from hope.validator.api.training import router as training_router
+from hope.validator.api.registration import router as registration_router
 
 logger = logging.getLogger(__name__)
 
@@ -212,12 +213,32 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
             len(p) if isinstance(p, (list, dict)) else 0
             for p in preds.values()
         )
+        # Surface the submission deadline + open/closed flag so miners
+        # can pre-check whether the window is still open before doing
+        # the work of generating predictions. Wall-clock deadline (ISO
+        # UTC string) — the same value the /predictions endpoint
+        # checks against.
+        from datetime import datetime as _dt, timezone as _tz
+        deadline_str = state.get("deadline")
+        submission_open_flag = bool(state.get("submission_open", False))
+        seconds_until_deadline: int | None = None
+        if deadline_str:
+            try:
+                deadline_dt = _dt.fromisoformat(deadline_str)
+                seconds_until_deadline = int(
+                    (deadline_dt - _dt.now(_tz.utc)).total_seconds()
+                )
+            except (TypeError, ValueError):
+                seconds_until_deadline = None
         return {
             "status": "ok",
             "service": "sn21-validator",
             "current_epoch": epoch_id,
             "episodes_loaded": episode_count,
             "predictions_received": predictions_count,
+            "deadline_utc": deadline_str,
+            "submission_open": submission_open_flag,
+            "seconds_until_deadline": seconds_until_deadline,
         }
 
     # Register routers
@@ -226,6 +247,7 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
     app.include_router(commitments_router, prefix="/v1/epochs", tags=["commitments"])
     app.include_router(verification_router, prefix="/v1/epochs", tags=["verification"])
     app.include_router(training_router, tags=["training"])
+    app.include_router(registration_router, prefix="/v1", tags=["registration"])
 
     # Debug endpoints — always registered so a successful deploy is
     # observable via curl, independent of which env vars happened to make
