@@ -287,12 +287,38 @@ python scripts/sn21_keys.py register --role validator \
     --network finney --netuid 21 \
     --wallet-name my_validator --wallet-hotkey default \
     --key ~/.sn21/keys/validator.pem
-
-# Run validator (HTTP API on :8080, --no-chain for offline development)
-hope-validator --release CURRENT_RELEASE_KEY --port 8080
 ```
 
-Full guide: [validator setup](docs/validator_setup.md).
+**A complete validator runs three independent processes** — all three are required for sustained operation:
+
+| Process | Binary | Cadence | What it does |
+|---|---|---|---|
+| **HTTP API** | `hope-validator-api` | long-lived daemon | Serves episodes to miners; takes `--port` |
+| **Scoring** | `hope-validator` | weekly cron (after mining-deadline) | Reads miner submissions, scores, commits weights on chain |
+| **Heartbeat** | `hope-validator-heartbeat` | cron every 3-4 hours | Re-asserts the last weights commit so Bittensor's `ActivityCutoff` (~16h on mainnet) does not prune your validator from consensus between weekly scoring runs |
+
+Skipping the heartbeat means your validator drops out of emission a day or two after each scoring run — even if your scoring is otherwise flawless.
+
+Quick example (mainnet):
+
+```bash
+# Process A — episode API (long-lived)
+hope-validator-api --release CURRENT_RELEASE_KEY \
+    --host 0.0.0.0 --port 8080 \
+    --wallet-name my_validator --wallet-hotkey default
+
+# Process B — weekly scoring (cron after mining deadline)
+hope-validator --release CURRENT_RELEASE_KEY \
+    --wallet-name my_validator --wallet-hotkey default \
+    --archive-tier-2 https://adtao-deploy.onrender.com \
+    --ed25519-key-file ~/.sn21/keys/validator.pem
+
+# Process C — heartbeat (cron every 3-4 hours)
+hope-validator-heartbeat \
+    --wallet-name my_validator --wallet-hotkey default
+```
+
+Full guide including cron snippets, hyperparameter notes, and reg-index setup: [validator setup](docs/validator_setup.md). The heartbeat is documented in detail in §10.4.
 
 ---
 

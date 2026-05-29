@@ -13,21 +13,27 @@
 > third-party validator programme is tracked at Review 4.
 
 > **Architecture note (read this first).** SN21's validator code ships as
-> **two separate binaries** that run independently:
+> **three separate binaries** that run independently. **You need to run
+> all three for a healthy validator** — running only one or two will
+> either fail to score or get pruned from Yuma consensus.
 >
 > - **`hope-validator-api`** — long-lived **HTTP daemon** that serves
 >   episodes to miners and accepts their public-facing health checks.
 >   This is the binary that takes `--port` and `--host`.
 > - **`hope-validator`** — one-shot **scoring pass** invoked once per
->   epoch after the miner deadline (typically from cron). It reads
->   on-chain miner submissions, evaluates scoreability, commits weights,
->   and exits. **No `--port` flag** — it is not an HTTP server.
+>   epoch (weekly) after the miner deadline (typically from cron). It
+>   reads on-chain miner submissions, evaluates scoreability, commits
+>   weights, and exits. **No `--port` flag** — it is not an HTTP server.
+> - **`hope-validator-heartbeat`** — short-lived **activity-floor cron**
+>   invoked every 3-4 hours. It re-asserts the latest weights commit so
+>   Bittensor's `ActivityCutoff` (~16h on mainnet) does not drop your
+>   validator from consensus between weekly scoring runs. Without this,
+>   your validator gets pruned from emission every Tuesday-ish. See
+>   §10.4 for full details.
 >
-> The two were a single binary in earlier revisions of this guide; many
-> examples below have been updated accordingly. If you see a reference
-> to `hope-validator --port`, treat it as a documentation drift and use
-> `hope-validator-api --port` for HTTP and plain `hope-validator` for
-> scoring.
+> If you see a reference to `hope-validator --port`, treat it as a
+> documentation drift and use `hope-validator-api --port` for HTTP and
+> plain `hope-validator` for scoring.
 
 ---
 
@@ -43,11 +49,12 @@ pip install -e .
 
 ## 2. Quick Start (Local Testing)
 
-Two commands you'll typically run, in two separate terminals or as two
-services:
+**Three** commands run as **three** independent processes — typically
+one long-lived HTTP service, one weekly cron, and one frequent
+(3-4 hour) cron:
 
 ```bash
-# Terminal A — episode-serving HTTP daemon (long-lived)
+# Process A — episode-serving HTTP daemon (long-lived)
 hope-validator-api \
     --release WR-2026-W19-PUB-E1 \
     --host 0.0.0.0 --port 8080 \
@@ -56,7 +63,7 @@ hope-validator-api \
 ```
 
 ```bash
-# Terminal B — one-shot scoring pass (run AFTER the miner deadline)
+# Process B — one-shot weekly scoring pass (run AFTER the miner deadline)
 hope-validator \
     --release WR-2026-W19-PUB-E1 \
     --network test --netuid 466 \
@@ -65,9 +72,29 @@ hope-validator \
     --ed25519-key-file ~/.sn21/keys/validator-ed25519.pem
 ```
 
-`hope-validator-api` exposes the same endpoints under `/v1/...` as
-before (see §4); `hope-validator` produces the on-chain
-`9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` scoring artifact sequence.
+```bash
+# Process C — activity-floor heartbeat (run every 3-4 hours from cron)
+hope-validator-heartbeat \
+    --network test --netuid 466 \
+    --wallet-name my_validator --wallet-hotkey default
+```
+
+Roles in one line each:
+
+- **A** (`hope-validator-api`) serves episodes to miners, runs forever.
+- **B** (`hope-validator`) scores after each weekly mining deadline,
+  produces the on-chain `9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` artifact
+  sequence, and exits.
+- **C** (`hope-validator-heartbeat`) re-asserts your latest weights
+  every few hours so Bittensor's `ActivityCutoff` (~16h on mainnet)
+  does not drop you from consensus between weekly scoring runs.
+  Self-throttles via `LastUpdate` check — safe to run every 3-4h on
+  cron. See §10.4 for the full mechanism.
+
+**All three are required for sustained operation.** Skipping the
+heartbeat means your validator gets pruned from emission a day or
+two after each scoring run — even if your scoring is otherwise
+flawless.
 
 For testnet, swap `--network test --netuid 466`; for mainnet use
 `--network finney --netuid 21` (the defaults).
