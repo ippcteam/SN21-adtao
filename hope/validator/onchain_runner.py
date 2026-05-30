@@ -402,6 +402,39 @@ def run_epoch_scoring(
         max(0.0, min(1.0, v / 1_000_000.0))
         for hk, v in score_map.items() if hk in uid_by_hotkey
     ]
+
+    # Optional weight-vector override. When SN21_OVERRIDE_WEIGHT_UID is set,
+    # the validator's normal per-miner weight vector is REPLACED with a
+    # single-entry vector that puts 100% weight on the override UID. This
+    # is used to align the validator's commit with the network consensus
+    # target when standalone real-scoring leaves us at vtrust=0; see
+    # docs/validator_setup.md for the operational rationale. The override
+    # bypasses scoring entirely — the scoreability + 9.C.1 path still runs
+    # for audit purposes, but 9.C.3 publishes the override instead of the
+    # computed per-miner allocation. Leave SN21_OVERRIDE_WEIGHT_UID unset
+    # (or empty) to keep the default scoring behaviour.
+    import os as _os
+    _override_uid_str = _os.environ.get("SN21_OVERRIDE_WEIGHT_UID", "").strip()
+    if _override_uid_str:
+        try:
+            _override_uid = int(_override_uid_str)
+            if _override_uid < 0 or _override_uid > 65535:
+                raise ValueError(f"out of u16 range: {_override_uid}")
+            print(
+                f"[weight-override] SN21_OVERRIDE_WEIGHT_UID={_override_uid} set; "
+                f"replacing the computed vector ({len(uids)} miners) with "
+                f"{{ {_override_uid}: 1.0 }}",
+                flush=True,
+            )
+            uids = [_override_uid]
+            weights = [1.0]
+        except ValueError as _e:
+            print(
+                f"[weight-override] SN21_OVERRIDE_WEIGHT_UID={_override_uid_str!r} "
+                f"invalid ({_e}); ignoring override and using computed vector",
+                flush=True,
+            )
+
     weights_commit = (
         commit_weights_layer_9c3(
             subtensor=subtensor,
