@@ -54,7 +54,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # Tier emission shares are the policy constants per
@@ -160,6 +160,23 @@ class MinerResult(BaseModel):
         "disqualified_other",
     ]
     tier: Optional[Literal["elite", "competitive", "participating"]] = None
+
+    @field_validator("hotkey")
+    @classmethod
+    def _hotkey_is_ss58(cls, v: str) -> str:
+        """Reject anything that isn't a chain SS58 address.
+
+        The CMS enforces the same rule server-side ("starts with 5, 47–48
+        chars"); mirroring it here fails fast at payload-build time so a
+        regression (e.g. publishing the 64-char raw-pubkey hex instead of
+        the SS58) surfaces in tests rather than as a 400 from a live cron.
+        """
+        if not (v.startswith("5") and 47 <= len(v) <= 48):
+            raise ValueError(
+                f"hotkey must be a chain SS58 address (starts with 5, "
+                f"47-48 chars); got {len(v)}-char {v[:8]!r}..."
+            )
+        return v
 
 
 class EmergencyIntervention(BaseModel):

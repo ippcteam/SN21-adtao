@@ -242,6 +242,35 @@ def aggregate(
     )
 
 
+def _hotkey_to_ss58(value: str) -> str:
+    """Normalise a per-UID hotkey field to the chain SS58 address.
+
+    `artifact.per_uid_scores` and the tier rosters carry the chain hotkey
+    as the 64-char hex of its 32-byte raw pubkey — the internal scoring
+    identity (see `_build_per_uid_scores`, which writes `hotkey.hex()`).
+    The leaderboard wire contract requires the SS58 form (starts with 5,
+    47–48 chars), so we encode at the publish boundary here.
+
+    This is a PURE deterministic encoding (ss58 = base58(pubkey ++ checksum)):
+    same hex in → same SS58 out, no I/O / clock / chain read — so it keeps
+    the aggregator's byte-identical-output guarantee intact, and the
+    verifier reconstructs the identical payload from the same artifact.
+
+    Already-SS58 values pass through unchanged, so the function is safe to
+    apply to any hotkey-shaped field regardless of upstream representation.
+    """
+    if len(value) in (47, 48) and value.startswith("5"):
+        return value  # already an SS58 address
+    if len(value) == 64:
+        try:
+            int(value, 16)  # confirm it is raw-pubkey hex before encoding
+        except ValueError:
+            return value
+        from bittensor_wallet.bittensor_wallet import Keypair  # type: ignore
+        return Keypair(public_key="0x" + value, ss58_format=42).ss58_address
+    return value  # unknown shape — surface it downstream rather than mangle
+
+
 def _build_miner_results(
     artifact: EpochArtifact,
     *,
@@ -292,7 +321,7 @@ def _build_miner_results(
                 tier = None
         results.append(MinerResult(
             uid=uid,
-            hotkey=hotkey,
+            hotkey=_hotkey_to_ss58(hotkey),
             score=clamped,
             status=status,
             tier=tier,
@@ -311,7 +340,7 @@ def _build_miner_results(
                 continue
             results.append(MinerResult(
                 uid=uid,
-                hotkey=str(hotkey),
+                hotkey=_hotkey_to_ss58(str(hotkey)),
                 score=0.0,
                 status=status,
                 tier=None,

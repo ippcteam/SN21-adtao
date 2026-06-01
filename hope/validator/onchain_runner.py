@@ -92,7 +92,12 @@ class MinerOnChainInputs:
     """
 
     miner_uid: int
-    miner_hotkey: bytes  # 32-byte raw ed25519 pubkey
+    # 32-byte raw CHAIN hotkey pubkey (ss58_decode of metagraph.hotkeys[uid]).
+    # This is the on-chain identity / metagraph hotkey — NOT the ed25519
+    # inner-sig reg-key (that's resolved separately via RegistrationIndex.
+    # lookup(miner_hotkey)). ss58_encode(this, fmt=42) round-trips back to
+    # the miner's chain hotkey SS58 — which is what the leaderboard publishes.
+    miner_hotkey: bytes
     revealed_k: Optional[bytes]
     sha256_ct_commit: Optional[bytes]
     self_archive_url: Optional[str]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from hope.reporting.aggregator import aggregate
+from hope.reporting.aggregator import _hotkey_to_ss58, aggregate
 from hope.reporting.epoch_artifact import EpochArtifact
 from hope.reporting.payload import EpochReportPayload
 
@@ -432,7 +432,11 @@ class TestMinerResults:
         assert isinstance(sample.uid, int)
         assert 0 <= sample.uid <= 255
         assert isinstance(sample.hotkey, str)
-        assert len(sample.hotkey) == 64  # _hot() returns 64-char hex
+        # The wire contract publishes the chain SS58 (payload.py: "hotkey
+        # carries the full SS58"); the aggregator encodes the artifact's
+        # 64-char hex pubkey at the publish boundary.
+        assert sample.hotkey.startswith("5")
+        assert 47 <= len(sample.hotkey) <= 48
         assert 0.0 <= sample.score <= 1.0
         assert sample.status == "scored"
         assert sample.tier in ("elite", "competitive", "participating", None)
@@ -471,8 +475,9 @@ class TestMinerResults:
         payload = aggregate(artifact)
         # Should still produce a valid payload.
         assert payload.miner_results is not None
-        # The clamped entry exists at score=1.0
-        first_hotkey = artifact.per_uid_scores[0]["hotkey"]
+        # The clamped entry exists at score=1.0. Published rows carry the
+        # SS58 form, so match against the encoded artifact hotkey.
+        first_hotkey = _hotkey_to_ss58(artifact.per_uid_scores[0]["hotkey"])
         match = next(
             mr for mr in payload.miner_results if mr.hotkey == first_hotkey
         )
