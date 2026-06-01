@@ -164,6 +164,24 @@ def report_response(response: httpx.Response) -> int:
     return EXIT_REJECTED
 
 
+def _is_frozen_409(response: httpx.Response) -> bool:
+    """True if the CMS rejected because the epoch is published/frozen (IA D-13).
+
+    The server returns 409 with a body like
+    ``{"error": "Epoch ... is published and frozen (IA D-13). ..."}``.
+    """
+    if response.status_code != 409:
+        return False
+    text = response.text
+    try:
+        body = response.json()
+        text = str(body.get("error") or body.get("detail") or text)
+    except json.JSONDecodeError:
+        pass
+    low = text.lower()
+    return "frozen" in low or "published" in low
+
+
 def _load_artifact(artifact_path: Path) -> EpochArtifact:
     """Load an artifact by direct path (not by epoch_id resolution)."""
     if not artifact_path.exists():
@@ -241,6 +259,37 @@ def main(argv: Optional[list[str]] = None) -> int:
         return EXIT_MISCONFIG
 
     response = post_payload(payload, endpoint=endpoint, api_key=api_key)
+
+    # IA D-13 correction flow: a published epoch is frozen (409 "published
+    # and frozen"). If we weren't already posting a correction, automatically
+    # re-post under a `{epoch}-COR-N` epoch_id with a `supersedes` pointer to
+    # the original. The CMS renders the most-recent correction as canonical;
+    # the original keeps its permanent URL with a "corrected by" banner.
+    if (
+        _is_frozen_409(response)
+        and not args.supersedes
+        and "-COR-" not in artifact.epoch_id
+    ):
+        for n in range(1, 10):
+            cor_id = f"{artifact.epoch_id}-COR-{n}"
+            logger.warning(
+                "epoch %s is published/frozen; re-posting as correction %s",
+                artifact.epoch_id, cor_id,
+            )
+            cor_commentary = args.commentary or (
+                f"Correction of {artifact.epoch_id}: validator registration "
+                f"index refreshed; this entry supersedes the original report."
+            )
+            payload = aggregate(
+                artifact,
+                commentary_markdown=cor_commentary,
+                supersedes=artifact.epoch_id,
+                epoch_id_override=cor_id,
+            )
+            response = post_payload(payload, endpoint=endpoint, api_key=api_key)
+            if not _is_frozen_409(response):
+                break  # accepted (or a different outcome worth surfacing)
+
     return report_response(response)
 
 

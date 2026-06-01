@@ -153,6 +153,7 @@ def aggregate(
     commentary_markdown: str | None = None,
     top_n: int = TOP_N_SCORES_MAX,
     supersedes: str | None = None,
+    epoch_id_override: str | None = None,
 ) -> EpochReportPayload:
     """Aggregate a private artifact into the public payload.
 
@@ -215,7 +216,11 @@ def aggregate(
     emergency = EmergencyIntervention(triggered=False)
 
     return EpochReportPayload(
-        epoch_id=artifact.epoch_id,
+        # `epoch_id_override` is used by the correction flow (IA D-13): a
+        # frozen/published epoch can't be mutated, so a correction is posted
+        # under a new `{orig}-COR-N` epoch_id with `supersedes=orig`. Stays a
+        # pure function — same (artifact, override) in → same payload out.
+        epoch_id=epoch_id_override or artifact.epoch_id,
         epoch_type=artifact.epoch_type,
         epoch_subtype=artifact.epoch_subtype,
         block_range_start=artifact.block_range_start or 0,

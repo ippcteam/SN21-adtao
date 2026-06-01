@@ -323,3 +323,29 @@ def test_main_missing_artifact_file_fails(tmp_path):
         "--dry-run",
     ])
     assert exit_code == por.EXIT_MISCONFIG
+
+
+# ---------------------------------------------------------------------------
+# _is_frozen_409 — IA D-13 published/frozen detection (drives auto-correction)
+# ---------------------------------------------------------------------------
+
+def test_is_frozen_409_detects_published_frozen():
+    r = httpx.Response(409, json={"error": "Epoch WR-2026-W22-PUB-E1 is published and frozen (IA D-13). Publish a correction as a new epoch entry — do not mutate history."})
+    assert por._is_frozen_409(r) is True
+
+
+def test_is_frozen_409_detail_key_variant():
+    r = httpx.Response(409, json={"detail": "row is frozen"})
+    assert por._is_frozen_409(r) is True
+
+
+def test_is_frozen_409_other_409_not_frozen():
+    # A 409 that isn't a freeze (e.g. generic conflict) must NOT trigger correction.
+    r = httpx.Response(409, json={"error": "duplicate idempotency key"})
+    assert por._is_frozen_409(r) is False
+
+
+def test_is_frozen_409_non_409_statuses():
+    assert por._is_frozen_409(httpx.Response(200, json={"id": "x"})) is False
+    assert por._is_frozen_409(httpx.Response(400, json={"error": "frozen"})) is False  # wrong status
+    assert por._is_frozen_409(httpx.Response(500, text="published")) is False
