@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import logging
 import os
 import sys
@@ -108,6 +109,19 @@ def post_payload(
             # 2xx terminal-success
             if 200 <= status < 300:
                 return response
+            # 429 Too Many Requests → honour Retry-After and retry. The CMS
+            # throttles rapid POSTs; the correction flow posts twice in quick
+            # succession (original 409 → -COR-N), which can trip this.
+            if status == 429:
+                wait = _retry_after_seconds(response, default=delay)
+                logger.warning(
+                    "429 rate-limited on attempt %d/%d; sleeping %.1fs",
+                    attempt, max_attempts, wait,
+                )
+                if attempt < max_attempts:
+                    sleep_fn(wait)
+                    delay *= backoff_factor
+                continue
             # 5xx → retry with backoff
             if 500 <= status < 600:
                 logger.warning(
@@ -118,7 +132,7 @@ def post_payload(
                     sleep_fn(delay)
                     delay *= backoff_factor
                 continue
-            # 4xx → terminal failure, no retry
+            # other 4xx → terminal failure, no retry
             return response
 
         # Exhausted retries; last_response is the most recent 5xx.
@@ -162,6 +176,26 @@ def report_response(response: httpx.Response) -> int:
         pass
     logger.error("REJECTED status=%d detail=%s", status, detail)
     return EXIT_REJECTED
+
+
+def _retry_after_seconds(response: httpx.Response, *, default: float) -> float:
+    """Seconds to wait before retrying a 429, from the Retry-After header or
+    a `"Retry after Ns"` body hint. Clamped to [1, 10] so a hostile header
+    can't stall the cron."""
+    raw = response.headers.get("Retry-After") or response.headers.get("retry-after")
+    val: Optional[float] = None
+    if raw:
+        try:
+            val = float(raw)
+        except ValueError:
+            val = None
+    if val is None:
+        m = re.search(r"retry after\s+(\d+(?:\.\d+)?)\s*s", response.text, re.IGNORECASE)
+        if m:
+            val = float(m.group(1))
+    if val is None:
+        val = default
+    return max(1.0, min(10.0, val))
 
 
 def _is_frozen_409(response: httpx.Response) -> bool:

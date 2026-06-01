@@ -246,25 +246,45 @@ def test_post_payload_5xx_exhausted_retries(tmp_path):
     assert n_calls["n"] == 3
 
 
-def test_post_payload_429_no_retry(tmp_path):
-    """429 is a 4xx — terminal in our scheme (the cron sleeps + retries via re-run).
+def test_post_payload_429_retries_then_succeeds(tmp_path):
+    """429 Too Many Requests is now retried (honouring Retry-After), so the
+    correction flow's rapid second POST survives the CMS rate limiter."""
+    _write_synthetic_artifact(tmp_path)
+    payload = _load_payload(tmp_path)
+    n_calls = {"n": 0}
+    slept: list[float] = []
 
-    Operators implementing custom retry-after handling should wrap post_payload.
-    """
+    def handler(_request: httpx.Request) -> httpx.Response:
+        n_calls["n"] += 1
+        if n_calls["n"] == 1:
+            return httpx.Response(429, json={"error": "Rate limit exceeded. Retry after 1s."})
+        return httpx.Response(201, json={"id": "ok", "status": "draft", "review_url": "x"})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        response = por.post_payload(payload, endpoint="https://cms.example.com/api",
+                                    api_key="test", client=client,
+                                    sleep_fn=slept.append)
+    assert response.status_code == 201
+    assert n_calls["n"] == 2
+    assert slept and slept[0] == 1.0  # honoured "Retry after 1s"
+
+
+def test_post_payload_429_exhausts_after_max_attempts(tmp_path):
+    """Persistent 429 returns the last 429 (cron fails + re-trigger) rather than looping forever."""
     _write_synthetic_artifact(tmp_path)
     payload = _load_payload(tmp_path)
     n_calls = {"n": 0}
 
     def handler(_request: httpx.Request) -> httpx.Response:
         n_calls["n"] += 1
-        return httpx.Response(429, json={"detail": "rate limited"})
+        return httpx.Response(429, json={"error": "still limited"})
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         response = por.post_payload(payload, endpoint="https://cms.example.com/api",
-                                    api_key="test", client=client,
+                                    api_key="test", client=client, max_attempts=3,
                                     sleep_fn=lambda s: None)
     assert response.status_code == 429
-    assert n_calls["n"] == 1
+    assert n_calls["n"] == 3
 
 
 # ----------------------------------------------------------------------------
