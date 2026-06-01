@@ -143,17 +143,41 @@ def read_artifact(epoch_id: str, base_dir: Optional[Path] = None) -> EpochArtifa
 def _build_per_uid_scores(outcome: EpochScoringOutcome) -> list[dict[str, Any]]:
     """Cross-reference outcome.score_map (hotkey→score_micro) with
     outcome.miner_reads (hotkey→uid) into the private per-miner list.
+
+    Two kinds of row:
+      * SCORED — one per entry in `score_map` (no `status`; the aggregator
+        defaults these to "scored").
+      * NOT SCORED — one per `miner_reads` entry that did NOT score
+        (`ok is False`), carrying `status = excluded_reason` so the
+        leaderboard shows WHY (not_registered, invalid_commit, late,
+        plaintext_unavailable, …). The CMS Disqualifier panel renders
+        these — without them, miners who submitted but didn't score would
+        silently vanish from the published table.
     """
     hotkey_to_uid: dict[bytes, int] = {
         read.miner_hotkey: read.miner_uid for read in outcome.miner_reads
     }
     rows: list[dict[str, Any]] = []
+    scored_hotkeys: set[bytes] = set()
     for hotkey, score_micro in outcome.score_map.items():
+        scored_hotkeys.add(hotkey)
         rows.append({
             "uid": hotkey_to_uid.get(hotkey, -1),
             "hotkey": hotkey.hex(),
             "score_micro": int(score_micro),
             "raw_score": score_micro / 1_000_000.0,
+        })
+    # Every miner we READ but could NOT score gets a disqualification row so
+    # the published table covers the full submitter set, not just winners.
+    for read in outcome.miner_reads:
+        if read.ok or read.miner_hotkey in scored_hotkeys:
+            continue
+        rows.append({
+            "uid": read.miner_uid,
+            "hotkey": read.miner_hotkey.hex(),
+            "score_micro": 0,
+            "raw_score": 0.0,
+            "status": read.excluded_reason or "unknown",
         })
     # Stable ordering for diff-friendliness — sort by uid then hotkey.
     rows.sort(key=lambda r: (r["uid"], r["hotkey"]))

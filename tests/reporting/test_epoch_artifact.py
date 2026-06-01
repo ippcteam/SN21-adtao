@@ -54,6 +54,25 @@ def _read(uid: int) -> MinerReadResult:
     )
 
 
+def _read_failed(uid: int, reason: str) -> MinerReadResult:
+    """A miner that was read but did NOT score (e.g. not_registered)."""
+    return MinerReadResult(
+        miner_hotkey=bytes([uid]) * 32,
+        miner_uid=uid,
+        ok=False,
+        plaintext=None,
+        excluded_reason=reason,
+        fetch=None,
+        on_chain=OnChainCommitTriple(
+            timelock_k_present=True,
+            sha256_ct_commit=bytes([uid]) * 32,
+            self_archive_url=f"https://archive.example.com/m{uid}",
+            chain_block_at_k_commit=1_000_000 + uid,
+        ),
+        scoreability=None,
+    )
+
+
 def _outcome(n_miners: int = 3) -> EpochScoringOutcome:
     score_map = {bytes([i]) * 32: 500_000 + i * 50_000 for i in range(n_miners)}
     return EpochScoringOutcome(
@@ -65,6 +84,36 @@ def _outcome(n_miners: int = 3) -> EpochScoringOutcome:
         block_range_start=1_000_000,
         block_range_end=1_001_000,
     )
+
+
+def test_per_uid_scores_include_unscored_reads_with_status(tmp_path):
+    """Miners read but not scored appear as disqualification rows so the
+    CMS leaderboard covers the full submitter set, not just winners."""
+    outcome = _outcome(2)  # uids 0,1 scored
+    # uid 98 submitted but isn't registered; uid 42 has a bad commit.
+    outcome.miner_reads.append(_read_failed(98, "not_registered"))
+    outcome.miner_reads.append(_read_failed(42, "inner_sig_hotkey_mismatch"))
+    artifact = build_artifact(
+        outcome=outcome,
+        epoch_id="WR-TEST-W22-PUB-E1",
+        total_registered_uids=256,
+        chain_fetch_timestamp="2026-06-01T17:00:00+00:00",
+    )
+    rows = {r["uid"]: r for r in artifact.per_uid_scores}
+    assert set(rows) == {0, 1, 42, 98}  # scored + both DQ rows present
+    assert "status" not in rows[0]  # scored rows carry no status
+    assert rows[98]["status"] == "not_registered"
+    assert rows[98]["raw_score"] == 0.0
+    assert rows[42]["status"] == "inner_sig_hotkey_mismatch"
+
+    # ...and they survive aggregation into the published CMS payload.
+    from hope.reporting.aggregator import aggregate
+    payload = aggregate(artifact)
+    by_uid = {mr.uid: mr for mr in payload.miner_results}
+    assert by_uid[98].status == "disqualified_not_registered"
+    assert by_uid[42].status == "disqualified_invalid_commit"
+    # hotkeys published as SS58 (not raw hex)
+    assert by_uid[98].hotkey.startswith("5") and 47 <= len(by_uid[98].hotkey) <= 48
 
 
 def test_resolve_artifact_dir_explicit_arg_wins(tmp_path, monkeypatch):

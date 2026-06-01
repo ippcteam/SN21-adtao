@@ -22,7 +22,7 @@ client, or the legacy WeightSetter.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -337,6 +337,14 @@ def run_epoch_scoring(
             miner_identity_for_archive=_pubkey_bytes_to_ss58(inp.miner_hotkey),
             inner_sig_pubkey=inner_sig_pk,
         )
+        # When we HAD a registration index to check against and the miner is
+        # absent from it, the root cause of any scoreability failure is "not
+        # registered" — relabel so the leaderboard shows the accurate
+        # disqualified_not_registered (rather than a misleading invalid_commit
+        # from the inner_sig falling back to the chain hotkey). A registered
+        # miner whose commit is genuinely bad keeps its specific reason.
+        if not result.ok and inner_sig_pk is None and registration_index is not None:
+            result = replace(result, excluded_reason="not_registered")
         miner_reads.append(result)
 
         # The 9.C.1 miner_commits_root covers EVERY miner whose K and
