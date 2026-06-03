@@ -146,6 +146,25 @@ class RegistrationIndex:
     def stats(self) -> dict[str, int]:
         return dict(self._stats)
 
+    @property
+    def last_scanned_block(self) -> Optional[int]:
+        """Highest block scanned so far, or None before any scan.
+
+        A rolling builder persists this alongside the index (in a sidecar
+        file) so the next run resumes via `extend_to_head()` instead of
+        re-scanning from scratch.
+        """
+        return self._last_scanned_block
+
+    def set_last_scanned_block(self, block: int) -> None:
+        """Seed the incremental scan cursor from a persisted checkpoint.
+
+        Lets a rolling builder reload `to_json()` entries via `merge_json()`
+        and restore the cursor so `extend_to_head()` continues from the last
+        persisted block rather than starting fresh at the chain head.
+        """
+        self._last_scanned_block = int(block)
+
     def lookup(self, hotkey_pk: bytes) -> Optional[bytes]:
         """Return the registered ed25519 pubkey for this hotkey, or None.
 
