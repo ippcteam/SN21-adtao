@@ -160,13 +160,12 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     if not args.release or args.release.strip().lower() == "auto":
-        # Mirror `hope-validator-api`'s --release=auto behavior: query the
-        # operator data backend for the most recently created release and
-        # use that as the scoring target. Without this branch, passing
-        # "--release auto" sent the literal string "auto" to the backend
-        # as the path component, which 404'd. Operators running the scorer
-        # directly (without the deploy-repo scoring_trigger.sh shell
-        # wrapper that resolves "auto" via curl beforehand) hit this.
+        # Resolve the SCORING target: the latest CLOSED epoch, i.e. the release
+        # *before* the currently-open (newest) one. The scorer must NOT use the
+        # newest release — that's the open submission epoch (what the prediction
+        # server serves), which has no bundles yet and yields an empty run.
+        # (Exactly the failure when an off-cadence rerun was the newest release.)
+        # See HopeDataClient.discover_scoreable_release for the assumption.
         from hope.validator.data_client import HopeDataClient
         import asyncio as _asyncio
         try:
@@ -177,14 +176,14 @@ def main():
                 f"be set; {exc}"
             )
         try:
-            args.release = _asyncio.run(client.discover_latest_release())
+            args.release = _asyncio.run(client.discover_scoreable_release())
         except Exception as exc:
             parser.error(
-                f"--release auto failed to resolve: {type(exc).__name__}: "
-                f"{exc}. Either pass --release <EPOCH_ID> explicitly or "
-                f"check the operator data backend at {client.base_url}."
+                f"--release auto failed to resolve a scoreable (closed) epoch: "
+                f"{type(exc).__name__}: {exc}. Either pass --release <EPOCH_ID> "
+                f"explicitly or check the operator data backend at {client.base_url}."
             )
-        logger.info("--release auto resolved to %s", args.release)
+        logger.info("--release auto resolved to scoreable epoch %s", args.release)
 
     if not args.release:
         parser.error("--release is required")
