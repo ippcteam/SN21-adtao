@@ -55,6 +55,8 @@ class DaemonConfig:
     reg_index_archive_url: str = ""     # SN21_SUBTENSOR_URL for the builder
     reg_index_cold_start_lookback_blocks: int = 0  # >0 bounds a no-checkpoint scan
     role: str = "miner"
+    ed25519_key_file: str = ""          # scorer --ed25519-key-file (9.C inner_sig)
+    archive_tier_2_urls: tuple = ()     # scorer --archive-tier-2 (miner AES_ct fetch)
     interval_seconds: float = 1800.0
     ignore_already_scored: bool = False
     heartbeat_dry_run: bool = False
@@ -85,6 +87,10 @@ def build_commands(cfg: DaemonConfig) -> list:
                 "--wallet-name", cfg.wallet_name, "--wallet-hotkey", cfg.wallet_hotkey]
         if cfg.reg_index:
             argv += ["--reg-index-prebuilt", cfg.reg_index]
+        if cfg.ed25519_key_file:
+            argv += ["--ed25519-key-file", cfg.ed25519_key_file]
+        for url in cfg.archive_tier_2_urls:
+            argv += ["--archive-tier-2", url]
         if cfg.ignore_already_scored:
             argv += ["--ignore-already-scored"]
         cmds.append(("scoring", argv, {}))
@@ -153,6 +159,13 @@ def main(argv: Optional[list] = None) -> int:
                         "scan to this many blocks back from head (0 = builder default). "
                         "Prevents a multi-hour cold-start scan on a slow archive.")
     p.add_argument("--role", default="miner")
+    p.add_argument("--ed25519-key-file", default=os.environ.get("SN21_ED25519_KEY_FILE", ""),
+                   help="Validator ed25519 PEM for the scorer's 9.C inner_sig "
+                        "(passed to hope-validator --ed25519-key-file).")
+    p.add_argument("--archive-tier-2", action="append", default=None,
+                   help="Tier-2 archive base URL(s) for the scorer to fetch miner "
+                        "AES_ct. Repeatable; env ARCHIVE_TIER_2_URLS (space/comma "
+                        "separated) is used if no flag is given.")
     p.add_argument("--interval-seconds", type=float,
                    default=float(os.environ.get("SN21_DAEMON_INTERVAL_SECS", "1800")))
     p.add_argument("--ignore-already-scored", action="store_true")
@@ -174,7 +187,13 @@ def main(argv: Optional[list] = None) -> int:
         wallet_name=args.wallet_name, wallet_hotkey=args.wallet_hotkey,
         reg_index=args.reg_index, reg_index_archive_url=args.reg_index_archive_url,
         reg_index_cold_start_lookback_blocks=args.reg_index_cold_start_lookback_blocks,
-        role=args.role, interval_seconds=args.interval_seconds,
+        role=args.role,
+        ed25519_key_file=args.ed25519_key_file,
+        archive_tier_2_urls=tuple(
+            args.archive_tier_2 if args.archive_tier_2 is not None
+            else [u for u in os.environ.get("ARCHIVE_TIER_2_URLS", "").replace(",", " ").split() if u]
+        ),
+        interval_seconds=args.interval_seconds,
         ignore_already_scored=args.ignore_already_scored,
         heartbeat_dry_run=args.heartbeat_dry_run,
         skip_reg_index=args.skip_reg_index, skip_scoring=args.skip_scoring,

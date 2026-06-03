@@ -52,6 +52,21 @@ def test_scoring_uses_release_auto_and_prebuilt_index():
     assert "--ignore-already-scored" not in argv
 
 
+def test_scoring_passes_ed25519_key_and_archive_tiers():
+    cmds = build_commands(_cfg(ed25519_key_file="/keys/validator.pem",
+                               archive_tier_2_urls=("https://a.test", "https://b.test")))
+    _n, argv, _e = next(c for c in cmds if c[0] == "scoring")
+    assert argv[argv.index("--ed25519-key-file") + 1] == "/keys/validator.pem"
+    # repeatable --archive-tier-2, one per url
+    t2 = [argv[i + 1] for i, a in enumerate(argv) if a == "--archive-tier-2"]
+    assert t2 == ["https://a.test", "https://b.test"]
+
+
+def test_scoring_omits_ed25519_and_tiers_when_unset():
+    _n, argv, _e = next(c for c in build_commands(_cfg()) if c[0] == "scoring")
+    assert "--ed25519-key-file" not in argv and "--archive-tier-2" not in argv
+
+
 def test_ignore_already_scored_flag_passthrough():
     _n, argv, _e = next(c for c in build_commands(_cfg(ignore_already_scored=True))
                         if c[0] == "scoring")
