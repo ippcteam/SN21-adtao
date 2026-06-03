@@ -35,6 +35,15 @@ def test_reg_index_uses_archive_env_override_only():
             assert e == {}
 
 
+def test_reg_index_cold_start_lookback_passthrough():
+    # 0 (default) => no flag; >0 => bounded cold-start scan
+    _n, argv, _e = next(c for c in build_commands(_cfg()) if c[0] == "reg-index")
+    assert "--cold-start-lookback-blocks" not in argv
+    _n, argv, _e = next(c for c in build_commands(_cfg(reg_index_cold_start_lookback_blocks=50))
+                        if c[0] == "reg-index")
+    assert argv[argv.index("--cold-start-lookback-blocks") + 1] == "50"
+
+
 def test_scoring_uses_release_auto_and_prebuilt_index():
     _n, argv, _e = next(c for c in build_commands(_cfg()) if c[0] == "scoring")
     assert argv[0] == "hope-validator"

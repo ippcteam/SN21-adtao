@@ -53,6 +53,7 @@ class DaemonConfig:
     wallet_hotkey: str = "default"
     reg_index: str = ""                 # path to sn21-reg-index.json (persistent)
     reg_index_archive_url: str = ""     # SN21_SUBTENSOR_URL for the builder
+    reg_index_cold_start_lookback_blocks: int = 0  # >0 bounds a no-checkpoint scan
     role: str = "miner"
     interval_seconds: float = 1800.0
     ignore_already_scored: bool = False
@@ -70,13 +71,13 @@ def build_commands(cfg: DaemonConfig) -> list:
         env = {}
         if cfg.reg_index_archive_url:
             env["SN21_SUBTENSOR_URL"] = cfg.reg_index_archive_url
-        cmds.append((
-            "reg-index",
-            [sys.executable, "-m", "scripts.build_reg_index",
-             "--network", cfg.network, "--netuid", str(cfg.netuid),
-             "--role", cfg.role, "--index", cfg.reg_index, "--reconnect"],
-            env,
-        ))
+        argv = [sys.executable, "-m", "scripts.build_reg_index",
+                "--network", cfg.network, "--netuid", str(cfg.netuid),
+                "--role", cfg.role, "--index", cfg.reg_index, "--reconnect"]
+        if cfg.reg_index_cold_start_lookback_blocks > 0:
+            argv += ["--cold-start-lookback-blocks",
+                     str(cfg.reg_index_cold_start_lookback_blocks)]
+        cmds.append(("reg-index", argv, env))
 
     if not cfg.skip_scoring:
         argv = ["hope-validator", "--release", "auto",
@@ -146,6 +147,11 @@ def main(argv: Optional[list] = None) -> int:
                    default=os.environ.get("SN21_REG_INDEX_ARCHIVE_URL", ""),
                    help="Archive RPC for the reg-index builder (SN21_SUBTENSOR_URL "
                         "for that subprocess only). Required for reg-index scanning.")
+    p.add_argument("--reg-index-cold-start-lookback-blocks", type=int,
+                   default=int(os.environ.get("SN21_REG_INDEX_COLD_START_LOOKBACK_BLOCKS", "0")),
+                   help="When the reg-index has no checkpoint yet, bound the first "
+                        "scan to this many blocks back from head (0 = builder default). "
+                        "Prevents a multi-hour cold-start scan on a slow archive.")
     p.add_argument("--role", default="miner")
     p.add_argument("--interval-seconds", type=float,
                    default=float(os.environ.get("SN21_DAEMON_INTERVAL_SECS", "1800")))
@@ -167,6 +173,7 @@ def main(argv: Optional[list] = None) -> int:
         network=args.network, netuid=args.netuid,
         wallet_name=args.wallet_name, wallet_hotkey=args.wallet_hotkey,
         reg_index=args.reg_index, reg_index_archive_url=args.reg_index_archive_url,
+        reg_index_cold_start_lookback_blocks=args.reg_index_cold_start_lookback_blocks,
         role=args.role, interval_seconds=args.interval_seconds,
         ignore_already_scored=args.ignore_already_scored,
         heartbeat_dry_run=args.heartbeat_dry_run,
