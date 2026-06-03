@@ -260,6 +260,33 @@ class HopeDataClient:
         logger.info(f"Fetched outcomes for {release_key}: {with_t7} with t7")
         return outcomes
 
+    async def fetch_package(self, release_key: str, *, include_outcomes: bool = True) -> dict:
+        """Return the raw, signature-verified challenge package dict.
+
+        Used by the outcome-commitment tooling (operator commits the canonical
+        digest of this package; validators verify their fetched package against
+        the on-chain commitment). Honors REQUIRE_HOPE_SIGNATURE like the other
+        fetchers.
+        """
+        suffix = "?include_outcomes=true" if include_outcomes else ""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.get(
+                self._url(f"/releases/{release_key}/package{suffix}"),
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            package = resp.json()
+        if not self.verify_hope_signature(package):
+            require = os.environ.get("REQUIRE_HOPE_SIGNATURE", "true").lower() != "false"
+            if require:
+                raise ValueError(
+                    "the operator signature verification failed for the package — "
+                    "refusing to use unverified data."
+                )
+            logger.warning("the operator signature not verified for package "
+                           "— REQUIRE_HOPE_SIGNATURE=false allows this")
+        return package
+
     async def fetch_epoch_data(self, release_key: str) -> EpochData:
         """Fetch the full challenge package (episodes + outcomes).
 
