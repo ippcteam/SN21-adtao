@@ -34,6 +34,12 @@
 > If you see a reference to `hope-validator --port`, treat it as a
 > documentation drift and use `hope-validator-api --port` for HTTP and
 > plain `hope-validator` for scoring.
+>
+> **Simpler option (recommended):** the **scoring + heartbeat + registration-
+> index** work can now run as a single long-running process,
+> **`hope-validator-daemon`**, instead of two separate crons + a manual
+> reg-index step. The episode API (`hope-validator-api`) still runs separately.
+> See **[validator_daemon.md](validator_daemon.md)**.
 
 ---
 
