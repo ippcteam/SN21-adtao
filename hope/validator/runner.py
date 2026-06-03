@@ -198,6 +198,12 @@ def main():
     )
     runner.init_bittensor()
 
+    # `import bittensor` (inside init_bittensor) calls logging.disable(), which
+    # silences our scoring/abort/weights-commit lines. Restore a visible handler
+    # so the scoring run is auditable in production logs.
+    from hope.validator._log import configure_logging
+    configure_logging(logger, "INFO")
+
     outcome = _run_validator_onchain_cli(args, runner)
     print("\nOn-chain epoch outcome:")
     print(f"  ok: {outcome.ok}")

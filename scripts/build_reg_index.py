@@ -199,18 +199,11 @@ def main(argv: Optional[list] = None) -> int:
     args = p.parse_args(argv)
 
     sub = make_subtensor(args.network)
-    # bittensor's import hijacks stdlib logging (calls logging.disable() and
-    # strips the root handler), silently swallowing our scan progress. Undo the
-    # global disable and attach a DEDICATED handler to our logger with
-    # propagate=False, so the build stays observable regardless of what
-    # bittensor does to the root logger.
-    logging.disable(logging.NOTSET)
-    _lvl = getattr(logging, args.log_level.upper(), logging.INFO)
-    _h = logging.StreamHandler(sys.stdout)
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.handlers[:] = [_h]
-    logger.setLevel(_lvl)
-    logger.propagate = False
+    # bittensor's import hijacks stdlib logging (logging.disable() + strips the
+    # root handler), silently swallowing our scan progress. Restore a visible,
+    # dedicated handler so the build stays observable.
+    from hope.validator._log import configure_logging
+    configure_logging(logger, args.log_level)
     reconnect_target = args.network if args.reconnect else None
     index = RegistrationIndex(
         sub, args.netuid,
