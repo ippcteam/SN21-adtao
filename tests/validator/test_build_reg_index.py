@@ -121,6 +121,27 @@ def test_build_once_cold_start_honors_backfill_start(tmp_path):
     assert calls == [(500, 1000)]
 
 
+def test_build_once_max_blocks_per_pass_caps_incremental(tmp_path):
+    idx = _index(10000)
+    idx.set_last_scanned_block(900)
+    calls = []
+    _stub_scan(idx, calls)
+    build_once(idx, str(tmp_path / "i.json"), "miner", 21,
+               backfill_start=None, cold_start_lookback=14_400, checkpoint_every=500,
+               max_blocks_per_pass=50)
+    assert calls == [(901, 950)]  # 901 .. 901+50-1
+
+
+def test_build_once_max_blocks_per_pass_caps_cold_start(tmp_path):
+    idx = _index(10000)  # no checkpoint; lookback 5000 -> start 5000
+    calls = []
+    _stub_scan(idx, calls)
+    build_once(idx, str(tmp_path / "i.json"), "miner", 21,
+               backfill_start=None, cold_start_lookback=5000, checkpoint_every=500,
+               max_blocks_per_pass=50)
+    assert calls == [(5000, 5049)]
+
+
 def test_build_once_up_to_date_does_not_scan(tmp_path):
     idx = _index(1000)
     idx.set_last_scanned_block(1000)

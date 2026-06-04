@@ -44,6 +44,14 @@ def test_reg_index_cold_start_lookback_passthrough():
     assert argv[argv.index("--cold-start-lookback-blocks") + 1] == "50"
 
 
+def test_reg_index_max_blocks_per_tick_passthrough():
+    _n, argv, _e = next(c for c in build_commands(_cfg()) if c[0] == "reg-index")
+    assert "--max-blocks-per-pass" not in argv
+    _n, argv, _e = next(c for c in build_commands(_cfg(reg_index_max_blocks_per_tick=200))
+                        if c[0] == "reg-index")
+    assert argv[argv.index("--max-blocks-per-pass") + 1] == "200"
+
+
 def test_scoring_uses_release_auto_and_prebuilt_index():
     _n, argv, _e = next(c for c in build_commands(_cfg()) if c[0] == "scoring")
     assert argv[0] == "hope-validator"
