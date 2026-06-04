@@ -4,11 +4,19 @@ One long-running process that replaces the **scoring cron + heartbeat cron +
 the manual registration-index step** with a single supervisor loop. Each tick
 it runs three *self-idempotent* tools as isolated subprocesses:
 
-| tick step | tool | what it does | idempotency |
-|---|---|---|---|
-| reg-index | `build_reg_index --once` | extends the registration index from its persisted checkpoint (archive RPC) | self-checkpointing; scans only new blocks |
-| scoring | `hope-validator --release auto` | resolves the latest **closed** epoch and scores it | on-chain `already_scored` guard → scores each epoch once |
-| weights | `hope-validator-heartbeat` | re-asserts the validator's last on-chain weights | self-throttles on the ≤1500-block gap |
+| order | tick step | tool | what it does | idempotency |
+|---|---|---|---|---|
+| 1 | weights | `hope-validator-heartbeat` | re-asserts the validator's last on-chain weights | self-throttles on the ≤1500-block gap |
+| 2 | reg-index | `build_reg_index --once` | extends the registration index from its persisted checkpoint (archive RPC) | self-checkpointing; scans only new blocks |
+| 3 | scoring | `hope-validator --release auto` | resolves the latest **closed** epoch and scores it | on-chain `already_scored` guard → scores each epoch once |
+
+> **The heartbeat runs FIRST**, before the slow archive-bound tools, and **every
+> tool has a wall-clock timeout** (`--heartbeat/reg-index/scoring-timeout-seconds`).
+> The activity-floor re-assertion is the only safety-critical, fast step, so it
+> must never sit behind a stalled reg-index or scoring run — a dropped archive
+> connection that hangs a slow tool gets killed at its ceiling and the next tick
+> retries (checkpoints/idempotency mean no work is lost). This decouples the
+> weight cycle from the slow tools entirely.
 
 > The **episode API** (`hope-validator-api`, the miner-facing HTTP server) is a
 > separate long-running service and is **not** part of the daemon — keep running
@@ -49,6 +57,9 @@ is also passed to the scorer as `--reg-index-prebuilt` automatically.
 | `--ed25519-key-file` | `SN21_ED25519_KEY_FILE` | the validator's ed25519 key for the scorer's 9.C inner-sig (chain hotkey is sr25519) |
 | `--archive-tier-2` (repeatable) | `ARCHIVE_TIER_2_URLS` (space/comma-sep) | tier-2 ct archive(s) the scorer fetches miner AES_ct from |
 | `--interval-seconds` | `SN21_DAEMON_INTERVAL_SECS` | seconds between ticks (300 recommended so the bounded reg-index keeps up + the heartbeat runs frequently) |
+| `--heartbeat-timeout-seconds` | `SN21_DAEMON_HEARTBEAT_TIMEOUT_SECS` | kill the heartbeat tool past this (default 240; 0 = no limit) |
+| `--reg-index-timeout-seconds` | `SN21_DAEMON_REG_INDEX_TIMEOUT_SECS` | kill a stalled reg-index past this; checkpoint persists, next tick resumes (default 1200; 0 = no limit) |
+| `--scoring-timeout-seconds` | `SN21_DAEMON_SCORING_TIMEOUT_SECS` | kill a stalled scoring run past this; it's idempotent, next tick re-runs (default 1800; 0 = no limit) |
 | `--heartbeat-dry-run` | `SN21_HEARTBEAT_DRY_RUN=1` | heartbeat logs its decision but commits nothing |
 | `--skip-scoring` / `--skip-heartbeat` / `--skip-reg-index` | — | drop a tool from the tick |
 

@@ -59,6 +59,14 @@ class DaemonConfig:
     ed25519_key_file: str = ""          # scorer --ed25519-key-file (9.C inner_sig)
     archive_tier_2_urls: tuple = ()     # scorer --archive-tier-2 (miner AES_ct fetch)
     interval_seconds: float = 1800.0
+    # Per-tool wall-clock ceilings. A tool that exceeds its ceiling is KILLED so
+    # it can never block the rest of the tick — most importantly, so a stalled
+    # reg-index/scoring (the public archive drops connections and --reconnect can
+    # spin) can never starve the heartbeat and let the validator drift toward the
+    # activity cutoff. 0 = no ceiling.
+    heartbeat_timeout_seconds: float = 240.0
+    reg_index_timeout_seconds: float = 1200.0
+    scoring_timeout_seconds: float = 1800.0
     ignore_already_scored: bool = False
     heartbeat_dry_run: bool = False
     skip_reg_index: bool = False
@@ -67,8 +75,25 @@ class DaemonConfig:
 
 
 def build_commands(cfg: DaemonConfig) -> list:
-    """Assemble the ordered (name, argv, env_overrides) tuples for one tick."""
+    """Assemble the ordered (name, argv, env_overrides, timeout) tuples for one tick.
+
+    Order is HEARTBEAT FIRST, then reg-index, then scoring. The heartbeat is the
+    only safety-critical, fast tool (one chain read + at most one set_weights), so
+    it runs before the slow archive-bound tools — that way a stalled reg-index or
+    scoring run can never delay the activity-floor re-assertion. Combined with the
+    per-tool timeouts, the weight cycle is structurally decoupled from the slow
+    tools. The heartbeat self-throttles below its gap threshold, so running it
+    first is a no-op on the vast majority of ticks.
+    """
     cmds: list = []
+
+    if not cfg.skip_heartbeat:
+        argv = ["hope-validator-heartbeat",
+                "--network", cfg.network, "--netuid", str(cfg.netuid),
+                "--wallet-name", cfg.wallet_name, "--wallet-hotkey", cfg.wallet_hotkey]
+        if cfg.heartbeat_dry_run:
+            argv += ["--dry-run"]
+        cmds.append(("heartbeat", argv, {}, cfg.heartbeat_timeout_seconds))
 
     if not cfg.skip_reg_index and cfg.reg_index:
         env = {}
@@ -82,7 +107,7 @@ def build_commands(cfg: DaemonConfig) -> list:
                      str(cfg.reg_index_cold_start_lookback_blocks)]
         if cfg.reg_index_max_blocks_per_tick > 0:
             argv += ["--max-blocks-per-pass", str(cfg.reg_index_max_blocks_per_tick)]
-        cmds.append(("reg-index", argv, env))
+        cmds.append(("reg-index", argv, env, cfg.reg_index_timeout_seconds))
 
     if not cfg.skip_scoring:
         argv = ["hope-validator", "--release", "auto",
@@ -96,42 +121,49 @@ def build_commands(cfg: DaemonConfig) -> list:
             argv += ["--archive-tier-2", url]
         if cfg.ignore_already_scored:
             argv += ["--ignore-already-scored"]
-        cmds.append(("scoring", argv, {}))
-
-    if not cfg.skip_heartbeat:
-        argv = ["hope-validator-heartbeat",
-                "--network", cfg.network, "--netuid", str(cfg.netuid),
-                "--wallet-name", cfg.wallet_name, "--wallet-hotkey", cfg.wallet_hotkey]
-        if cfg.heartbeat_dry_run:
-            argv += ["--dry-run"]
-        cmds.append(("heartbeat", argv, {}))
+        cmds.append(("scoring", argv, {}, cfg.scoring_timeout_seconds))
 
     return cmds
 
 
-def _default_runner(name: str, argv: list, env_overrides: dict) -> int:
-    """Run one tool as a subprocess; return its exit code (-1 on launch error)."""
+# Exit code recorded when a tool is killed for exceeding its wall-clock ceiling
+# (mirrors the shell convention 128+SIGKILL).
+TIMEOUT_RC = -137
+
+
+def _default_runner(name: str, argv: list, env_overrides: dict,
+                    timeout: Optional[float] = None) -> int:
+    """Run one tool as a subprocess; return its exit code.
+
+    On timeout the child is killed (subprocess.run terminates it) and TIMEOUT_RC
+    is returned so the tick continues with the next tool. -1 on launch error.
+    """
     env = {**os.environ, **(env_overrides or {})}
+    to = timeout if (timeout and timeout > 0) else None
     try:
-        proc = subprocess.run(argv, env=env)
+        proc = subprocess.run(argv, env=env, timeout=to)
         return int(proc.returncode)
+    except subprocess.TimeoutExpired:
+        logger.error("%s: exceeded %.0fs ceiling; killed (will retry next tick)",
+                     name, to)
+        return TIMEOUT_RC
     except Exception as exc:  # FileNotFoundError, etc.
         logger.error("%s: failed to launch (%s)", name, exc)
         return -1
 
 
 def run_tick(cfg: DaemonConfig,
-             runner: Callable[[str, list, dict], int] = _default_runner) -> dict:
+             runner: Callable[..., int] = _default_runner) -> dict:
     """Run one supervisor pass: each tool in order, isolated from the others.
 
-    A tool raising or exiting non-zero is logged and recorded but never blocks
-    the rest of the tick. Returns {tool_name: exit_code}.
+    A tool raising, exiting non-zero, or exceeding its timeout is logged and
+    recorded but never blocks the rest of the tick. Returns {tool_name: exit_code}.
     """
     results: dict = {}
-    for name, argv, env in build_commands(cfg):
+    for name, argv, env, timeout in build_commands(cfg):
         logger.info("tick: running %s", name)
         try:
-            rc = runner(name, argv, env)
+            rc = runner(name, argv, env, timeout)
         except Exception as exc:
             logger.exception("%s raised: %s", name, exc)
             rc = -1
@@ -176,6 +208,17 @@ def main(argv: Optional[list] = None) -> int:
                         "separated) is used if no flag is given.")
     p.add_argument("--interval-seconds", type=float,
                    default=float(os.environ.get("SN21_DAEMON_INTERVAL_SECS", "1800")))
+    p.add_argument("--heartbeat-timeout-seconds", type=float,
+                   default=float(os.environ.get("SN21_DAEMON_HEARTBEAT_TIMEOUT_SECS", "240")),
+                   help="Kill the heartbeat tool if it runs longer than this (0 = no limit).")
+    p.add_argument("--reg-index-timeout-seconds", type=float,
+                   default=float(os.environ.get("SN21_DAEMON_REG_INDEX_TIMEOUT_SECS", "1200")),
+                   help="Kill the reg-index tool if it runs longer than this; the "
+                        "checkpoint persists so the next tick resumes (0 = no limit).")
+    p.add_argument("--scoring-timeout-seconds", type=float,
+                   default=float(os.environ.get("SN21_DAEMON_SCORING_TIMEOUT_SECS", "1800")),
+                   help="Kill the scoring tool if it runs longer than this; it is "
+                        "idempotent so the next tick re-runs (0 = no limit).")
     p.add_argument("--ignore-already-scored", action="store_true")
     p.add_argument("--heartbeat-dry-run", action="store_true",
                    default=os.environ.get("SN21_HEARTBEAT_DRY_RUN", "0") == "1")
@@ -203,6 +246,9 @@ def main(argv: Optional[list] = None) -> int:
             else [u for u in os.environ.get("ARCHIVE_TIER_2_URLS", "").replace(",", " ").split() if u]
         ),
         interval_seconds=args.interval_seconds,
+        heartbeat_timeout_seconds=args.heartbeat_timeout_seconds,
+        reg_index_timeout_seconds=args.reg_index_timeout_seconds,
+        scoring_timeout_seconds=args.scoring_timeout_seconds,
         ignore_already_scored=args.ignore_already_scored,
         heartbeat_dry_run=args.heartbeat_dry_run,
         skip_reg_index=args.skip_reg_index, skip_scoring=args.skip_scoring,
