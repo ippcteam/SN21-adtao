@@ -18,9 +18,16 @@ it runs three *self-idempotent* tools as isolated subprocesses:
 > retries (checkpoints/idempotency mean no work is lost). This decouples the
 > weight cycle from the slow tools entirely.
 
-> The **episode API** (`hope-validator-api`, the miner-facing HTTP server) is a
-> separate long-running service and is **not** part of the daemon — keep running
-> it. The daemon consolidates only the scoring + heartbeat + reg-index work.
+> **Validators only run the daemon.** It is the single long-running process — it
+> consolidates the reg-index build + scoring + heartbeat. You do **not** run the
+> standalone `build_reg_index.py` for normal operation (the daemon runs it
+> in-process each tick); run it standalone only to independently *audit* your
+> index or for a one-time cold-start backfill. `verify_epoch.py` is an on-demand
+> check, not a process to keep running.
+>
+> The **episode API** (`hope-validator-api`, the miner-facing HTTP server that
+> hands episodes to miners) is **operator-side only** — the subnet operator runs
+> it; **validators do not need it** and it is not part of the daemon.
 
 ## Why a supervisor (not a monolith)
 
