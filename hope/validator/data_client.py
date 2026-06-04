@@ -121,6 +121,51 @@ class HopeDataClient:
             )
         return str(key)
 
+    async def discover_scoreable_release(self) -> str:
+        """Return the release_key of the latest CLOSED epoch to SCORE.
+
+        The most-recently-created release is the OPEN submission epoch — the
+        one the prediction server is currently serving and accepting bundles
+        for. Scoring must target the epoch *before* it: the most-recently
+        closed one, which has on-chain submissions to grade. This is the
+        scorer's counterpart to `discover_latest_release()` (which returns the
+        newest/open epoch and is correct for the prediction server, but wrong
+        for scoring).
+
+        Why not the newest: resolving the scorer to the newest release lands on
+        the open epoch, whose submission window hasn't closed and which has no
+        bundles yet — an empty scoring run. (Exactly the failure when an
+        off-cadence rerun was the newest release.)
+
+        Assumption: the newest release == the open submission epoch. Holds for
+        the weekly cadence and for off-cadence reruns. If two epochs are
+        briefly open at once (a rerun overlapping a fresh weekly build), pin
+        `--release <EPOCH_ID>` explicitly. P3's in-process epoch state will make
+        this deadline-exact (no created-at heuristic).
+
+        Raises RuntimeError if fewer than two releases exist or the chosen
+        record lacks a `release_key`.
+        """
+        releases = await self.list_releases()
+        if not releases:
+            raise RuntimeError(
+                "no releases returned from the operator data backend; cannot "
+                "resolve a scoreable release. Verify HOPE_API_URL / HOPE_API_KEY."
+            )
+        releases.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+        if len(releases) < 2:
+            raise RuntimeError(
+                "only one release exists; cannot distinguish the open epoch "
+                "from a closed one. Pass --release <EPOCH_ID> explicitly."
+            )
+        key = releases[1].get("release_key")
+        if not key:
+            raise RuntimeError(
+                "the release preceding the newest has no `release_key` field; "
+                "backend response shape may have changed."
+            )
+        return str(key)
+
     async def fetch_release_metadata(self, release_key: str) -> dict:
         """Fetch metadata for a specific release."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -214,6 +259,33 @@ class HopeDataClient:
         with_t7 = sum(1 for o in outcomes if o.t7)
         logger.info(f"Fetched outcomes for {release_key}: {with_t7} with t7")
         return outcomes
+
+    async def fetch_package(self, release_key: str, *, include_outcomes: bool = True) -> dict:
+        """Return the raw, signature-verified challenge package dict.
+
+        Used by the outcome-commitment tooling (operator commits the canonical
+        digest of this package; validators verify their fetched package against
+        the on-chain commitment). Honors REQUIRE_HOPE_SIGNATURE like the other
+        fetchers.
+        """
+        suffix = "?include_outcomes=true" if include_outcomes else ""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.get(
+                self._url(f"/releases/{release_key}/package{suffix}"),
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            package = resp.json()
+        if not self.verify_hope_signature(package):
+            require = os.environ.get("REQUIRE_HOPE_SIGNATURE", "true").lower() != "false"
+            if require:
+                raise ValueError(
+                    "the operator signature verification failed for the package — "
+                    "refusing to use unverified data."
+                )
+            logger.warning("the operator signature not verified for package "
+                           "— REQUIRE_HOPE_SIGNATURE=false allows this")
+        return package
 
     async def fetch_epoch_data(self, release_key: str) -> EpochData:
         """Fetch the full challenge package (episodes + outcomes).

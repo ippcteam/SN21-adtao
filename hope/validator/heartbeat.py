@@ -287,23 +287,13 @@ def main() -> int:
         return 2
 
     import bittensor as bt
-    # Bittensor's bundled btlogging configures loguru at WARNING and silently
-    # raises the Python root logger level past INFO during `import bittensor`,
-    # which suppresses our action=submitted / action=skipped_* lines below.
-    # Re-force INFO with `force=True` AFTER the import so the heartbeat's
-    # decision (and any operator-visible diagnostics) actually appear in
-    # production cron logs.
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        force=True,
-    )
-    logging.getLogger().setLevel(logging.INFO)
-    # Also stop the bittensor / btlogging / loguru loggers from propagating
-    # their own (often WARNING-level) handlers up to the root logger; mirrors
-    # the pattern in hope/miner/runner.py.
-    for _name in ("bittensor", "btlogging", "loguru"):
-        logging.getLogger(_name).propagate = False
+    # Bittensor's import installs loguru AND calls logging.disable(), which
+    # globally suppresses stdlib logging regardless of basicConfig/setLevel —
+    # so the heartbeat's action=submitted / action=skipped_* decision lines
+    # went silent in production. Restore a dedicated, visible handler AFTER the
+    # import (clears the global disable + attaches our own handler).
+    from hope.validator._log import configure_logging
+    configure_logging(logger, "INFO")
 
     from hope.validator._subtensor import make_subtensor
     wallet = bt.Wallet(name=args.wallet_name, hotkey=args.wallet_hotkey)
