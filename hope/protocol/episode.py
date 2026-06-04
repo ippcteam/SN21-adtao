@@ -114,6 +114,10 @@ class BundleSummary(BaseModel):
     net_efficiency_delta: float = 0.0
     net_capacity_delta: float = 0.0
     source_mix: dict[str, int] = {}
+    # Canonical directional transition (e.g. BUDGET:up_large,
+    # BID_SWITCH:maximize_conversions->target_spend). Served by the data API
+    # per episode; the unit per-cell consensus groups on.
+    transition_key: Optional[str] = None
 
 
 class ActionBundle(BaseModel):
