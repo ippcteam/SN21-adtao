@@ -54,6 +54,7 @@ class DaemonConfig:
     reg_index: str = ""                 # path to sn21-reg-index.json (persistent)
     reg_index_archive_url: str = ""     # SN21_SUBTENSOR_URL for the builder
     reg_index_cold_start_lookback_blocks: int = 0  # >0 bounds a no-checkpoint scan
+    reg_index_max_blocks_per_tick: int = 0  # >0 caps each tick's scan (heartbeat safety)
     role: str = "miner"
     ed25519_key_file: str = ""          # scorer --ed25519-key-file (9.C inner_sig)
     archive_tier_2_urls: tuple = ()     # scorer --archive-tier-2 (miner AES_ct fetch)
@@ -79,6 +80,8 @@ def build_commands(cfg: DaemonConfig) -> list:
         if cfg.reg_index_cold_start_lookback_blocks > 0:
             argv += ["--cold-start-lookback-blocks",
                      str(cfg.reg_index_cold_start_lookback_blocks)]
+        if cfg.reg_index_max_blocks_per_tick > 0:
+            argv += ["--max-blocks-per-pass", str(cfg.reg_index_max_blocks_per_tick)]
         cmds.append(("reg-index", argv, env))
 
     if not cfg.skip_scoring:
@@ -159,6 +162,11 @@ def main(argv: Optional[list] = None) -> int:
                         "scan to this many blocks back from head (0 = builder default). "
                         "Prevents a multi-hour cold-start scan on a slow archive.")
     p.add_argument("--role", default="miner")
+    p.add_argument("--reg-index-max-blocks-per-tick", type=int,
+                   default=int(os.environ.get("SN21_REG_INDEX_MAX_BLOCKS_PER_TICK", "0")),
+                   help="Cap each tick's reg-index scan to N blocks so it never "
+                        "blocks the heartbeat on a slow archive (0 = unbounded). "
+                        "On the public archive (~8s/block) ~200 keeps the tick short.")
     p.add_argument("--ed25519-key-file", default=os.environ.get("SN21_ED25519_KEY_FILE", ""),
                    help="Validator ed25519 PEM for the scorer's 9.C inner_sig "
                         "(passed to hope-validator --ed25519-key-file).")
@@ -187,6 +195,7 @@ def main(argv: Optional[list] = None) -> int:
         wallet_name=args.wallet_name, wallet_hotkey=args.wallet_hotkey,
         reg_index=args.reg_index, reg_index_archive_url=args.reg_index_archive_url,
         reg_index_cold_start_lookback_blocks=args.reg_index_cold_start_lookback_blocks,
+        reg_index_max_blocks_per_tick=args.reg_index_max_blocks_per_tick,
         role=args.role,
         ed25519_key_file=args.ed25519_key_file,
         archive_tier_2_urls=tuple(

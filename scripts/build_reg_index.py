@@ -126,11 +126,14 @@ def _load(index_path: str, index: RegistrationIndex) -> Optional[int]:
 
 def build_once(index: RegistrationIndex, index_path: str, role: str, netuid: int,
                *, backfill_start: Optional[int], cold_start_lookback: int,
-               checkpoint_every: int, end_block: Optional[int] = None) -> int:
+               checkpoint_every: int, end_block: Optional[int] = None,
+               max_blocks_per_pass: int = 0) -> int:
     """One pass: scan from the checkpoint (or cold-start window) to the target, persist.
 
-    The target is chain head, unless `end_block` caps it (for chunked
-    cold-start backfills or bounded runs). Returns new registrations verified.
+    The target is chain head, unless `end_block` caps it or `max_blocks_per_pass`
+    bounds the pass size (so a slow archive can't make one scan run for hours —
+    in the daemon that would block the heartbeat; the rest catches up next pass).
+    Returns new registrations verified.
     """
     try:
         head = int(index._subtensor.get_current_block())  # read-only
@@ -142,13 +145,17 @@ def build_once(index: RegistrationIndex, index_path: str, role: str, netuid: int
     last = index.last_scanned_block
     if last is None:
         start = backfill_start if backfill_start is not None else max(0, target - cold_start_lookback)
-        logger.info("cold start: scanning [%d, %d] (%d blocks)", start, target, target - start + 1)
+        mode = "cold start"
     elif last >= target:
         logger.info("up to date (last_scanned_block=%d >= target=%d)", last, target)
         return 0
     else:
         start = last + 1
-        logger.info("incremental: scanning [%d, %d] (%d blocks)", start, target, target - start + 1)
+        mode = "incremental"
+
+    if max_blocks_per_pass > 0:
+        target = min(target, start + max_blocks_per_pass - 1)
+    logger.info("%s: scanning [%d, %d] (%d blocks)", mode, start, target, target - start + 1)
 
     def _checkpoint(block_num, entries):
         _save(index_path, role, netuid, block_num, entries)
@@ -188,6 +195,10 @@ def main(argv: Optional[list] = None) -> int:
                         f"(default {DEFAULT_COLD_START_LOOKBACK_BLOCKS} ~2 days).")
     p.add_argument("--checkpoint-every", type=int, default=500,
                    help="Persist index+sidecar every N scanned blocks (crash safety).")
+    p.add_argument("--max-blocks-per-pass", type=int, default=0,
+                   help="Cap each pass to N blocks (0 = unbounded). Keeps a single "
+                        "scan short on a slow archive so it never blocks a caller's "
+                        "other work (e.g. the daemon's heartbeat); catches up next pass.")
     p.add_argument("--reconnect", action="store_true",
                    help="Rebuild the RPC connection after repeated read failures "
                         "(recommended against the flaky public archive).")
@@ -219,6 +230,7 @@ def main(argv: Optional[list] = None) -> int:
             cold_start_lookback=args.cold_start_lookback_blocks,
             checkpoint_every=args.checkpoint_every,
             end_block=args.end_block,
+            max_blocks_per_pass=args.max_blocks_per_pass,
         )
 
     if not args.loop:
