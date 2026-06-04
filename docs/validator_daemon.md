@@ -43,11 +43,22 @@ is also passed to the scorer as `--reg-index-prebuilt` automatically.
 | flag | env | meaning |
 |---|---|---|
 | `--reg-index` | `SN21_REG_INDEX_PATH` | reg-index JSON path (persistent disk) |
-| `--reg-index-archive-url` | `SN21_REG_INDEX_ARCHIVE_URL` | archive RPC for the reg-index scan (needs historical state) |
+| `--reg-index-archive-url` | `SN21_REG_INDEX_ARCHIVE_URL` | **archive** RPC for the reg-index scan — see the note below; **required** |
 | `--reg-index-cold-start-lookback-blocks` | `SN21_REG_INDEX_COLD_START_LOOKBACK_BLOCKS` | bounds the first scan when there's no checkpoint (avoid a multi-hour cold start) |
-| `--interval-seconds` | `SN21_DAEMON_INTERVAL_SECS` | seconds between ticks (default 1800) |
+| `--reg-index-max-blocks-per-tick` | `SN21_REG_INDEX_MAX_BLOCKS_PER_TICK` | cap each tick's scan to N blocks so a slow archive can never block the heartbeat (catches up over ticks). On the public archive `200` keeps a tick short |
+| `--ed25519-key-file` | `SN21_ED25519_KEY_FILE` | the validator's ed25519 key for the scorer's 9.C inner-sig (chain hotkey is sr25519) |
+| `--archive-tier-2` (repeatable) | `ARCHIVE_TIER_2_URLS` (space/comma-sep) | tier-2 ct archive(s) the scorer fetches miner AES_ct from |
+| `--interval-seconds` | `SN21_DAEMON_INTERVAL_SECS` | seconds between ticks (300 recommended so the bounded reg-index keeps up + the heartbeat runs frequently) |
 | `--heartbeat-dry-run` | `SN21_HEARTBEAT_DRY_RUN=1` | heartbeat logs its decision but commits nothing |
 | `--skip-scoring` / `--skip-heartbeat` / `--skip-reg-index` | — | drop a tool from the tick |
+
+> **`SN21_REG_INDEX_ARCHIVE_URL` must point at a true archive node** (full history,
+> e.g. `wss://archive.chain.opentensor.ai:443` or your own archival node). A
+> pruned/standard RPC keeps only ~256 blocks of state, so historical
+> `CommitmentOf` reads fail with `State discarded … block is too old … use an
+> archive node` and the reg-index reads **zero** blocks. The per-tick bound +
+> `300s` interval keep the heartbeat safe even on the slow public archive; for
+> steady-state speed, point this at your own archival node.
 | `--once` | — | run one tick and exit (manual run / smoke test) |
 
 `HOPE_API_KEY` / `HOPE_API_URL` are required (the scorer resolves `--release
