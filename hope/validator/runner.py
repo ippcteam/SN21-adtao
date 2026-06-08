@@ -154,6 +154,14 @@ def main():
              "recovery from runs that landed a 9.C.1 stub without proceeding to "
              "9.C.3. Settable via SN21_IGNORE_ALREADY_SCORED=1 env.",
     )
+    parser.add_argument(
+        "--report-only", action="store_true",
+        default=os.environ.get("SN21_REPORT_ONLY", "").lower() in ("1", "true", "yes"),
+        help="Score + write the leaderboard artifact but make NO chain commits "
+             "(no 9.C, no set_weights). For rebuilding/correcting a report when "
+             "the on-chain 9.C already exists — immune to the Commitments space "
+             "budget and the weights rate limit. Settable via SN21_REPORT_ONLY=1.",
+    )
 
     args = parser.parse_args()
 
@@ -608,6 +616,7 @@ def _run_validator_onchain_cli(args, runner):
         blocks_until_weights_reveal=args.blocks_until_weights_reveal,
         registration_index=registration_index,
         ignore_already_scored=args.ignore_already_scored,
+        report_only=args.report_only,
     )
 
     # Reporter hook — writes the operator-private epoch artifact when

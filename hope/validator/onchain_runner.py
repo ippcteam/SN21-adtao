@@ -123,9 +123,18 @@ class EpochScoringOutcome:
     # miners are visible) through the validator's 9.C.3 weights commit.
     block_range_start: Optional[int] = None
     block_range_end: Optional[int] = None
+    # report-only run: scoring was computed but NO chain commits were made (the
+    # on-chain 9.C/weights already exist from the real run). Lets us rebuild the
+    # leaderboard artifact for a report correction without touching chain — so
+    # no Commitments space-budget spend, no weights rate-limit, retryable anytime.
+    report_only: bool = False
 
     @property
     def ok(self) -> bool:
+        if self.report_only:
+            # No commits in report-only mode; "ok" = scoring produced a result,
+            # which is all the artifact/reporter consumes.
+            return self.aborted_reason is None and bool(self.score_map)
         return (
             self.aborted_reason is None
             and self.pre_scoring_commit is not None and self.pre_scoring_commit.success
@@ -197,6 +206,7 @@ def run_epoch_scoring(
     blocks_until_post_scoring_reveal: int,
     blocks_until_weights_reveal: int,
     registration_index: Optional["RegistrationIndex"] = None,
+    report_only: bool = False,
     ignore_already_scored: bool = False,
 ) -> EpochScoringOutcome:
     """Run the full Layer 9.C orchestration for one validator-epoch.
@@ -245,7 +255,7 @@ def run_epoch_scoring(
         )
         validator_ss58 = validator_wallet.hotkey.ss58_address
         if validator_already_scored_epoch(subtensor, netuid, validator_ss58, epoch_id):
-            if ignore_already_scored:
+            if ignore_already_scored or report_only:
                 logger.warning(
                     "ignore_already_scored=True: bypassing already_scored guard "
                     "for validator %s... epoch_id=%s. The pallet-byte-budget "
@@ -267,7 +277,7 @@ def run_epoch_scoring(
             subtensor, netuid, validator_ss58,
             needed_bytes=MIN_VALIDATOR_BUDGET_BYTES,
         )
-        if not sufficient:
+        if not sufficient and not report_only:
             return EpochScoringOutcome(
                 miner_reads=[],
                 aborted_reason=(
@@ -378,35 +388,53 @@ def run_epoch_scoring(
                 ))
 
     # ---- 2. build + commit 9.C.1 pre-scoring state ----
-    pre_blob = build_pre_scoring_state(
-        validator_hotkey=validator_hotkey,
-        validator_signing_key=validator_signing_key,
-        epoch_id=epoch_id,
-        epoch_idx=epoch_idx,
-        outcomes_release_round=outcomes_release_round,
-        outcomes_fetched_at_round=outcomes_fetched_at_round,
-        miner_commits=miner_commits,
-        excluded_miners=excluded,
-    )
-    pre_commit = submit_pre_scoring_state_layer_9c1(
-        subtensor=subtensor,
-        validator_wallet=validator_wallet,
-        netuid=netuid,
-        pre_scoring_state_cbor=pre_blob,
-        blocks_until_reveal=blocks_until_pre_scoring_reveal,
-    )
-    if not pre_commit.success:
-        return EpochScoringOutcome(
-            pre_scoring_commit=pre_commit,
-            miner_reads=miner_reads,
-            aborted_reason=f"pre_scoring_commit_failed: {pre_commit.message}",
+    # (skipped in report-only mode — no chain write, so the score below still runs)
+    pre_commit: Optional[CommitResult] = None
+    if not report_only:
+        pre_blob = build_pre_scoring_state(
+            validator_hotkey=validator_hotkey,
+            validator_signing_key=validator_signing_key,
+            epoch_id=epoch_id,
+            epoch_idx=epoch_idx,
+            outcomes_release_round=outcomes_release_round,
+            outcomes_fetched_at_round=outcomes_fetched_at_round,
+            miner_commits=miner_commits,
+            excluded_miners=excluded,
         )
+        pre_commit = submit_pre_scoring_state_layer_9c1(
+            subtensor=subtensor,
+            validator_wallet=validator_wallet,
+            netuid=netuid,
+            pre_scoring_state_cbor=pre_blob,
+            blocks_until_reveal=blocks_until_pre_scoring_reveal,
+        )
+        if not pre_commit.success:
+            return EpochScoringOutcome(
+                pre_scoring_commit=pre_commit,
+                miner_reads=miner_reads,
+                aborted_reason=f"pre_scoring_commit_failed: {pre_commit.message}",
+            )
 
     # ---- 3. score accepted miners ----
     score_map = scorer(epoch_id, score_inputs)
     scored_records = [
         ScoredMinerRecord(miner_hotkey=hk, score_micro=v) for hk, v in score_map.items()
     ]
+
+    # report-only short-circuit: scoring is done; skip ALL chain commits (9.C.1/
+    # 9.C.3 weights/9.C.2/9.C.6). Used to (re)build the leaderboard artifact for a
+    # report correction when the on-chain 9.C already exists — no Commitments
+    # space-budget spend, no weights rate-limit, no consensus impact. The artifact
+    # is assembled from score_map + miner_reads.
+    if report_only:
+        start, end = compute_block_range(miner_inputs, None, None)
+        return EpochScoringOutcome(
+            miner_reads=miner_reads,
+            score_map=score_map,
+            report_only=True,
+            block_range_start=start,
+            block_range_end=end,
+        )
 
     # ---- 4. submit weights (Layer 9.C.3) ----
     uid_by_hotkey = {inp.miner_hotkey: inp.miner_uid for inp in miner_inputs}
