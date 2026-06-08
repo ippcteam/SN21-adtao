@@ -369,3 +369,43 @@ def test_is_frozen_409_non_409_statuses():
     assert por._is_frozen_409(httpx.Response(200, json={"id": "x"})) is False
     assert por._is_frozen_409(httpx.Response(400, json={"error": "frozen"})) is False  # wrong status
     assert por._is_frozen_409(httpx.Response(500, text="published")) is False
+
+
+# ----------------------------------------------------------------------------
+# --artifact-dir (autonomous/daemon use) + --skip-if-posted idempotency
+# ----------------------------------------------------------------------------
+
+def test_artifact_dir_empty_is_noop(tmp_path):
+    # No artifact in the dir → clean no-op (exit 0), so the daemon's per-tick
+    # report step does nothing when scoring produced nothing.
+    empty = tmp_path / "arts"
+    empty.mkdir()
+    assert por.main(["--artifact-dir", str(empty)]) == por.EXIT_OK
+
+
+def test_artifact_dir_selects_newest(tmp_path, capsys, monkeypatch):
+    # Newest epoch_*.json in the dir is the one posted (dry-run → no network).
+    _write_synthetic_artifact(tmp_path)  # writes epoch_WR-2026-W18-PUB-E1.json
+    monkeypatch.delenv("SN21_LEADERBOARD_API_KEY", raising=False)
+    rc = por.main(["--artifact-dir", str(tmp_path), "--dry-run"])
+    assert rc == por.EXIT_OK
+    out = json.loads(capsys.readouterr().out)
+    assert out["epoch_id"] == "WR-2026-W18-PUB-E1"
+
+
+def test_posted_ledger_roundtrip(tmp_path):
+    assert por._already_posted(tmp_path, "WR-2026-W18-PUB-E1") is False
+    por._record_posted(tmp_path, "WR-2026-W18-PUB-E1")
+    assert por._already_posted(tmp_path, "WR-2026-W18-PUB-E1") is True
+    assert por._already_posted(tmp_path, "WR-2026-W19-PUB-E1") is False  # other epoch
+
+
+def test_skip_if_posted_skips_already_posted(tmp_path, capsys, monkeypatch):
+    # Pre-record the epoch as posted → --skip-if-posted returns 0 and prints no
+    # payload (skipped before the dry-run dump). Prevents re-posting frozen epochs.
+    _write_synthetic_artifact(tmp_path)
+    por._record_posted(tmp_path, "WR-2026-W18-PUB-E1")
+    monkeypatch.delenv("SN21_LEADERBOARD_API_KEY", raising=False)
+    rc = por.main(["--artifact-dir", str(tmp_path), "--skip-if-posted", "--dry-run"])
+    assert rc == por.EXIT_OK
+    assert capsys.readouterr().out.strip() == ""  # nothing posted/printed → skipped

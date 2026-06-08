@@ -8,7 +8,8 @@ it runs three *self-idempotent* tools as isolated subprocesses:
 |---|---|---|---|---|
 | 1 | reg-index | `build_reg_index --once` | extends the registration index from its persisted checkpoint (archive RPC) | self-checkpointing; scans only new blocks |
 | 2 | scoring | `hope-validator --release auto` | resolves the latest **closed** epoch and scores it (commits fresh weights) | on-chain `already_scored` guard → scores each epoch once |
-| 3 | weights | `hope-validator-heartbeat` | re-asserts the last on-chain weights when the gap grows | self-throttles on the ≤1500-block gap |
+| 3 | report | `post_epoch_report --artifact-dir … --skip-if-posted` | POSTs the newest leaderboard artifact to the CMS (only when `SN21_LEADERBOARD_REPORTER=1`) | `.posted_epochs.json` ledger → never re-posts a frozen epoch |
+| 4 | weights | `hope-validator-heartbeat` | re-asserts the last on-chain weights when the gap grows | self-throttles on the ≤1500-block gap |
 
 > **The heartbeat runs LAST, and every tool has a wall-clock timeout**
 > (`--heartbeat/reg-index/scoring-timeout-seconds`). Scoring is the only tool that

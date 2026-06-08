@@ -115,6 +115,25 @@ def test_no_reg_index_path_means_no_reg_index_command():
     assert _names(build_commands(_cfg(reg_index=""))) == ["scoring", "heartbeat"]
 
 
+def test_report_step_absent_without_artifact_dir():
+    # No leaderboard_artifact_dir → no CMS post step (default).
+    assert "report" not in _names(build_commands(_cfg()))
+
+
+def test_report_step_runs_after_scoring_before_heartbeat():
+    cmds = build_commands(_cfg(leaderboard_artifact_dir="/data/sn21-epoch-artifacts"))
+    assert _names(cmds) == ["reg-index", "scoring", "report", "heartbeat"]
+    argv, _e, _t = _by_name(cmds, "report")
+    assert "scripts.post_epoch_report" in argv
+    assert argv[argv.index("--artifact-dir") + 1] == "/data/sn21-epoch-artifacts"
+    assert "--skip-if-posted" in argv  # idempotent: never re-posts a frozen epoch
+
+
+def test_skip_report_drops_the_report_step():
+    cmds = build_commands(_cfg(leaderboard_artifact_dir="/data/x", skip_report=True))
+    assert "report" not in _names(cmds)
+
+
 def test_run_tick_calls_every_tool_in_order_and_records_codes():
     calls = []
     def fake(name, argv, env, timeout):

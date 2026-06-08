@@ -216,6 +216,39 @@ def _is_frozen_409(response: httpx.Response) -> bool:
     return "frozen" in low or "published" in low
 
 
+_POSTED_LEDGER = ".posted_epochs.json"
+
+
+def _ledger_path(ledger_dir: Path) -> Path:
+    return ledger_dir / _POSTED_LEDGER
+
+
+def _already_posted(ledger_dir: Path, epoch_id: str) -> bool:
+    """True if epoch_id is recorded in the dir's posted-ledger."""
+    p = _ledger_path(ledger_dir)
+    if not p.exists():
+        return False
+    try:
+        return epoch_id in set(json.loads(p.read_text()))
+    except (json.JSONDecodeError, ValueError, OSError):
+        return False  # unreadable ledger ⇒ treat as not-posted (safe: at worst re-posts)
+
+
+def _record_posted(ledger_dir: Path, epoch_id: str) -> None:
+    """Append epoch_id to the dir's posted-ledger (best-effort, idempotent)."""
+    p = _ledger_path(ledger_dir)
+    try:
+        existing = json.loads(p.read_text()) if p.exists() else []
+    except (json.JSONDecodeError, ValueError, OSError):
+        existing = []
+    if epoch_id not in existing:
+        existing.append(epoch_id)
+    try:
+        p.write_text(json.dumps(existing))
+    except OSError as e:
+        logger.warning("could not update posted-ledger %s: %s", p, e)
+
+
 def _load_artifact(artifact_path: Path) -> EpochArtifact:
     """Load an artifact by direct path (not by epoch_id resolution)."""
     if not artifact_path.exists():
@@ -229,8 +262,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="POST one epoch's leaderboard report to the CMS.",
     )
-    parser.add_argument("--artifact", required=True, type=Path,
+    parser.add_argument("--artifact", type=Path, default=None,
                         help="Path to the EpochArtifact JSON file.")
+    parser.add_argument("--artifact-dir", type=Path, default=None,
+                        help="Directory of epoch_*.json artifacts; posts the "
+                             "NEWEST one. For autonomous/daemon use where the "
+                             "exact epoch isn't known ahead of time. Exits 0 "
+                             "(no-op) if the dir holds no artifact.")
+    parser.add_argument("--skip-if-posted", action="store_true",
+                        help="Skip if this epoch_id was already posted (tracked "
+                             "in <dir>/.posted_epochs.json); record on success. "
+                             "Makes repeated daemon invocations idempotent so a "
+                             "published/frozen epoch isn't re-posted as a fresh "
+                             "-COR correction every tick.")
     parser.add_argument("--endpoint", default=None,
                         help="Override $SN21_LEADERBOARD_ENDPOINT (default: %s)."
                              % DEFAULT_ENDPOINT)
@@ -266,12 +310,35 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     api_key = args.api_key or os.environ.get("SN21_LEADERBOARD_API_KEY", "")
 
+    # Resolve the artifact path: explicit --artifact, or the newest in --artifact-dir.
+    artifact_path = args.artifact
+    ledger_dir = args.artifact_dir
+    if args.artifact_dir is not None:
+        candidates = sorted(args.artifact_dir.glob("epoch_*.json"),
+                            key=lambda p: p.stat().st_mtime, reverse=True)
+        if not candidates:
+            logger.info("no epoch_*.json in %s; nothing to post (no-op)",
+                        args.artifact_dir)
+            return EXIT_OK
+        artifact_path = candidates[0]
+        logger.info("artifact-dir: selected newest artifact %s", artifact_path.name)
+    if artifact_path is None:
+        logger.error("one of --artifact or --artifact-dir is required")
+        return EXIT_MISCONFIG
+    if ledger_dir is None:
+        ledger_dir = artifact_path.parent
+
     # Load + aggregate
     try:
-        artifact = _load_artifact(args.artifact)
+        artifact = _load_artifact(artifact_path)
     except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
         logger.error("cannot load artifact: %s", e)
         return EXIT_MISCONFIG
+
+    if args.skip_if_posted and _already_posted(ledger_dir, artifact.epoch_id):
+        logger.info("epoch %s already posted (per %s ledger); skipping",
+                    artifact.epoch_id, ledger_dir)
+        return EXIT_OK
 
     payload = aggregate(
         artifact,
@@ -324,7 +391,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             if not _is_frozen_409(response):
                 break  # accepted (or a different outcome worth surfacing)
 
-    return report_response(response)
+    rc = report_response(response)
+    if args.skip_if_posted and rc == EXIT_OK:
+        _record_posted(ledger_dir, artifact.epoch_id)
+    return rc
 
 
 if __name__ == "__main__":

@@ -67,10 +67,16 @@ class DaemonConfig:
     heartbeat_timeout_seconds: float = 240.0
     reg_index_timeout_seconds: float = 1200.0
     scoring_timeout_seconds: float = 1800.0
+    report_timeout_seconds: float = 300.0
+    # Leaderboard publish: after a successful scoring tick writes its artifact,
+    # POST it to the CMS (the step the old scoring cron ran separately). Idempotent
+    # via --skip-if-posted so a published/frozen epoch isn't re-posted every tick.
+    leaderboard_artifact_dir: str = ""  # SN21_EPOCH_ARTIFACT_DIR; "" disables the report step
     ignore_already_scored: bool = False
     heartbeat_dry_run: bool = False
     skip_reg_index: bool = False
     skip_scoring: bool = False
+    skip_report: bool = False
     skip_heartbeat: bool = False
 
 
@@ -124,6 +130,17 @@ def build_commands(cfg: DaemonConfig) -> list:
         if cfg.ignore_already_scored:
             argv += ["--ignore-already-scored"]
         cmds.append(("scoring", argv, {}, cfg.scoring_timeout_seconds))
+
+    # Publish the leaderboard to the CMS — the step the old scoring cron ran
+    # after hope-validator. Posts the NEWEST artifact scoring just wrote;
+    # --skip-if-posted makes it a no-op when nothing new was produced, so a
+    # published/frozen epoch is never re-posted as a -COR correction every tick.
+    # HTTP POST only (no chain) → runs after scoring, before the heartbeat,
+    # without touching the weight cycle.
+    if not cfg.skip_report and cfg.leaderboard_artifact_dir:
+        argv = [sys.executable, "-m", "scripts.post_epoch_report",
+                "--artifact-dir", cfg.leaderboard_artifact_dir, "--skip-if-posted"]
+        cmds.append(("report", argv, {}, cfg.report_timeout_seconds))
 
     if not cfg.skip_heartbeat:
         argv = ["hope-validator-heartbeat",
@@ -229,11 +246,20 @@ def main(argv: Optional[list] = None) -> int:
                    default=float(os.environ.get("SN21_DAEMON_SCORING_TIMEOUT_SECS", "1800")),
                    help="Kill the scoring tool if it runs longer than this; it is "
                         "idempotent so the next tick re-runs (0 = no limit).")
+    p.add_argument("--report-timeout-seconds", type=float,
+                   default=float(os.environ.get("SN21_DAEMON_REPORT_TIMEOUT_SECS", "300")),
+                   help="Kill the CMS leaderboard POST if it runs longer than this (0 = no limit).")
+    p.add_argument("--leaderboard-artifact-dir",
+                   default=os.environ.get("SN21_EPOCH_ARTIFACT_DIR", "/tmp/sn21-epoch-artifacts"),
+                   help="Dir where the scorer writes its epoch artifact; the daemon "
+                        "POSTs the newest one to the CMS after scoring (idempotently, "
+                        "via --skip-if-posted). Active only when SN21_LEADERBOARD_REPORTER=1.")
     p.add_argument("--ignore-already-scored", action="store_true")
     p.add_argument("--heartbeat-dry-run", action="store_true",
                    default=os.environ.get("SN21_HEARTBEAT_DRY_RUN", "0") == "1")
     p.add_argument("--skip-reg-index", action="store_true")
     p.add_argument("--skip-scoring", action="store_true")
+    p.add_argument("--skip-report", action="store_true")
     p.add_argument("--skip-heartbeat", action="store_true")
     p.add_argument("--once", action="store_true",
                    help="Run a single tick and exit (manual run / smoke test).")
@@ -259,11 +285,23 @@ def main(argv: Optional[list] = None) -> int:
         heartbeat_timeout_seconds=args.heartbeat_timeout_seconds,
         reg_index_timeout_seconds=args.reg_index_timeout_seconds,
         scoring_timeout_seconds=args.scoring_timeout_seconds,
+        report_timeout_seconds=args.report_timeout_seconds,
+        leaderboard_artifact_dir=args.leaderboard_artifact_dir,
         ignore_already_scored=args.ignore_already_scored,
         heartbeat_dry_run=args.heartbeat_dry_run,
         skip_reg_index=args.skip_reg_index, skip_scoring=args.skip_scoring,
-        skip_heartbeat=args.skip_heartbeat,
+        skip_report=args.skip_report, skip_heartbeat=args.skip_heartbeat,
     )
+
+    # The report step publishes to the CMS only when the leaderboard reporter is
+    # enabled (the same gate the scoring cron used + that makes the scorer write
+    # the artifact). Without it, skip — a daemon with no reporter creds shouldn't
+    # POST every tick.
+    from hope.reporting.flags import reporter_enabled
+    if not cfg.skip_report and not reporter_enabled():
+        logger.info("leaderboard reporter disabled (SN21_LEADERBOARD_REPORTER!=1); "
+                    "skipping the CMS report step")
+        cfg.skip_report = True
 
     if cfg.skip_reg_index is False and not cfg.reg_index:
         logger.warning("no --reg-index path set; skipping the reg-index tick "
