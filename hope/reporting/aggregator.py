@@ -25,7 +25,7 @@ v3 contract change (CMS-side scope expansion):
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from hope.reporting.histogram import (
     compute_histogram,
@@ -154,6 +154,7 @@ def aggregate(
     top_n: int = TOP_N_SCORES_MAX,
     supersedes: str | None = None,
     epoch_id_override: str | None = None,
+    epoch_membership_uids: Optional[set[int]] = None,
 ) -> EpochReportPayload:
     """Aggregate a private artifact into the public payload.
 
@@ -209,7 +210,9 @@ def aggregate(
         tier_split_active=tier_split_active,
     )
 
-    miner_results = _build_miner_results(artifact, tier_split_active=tier_split_active)
+    miner_results = _build_miner_results(
+        artifact, tier_split_active=tier_split_active,
+        epoch_membership_uids=epoch_membership_uids)
 
     # v1 routine emergency state — always false. Q19 freezes this until
     # trigger-state machines land in SN21_REWARD_MECHANISM.md.
@@ -280,6 +283,7 @@ def _build_miner_results(
     artifact: EpochArtifact,
     *,
     tier_split_active: bool,
+    epoch_membership_uids: Optional[set[int]] = None,
 ) -> list[MinerResult]:
     """Build the per-UID Cacheon-style table from artifact.per_uid_scores.
 
@@ -287,6 +291,13 @@ def _build_miner_results(
     artifact's tier_result. Miners that the upstream runner excluded
     appear in artifact.tier_result['excluded'] (when populated) and
     are mapped onto Rob's `disqualified_*` status enum.
+
+    `epoch_membership_uids`, when given, scopes the *scored* set to an
+    eligible cohort: a miner that scored but whose uid is NOT in the set is
+    re-labeled `disqualified_not_in_epoch` (tier cleared) instead of `scored`.
+    Used for re-run epochs that should only credit the original participants
+    (e.g. WR-2026-W21-RERUN-E1 → the W21-16) while still showing the others.
+    Already-disqualified rows are untouched (the filter only narrows scored).
     """
     # Map hotkey → tier from the artifact's tier allocation.
     tier_by_hotkey: dict[str, str] = {}
@@ -316,6 +327,11 @@ def _build_miner_results(
         if isinstance(raw_status, str) and raw_status:
             status = _map_exclusion_to_status(raw_status)
             # DQ rows always have tier=null per Rob's v4 spec.
+            tier = None
+        elif epoch_membership_uids is not None and uid not in epoch_membership_uids:
+            # Scored, but not part of this epoch's eligible cohort (re-run scoped
+            # to the original participants). Show the row, flagged + tier cleared.
+            status = "disqualified_not_in_epoch"
             tier = None
         else:
             status = "scored"
@@ -370,6 +386,9 @@ _EXCLUSION_STATUS_MAP = {
     "no_registration": "disqualified_not_registered",
     "late_submission": "disqualified_late_submission",
     "late": "disqualified_late_submission",
+    "not_in_epoch": "disqualified_not_in_epoch",
+    "not_in_w21": "disqualified_not_in_epoch",
+    "disqualified_not_in_epoch": "disqualified_not_in_epoch",
     # Pass-through if upstream already emits the canonical status form:
     "disqualified_below_threshold": "disqualified_below_threshold",
     "disqualified_missing_snapshot": "disqualified_missing_snapshot",

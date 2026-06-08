@@ -293,9 +293,19 @@ def main(argv: Optional[list[str]] = None) -> int:
                              "back to the original. The dashboard renders "
                              "the most-recent correction as the canonical "
                              "view of an epoch slot.")
+    parser.add_argument("--epoch-membership-uids", default=None,
+                        help="Comma-separated uids eligible to be SCORED this epoch "
+                             "(e.g. a re-run scoped to the original participants). A "
+                             "miner that scored but whose uid is not listed is "
+                             "re-labeled 'disqualified_not_in_epoch' (shown, not "
+                             "credited). Omit to score everyone normally.")
     parser.add_argument("--log-level", default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args(argv)
+
+    membership_uids = None
+    if args.epoch_membership_uids:
+        membership_uids = {int(u) for u in args.epoch_membership_uids.replace(",", " ").split()}
 
     logging.basicConfig(
         level=args.log_level,
@@ -344,6 +354,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         artifact,
         commentary_markdown=args.commentary,
         supersedes=args.supersedes,
+        epoch_membership_uids=membership_uids,
     )
 
     if args.dry_run:
@@ -386,6 +397,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 commentary_markdown=cor_commentary,
                 supersedes=artifact.epoch_id,
                 epoch_id_override=cor_id,
+                epoch_membership_uids=membership_uids,
             )
             response = post_payload(payload, endpoint=endpoint, api_key=api_key)
             if not _is_frozen_409(response):

@@ -157,6 +157,7 @@ class MinerResult(BaseModel):
         # heading + explainer, so miners can self-diagnose):
         "disqualified_not_registered",      # uid wasn't registered on netuid at epoch close
         "disqualified_late_submission",     # bundle landed after the close-window cutoff
+        "disqualified_not_in_epoch",        # submitted, but not part of this epoch's eligible cohort (e.g. a re-run scoped to the original participants)
         "disqualified_other",
     ]
     tier: Optional[Literal["elite", "competitive", "participating"]] = None

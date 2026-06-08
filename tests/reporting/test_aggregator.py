@@ -593,3 +593,27 @@ class TestAggregatorV4:
         # Edges always start at 0 and end at the score_range max
         assert edges[0] == 0.0
         assert edges[-1] == 1.0
+
+
+# ----------------------------------------------------------------------------
+# epoch_membership_uids — re-run scoped to an eligible cohort (e.g. W21-16)
+# ----------------------------------------------------------------------------
+
+def test_membership_filter_flags_non_members_not_in_epoch():
+    artifact = _artifact(n_qualifying=20)  # uids 0..19 all scored
+    eligible = {0, 1, 2, 3, 4}
+    payload = aggregate(artifact, epoch_membership_uids=eligible)
+    by_uid = {m.uid: m for m in payload.miner_results}
+    scored = [m for m in payload.miner_results if m.status == "scored"]
+    flagged = [m for m in payload.miner_results if m.status == "disqualified_not_in_epoch"]
+    assert {m.uid for m in scored} == eligible          # only the cohort is scored
+    assert len(flagged) == 15                            # the rest are flagged, still shown
+    assert all(m.tier is None for m in flagged)          # DQ rows carry no tier
+    # a flagged row keeps its uid + hotkey (shown), just not credited as scored
+    assert by_uid[10].status == "disqualified_not_in_epoch"
+
+
+def test_membership_filter_absent_scores_everyone():
+    artifact = _artifact(n_qualifying=20)
+    payload = aggregate(artifact)  # no membership → unchanged behaviour
+    assert all(m.status == "scored" for m in payload.miner_results)
