@@ -6,17 +6,22 @@ it runs three *self-idempotent* tools as isolated subprocesses:
 
 | order | tick step | tool | what it does | idempotency |
 |---|---|---|---|---|
-| 1 | weights | `hope-validator-heartbeat` | re-asserts the validator's last on-chain weights | self-throttles on the ≤1500-block gap |
-| 2 | reg-index | `build_reg_index --once` | extends the registration index from its persisted checkpoint (archive RPC) | self-checkpointing; scans only new blocks |
-| 3 | scoring | `hope-validator --release auto` | resolves the latest **closed** epoch and scores it | on-chain `already_scored` guard → scores each epoch once |
+| 1 | reg-index | `build_reg_index --once` | extends the registration index from its persisted checkpoint (archive RPC) | self-checkpointing; scans only new blocks |
+| 2 | scoring | `hope-validator --release auto` | resolves the latest **closed** epoch and scores it (commits fresh weights) | on-chain `already_scored` guard → scores each epoch once |
+| 3 | weights | `hope-validator-heartbeat` | re-asserts the last on-chain weights when the gap grows | self-throttles on the ≤1500-block gap |
 
-> **The heartbeat runs FIRST**, before the slow archive-bound tools, and **every
-> tool has a wall-clock timeout** (`--heartbeat/reg-index/scoring-timeout-seconds`).
-> The activity-floor re-assertion is the only safety-critical, fast step, so it
-> must never sit behind a stalled reg-index or scoring run — a dropped archive
-> connection that hangs a slow tool gets killed at its ceiling and the next tick
-> retries (checkpoints/idempotency mean no work is lost). This decouples the
-> weight cycle from the slow tools entirely.
+> **The heartbeat runs LAST, and every tool has a wall-clock timeout**
+> (`--heartbeat/reg-index/scoring-timeout-seconds`). Scoring is the only tool that
+> commits *fresh* weights; the heartbeat only re-asserts the last weights. Running
+> scoring first means on a weekly-close tick scoring commits its weights, then the
+> heartbeat sees a freshly-reset gap and skips — so the two **never compete for the
+> same `set_weights` slot** (the 180-block weight rate limit). The per-tool
+> **timeouts** are what prevent a stalled archive-bound tool from starving the
+> heartbeat — a hung tool is killed at its ceiling and the next tick resumes
+> (checkpoints/idempotency mean no work is lost). (Heartbeat-first was tried but
+> made the heartbeat grab the weight slot and rate-limit the weekly scoring's own
+> commit, aborting the run with no leaderboard post — so heartbeat-last + timeouts
+> is the correct combination.)
 
 > **Validators only run the daemon.** It is the single long-running process — it
 > consolidates the reg-index build + scoring + heartbeat. You do **not** run the

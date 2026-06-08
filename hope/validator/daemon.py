@@ -77,23 +77,25 @@ class DaemonConfig:
 def build_commands(cfg: DaemonConfig) -> list:
     """Assemble the ordered (name, argv, env_overrides, timeout) tuples for one tick.
 
-    Order is HEARTBEAT FIRST, then reg-index, then scoring. The heartbeat is the
-    only safety-critical, fast tool (one chain read + at most one set_weights), so
-    it runs before the slow archive-bound tools — that way a stalled reg-index or
-    scoring run can never delay the activity-floor re-assertion. Combined with the
-    per-tool timeouts, the weight cycle is structurally decoupled from the slow
-    tools. The heartbeat self-throttles below its gap threshold, so running it
-    first is a no-op on the vast majority of ticks.
+    Order is reg-index -> scoring -> HEARTBEAT LAST. Scoring is the only tool that
+    commits *fresh* weights, and the heartbeat merely re-asserts the last weights
+    when the activity gap grows. Running scoring before the heartbeat means:
+
+      * on a weekly-close tick, scoring commits its weights first, then the
+        heartbeat sees a freshly-reset gap (< threshold) and skips — so the two
+        never compete for the same `set_weights` slot;
+      * on every other tick, scoring is an `already_scored` no-op and the
+        heartbeat backstops the activity floor as usual.
+
+    Heartbeat-FIRST was tried to stop a stalled reg-index from starving the
+    heartbeat, but it made the heartbeat grab the weight slot and then rate-limit
+    (180-block) scoring's own commit, aborting the weekly run (no artifact / no
+    leaderboard post). The per-tool *timeouts* below already prevent a stalled
+    tool from starving the heartbeat, so heartbeat-last is both safe and
+    collision-free. The heartbeat self-throttles below its gap threshold, so it's
+    a no-op on the vast majority of ticks regardless of position.
     """
     cmds: list = []
-
-    if not cfg.skip_heartbeat:
-        argv = ["hope-validator-heartbeat",
-                "--network", cfg.network, "--netuid", str(cfg.netuid),
-                "--wallet-name", cfg.wallet_name, "--wallet-hotkey", cfg.wallet_hotkey]
-        if cfg.heartbeat_dry_run:
-            argv += ["--dry-run"]
-        cmds.append(("heartbeat", argv, {}, cfg.heartbeat_timeout_seconds))
 
     if not cfg.skip_reg_index and cfg.reg_index:
         env = {}
@@ -122,6 +124,14 @@ def build_commands(cfg: DaemonConfig) -> list:
         if cfg.ignore_already_scored:
             argv += ["--ignore-already-scored"]
         cmds.append(("scoring", argv, {}, cfg.scoring_timeout_seconds))
+
+    if not cfg.skip_heartbeat:
+        argv = ["hope-validator-heartbeat",
+                "--network", cfg.network, "--netuid", str(cfg.netuid),
+                "--wallet-name", cfg.wallet_name, "--wallet-hotkey", cfg.wallet_hotkey]
+        if cfg.heartbeat_dry_run:
+            argv += ["--dry-run"]
+        cmds.append(("heartbeat", argv, {}, cfg.heartbeat_timeout_seconds))
 
     return cmds
 

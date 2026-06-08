@@ -27,10 +27,12 @@ def _by_name(cmds, name):
     return argv, env, timeout
 
 
-def test_heartbeat_runs_first_then_reg_index_then_scoring():
-    # Heartbeat is safety-critical + fast, so it must run BEFORE the slow
-    # archive-bound tools — a stalled reg-index/scoring can never delay it.
-    assert _names(build_commands(_cfg())) == ["heartbeat", "reg-index", "scoring"]
+def test_reg_index_then_scoring_then_heartbeat_last():
+    # Heartbeat runs LAST: scoring commits fresh weights first, so the heartbeat
+    # then sees a reset gap and skips — they never compete for the set_weights
+    # slot (the 180-block rate limit). Per-tool timeouts (not ordering) prevent a
+    # stalled tool from starving the heartbeat.
+    assert _names(build_commands(_cfg())) == ["reg-index", "scoring", "heartbeat"]
 
 
 def test_each_command_carries_its_timeout():
@@ -104,13 +106,13 @@ def test_heartbeat_dry_run_flag_passthrough():
 
 
 def test_skip_toggles_drop_commands():
-    assert _names(build_commands(_cfg(skip_scoring=True))) == ["heartbeat", "reg-index"]
+    assert _names(build_commands(_cfg(skip_scoring=True))) == ["reg-index", "heartbeat"]
     assert _names(build_commands(_cfg(skip_heartbeat=True))) == ["reg-index", "scoring"]
-    assert _names(build_commands(_cfg(skip_reg_index=True))) == ["heartbeat", "scoring"]
+    assert _names(build_commands(_cfg(skip_reg_index=True))) == ["scoring", "heartbeat"]
 
 
 def test_no_reg_index_path_means_no_reg_index_command():
-    assert _names(build_commands(_cfg(reg_index=""))) == ["heartbeat", "scoring"]
+    assert _names(build_commands(_cfg(reg_index=""))) == ["scoring", "heartbeat"]
 
 
 def test_run_tick_calls_every_tool_in_order_and_records_codes():
@@ -119,7 +121,7 @@ def test_run_tick_calls_every_tool_in_order_and_records_codes():
         calls.append(name)
         return 0
     res = run_tick(_cfg(), runner=fake)
-    assert calls == ["heartbeat", "reg-index", "scoring"]
+    assert calls == ["reg-index", "scoring", "heartbeat"]
     assert res == {"heartbeat": 0, "reg-index": 0, "scoring": 0}
 
 
@@ -134,16 +136,17 @@ def test_run_tick_passes_each_tools_timeout_to_runner():
     assert seen["scoring"] == _cfg().scoring_timeout_seconds
 
 
-def test_run_tick_isolates_failures_after_heartbeat_already_ran():
-    # heartbeat runs first and succeeds; a later tool blowing up never undoes it.
+def test_run_tick_isolates_failures_so_heartbeat_still_runs_last():
+    # reg-index degraded + scoring blowing up must NOT stop the heartbeat (last)
+    # from running — the activity floor is maintained regardless of upstream tools.
     def fake(name, argv, env, timeout):
         if name == "scoring":
             raise RuntimeError("boom")
         if name == "reg-index":
             return 3
-        return 0
+        return 0  # heartbeat
     res = run_tick(_cfg(), runner=fake)
-    assert res == {"heartbeat": 0, "reg-index": 3, "scoring": -1}
+    assert res == {"reg-index": 3, "scoring": -1, "heartbeat": 0}
 
 
 def test_default_runner_returns_timeout_rc_on_expiry():
