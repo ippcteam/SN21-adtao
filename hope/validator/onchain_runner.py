@@ -444,6 +444,31 @@ def run_epoch_scoring(
         for hk, v in score_map.items() if hk in uid_by_hotkey
     ]
 
+    # Optional weight allowlist. When SN21_WEIGHT_ALLOWLIST_UIDS is set (comma-
+    # separated UIDs), the computed per-miner vector is restricted to those UIDs
+    # BEFORE any override/burn split — i.e. only the listed miners can receive
+    # the miner share of the weight. Unset = no restriction (all scored miners).
+    # Applied here so it composes with SN21_BURN_FRACTION below.
+    import os as _os_allow
+    _allow_str = _os_allow.environ.get("SN21_WEIGHT_ALLOWLIST_UIDS", "").strip()
+    if _allow_str:
+        try:
+            _allow = {int(x) for x in _allow_str.replace(" ", "").split(",") if x}
+            _pairs = [(u, w) for u, w in zip(uids, weights) if u in _allow]
+            print(
+                f"[weight-allowlist] restricting {len(uids)} -> {len(_pairs)} "
+                f"miners (allowlist size {len(_allow)})",
+                flush=True,
+            )
+            uids = [u for u, _ in _pairs]
+            weights = [w for _, w in _pairs]
+        except ValueError as _e:
+            print(
+                f"[weight-allowlist] SN21_WEIGHT_ALLOWLIST_UIDS={_allow_str!r} "
+                f"invalid ({_e}); ignoring (no restriction)",
+                flush=True,
+            )
+
     # Optional weight-vector override. When SN21_OVERRIDE_WEIGHT_UID is set,
     # the validator's normal per-miner weight vector is REPLACED with a
     # single-entry vector that puts 100% weight on the override UID. This
