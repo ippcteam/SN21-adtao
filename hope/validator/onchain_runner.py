@@ -461,14 +461,59 @@ def run_epoch_scoring(
             _override_uid = int(_override_uid_str)
             if _override_uid < 0 or _override_uid > 65535:
                 raise ValueError(f"out of u16 range: {_override_uid}")
-            print(
-                f"[weight-override] SN21_OVERRIDE_WEIGHT_UID={_override_uid} set; "
-                f"replacing the computed vector ({len(uids)} miners) with "
-                f"{{ {_override_uid}: 1.0 }}",
-                flush=True,
-            )
-            uids = [_override_uid]
-            weights = [1.0]
+            # Optional partial burn. When SN21_BURN_FRACTION is set to a value
+            # strictly between 0 and 1, the override UID receives that fraction
+            # of the weight and the remaining (1 - fraction) is distributed
+            # across the computed per-miner vector in proportion to scores.
+            # Unset (or a value <=0 or >=1, or no scoreable miners) keeps the
+            # full 100% single-UID override.
+            _burn_str = _os.environ.get("SN21_BURN_FRACTION", "").strip()
+            _burn = None
+            if _burn_str:
+                try:
+                    _bf = float(_burn_str)
+                    if 0.0 < _bf < 1.0:
+                        _burn = _bf
+                    else:
+                        print(
+                            f"[weight-override] SN21_BURN_FRACTION={_burn_str!r} "
+                            f"outside (0,1); using full single-UID override",
+                            flush=True,
+                        )
+                except ValueError as _e:
+                    print(
+                        f"[weight-override] SN21_BURN_FRACTION={_burn_str!r} "
+                        f"invalid ({_e}); using full single-UID override",
+                        flush=True,
+                    )
+            _miner_pairs = [
+                (u, w) for u, w in zip(uids, weights) if u != _override_uid
+            ]
+            _miner_total = sum(w for _, w in _miner_pairs)
+            if _burn is not None and _miner_pairs and _miner_total > 0:
+                # e.g. SN21_BURN_FRACTION=0.75 -> 75% to override UID,
+                # 25% across miners in proportion to their scores.
+                _scaled = [
+                    (1.0 - _burn) * (w / _miner_total) for _, w in _miner_pairs
+                ]
+                _miner_uids = [u for u, _ in _miner_pairs]
+                uids = _miner_uids + [_override_uid]
+                weights = _scaled + [_burn]
+                print(
+                    f"[weight-override] partial burn: {_burn:.0%} -> UID "
+                    f"{_override_uid}, {1.0 - _burn:.0%} across {len(_miner_uids)} "
+                    f"miners by score",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[weight-override] SN21_OVERRIDE_WEIGHT_UID={_override_uid} set; "
+                    f"replacing the computed vector ({len(uids)} miners) with "
+                    f"{{ {_override_uid}: 1.0 }}",
+                    flush=True,
+                )
+                uids = [_override_uid]
+                weights = [1.0]
         except ValueError as _e:
             print(
                 f"[weight-override] SN21_OVERRIDE_WEIGHT_UID={_override_uid_str!r} "
