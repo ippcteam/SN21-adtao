@@ -208,6 +208,7 @@ def run_epoch_scoring(
     registration_index: Optional["RegistrationIndex"] = None,
     report_only: bool = False,
     ignore_already_scored: bool = False,
+    baseline_score: float = 0.0,
 ) -> EpochScoringOutcome:
     """Run the full Layer 9.C orchestration for one validator-epoch.
 
@@ -468,6 +469,47 @@ def run_epoch_scoring(
                 f"invalid ({_e}); ignoring (no restriction)",
                 flush=True,
             )
+
+    # Optional tiered allocation (SN21_REWARD_MECHANISM.md Components 1-2).
+    # When SN21_TIERED_WEIGHTS is set, the flat per-score miner vector is
+    # replaced with the participation gate + Elite/Competitive/Participating
+    # 60/30/10 split (single proportional pool under 15 qualifying miners, per
+    # spec). Applied AFTER the allowlist (only allowlisted miners are
+    # candidates) and BEFORE the override/burn split (which scales the resulting
+    # miner pool to 1 - burn_fraction). `baseline_score` is the predict-zero /
+    # conditional-prior gate threshold passed by the runner; per-episode
+    # coverage is unavailable in the aggregated chain path (the scoreability
+    # check is the de-facto submission gate), so coverage passes at 1.0.
+    _tiered = _os_allow.environ.get("SN21_TIERED_WEIGHTS", "").strip().lower()
+    if _tiered in ("1", "true", "yes", "on"):
+        from hope.validator.tiered_weights import MinerEpochInputs, TieredAllocator
+
+        _score_by_uid = {
+            uid_by_hotkey[hk]: v
+            for hk, v in score_map.items() if hk in uid_by_hotkey
+        }
+        _t_inputs = [
+            MinerEpochInputs(
+                hotkey=str(u),
+                raw_score=max(0.0, min(1.0, _score_by_uid.get(u, 0) / 1_000_000.0)),
+                baseline_score=baseline_score,
+                coverage_fraction=1.0,
+            )
+            for u in uids
+        ]
+        _res = TieredAllocator().allocate(_t_inputs)
+        _funded = [(int(h), w) for h, w in _res.weights.items() if w > 0.0]
+        print(
+            f"[tiered-weights] {len(_t_inputs)} candidates -> elite "
+            f"{len(_res.elite)} / competitive {len(_res.competitive)} / "
+            f"participating {len(_res.participating)}; gate-excluded "
+            f"{len(_res.excluded)}; funded {len(_funded)} "
+            f"(baseline={baseline_score:.4f}, "
+            f"elite_floor_cleared={_res.elite_floor_cleared})",
+            flush=True,
+        )
+        uids = [u for u, _ in _funded]
+        weights = [w for _, w in _funded]
 
     # Optional weight-vector override. When SN21_OVERRIDE_WEIGHT_UID is set,
     # the validator's normal per-miner weight vector is REPLACED with a

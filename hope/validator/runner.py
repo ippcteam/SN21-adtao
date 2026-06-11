@@ -415,6 +415,7 @@ def _run_validator_onchain_cli(args, runner):
         aggregate_outcomes_to_truth,
         compute_scoring_inputs_hash,
         make_scorer,
+        score_one_miner,
     )
     from hope.validator.onchain_runner import (
         MinerOnChainInputs,
@@ -587,6 +588,25 @@ def _run_validator_onchain_cli(args, runner):
         )
 
     scorer = make_scorer(truth_by_horizon)
+
+    # Predict-zero baseline for the tiered participation gate
+    # (SN21_REWARD_MECHANISM Component 1): the score a flat zero-quantile /
+    # zero-probability prediction achieves against the same per-horizon truth.
+    # Miners must beat this to qualify for a tier pool. Only consulted when
+    # SN21_TIERED_WEIGHTS is enabled; harmless to compute otherwise.
+    _zero_plaintext = {
+        "horizons": [
+            {"h": h, "cost_q": [0, 0, 0], "conv_q": [0, 0, 0],
+             "eff_q": [0, 0, 0], "miss_p": 0, "instab_p": 0}
+            for h in truth_by_horizon
+        ]
+    }
+    baseline_score = score_one_miner(_zero_plaintext, truth_by_horizon) / 1_000_000.0
+    print(
+        f"[baseline] predict-zero baseline_score={baseline_score:.4f} "
+        f"over {len(truth_by_horizon)} horizons",
+        flush=True,
+    )
     submitted_round = drand_round_at(int(_time.time()))
 
     # Stamp chain_fetch_timestamp BEFORE the run starts — closest moment
@@ -617,6 +637,7 @@ def _run_validator_onchain_cli(args, runner):
         registration_index=registration_index,
         ignore_already_scored=args.ignore_already_scored,
         report_only=args.report_only,
+        baseline_score=baseline_score,
     )
 
     # Reporter hook — writes the operator-private epoch artifact when
