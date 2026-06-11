@@ -218,12 +218,17 @@ def run_heartbeat(
     # `set_weights(commit_reveal_version=4, version_key=10002001)` semantics,
     # same retry logic, same block_hash binding behavior. This guarantees the
     # heartbeat cannot diverge from the scoring path's submission contract.
+    # verify_applied=False: the heartbeat only fires when gap >= threshold, so it
+    # is never rate-limited and doesn't gate 9.C.2 on the result — it has no need
+    # for the post-commit LastUpdate verification, and skipping it avoids two
+    # extra RPC reads on this time-critical (240s-timeout) path.
     result = commit_weights_layer_9c3(
         subtensor=subtensor,
         validator_wallet=validator_wallet,
         netuid=netuid,
         uids=uids_to_send,
         weights=normalized,
+        verify_applied=False,
     )
 
     if result.success:
