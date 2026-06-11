@@ -137,6 +137,8 @@ Per-horizon episode score:
 **Directional (15%):** Correct direction of primary goal metric.  
 **Goal (15%):** P50 on the account’s primary goal metric.  
 
+**Implementation status.** The launch scorer (`hope/scoring/onchain_adapter.py:score_one_miner`) shipped a simplified `0.7×CRPS + 0.3×Brier` proxy whose quantile term is band-insensitive (a perfect P50 and one a few percent off score identically, compressing the dynamic range). The full four-component score above is implemented in `score_one_miner_v2` (pinball quantile + coverage/width + directional + P50-goal) and enabled via `SN21_SCORING_V2` (default off; the matching verifier must set the same flag — recording the scorer version on chain is a tracked follow-up). It is scheduled to become the default after Review 1.
+
 **Horizon aggregation** (by measurement resolution).
 
 **Launch (Phase 1)** uses 7-day and 14-day horizons only:
