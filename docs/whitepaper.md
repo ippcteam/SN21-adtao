@@ -22,7 +22,7 @@ Bittensor Subnet 21 · MIT-licensed · Public verifier ships at launch
 | Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
 | Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is being pursued as an upstream Bittensor change | §14.1 + adversarial test |
 | Per-episode artifacts | **Available via configuration.** `submit_miner_epoch(per_episode_entries=...)` builds the bundle, binds `episodes_root` + `episodes_bundle_sha256` in the aggregated plaintext, and uploads to the archives. The default `hope-miner` CLI submits aggregate-per-horizon at launch; per-episode is opt-in for miners that wire it. Default behaviour will move to per-episode after operational-cycle-1 | §14.2 |
-| Reward mechanism | **`TieredAllocator` available, default runner uses simple normalization + burn.** `hope/validator/tiered_weights.py:TieredAllocator` enforces the full participation gate / EMA tier placement / Elite floor / pool shares spec. The default `hope-validator` CLI runs `WeightSetter(burn_fraction=0.95)` + `normalize_scores(...)` at launch. To enable tiers, an operator constructs `WeightSetter(tiered_allocator=TieredAllocator())` and calls `allocate_tiered(...)`. Tier mechanics are scheduled to become the default after Review 1 | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
+| Reward mechanism | **`TieredAllocator` wired into the chain runner behind an opt-in; defaults to simple normalization + burn until Review 1.** `hope/validator/tiered_weights.py:TieredAllocator` enforces the full participation gate / EMA tier placement / Elite floor / pool shares spec. The chain `hope-validator` runner enables it via `SN21_TIERED_WEIGHTS` (gate baseline = predict-zero score against the epoch truth); unset, it uses flat score-normalization + burn. The legacy HTTP path can also wire `WeightSetter(tiered_allocator=TieredAllocator())`. Tier mechanics are scheduled to become the default after Review 1 | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
 | Conditional-prior baseline | **Live at launch.** The release artifact's `scoring_metadata.conditional_prior` per episode plumbs through `ScoringMetadata` and `SkillScoreCalculator.compute_baseline_prediction(...)`. Episodes with no published prior fall through to predict-zero — no crash, no silent gate-zeroing | §12 |
 
 When in doubt about a claim in the rest of this paper, this table is the
@@ -855,12 +855,14 @@ via simple normalization and submits via `set_weights`.
 
 > **Status (launch).** The tiered allocator is **available** in
 > `hope/validator/tiered_weights.py:TieredAllocator` and fully unit-
-> tested (`tests/validator/test_tiered_weights.py`), but it is
-> **not the default path in the production validator runner**. The
-> default `hope-validator` CLI constructs
-> `WeightSetter(burn_fraction=0.95)` and calls `normalize_scores(...)`
-> — simple linear normalisation of raw scores + 95% burn. Operators
-> who want tier mechanics on day one wire it explicitly:
+> tested (`tests/validator/test_tiered_weights.py`). The chain
+> `hope-validator` runner **wires it behind the `SN21_TIERED_WEIGHTS`
+> opt-in**: when set, the per-miner weight vector is built via the
+> participation gate + Elite/Competitive/Participating pools (single
+> proportional pool under 15 qualifying miners), with the gate baseline
+> taken as the predict-zero score against the epoch truth. Unset, the
+> runner uses simple linear normalisation of raw scores + burn. The
+> legacy HTTP path can also wire it explicitly:
 > ```python
 > setter = WeightSetter(burn_fraction=0.95,
 >                       tiered_allocator=TieredAllocator())

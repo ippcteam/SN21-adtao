@@ -7,7 +7,7 @@
 | **Authoritative for launch** | Yes — gates, tier shape, EMA, governance. |
 | **Companion** | [SN21_EPOCH_STRUCTURE.md](./SN21_EPOCH_STRUCTURE.md) |
 
-**Implementation note:** This document is the authoritative spec for the launch reward mechanism *as designed*. The default `hope-validator` CLI at launch ships a simpler path — score-normalization + 95% burn — while the chain-side scoring pipeline is exercised end-to-end during the first operational cycle. The full tiered allocator is implemented in `hope/validator/tiered_weights.py:TieredAllocator` and unit-tested; operators can opt in immediately via `WeightSetter(tiered_allocator=TieredAllocator())`. The default runner is scheduled to switch to the tiered path after Review 1.
+**Implementation note:** This document is the authoritative spec for the launch reward mechanism *as designed*. The default `hope-validator` CLI at launch ships a simpler path — score-normalization + 95% burn — while the chain-side scoring pipeline is exercised end-to-end during the first operational cycle. The full tiered allocator is implemented in `hope/validator/tiered_weights.py:TieredAllocator` and unit-tested. The chain validator runner now wires it behind the `SN21_TIERED_WEIGHTS` opt-in — when enabled, the per-miner weight vector is built via the participation gate + Elite/Competitive/Participating pools (single proportional pool under 15 qualifying miners) instead of flat score-normalization (the legacy `WeightSetter(tiered_allocator=TieredAllocator())` path remains for the HTTP runner). The gate's baseline is the predict-zero score against the epoch truth. It defaults off pending Review 1, after which it becomes the default.
 
 ## Purpose
 
