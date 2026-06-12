@@ -27,12 +27,35 @@ def _by_name(cmds, name):
     return argv, env, timeout
 
 
-def test_reg_index_then_scoring_then_heartbeat_last():
-    # Heartbeat runs LAST: scoring commits fresh weights first, so the heartbeat
-    # then sees a reset gap and skips — they never compete for the set_weights
-    # slot (the 180-block rate limit). Per-tool timeouts (not ordering) prevent a
-    # stalled tool from starving the heartbeat.
-    assert _names(build_commands(_cfg())) == ["reg-index", "scoring", "heartbeat"]
+def test_reg_index_head_first_then_archive_scoring_heartbeat_last():
+    # reg-index-head (fast lite-node refresh) runs FIRST so new registrations are
+    # caught every tick even if the archive block-scan is slow/stuck; the archive
+    # build follows for historical completeness. Heartbeat runs LAST: scoring
+    # commits fresh weights first, so the heartbeat then sees a reset gap and
+    # skips — they never compete for the set_weights slot (180-block rate limit).
+    assert _names(build_commands(_cfg())) == [
+        "reg-index-head", "reg-index", "scoring", "heartbeat"]
+
+
+def test_reg_index_head_uses_lite_node_and_refresh_script():
+    argv, env, timeout = _by_name(build_commands(_cfg()), "reg-index-head")
+    assert "scripts.refresh_reg_index_head" in argv
+    assert "--index" in argv and "/data/sn21-reg-index.json" in argv
+    assert "--network" in argv and "finney" in argv
+    # NO archive override — the head refresh reads the lite node on purpose.
+    assert env == {}
+    assert timeout == _cfg().reg_index_head_timeout_seconds
+
+
+def test_skip_reg_index_head_leaves_only_archive_scan():
+    names = _names(build_commands(_cfg(skip_reg_index_head=True)))
+    assert "reg-index-head" not in names
+    assert names == ["reg-index", "scoring", "heartbeat"]
+
+
+def test_skip_reg_index_drops_both_reg_steps():
+    names = _names(build_commands(_cfg(skip_reg_index=True)))
+    assert "reg-index-head" not in names and "reg-index" not in names
 
 
 def test_each_command_carries_its_timeout():
@@ -106,8 +129,10 @@ def test_heartbeat_dry_run_flag_passthrough():
 
 
 def test_skip_toggles_drop_commands():
-    assert _names(build_commands(_cfg(skip_scoring=True))) == ["reg-index", "heartbeat"]
-    assert _names(build_commands(_cfg(skip_heartbeat=True))) == ["reg-index", "scoring"]
+    assert _names(build_commands(_cfg(skip_scoring=True))) == [
+        "reg-index-head", "reg-index", "heartbeat"]
+    assert _names(build_commands(_cfg(skip_heartbeat=True))) == [
+        "reg-index-head", "reg-index", "scoring"]
     assert _names(build_commands(_cfg(skip_reg_index=True))) == ["scoring", "heartbeat"]
 
 
@@ -122,7 +147,7 @@ def test_report_step_absent_without_artifact_dir():
 
 def test_report_step_runs_after_scoring_before_heartbeat():
     cmds = build_commands(_cfg(leaderboard_artifact_dir="/data/sn21-epoch-artifacts"))
-    assert _names(cmds) == ["reg-index", "scoring", "report", "heartbeat"]
+    assert _names(cmds) == ["reg-index-head", "reg-index", "scoring", "report", "heartbeat"]
     argv, _e, _t = _by_name(cmds, "report")
     assert "scripts.post_epoch_report" in argv
     assert argv[argv.index("--artifact-dir") + 1] == "/data/sn21-epoch-artifacts"
@@ -140,8 +165,8 @@ def test_run_tick_calls_every_tool_in_order_and_records_codes():
         calls.append(name)
         return 0
     res = run_tick(_cfg(), runner=fake)
-    assert calls == ["reg-index", "scoring", "heartbeat"]
-    assert res == {"heartbeat": 0, "reg-index": 0, "scoring": 0}
+    assert calls == ["reg-index-head", "reg-index", "scoring", "heartbeat"]
+    assert res == {"heartbeat": 0, "reg-index-head": 0, "reg-index": 0, "scoring": 0}
 
 
 def test_run_tick_passes_each_tools_timeout_to_runner():
@@ -165,7 +190,7 @@ def test_run_tick_isolates_failures_so_heartbeat_still_runs_last():
             return 3
         return 0  # heartbeat
     res = run_tick(_cfg(), runner=fake)
-    assert res == {"reg-index": 3, "scoring": -1, "heartbeat": 0}
+    assert res == {"reg-index-head": 0, "reg-index": 3, "scoring": -1, "heartbeat": 0}
 
 
 def test_default_runner_returns_timeout_rc_on_expiry():

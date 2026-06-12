@@ -55,6 +55,7 @@ class DaemonConfig:
     reg_index_archive_url: str = ""     # SN21_SUBTENSOR_URL for the builder
     reg_index_cold_start_lookback_blocks: int = 0  # >0 bounds a no-checkpoint scan
     reg_index_max_blocks_per_tick: int = 0  # >0 caps each tick's scan (heartbeat safety)
+    skip_reg_index_head: bool = False   # disable the fast lite-node head refresh
     role: str = "miner"
     ed25519_key_file: str = ""          # scorer --ed25519-key-file (9.C inner_sig)
     archive_tier_2_urls: tuple = ()     # scorer --archive-tier-2 (miner AES_ct fetch)
@@ -66,6 +67,7 @@ class DaemonConfig:
     # activity cutoff. 0 = no ceiling.
     heartbeat_timeout_seconds: float = 240.0
     reg_index_timeout_seconds: float = 1200.0
+    reg_index_head_timeout_seconds: float = 420.0  # lite-node 256-hotkey sweep
     scoring_timeout_seconds: float = 1800.0
     report_timeout_seconds: float = 300.0
     # Leaderboard publish: after a successful scoring tick writes its artifact,
@@ -104,6 +106,23 @@ def build_commands(cfg: DaemonConfig) -> list:
     cmds: list = []
 
     if not cfg.skip_reg_index and cfg.reg_index:
+        # Fast, reliable FIRST: a head-only refresh reads each metagraph hotkey's
+        # CURRENT commitment from the LITE node (no archive) and merges any valid
+        # reg-v1 into the index. A miner who just registered hasn't overwritten
+        # their reg-v1, so this one-pass sweep catches them every tick — keeping
+        # the index current even when the archive block-scan below is slow or
+        # stuck (which silently froze the index for days in the field). Merge-only,
+        # so it never drops the block-scanned baseline.
+        if not cfg.skip_reg_index_head:
+            head_argv = [sys.executable, "-m", "scripts.refresh_reg_index_head",
+                         "--network", cfg.network, "--netuid", str(cfg.netuid),
+                         "--role", cfg.role, "--index", cfg.reg_index]
+            cmds.append(("reg-index-head", head_argv, {},
+                         cfg.reg_index_head_timeout_seconds))
+
+        # Archive block-scan for historical completeness (slow; bounded per tick
+        # so it can't starve the heartbeat). No longer the critical path for
+        # catching new miners — the head refresh above handles that.
         env = {}
         if cfg.reg_index_archive_url:
             env["SN21_SUBTENSOR_URL"] = cfg.reg_index_archive_url
@@ -242,6 +261,10 @@ def main(argv: Optional[list] = None) -> int:
                    default=float(os.environ.get("SN21_DAEMON_REG_INDEX_TIMEOUT_SECS", "1200")),
                    help="Kill the reg-index tool if it runs longer than this; the "
                         "checkpoint persists so the next tick resumes (0 = no limit).")
+    p.add_argument("--reg-index-head-timeout-seconds", type=float,
+                   default=float(os.environ.get("SN21_DAEMON_REG_INDEX_HEAD_TIMEOUT_SECS", "420")),
+                   help="Kill the fast head-only reg-index refresh if it runs longer "
+                        "than this (lite-node 256-hotkey sweep; 0 = no limit).")
     p.add_argument("--scoring-timeout-seconds", type=float,
                    default=float(os.environ.get("SN21_DAEMON_SCORING_TIMEOUT_SECS", "1800")),
                    help="Kill the scoring tool if it runs longer than this; it is "
@@ -258,6 +281,10 @@ def main(argv: Optional[list] = None) -> int:
     p.add_argument("--heartbeat-dry-run", action="store_true",
                    default=os.environ.get("SN21_HEARTBEAT_DRY_RUN", "0") == "1")
     p.add_argument("--skip-reg-index", action="store_true")
+    p.add_argument("--skip-reg-index-head", action="store_true",
+                   default=os.environ.get("SN21_SKIP_REG_INDEX_HEAD", "0") == "1",
+                   help="Disable the fast lite-node head refresh (leave only the "
+                        "archive block-scan).")
     p.add_argument("--skip-scoring", action="store_true")
     p.add_argument("--skip-report", action="store_true")
     p.add_argument("--skip-heartbeat", action="store_true")
@@ -275,6 +302,7 @@ def main(argv: Optional[list] = None) -> int:
         reg_index=args.reg_index, reg_index_archive_url=args.reg_index_archive_url,
         reg_index_cold_start_lookback_blocks=args.reg_index_cold_start_lookback_blocks,
         reg_index_max_blocks_per_tick=args.reg_index_max_blocks_per_tick,
+        skip_reg_index_head=args.skip_reg_index_head,
         role=args.role,
         ed25519_key_file=args.ed25519_key_file,
         archive_tier_2_urls=tuple(
@@ -284,6 +312,7 @@ def main(argv: Optional[list] = None) -> int:
         interval_seconds=args.interval_seconds,
         heartbeat_timeout_seconds=args.heartbeat_timeout_seconds,
         reg_index_timeout_seconds=args.reg_index_timeout_seconds,
+        reg_index_head_timeout_seconds=args.reg_index_head_timeout_seconds,
         scoring_timeout_seconds=args.scoring_timeout_seconds,
         report_timeout_seconds=args.report_timeout_seconds,
         leaderboard_artifact_dir=args.leaderboard_artifact_dir,
