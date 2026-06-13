@@ -3,7 +3,8 @@
 Runs the FastAPI app from `hope.validator.api.server:create_app` against a
 state dict built from:
   - episodes fetched from the operator's data API (HOPE_API_URL),
-  - the deadline computed as now + PREDICTION_DEADLINE_HOURS,
+  - the restart-stable submission deadline (SN21_PREDICTION_DEADLINE_UTC
+    override, else the calendar-anchored weekly Monday close),
   - registered miner hotkeys read from the metagraph.
 
 A background task refreshes `registered_miners` and `uid_map` from the
@@ -28,11 +29,11 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import uvicorn
 
-from hope.constants import PREDICTION_DEADLINE_HOURS
+from hope.validator.epoch_manager import next_mining_close
 from hope.validator.api.server import create_app
 from hope.validator.data_client import HopeDataClient
 
@@ -93,8 +94,26 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
         len(epoch_data.episodes), release_key, epoch_data.schema_version,
     )
 
-    deadline = (datetime.now(timezone.utc)
-                + timedelta(hours=PREDICTION_DEADLINE_HOURS)).isoformat()
+    # Submission deadline. MUST be restart-stable: computing it as
+    # `now + PREDICTION_DEADLINE_HOURS` re-anchored the close to process-start
+    # time, so every API restart slid the deadline forward (a Jun-12 restart
+    # pushed W24's close from Mon 05:00 UTC to the following Fri). Instead:
+    #   1. an explicit operator override (SN21_PREDICTION_DEADLINE_UTC, absolute
+    #      ISO-8601) — authoritative + fixed across restarts; set per epoch; or
+    #   2. the calendar-anchored Monday close (next Monday MINING_CLOSE_HOUR_UTC),
+    #      identical on every restart within the week — the weekly Mon→Mon cadence.
+    _override = os.environ.get("SN21_PREDICTION_DEADLINE_UTC", "").strip()
+    if _override:
+        try:
+            deadline = (datetime.fromisoformat(_override.replace("Z", "+00:00"))
+                        .astimezone(timezone.utc).isoformat())
+            logger.info("Using SN21_PREDICTION_DEADLINE_UTC override: %s", deadline)
+        except ValueError:
+            logger.warning("Bad SN21_PREDICTION_DEADLINE_UTC=%r; falling back to "
+                           "weekly Monday close", _override)
+            deadline = next_mining_close(datetime.now(timezone.utc)).isoformat()
+    else:
+        deadline = next_mining_close(datetime.now(timezone.utc)).isoformat()
 
     registered_miners: set[str] = set()
     uid_map: dict[str, int] = {}
