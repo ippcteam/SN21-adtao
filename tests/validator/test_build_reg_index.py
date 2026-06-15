@@ -151,3 +151,49 @@ def test_build_once_up_to_date_does_not_scan(tmp_path):
                        backfill_start=None, cold_start_lookback=100, checkpoint_every=500)
     assert calls == []
     assert found == 0
+
+
+# ---------------------------------------------------------------------------
+# Anti-clobber: a slow build pass must NOT overwrite additions a concurrent
+# writer (head-refresh) made to the file between this pass's load and save.
+# Regression for the live 221 -> 167 revert.
+# ---------------------------------------------------------------------------
+
+
+def _je(pk_hex: str, block: int) -> dict:
+    return {
+        "hotkey_ss58": "5Stub" + pk_hex[:6],
+        "hotkey_pk_hex": pk_hex,
+        "ed25519_pk_hex": "ab" * 32,
+        "role": "M",
+        "block_number": block,
+    }
+
+
+def test_save_unions_with_concurrent_on_disk_additions(tmp_path):
+    path = str(tmp_path / "idx.json")
+    # Disk already has A + B (e.g. written by a concurrent head-refresh).
+    with open(path, "w") as f:
+        json.dump([_je("aa" * 32, 100), _je("bb" * 32, 100)], f)
+    # A slow build pass only knows about C — saving must NOT drop A and B.
+    _save(path, "miner", 21, last_scanned_block=500, entries=[_je("cc" * 32, 200)])
+    with open(path) as f:
+        saved = {e["hotkey_pk_hex"] for e in json.load(f)}
+    assert saved == {"aa" * 32, "bb" * 32, "cc" * 32}  # union, nothing clobbered
+
+
+def test_save_keeps_higher_block_per_hotkey(tmp_path):
+    path = str(tmp_path / "idx.json")
+    with open(path, "w") as f:
+        json.dump([_je("aa" * 32, 100)], f)  # disk: A @ 100
+    _save(path, "miner", 21, last_scanned_block=500, entries=[_je("aa" * 32, 250)])  # newer A @ 250
+    with open(path) as f:
+        rows = json.load(f)
+    assert len(rows) == 1 and rows[0]["block_number"] == 250  # newer wins
+
+
+def test_save_no_prior_file_writes_entries(tmp_path):
+    path = str(tmp_path / "fresh.json")
+    _save(path, "miner", 21, last_scanned_block=10, entries=[_je("dd" * 32, 5)])
+    with open(path) as f:
+        assert {e["hotkey_pk_hex"] for e in json.load(f)} == {"dd" * 32}

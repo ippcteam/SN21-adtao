@@ -82,13 +82,53 @@ def _state_path(index_path: str) -> str:
     return f"{index_path}.state.json"
 
 
+def _union_with_disk(index_path: str, entries: list) -> list:
+    """Union ``entries`` with whatever is CURRENTLY on disk, keyed by hotkey,
+    keeping the higher ``block_number`` per hotkey.
+
+    A scan pass can take minutes on a slow archive. Between this builder loading
+    the file at the start of a pass and writing it back at the end, another
+    writer (the fast head-refresh, or a parallel manual run) may have ADDED
+    entries. Writing only our own in-memory set would clobber those additions
+    (observed live: a 221-entry index reverted to 167 when a slow build pass
+    overwrote a concurrent head-refresh). Re-reading + unioning immediately
+    before the write shrinks the clobber window from the whole scan to a few
+    milliseconds and is consistent with the merge-only contract (we never drop).
+    """
+    merged: dict = {}
+
+    def _ingest(items):
+        for e in items:
+            k = e.get("hotkey_pk_hex")
+            if not k:
+                continue
+            prev = merged.get(k)
+            if prev is None or int(e.get("block_number", -1)) >= int(prev.get("block_number", -1)):
+                merged[k] = e
+
+    try:
+        with open(index_path) as f:
+            disk = json.load(f)
+        if isinstance(disk, list):
+            _ingest(disk)  # on-disk first; our entries win ties
+    except (OSError, json.JSONDecodeError):
+        pass
+    _ingest(entries)
+    return list(merged.values())
+
+
 def _save(index_path: str, role: str, netuid: int,
           last_scanned_block: int, entries: list) -> None:
-    """Persist the index (bare list) + the sidecar checkpoint, atomically."""
-    _atomic_write_json(index_path, entries)
+    """Persist the index (bare list) + the sidecar checkpoint, atomically.
+
+    Unions with the current on-disk file first so a slow pass can't clobber a
+    concurrent writer's additions (see ``_union_with_disk``).
+    """
+    union = _union_with_disk(index_path, entries)
+    _atomic_write_json(index_path, union)
     _atomic_write_json(_state_path(index_path), {
         "last_scanned_block": int(last_scanned_block),
-        "entries": len(entries),
+        "entries": len(union),
         "role": role,
         "netuid": netuid,
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
