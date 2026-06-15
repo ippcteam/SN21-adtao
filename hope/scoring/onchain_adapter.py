@@ -33,6 +33,7 @@ reproduce it byte-for-byte.
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -279,7 +280,15 @@ def score_one_miner(
 # Fully deterministic. Opt in via SN21_SCORING_V2 (the matching verifier must
 # set the same flag; recording the scorer version on chain is a follow-up).
 # Scale constants are in deci-percent and tunable at Review 1.
-PINBALL_SCALE = 300.0
+# PINBALL_SCALE controls the pinball gradient (50% of the v2 score). It is the
+# dominant lever on score *differentiation*: at the legacy 300 a half-right
+# prediction, a do-nothing, and a wrong-direction one all score ~0.86 (flat
+# emissions); lowering it toward ~12–20 (matched to observed delta magnitudes)
+# restores a real ladder. Env-tunable so the scale can be calibrated per the
+# observed truth distribution WITHOUT a code change. NOTE: the score verifier
+# must use the SAME value (see task: record scorer params on chain) — changing
+# it is a scoring-spec change, not a silent tweak.
+PINBALL_SCALE = float(os.environ.get("SN21_PINBALL_SCALE", "300"))
 P50_GOAL_SCALE = 400.0
 INTERVAL_WIDTH_SCALE = 1000.0
 _QUANTILE_LEVELS = (0.1, 0.5, 0.9)

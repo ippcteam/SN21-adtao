@@ -21,6 +21,35 @@ from hope.scoring.onchain_adapter import (
 )
 
 
+class TestPinballScaleDifferentiation:
+    """A lower PINBALL_SCALE widens the score gap between a meaningfully-better
+    prediction and do-nothing. At the legacy 300, half-right ≈ zero (the flat-
+    emissions bug); recalibrating restores a real gradient."""
+
+    def _truth(self):  # near-zero aggregate truth, like live W24
+        return {"7": HorizonTruth(horizon="7", truth_cost_p50_dpct=-2,
+                                  truth_conv_p50_dpct=-6, truth_eff_p50_dpct=-4,
+                                  goal_miss_freq_ppm=0, instab_freq_ppm=0)}
+
+    def _pred(self, frac):
+        t = self._truth()["7"]
+        return {"horizons": [{"h": "7",
+                "cost_q": [round(t.truth_cost_p50_dpct * frac)] * 3,
+                "conv_q": [round(t.truth_conv_p50_dpct * frac)] * 3,
+                "eff_q": [round(t.truth_eff_p50_dpct * frac)] * 3,
+                "miss_p": 0, "instab_p": 0}]}
+
+    def test_legacy_scale_is_flat_lower_scale_separates(self, monkeypatch):
+        import hope.scoring.onchain_adapter as A
+        t, half, zero = self._truth(), self._pred(0.5), self._pred(0.0)
+        monkeypatch.setattr(A, "PINBALL_SCALE", 300.0)
+        gap_legacy = (A.score_one_miner_v2(half, t) - A.score_one_miner_v2(zero, t)) / 1e6
+        monkeypatch.setattr(A, "PINBALL_SCALE", 15.0)
+        gap_recal = (A.score_one_miner_v2(half, t) - A.score_one_miner_v2(zero, t)) / 1e6
+        assert gap_legacy < 0.02          # half ≈ zero at 300 → flat emissions
+        assert gap_recal > gap_legacy     # recalibration separates them
+
+
 class TestPredictZeroBaselineMatchesActiveScorer:
     """Regression: the tiered gate's predict-zero baseline MUST be computed with
     the same scorer the miners are scored with. A hardcoded-v1 baseline (~0.97)
