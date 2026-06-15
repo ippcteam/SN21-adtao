@@ -164,6 +164,33 @@ class HopeDataClient:
                 "the release preceding the newest has no `release_key` field; "
                 "backend response shape may have changed."
             )
+
+        # Don't score releases[1] until its submission deadline has actually
+        # passed. The new epoch (releases[0]) is created Mon ~02:00 UTC, but the
+        # PRIOR epoch's window closes that same Mon 05:00 — so for ~3h both
+        # exist while releases[1] is still OPEN. Scoring it in that gap is
+        # premature: it commits an incomplete 9.C.1 and the already_scored guard
+        # then LOCKS the epoch at whatever (often empty → 100% burn) it scored
+        # before miners' bundles even revealed. (This is what burned W24.) The
+        # deadline = next_mining_close(releases[0].created_at) — the Monday close
+        # that coincides with the new epoch's open.
+        from datetime import datetime, timezone
+        from hope.validator.epoch_manager import next_mining_close
+        newest_created = releases[0].get("created_at")
+        if newest_created:
+            try:
+                opened = datetime.fromisoformat(str(newest_created))
+                if opened.tzinfo is None:
+                    opened = opened.replace(tzinfo=timezone.utc)
+                deadline = next_mining_close(opened)
+                if datetime.now(timezone.utc) < deadline:
+                    raise RuntimeError(
+                        f"scoreable release {key} has not closed yet (deadline "
+                        f"{deadline.isoformat()}); skipping to avoid premature "
+                        f"scoring. Pin --release {key} explicitly to override."
+                    )
+            except ValueError:
+                pass  # unparseable created_at → best-effort, fall through
         return str(key)
 
     async def fetch_release_metadata(self, release_key: str) -> dict:

@@ -21,6 +21,26 @@ from hope.scoring.onchain_adapter import (
 )
 
 
+class TestDirectionScore:
+    """Both-flat earns half credit (the trivial predict-zero call); a correct
+    non-flat directional call earns full credit; wrong direction earns zero."""
+
+    def test_both_flat_is_half(self):
+        from hope.scoring.onchain_adapter import _direction_score
+        assert _direction_score(0, 0) == 0.5      # zero vs flat truth
+        assert _direction_score(2, -3) == 0.5     # both within the ±5 flat band
+
+    def test_correct_nonflat_is_full(self):
+        from hope.scoring.onchain_adapter import _direction_score
+        assert _direction_score(20, 30) == 1.0    # both up
+        assert _direction_score(-20, -30) == 1.0  # both down
+
+    def test_wrong_direction_is_zero(self):
+        from hope.scoring.onchain_adapter import _direction_score
+        assert _direction_score(0, 30) == 0.0     # flat vs up
+        assert _direction_score(20, -30) == 0.0   # up vs down
+
+
 class TestPinballScaleDifferentiation:
     """A lower PINBALL_SCALE widens the score gap between a meaningfully-better
     prediction and do-nothing. At the legacy 300, half-right ≈ zero (the flat-

@@ -317,10 +317,18 @@ def _coverage_score(triple: list[int], truth: int) -> float:
 
 
 def _direction_score(p50: int, truth: int) -> float:
-    """1.0 iff the predicted P50 has the same sign as truth (|x|<5 dpct = flat)."""
+    """Directional accuracy of P50 vs truth (|x|<5 dpct = flat).
+
+    A correct NON-flat directional call earns full credit. "Both flat" earns
+    only HALF — predicting flat is the trivial predict-zero call, so it
+    shouldn't score the same as a skillful up/down call (giving it 1.0 floored
+    the predict-zero baseline higher than warranted on stable epochs).
+    """
     sp = 0 if abs(p50) < 5 else (1 if p50 > 0 else -1)
     st = 0 if abs(truth) < 5 else (1 if truth > 0 else -1)
-    return 1.0 if sp == st else 0.0
+    if sp != st:
+        return 0.0
+    return 0.5 if sp == 0 else 1.0
 
 
 def _p50_goal_score(p50: int, truth: int) -> float:
