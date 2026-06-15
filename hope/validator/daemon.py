@@ -55,7 +55,9 @@ class DaemonConfig:
     reg_index_archive_url: str = ""     # SN21_SUBTENSOR_URL for the builder
     reg_index_cold_start_lookback_blocks: int = 0  # >0 bounds a no-checkpoint scan
     reg_index_max_blocks_per_tick: int = 0  # >0 caps each tick's scan (heartbeat safety)
+    reg_index_staleness_alarm_blocks: int = 2000  # warn if head-last_scanned exceeds this
     skip_reg_index_head: bool = False   # disable the fast lite-node head refresh
+    skip_staleness_alarm: bool = False  # disable the reg-index staleness alarm
     role: str = "miner"
     ed25519_key_file: str = ""          # scorer --ed25519-key-file (9.C inner_sig)
     archive_tier_2_urls: tuple = ()     # scorer --archive-tier-2 (miner AES_ct fetch)
@@ -68,6 +70,7 @@ class DaemonConfig:
     heartbeat_timeout_seconds: float = 240.0
     reg_index_timeout_seconds: float = 1200.0
     reg_index_head_timeout_seconds: float = 420.0  # lite-node 256-hotkey sweep
+    staleness_alarm_timeout_seconds: float = 120.0  # lite-node single head read
     scoring_timeout_seconds: float = 1800.0
     report_timeout_seconds: float = 300.0
     # Leaderboard publish: after a successful scoring tick writes its artifact,
@@ -104,6 +107,18 @@ def build_commands(cfg: DaemonConfig) -> list:
     a no-op on the vast majority of ticks regardless of position.
     """
     cmds: list = []
+
+    # Staleness alarm FIRST — ground-truth health for the reg-index, the analogue
+    # of the LastUpdate-gap check for weights. It reads the builder's checkpoint
+    # and chain head (lite node) and screams if the event scan has fallen too far
+    # behind; it runs even when reg-index scanning is skipped/broken, so a frozen
+    # index (2026-06-04 → unnoticed 11 days) can never again hide behind green logs.
+    if not cfg.skip_staleness_alarm and cfg.reg_index:
+        argv = [sys.executable, "-m", "scripts.check_reg_index_staleness",
+                "--network", cfg.network, "--index", cfg.reg_index,
+                "--threshold-blocks", str(cfg.reg_index_staleness_alarm_blocks)]
+        cmds.append(("staleness-alarm", argv, {},
+                     cfg.staleness_alarm_timeout_seconds))
 
     if not cfg.skip_reg_index and cfg.reg_index:
         # Fast, reliable FIRST: a head-only refresh reads each metagraph hotkey's
@@ -285,6 +300,18 @@ def main(argv: Optional[list] = None) -> int:
                    default=os.environ.get("SN21_SKIP_REG_INDEX_HEAD", "0") == "1",
                    help="Disable the fast lite-node head refresh (leave only the "
                         "archive block-scan).")
+    p.add_argument("--reg-index-staleness-alarm-blocks", type=int,
+                   default=int(os.environ.get("SN21_REG_INDEX_STALENESS_ALARM_BLOCKS", "2000")),
+                   help="Warn loudly when chain head exceeds the reg-index's "
+                        "last_scanned_block by more than this many blocks (a frozen "
+                        "event scan silently DQs new miners).")
+    p.add_argument("--skip-staleness-alarm", action="store_true",
+                   default=os.environ.get("SN21_SKIP_STALENESS_ALARM", "0") == "1",
+                   help="Disable the reg-index staleness alarm tick step.")
+    p.add_argument("--staleness-alarm-timeout-seconds", type=float,
+                   default=float(os.environ.get("SN21_DAEMON_STALENESS_ALARM_TIMEOUT_SECS", "120")),
+                   help="Kill the staleness alarm if it runs longer than this "
+                        "(lite-node single head read; 0 = no limit).")
     p.add_argument("--skip-scoring", action="store_true")
     p.add_argument("--skip-report", action="store_true")
     p.add_argument("--skip-heartbeat", action="store_true")
@@ -302,7 +329,10 @@ def main(argv: Optional[list] = None) -> int:
         reg_index=args.reg_index, reg_index_archive_url=args.reg_index_archive_url,
         reg_index_cold_start_lookback_blocks=args.reg_index_cold_start_lookback_blocks,
         reg_index_max_blocks_per_tick=args.reg_index_max_blocks_per_tick,
+        reg_index_staleness_alarm_blocks=args.reg_index_staleness_alarm_blocks,
         skip_reg_index_head=args.skip_reg_index_head,
+        skip_staleness_alarm=args.skip_staleness_alarm,
+        staleness_alarm_timeout_seconds=args.staleness_alarm_timeout_seconds,
         role=args.role,
         ed25519_key_file=args.ed25519_key_file,
         archive_tier_2_urls=tuple(

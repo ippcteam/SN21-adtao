@@ -34,7 +34,7 @@ def test_reg_index_head_first_then_archive_scoring_heartbeat_last():
     # commits fresh weights first, so the heartbeat then sees a reset gap and
     # skips — they never compete for the set_weights slot (180-block rate limit).
     assert _names(build_commands(_cfg())) == [
-        "reg-index-head", "reg-index", "scoring", "heartbeat"]
+        "staleness-alarm", "reg-index-head", "reg-index", "scoring", "heartbeat"]
 
 
 def test_reg_index_head_uses_lite_node_and_refresh_script():
@@ -50,7 +50,7 @@ def test_reg_index_head_uses_lite_node_and_refresh_script():
 def test_skip_reg_index_head_leaves_only_archive_scan():
     names = _names(build_commands(_cfg(skip_reg_index_head=True)))
     assert "reg-index-head" not in names
-    assert names == ["reg-index", "scoring", "heartbeat"]
+    assert names == ["staleness-alarm", "reg-index", "scoring", "heartbeat"]
 
 
 def test_skip_reg_index_drops_both_reg_steps():
@@ -130,10 +130,13 @@ def test_heartbeat_dry_run_flag_passthrough():
 
 def test_skip_toggles_drop_commands():
     assert _names(build_commands(_cfg(skip_scoring=True))) == [
-        "reg-index-head", "reg-index", "heartbeat"]
+        "staleness-alarm", "reg-index-head", "reg-index", "heartbeat"]
     assert _names(build_commands(_cfg(skip_heartbeat=True))) == [
-        "reg-index-head", "reg-index", "scoring"]
-    assert _names(build_commands(_cfg(skip_reg_index=True))) == ["scoring", "heartbeat"]
+        "staleness-alarm", "reg-index-head", "reg-index", "scoring"]
+    # skip_reg_index drops the scan steps but the staleness alarm still fires
+    # (its whole point is to scream when scanning is broken/skipped).
+    assert _names(build_commands(_cfg(skip_reg_index=True))) == [
+        "staleness-alarm", "scoring", "heartbeat"]
 
 
 def test_no_reg_index_path_means_no_reg_index_command():
@@ -147,7 +150,8 @@ def test_report_step_absent_without_artifact_dir():
 
 def test_report_step_runs_after_scoring_before_heartbeat():
     cmds = build_commands(_cfg(leaderboard_artifact_dir="/data/sn21-epoch-artifacts"))
-    assert _names(cmds) == ["reg-index-head", "reg-index", "scoring", "report", "heartbeat"]
+    assert _names(cmds) == [
+        "staleness-alarm", "reg-index-head", "reg-index", "scoring", "report", "heartbeat"]
     argv, _e, _t = _by_name(cmds, "report")
     assert "scripts.post_epoch_report" in argv
     assert argv[argv.index("--artifact-dir") + 1] == "/data/sn21-epoch-artifacts"
@@ -165,8 +169,9 @@ def test_run_tick_calls_every_tool_in_order_and_records_codes():
         calls.append(name)
         return 0
     res = run_tick(_cfg(), runner=fake)
-    assert calls == ["reg-index-head", "reg-index", "scoring", "heartbeat"]
-    assert res == {"heartbeat": 0, "reg-index-head": 0, "reg-index": 0, "scoring": 0}
+    assert calls == ["staleness-alarm", "reg-index-head", "reg-index", "scoring", "heartbeat"]
+    assert res == {"staleness-alarm": 0, "heartbeat": 0, "reg-index-head": 0,
+                   "reg-index": 0, "scoring": 0}
 
 
 def test_run_tick_passes_each_tools_timeout_to_runner():
@@ -190,7 +195,8 @@ def test_run_tick_isolates_failures_so_heartbeat_still_runs_last():
             return 3
         return 0  # heartbeat
     res = run_tick(_cfg(), runner=fake)
-    assert res == {"reg-index-head": 0, "reg-index": 3, "scoring": -1, "heartbeat": 0}
+    assert res == {"staleness-alarm": 0, "reg-index-head": 0, "reg-index": 3,
+                   "scoring": -1, "heartbeat": 0}
 
 
 def test_default_runner_returns_timeout_rc_on_expiry():

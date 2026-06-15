@@ -222,33 +222,54 @@ class RegistrationIndex:
             return 0
         found_this_range = 0
         n_scanned = 0
-        consecutive_errors = 0
         for block_num in range(start_block, end_block + 1):
-            try:
-                block_hash = self._subtensor.substrate.get_block_hash(block_num)
-                consecutive_errors = 0
-            except Exception as exc:
-                logger.warning("get_block_hash(%d) failed: %s", block_num, exc)
-                consecutive_errors += 1
-                if consecutive_errors >= self._reconnect_after_failures:
-                    if self._try_reconnect():
-                        consecutive_errors = 0
-                continue
+            # Read this block with bounded retries, reconnecting between attempts.
+            # CRITICAL: if it stays unreadable, STOP the pass — never `continue`
+            # past it. Skipping a failed block would let `last_scanned_block`
+            # advance over an UNREAD block, and its registrations would be dropped
+            # PERMANENTLY (the silent-gap bug: a flaky archive drops the socket
+            # mid-scan, the block is skipped, the checkpoint moves on, and that
+            # miner is invisible to scoring forever). Stopping leaves the
+            # checkpoint at the last CONTIGUOUS block, so the next pass resumes
+            # exactly here and retries it — progress is gapless by construction.
+            block_hash = None
+            for attempt in range(self._reconnect_after_failures):
+                try:
+                    block_hash = self._subtensor.substrate.get_block_hash(block_num)
+                    break
+                except Exception as exc:
+                    logger.warning("get_block_hash(%d) failed (attempt %d/%d): %s",
+                                   block_num, attempt + 1,
+                                   self._reconnect_after_failures, exc)
+                    self._try_reconnect()
             if not isinstance(block_hash, str):
-                continue
+                logger.error("stopping pass at block %d: block hash unreadable after "
+                             "%d attempts; checkpoint stays at %s so this block is "
+                             "retried next pass (no gap)", block_num,
+                             self._reconnect_after_failures, self._last_scanned_block)
+                break
 
-            try:
-                events = read_events_at_block(
-                    self._subtensor, block_hash, module_filter="Commitments",
-                )
-                consecutive_errors = 0
-            except Exception as exc:
-                logger.warning("events at block %d failed: %s", block_num, exc)
-                consecutive_errors += 1
-                if consecutive_errors >= self._reconnect_after_failures:
-                    if self._try_reconnect():
-                        consecutive_errors = 0
-                continue
+            events = None
+            read_ok = False
+            for attempt in range(self._reconnect_after_failures):
+                try:
+                    events = read_events_at_block(
+                        self._subtensor, block_hash, module_filter="Commitments",
+                    )
+                    read_ok = True
+                    break
+                except Exception as exc:
+                    logger.warning("events at block %d failed (attempt %d/%d): %s",
+                                   block_num, attempt + 1,
+                                   self._reconnect_after_failures, exc)
+                    self._try_reconnect()
+            if not read_ok:
+                logger.error("stopping pass at block %d: events unreadable after %d "
+                             "attempts; checkpoint stays at %s (retried next pass, "
+                             "no gap)", block_num,
+                             self._reconnect_after_failures, self._last_scanned_block)
+                break
+
             self._stats["blocks_scanned"] += 1
             n_scanned += 1
 

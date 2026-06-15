@@ -313,3 +313,57 @@ def test_merge_json_ignores_malformed_entries():
     ]
     assert index.merge_json(bad) == 0
     assert index.size == 0
+
+
+# ---------------------------------------------------------------------------
+# Silent-gap regression: a block that fails to read must STOP the pass, never
+# be skipped while the checkpoint advances past it (the freeze bug that dropped
+# real miners forever when the flaky archive timed out mid-scan).
+# ---------------------------------------------------------------------------
+
+
+class _FlakyHashSubtensor(_FakeSubtensor):
+    """get_block_hash raises on one block (simulates a dropped archive socket)."""
+
+    def __init__(self, *, fail_block: int, **kw):
+        super().__init__(**kw)
+        self._fail_block = fail_block
+
+    def get_block_hash(self, block_number: int) -> str:
+        if block_number == self._fail_block:
+            raise ConnectionError("websocket keepalive ping timeout")
+        return f"0x{block_number:064x}"
+
+
+def test_unreadable_block_stops_pass_without_advancing_checkpoint(monkeypatch):
+    # Block 102 is unreadable. The scan must stop at 101 — NOT skip 102 and run
+    # on to 105, which would advance last_scanned_block past an unread block and
+    # drop its registrations permanently. (reconnect_network=None → no reconnect,
+    # so the bounded retries all fail and the pass breaks.)
+    _install_fakes(monkeypatch, events_by_block={}, commits_by_pin={})
+    index = RegistrationIndex(_FlakyHashSubtensor(fail_block=102), netuid=466)
+    index.scan_range(100, 105)
+    assert index.last_scanned_block == 101  # last contiguous block, no gap past 102
+
+
+def test_events_read_failure_also_stops_without_gap(monkeypatch):
+    # Same guarantee when get_block_hash succeeds but events read fails.
+    import hope.validator.registration_index as mod
+
+    def flaky_read_events(subtensor, block_hash, *, module_filter=None):
+        if int(block_hash, 16) == 103:
+            raise TimeoutError("archive timed out closing connection")
+        return []
+
+    monkeypatch.setattr(mod, "read_events_at_block", flaky_read_events)
+    index = RegistrationIndex(_FakeSubtensor(), netuid=466)
+    index.scan_range(100, 110)
+    assert index.last_scanned_block == 102  # stopped at the block before the failure
+
+
+def test_clean_scan_still_advances_to_end(monkeypatch):
+    # Happy path unchanged: a fully-readable range advances the checkpoint to end.
+    _install_fakes(monkeypatch, events_by_block={}, commits_by_pin={})
+    index = RegistrationIndex(_FakeSubtensor(), netuid=466)
+    index.scan_range(100, 105)
+    assert index.last_scanned_block == 105
