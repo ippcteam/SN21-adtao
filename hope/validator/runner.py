@@ -415,7 +415,7 @@ def _run_validator_onchain_cli(args, runner):
         aggregate_outcomes_to_truth,
         compute_scoring_inputs_hash,
         make_scorer,
-        score_one_miner,
+        predict_zero_baseline,
     )
     from hope.validator.onchain_runner import (
         MinerOnChainInputs,
@@ -594,14 +594,10 @@ def _run_validator_onchain_cli(args, runner):
     # zero-probability prediction achieves against the same per-horizon truth.
     # Miners must beat this to qualify for a tier pool. Only consulted when
     # SN21_TIERED_WEIGHTS is enabled; harmless to compute otherwise.
-    _zero_plaintext = {
-        "horizons": [
-            {"h": h, "cost_q": [0, 0, 0], "conv_q": [0, 0, 0],
-             "eff_q": [0, 0, 0], "miss_p": 0, "instab_p": 0}
-            for h in truth_by_horizon
-        ]
-    }
-    baseline_score = score_one_miner(_zero_plaintext, truth_by_horizon) / 1_000_000.0
+    # Use the SAME scorer the miners are scored with (v2 when SN21_SCORING_V2 is
+    # set) — a hardcoded-v1 baseline vs v2 miner scores gate-excluded 100% of
+    # miners and burned every epoch.
+    baseline_score = predict_zero_baseline(truth_by_horizon)
     print(
         f"[baseline] predict-zero baseline_score={baseline_score:.4f} "
         f"over {len(truth_by_horizon)} horizons",

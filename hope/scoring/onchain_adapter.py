@@ -373,15 +373,43 @@ def make_scorer(
     Returns:
         Callable suitable for `run_epoch_scoring(scorer=...)`.
     """
-    import os as _os
-    _use_v2 = _os.environ.get("SN21_SCORING_V2", "").strip().lower() in (
-        "1", "true", "yes", "on",
-    )
-    _score = score_one_miner_v2 if _use_v2 else score_one_miner
+    _score = _scoring_fn_for_env()
 
     def scorer(epoch_id: str, plaintexts: dict[bytes, dict[str, Any]]) -> dict[bytes, int]:
         return {hk: _score(pt, truth_by_horizon) for hk, pt in plaintexts.items()}
     return scorer
+
+
+def _scoring_fn_for_env():
+    """The single source of truth for which scorer is active (v1/v2).
+
+    `make_scorer` and the predict-zero baseline MUST agree, or the tiered gate
+    compares miner scores on one scale against a baseline on another.
+    """
+    import os as _os
+    _use_v2 = _os.environ.get("SN21_SCORING_V2", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+    return score_one_miner_v2 if _use_v2 else score_one_miner
+
+
+def predict_zero_baseline(truth_by_horizon: dict[str, HorizonTruth]) -> float:
+    """Score of a flat predict-zero submission, in [0,1].
+
+    Computed with the SAME scorer the miners are scored with (v2 when
+    SN21_SCORING_V2 is set) so the tiered participation gate compares
+    like-for-like. Previously this was hardcoded to v1 while miners were scored
+    with v2 — a scale mismatch that gate-excluded 100% of miners (baseline≈0.99
+    on v1, unbeatable by v2 scores) → permanent full burn.
+    """
+    zero_plaintext = {
+        "horizons": [
+            {"h": h, "cost_q": [0, 0, 0], "conv_q": [0, 0, 0],
+             "eff_q": [0, 0, 0], "miss_p": 0, "instab_p": 0}
+            for h in truth_by_horizon
+        ]
+    }
+    return _scoring_fn_for_env()(zero_plaintext, truth_by_horizon) / 1_000_000.0
 
 
 def compute_scoring_inputs_hash(

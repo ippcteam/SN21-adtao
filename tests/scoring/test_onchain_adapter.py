@@ -14,9 +14,56 @@ from hope.scoring.onchain_adapter import (
     bundle_to_predictions,
     compute_scoring_inputs_hash,
     make_scorer,
+    predict_zero_baseline,
     score_one_miner,
+    score_one_miner_v2,
     wrap_epoch_scorer,
 )
+
+
+class TestPredictZeroBaselineMatchesActiveScorer:
+    """Regression: the tiered gate's predict-zero baseline MUST be computed with
+    the same scorer the miners are scored with. A hardcoded-v1 baseline (~0.97)
+    vs v2 miner scores gate-excluded 100% of miners → permanent full burn."""
+
+    def _truth(self):  # non-zero deltas → predict-zero is NOT perfect
+        return {"7": HorizonTruth(horizon="7", truth_cost_p50_dpct=30,
+                                  truth_conv_p50_dpct=-20, truth_eff_p50_dpct=15,
+                                  goal_miss_freq_ppm=100_000, instab_freq_ppm=50_000)}
+
+    def _zero(self, truth):
+        return {"horizons": [{"h": h, "cost_q": [0, 0, 0], "conv_q": [0, 0, 0],
+                              "eff_q": [0, 0, 0], "miss_p": 0, "instab_p": 0}
+                             for h in truth]}
+
+    def test_baseline_uses_v1_when_flag_unset(self, monkeypatch):
+        monkeypatch.delenv("SN21_SCORING_V2", raising=False)
+        t = self._truth()
+        assert predict_zero_baseline(t) == pytest.approx(
+            score_one_miner(self._zero(t), t) / 1_000_000.0)
+
+    def test_baseline_uses_v2_when_flag_set(self, monkeypatch):
+        monkeypatch.setenv("SN21_SCORING_V2", "1")
+        t = self._truth()
+        assert predict_zero_baseline(t) == pytest.approx(
+            score_one_miner_v2(self._zero(t), t) / 1_000_000.0)
+
+    def test_v1_baseline_higher_than_v2_on_nonzero_truth(self, monkeypatch):
+        t = self._truth()
+        monkeypatch.delenv("SN21_SCORING_V2", raising=False)
+        v1 = predict_zero_baseline(t)
+        monkeypatch.setenv("SN21_SCORING_V2", "1")
+        v2 = predict_zero_baseline(t)
+        assert v1 > v2  # v1 compresses near 1.0; v2 leaves room for miners to beat
+
+    def test_baseline_agrees_with_make_scorer(self, monkeypatch):
+        # the invariant that prevents the bug recurring: scoring predict-zero
+        # through make_scorer (the miner path) == predict_zero_baseline.
+        monkeypatch.setenv("SN21_SCORING_V2", "1")
+        t = self._truth()
+        scorer = make_scorer(t)
+        miner_path = scorer("EP", {b"x": self._zero(t)})[b"x"] / 1_000_000.0
+        assert predict_zero_baseline(t) == pytest.approx(miner_path)
 
 
 def _plaintext(epoch_id="EP-A", hk=None, cost_q=(-50, 0, 50), conv_q=(-30, 10, 50),
