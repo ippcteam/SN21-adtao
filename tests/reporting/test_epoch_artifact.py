@@ -261,3 +261,56 @@ def test_written_file_is_valid_json(tmp_path):
         raw = json.load(f)
     assert raw["epoch_id"] == "WR-JSON-OK"
     assert raw["artifact_schema_version"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Baseline threading — the leaderboard MUST gate/tier against the real
+# predict-zero baseline the chain used, not the 0.0 placeholder. Otherwise a
+# below-baseline miner shows a tier while earning 0 on chain ("Competitive but
+# earns nothing" — the contradiction Rob flagged). Regression for that.
+# ---------------------------------------------------------------------------
+
+
+def test_real_baseline_threads_into_tiers_and_met_flags(tmp_path):
+    # _outcome(3) → raw scores 0.50, 0.55, 0.60. Gate is strict raw > baseline.
+    artifact = build_artifact(
+        outcome=_outcome(3),
+        epoch_id="WR-TEST-W24-PUB-E1",
+        total_registered_uids=3,
+        chain_fetch_timestamp="2026-06-01T17:00:00+00:00",
+        baseline_score=0.55,
+    )
+    assert artifact.baseline_score == 0.55
+    met = {round(r["raw_score"], 2): r["met_baseline"]
+           for r in artifact.per_uid_scores if "status" not in r}
+    assert met[0.50] is False
+    assert met[0.55] is False          # strict gate: equal is NOT above
+    assert met[0.60] is True
+    # only the one above-baseline miner qualifies for a tier/funding
+    assert len(artifact.tier_result.get("qualifying", [])) == 1
+
+
+def test_below_baseline_scored_miner_gets_no_tier_in_payload(tmp_path):
+    # The end-to-end reconciliation: a scored-but-below-baseline miner must show
+    # as disqualified_below_threshold with tier=None + met_baseline=False — never
+    # a tiered "scored" row — so the published table matches the funded set.
+    from hope.reporting.aggregator import aggregate
+    artifact = build_artifact(
+        outcome=_outcome(3),
+        epoch_id="WR-TEST-W24-PUB-E1",
+        total_registered_uids=3,
+        chain_fetch_timestamp="2026-06-01T17:00:00+00:00",
+        baseline_score=0.55,
+    )
+    payload = aggregate(artifact)
+    assert payload.baseline_score == 0.55
+    by_uid = {mr.uid: mr for mr in payload.miner_results}
+    # uids 0 (0.50) + 1 (0.55) below/at baseline → DQ, no tier, not met
+    for u in (0, 1):
+        assert by_uid[u].status == "disqualified_below_threshold"
+        assert by_uid[u].tier is None
+        assert by_uid[u].met_baseline is False
+    # uid 2 (0.60) cleared the baseline
+    assert by_uid[2].met_baseline is True
+    # invariant: any row WITH a tier must have met the baseline
+    assert all(mr.met_baseline for mr in payload.miner_results if mr.tier is not None)

@@ -236,6 +236,7 @@ def aggregate(
         total_registered_uids=artifact.total_registered_uids,
         pool_size_below_distribution_floor=pool_below_floor,
         baseline_beat_rate=_baseline_beat_rate(qualifying_scores),
+        baseline_score=max(0.0, min(1.0, float(getattr(artifact, "baseline_score", 0.0) or 0.0))),
         score_distribution=score_distribution,
         tier_distribution=tier_distribution,
         tier_split_active=tier_split_active,
@@ -309,7 +310,17 @@ def _build_miner_results(
         for hk in artifact.tier_result.get("participating", []) or []:
             tier_by_hotkey[hk] = "participating"
 
+    # Allocator exclusions (hotkey → reason): below_baseline, coverage, etc.
+    # Merge these into the per-miner row so a scored-but-excluded miner shows
+    # ONE row with the correct disqualified status (not a "scored" row plus a
+    # duplicate). The below-baseline case is the important one post-baseline-fix.
+    excluded_map: dict[str, str] = {}
+    _ex = artifact.tier_result.get("excluded", {}) if isinstance(artifact.tier_result, dict) else {}
+    if isinstance(_ex, dict):
+        excluded_map = {str(hk): str(reason) for hk, reason in _ex.items()}
+
     results: list[MinerResult] = []
+    emitted_hotkeys: set[str] = set()
     for entry in artifact.per_uid_scores:
         # Skip rows lacking the fields we need.
         try:
@@ -328,10 +339,24 @@ def _build_miner_results(
             status = _map_exclusion_to_status(raw_status)
             # DQ rows always have tier=null per Rob's v4 spec.
             tier = None
+        elif hotkey in excluded_map:
+            # Scored a number but the allocator excluded it (below_baseline,
+            # coverage, …). Show the exclusion, not a tiered "scored" row —
+            # this is the "Competitive but earns 0 on chain" fix.
+            status = _map_exclusion_to_status(excluded_map[hotkey])
+            tier = None
         elif epoch_membership_uids is not None and uid not in epoch_membership_uids:
             # Scored, but not part of this epoch's eligible cohort (re-run scoped
             # to the original participants). Show the row, flagged + tier cleared.
             status = "disqualified_not_in_epoch"
+            tier = None
+        elif not bool(entry.get("met_baseline", True)):
+            # Scored a number but did NOT clear the predict-zero baseline →
+            # earns 0 on chain and gets NO tier. Show that honestly instead of
+            # a tiered "scored" row (this is the "Competitive but earns 0 on
+            # chain" contradiction — the published table must match the funded
+            # set). Old artifacts lacking met_baseline default True (no regress).
+            status = "disqualified_below_threshold"
             tier = None
         else:
             status = "scored"
@@ -346,14 +371,17 @@ def _build_miner_results(
             score=clamped,
             status=status,
             tier=tier,
+            met_baseline=bool(entry.get("met_baseline", status == "scored")),
         ))
+        emitted_hotkeys.add(hotkey)
 
-    # Disqualified miners — appear in tier_result['excluded'] when the
-    # runner records them. Shape: dict[hotkey -> reason] where reason
-    # is one of the runner's exclusion codes.
-    excluded = artifact.tier_result.get("excluded", {}) if isinstance(artifact.tier_result, dict) else {}
-    if isinstance(excluded, dict):
-        for hotkey, reason in excluded.items():
+    # Excluded miners with NO per_uid_scores row (score-less exclusions). Those
+    # that DID score were already emitted above with their exclusion merged in,
+    # so skip them here to avoid a duplicate UID row.
+    if excluded_map:
+        for hotkey, reason in excluded_map.items():
+            if str(hotkey) in emitted_hotkeys:
+                continue
             status = _map_exclusion_to_status(str(reason))
             # Excluded miners may not have a uid in artifact — skip if absent.
             uid = _find_uid_for_hotkey(artifact, str(hotkey))
@@ -365,6 +393,7 @@ def _build_miner_results(
                 score=0.0,
                 status=status,
                 tier=None,
+                met_baseline=False,
             ))
 
     return results
@@ -374,6 +403,7 @@ _EXCLUSION_STATUS_MAP = {
     "scored": "scored",
     # Generic disqualification reasons (existing in v3):
     "below_threshold": "disqualified_below_threshold",
+    "below_baseline": "disqualified_below_threshold",  # allocator gate reason
     "missing_snapshot": "disqualified_missing_snapshot",
     "invalid_commit": "disqualified_invalid_commit",
     "inner_sig_hotkey_mismatch": "disqualified_invalid_commit",

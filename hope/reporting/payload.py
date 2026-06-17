@@ -161,6 +161,12 @@ class MinerResult(BaseModel):
         "disqualified_other",
     ]
     tier: Optional[Literal["elite", "competitive", "participating"]] = None
+    # Did this miner clear the epoch's predict-zero baseline? Drives the
+    # leaderboard's "met baseline ✓/✗" column + gap display, and guarantees
+    # the table reconciles with the on-chain funded set: a row WITH a tier
+    # always has met_baseline=True; below-baseline rows are
+    # status="disqualified_below_threshold", tier=null, met_baseline=False.
+    met_baseline: bool = False
 
     @field_validator("hotkey")
     @classmethod
@@ -231,6 +237,10 @@ class EpochReportPayload(BaseModel):
     total_registered_uids: int = Field(ge=0)
     pool_size_below_distribution_floor: bool
     baseline_beat_rate: float = Field(ge=0.0, le=1.0)
+    # The epoch's predict-zero participation-gate threshold (the SAME value the
+    # on-chain scorer gated on). The leaderboard shows this so a miner can see
+    # their score vs the line + the gap. Default 0.0 keeps older payloads valid.
+    baseline_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
     # Distribution (None when pool is below the floor)
     score_distribution: Optional[ScoreDistribution]

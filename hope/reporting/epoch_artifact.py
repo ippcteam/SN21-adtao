@@ -73,6 +73,13 @@ class EpochArtifact:
     validator_output_snapshot_timestamp: str
     chain_fetch_timestamp: str
 
+    # The predict-zero participation-gate baseline the on-chain scorer used
+    # this epoch. CRITICAL: the leaderboard MUST tier/gate against this same
+    # value, not a 0.0 placeholder — otherwise the published tiers disagree
+    # with the on-chain funded set (a miner shown "Competitive" earns 0 on
+    # chain), which reads as the validator cheating. Surfaced in the payload.
+    baseline_score: float = 0.0
+
     # Private per-miner detail. Stays in this file; never POSTed verbatim.
     per_uid_scores: list[dict[str, Any]] = field(default_factory=list)
 
@@ -140,7 +147,8 @@ def read_artifact(epoch_id: str, base_dir: Optional[Path] = None) -> EpochArtifa
     return EpochArtifact(**payload)
 
 
-def _build_per_uid_scores(outcome: EpochScoringOutcome) -> list[dict[str, Any]]:
+def _build_per_uid_scores(outcome: EpochScoringOutcome,
+                          *, baseline_score: float = 0.0) -> list[dict[str, Any]]:
     """Cross-reference outcome.score_map (hotkey→score_micro) with
     outcome.miner_reads (hotkey→uid) into the private per-miner list.
 
@@ -161,11 +169,16 @@ def _build_per_uid_scores(outcome: EpochScoringOutcome) -> list[dict[str, Any]]:
     scored_hotkeys: set[bytes] = set()
     for hotkey, score_micro in outcome.score_map.items():
         scored_hotkeys.add(hotkey)
+        raw = score_micro / 1_000_000.0
         rows.append({
             "uid": hotkey_to_uid.get(hotkey, -1),
             "hotkey": hotkey.hex(),
             "score_micro": int(score_micro),
-            "raw_score": score_micro / 1_000_000.0,
+            "raw_score": raw,
+            # Did this miner clear the gate? (raw_score > baseline). Drives the
+            # leaderboard's "met baseline ✓/✗" + the gap-to-baseline display,
+            # and reconciles the published tiers with the on-chain funded set.
+            "met_baseline": raw > baseline_score,
         })
     # Every miner we READ but could NOT score gets a disqualification row so
     # the published table covers the full submitter set, not just winners.
@@ -177,6 +190,7 @@ def _build_per_uid_scores(outcome: EpochScoringOutcome) -> list[dict[str, Any]]:
             "hotkey": read.miner_hotkey.hex(),
             "score_micro": 0,
             "raw_score": 0.0,
+            "met_baseline": False,
             "status": read.excluded_reason or "unknown",
         })
     # Stable ordering for diff-friendliness — sort by uid then hotkey.
@@ -193,6 +207,7 @@ def build_artifact(
     epoch_type: str = "Search",
     epoch_subtype: Optional[str] = "campaign-level",
     epoch_type_multiplier: float = 1.0,
+    baseline_score: float = 0.0,
 ) -> EpochArtifact:
     """Assemble an EpochArtifact from a completed scoring run.
 
@@ -215,7 +230,11 @@ def build_artifact(
         this function — call `write_artifact(...)` separately, or use
         `build_and_write_artifact(...)` for the one-shot path.
     """
-    tier_result_obj = compute_tier_result_from_score_map(outcome.score_map)
+    # Gate + tier against the REAL predict-zero baseline the chain used — NOT
+    # the 0.0 placeholder. This is what makes the published tiers/funded set
+    # equal the on-chain funded set (the fix for "Competitive but earns 0").
+    tier_result_obj = compute_tier_result_from_score_map(
+        outcome.score_map, baseline_score=baseline_score)
     tier_result_dict = dataclasses.asdict(tier_result_obj)
 
     return EpochArtifact(
@@ -231,7 +250,8 @@ def build_artifact(
         total_registered_uids=total_registered_uids,
         validator_output_snapshot_timestamp=datetime.now(timezone.utc).isoformat(),
         chain_fetch_timestamp=chain_fetch_timestamp,
-        per_uid_scores=_build_per_uid_scores(outcome),
+        baseline_score=baseline_score,
+        per_uid_scores=_build_per_uid_scores(outcome, baseline_score=baseline_score),
         tier_result=tier_result_dict,
     )
 
@@ -246,6 +266,7 @@ def build_and_write_artifact(
     epoch_type: str = "Search",
     epoch_subtype: Optional[str] = "campaign-level",
     epoch_type_multiplier: float = 1.0,
+    baseline_score: float = 0.0,
 ) -> Path:
     """One-shot: build + write. Returns the path the artifact was written to."""
     artifact = build_artifact(
@@ -256,5 +277,6 @@ def build_and_write_artifact(
         epoch_type=epoch_type,
         epoch_subtype=epoch_subtype,
         epoch_type_multiplier=epoch_type_multiplier,
+        baseline_score=baseline_score,
     )
     return write_artifact(artifact, base_dir=base_dir)

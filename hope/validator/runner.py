@@ -661,6 +661,7 @@ def _run_validator_onchain_cli(args, runner):
                     epoch_id=args.release,
                     total_registered_uids=int(total_uids),
                     chain_fetch_timestamp=chain_fetch_timestamp,
+                    baseline_score=baseline_score,
                 )
                 logger.info("epoch artifact written: %s", artifact_path)
             except Exception as e:
