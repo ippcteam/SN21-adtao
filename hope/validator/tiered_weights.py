@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,16 @@ ELITE_REDISTRIBUTION_TO_PARTICIPATING = 0.10 / (0.30 + 0.10)
 # Below this many qualifying miners, skip tier split and use a single
 # proportional pool.
 MIN_MINERS_FOR_TIER_SPLIT = 15
+
+# Flat-week fallback. In a statistically flat outcome week, "predict-zero" can
+# be near-optimal, so a healthy field can score just under the predict-zero
+# baseline and ZERO miners clear the participation gate — which would burn the
+# whole epoch. When that happens, instead of burning, fund the top
+# FLATWEEK_FUND_FRACTION of the COVERAGE-passing field (ranked by raw_score)
+# through the same Elite/Competitive/Participating split, proportional by score.
+# Coverage failures are still excluded (no reward for under-submitting). Tunable
+# via SN21_FLATWEEK_FUND_FRACTION; set to 0 to disable (revert to full burn).
+FLATWEEK_FUND_FRACTION = 0.50
 
 
 @dataclass
@@ -146,6 +157,74 @@ class TieredAllocator:
                     return False, f"small_bucket_under_min:{bucket[0]}:{bucket[1]}"
         return True, None
 
+    def _flat_week_fallback(
+        self, inputs: list[MinerEpochInputs], excluded: dict[str, str]
+    ) -> TierAllocationResult:
+        """Fund the top fraction of the field when ZERO miners beat predict-zero.
+
+        Eligible = miners whose ONLY gate failure was ``below_baseline`` (they
+        met coverage and bucket gates — i.e. real participants who just couldn't
+        beat a flat week). Coverage/bucket failures stay excluded. The top
+        ``SN21_FLATWEEK_FUND_FRACTION`` by raw_score are funded through the same
+        60/30/10 Elite/Competitive/Participating split, proportional by score.
+        """
+        frac = float(os.environ.get("SN21_FLATWEEK_FUND_FRACTION", str(FLATWEEK_FUND_FRACTION)))
+        if frac <= 0:
+            logger.warning("flat week: 0 miners beat baseline and fallback disabled — full burn")
+            return TierAllocationResult(
+                weights={}, qualifying=[], excluded=excluded, elite_floor_cleared=False
+            )
+
+        eligible = sorted(
+            (m for m in inputs if excluded.get(m.hotkey) == "below_baseline" and m.raw_score > 0),
+            key=lambda m: m.raw_score,
+            reverse=True,
+        )
+        if not eligible:
+            return TierAllocationResult(
+                weights={}, qualifying=[], excluded=excluded, elite_floor_cleared=False
+            )
+
+        n_fund = max(1, round(len(eligible) * frac))
+        funded = eligible[:n_fund]
+        for m in funded:                       # funded miners are no longer "excluded"
+            excluded.pop(m.hotkey, None)
+
+        n_elite = max(1, round(n_fund * 0.20))
+        n_comp = round(n_fund * 0.40)
+        bands = [
+            ("elite", funded[:n_elite], ELITE_POOL_SHARE),
+            ("competitive", funded[n_elite:n_elite + n_comp], COMPETITIVE_POOL_SHARE),
+            ("participating", funded[n_elite + n_comp:], PARTICIPATING_POOL_SHARE),
+        ]
+        weights: dict[str, float] = {}
+        tiers: dict[str, list[str]] = {"elite": [], "competitive": [], "participating": []}
+        for name, band, pool in bands:
+            total = sum(m.raw_score for m in band)
+            for m in band:
+                weights[m.hotkey] = (pool * m.raw_score / total) if total > 0 else 0.0
+                tiers[name].append(m.hotkey)
+
+        # Renormalize to sum to 1.0 (covers the case where a band is empty at
+        # very small n_fund, so its pool share isn't silently dropped).
+        wsum = sum(weights.values())
+        if wsum > 0:
+            weights = {hk: w / wsum for hk, w in weights.items()}
+
+        logger.warning(
+            "flat week: 0/%d beat baseline; flat-week fallback funded top %d (frac=%.2f)",
+            len(inputs), n_fund, frac,
+        )
+        return TierAllocationResult(
+            weights=weights,
+            qualifying=[m.hotkey for m in funded],
+            excluded=excluded,
+            elite=tiers["elite"],
+            competitive=tiers["competitive"],
+            participating=tiers["participating"],
+            elite_floor_cleared=False,
+        )
+
     def allocate(self, inputs: list[MinerEpochInputs]) -> TierAllocationResult:
         """Run the gate, EMA tier placement, and pool allocation."""
         weights: dict[str, float] = {}
@@ -168,12 +247,9 @@ class TieredAllocator:
             self._record_score(m.hotkey, m.raw_score)
 
         if not gate_passed:
-            return TierAllocationResult(
-                weights={},
-                qualifying=[],
-                excluded=excluded,
-                elite_floor_cleared=False,
-            )
+            # Flat week: nobody beat predict-zero. Rather than burn the whole
+            # epoch, fund the top fraction of the coverage-passing field.
+            return self._flat_week_fallback(inputs, excluded)
 
         # Single-pool fallback when fewer than 15 qualifying miners.
         if len(gate_passed) < MIN_MINERS_FOR_TIER_SPLIT:

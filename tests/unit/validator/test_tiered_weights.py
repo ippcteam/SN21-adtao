@@ -153,9 +153,38 @@ def test_excluded_miners_get_zero_weight_explicitly():
     assert res.weights.get("loser", 0.0) == 0.0
 
 
-def test_zero_qualifying_miners_returns_empty_weights():
+def test_flat_week_fallback_funds_top_fraction():
+    # Flat week: every miner is below the predict-zero baseline, but all met
+    # coverage. Instead of burning the epoch, the fallback funds the top
+    # SN21_FLATWEEK_FUND_FRACTION (default 0.50) by raw_score, 60/30/10.
     alloc = TieredAllocator()
-    # All miners below baseline.
+    miners = [_miner(f"hk{i:03d}", raw=0.80 + i * 0.0005, baseline=0.925) for i in range(100)]
+    res = alloc.allocate(miners)
+    assert len(res.weights) == 50                     # top 50% funded
+    assert len(res.excluded) == 50                    # bottom 50% excluded
+    assert abs(sum(res.weights.values()) - 1.0) < 1e-9
+    assert len(res.elite) == 10 and len(res.competitive) == 20 and len(res.participating) == 20
+    # proportional, NOT equal — highest score gets the largest share.
+    assert len(set(round(w, 8) for w in res.weights.values())) > 1
+    top = max(miners, key=lambda m: m.raw_score).hotkey
+    assert res.weights[top] == max(res.weights.values())
+
+
+def test_flat_week_fallback_excludes_coverage_failures():
+    # A miner that failed COVERAGE (not just baseline) is never funded by the
+    # fallback — no reward for under-submitting.
+    alloc = TieredAllocator()
+    miners = [_miner(f"hk{i}", raw=0.85, baseline=0.925) for i in range(20)]
+    miners.append(_miner("lazy", raw=0.99, baseline=0.925, coverage=0.10))  # high score, bad coverage
+    res = alloc.allocate(miners)
+    assert "lazy" not in res.weights
+    assert res.excluded.get("lazy") == "coverage_below_gate"
+
+
+def test_flat_week_fallback_disabled_burns(monkeypatch):
+    # Operators can opt back into full-burn by setting the fraction to 0.
+    monkeypatch.setenv("SN21_FLATWEEK_FUND_FRACTION", "0")
+    alloc = TieredAllocator()
     miners = [_miner(f"hk{i}", raw=0.4, baseline=0.5) for i in range(10)]
     res = alloc.allocate(miners)
     assert res.weights == {}
