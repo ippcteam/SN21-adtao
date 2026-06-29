@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from hope.reporting.aggregator import _hotkey_to_ss58, aggregate
+from hope.reporting.aggregator import _build_miner_results, _hotkey_to_ss58, aggregate
 from hope.reporting.epoch_artifact import EpochArtifact
 from hope.reporting.payload import EpochReportPayload
 
@@ -617,3 +617,30 @@ def test_membership_filter_absent_scores_everyone():
     artifact = _artifact(n_qualifying=20)
     payload = aggregate(artifact)  # no membership → unchanged behaviour
     assert all(m.status == "scored" for m in payload.miner_results)
+
+
+def test_flat_week_funded_miners_show_scored_with_tier():
+    """Flat week: nobody beats predict-zero (met_baseline=False for all), but the
+    flat-week fallback funds the top fraction. Those funded miners must appear as
+    `scored` with their tier — not `disqualified_below_threshold` — so the
+    published table matches the on-chain funded set."""
+    art = _artifact(n_qualifying=20)
+    # Simulate a flat week: every per-uid row is below the predict-zero baseline.
+    for row in art.per_uid_scores:
+        row["met_baseline"] = False
+    # Add two genuinely-unfunded below-baseline miners (not in any tier list).
+    loser_a, loser_b = _hot(200), _hot(201)
+    art.per_uid_scores.append({"uid": 200, "hotkey": loser_a, "raw_score": 0.30, "met_baseline": False})
+    art.per_uid_scores.append({"uid": 201, "hotkey": loser_b, "raw_score": 0.29, "met_baseline": False})
+    art.tier_result["excluded"] = {loser_a: "below_baseline", loser_b: "below_baseline"}
+
+    rows = _build_miner_results(art, tier_split_active=True)
+    by_uid = {r.uid: r for r in rows}
+
+    funded = [r for r in rows if r.status == "scored"]
+    assert len(funded) == 20                       # all 20 fallback-funded show scored
+    assert all(r.tier in ("elite", "competitive", "participating") for r in funded)
+    assert {r.tier for r in funded} == {"elite", "competitive", "participating"}
+    # the unfunded below-baseline pair stays disqualified, no tier
+    assert by_uid[200].status == "disqualified_below_threshold" and by_uid[200].tier is None
+    assert by_uid[201].status == "disqualified_below_threshold" and by_uid[201].tier is None

@@ -350,12 +350,23 @@ def _build_miner_results(
             # to the original participants). Show the row, flagged + tier cleared.
             status = "disqualified_not_in_epoch"
             tier = None
+        elif tier_split_active and hotkey in tier_by_hotkey:
+            # Funded by the allocator INCLUDING the flat-week fallback: in a
+            # flat week no miner beats predict-zero (met_baseline=False for all),
+            # but the top fraction is still funded and earns on chain. The
+            # published row must match the funded set, so show 'scored' with the
+            # allocated tier — not a 'disqualified_below_threshold' that would
+            # contradict the on-chain payout. (Normal weeks hit the else branch
+            # below with met_baseline=True; this only adds the below-baseline-
+            # but-funded case.)
+            status = "scored"
+            tier = tier_by_hotkey[hotkey]
         elif not bool(entry.get("met_baseline", True)):
-            # Scored a number but did NOT clear the predict-zero baseline →
-            # earns 0 on chain and gets NO tier. Show that honestly instead of
-            # a tiered "scored" row (this is the "Competitive but earns 0 on
-            # chain" contradiction — the published table must match the funded
-            # set). Old artifacts lacking met_baseline default True (no regress).
+            # Scored a number but did NOT clear the baseline AND was not funded
+            # by the fallback → earns 0 on chain and gets NO tier. Show that
+            # honestly instead of a tiered "scored" row (the "Competitive but
+            # earns 0 on chain" contradiction — the published table must match
+            # the funded set). Old artifacts lacking met_baseline default True.
             status = "disqualified_below_threshold"
             tier = None
         else:
