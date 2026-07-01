@@ -73,3 +73,23 @@ def test_does_not_use_newest_even_if_input_unsorted():
         {"release_key": "CLOSED", "created_at": "2026-05-25T00:00:00"},
     ])
     assert _run(c) == "CLOSED"
+
+
+def test_late_staged_newest_does_not_block_prior_scoring():
+    """Regression: if the NEWEST epoch is published LATE on its Monday (after the
+    05:00 close), the prior epoch must still resolve as scoreable — not get its
+    deadline rolled a week forward (the W27-staged-~13:00 → W26-blocked bug)."""
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    # Most recent past Monday at 13:00 UTC (a late stage, after the 05:00 close).
+    monday = (now - timedelta(days=now.weekday())).replace(
+        hour=13, minute=0, second=0, microsecond=0)
+    if monday >= now:                      # today is Monday, before 13:00
+        monday -= timedelta(days=7)
+    c = _FakeClient([
+        {"release_key": "WR-NEW-OPEN", "created_at": monday.replace(tzinfo=None).isoformat()},
+        {"release_key": "WR-PRIOR-CLOSED", "created_at": (monday - timedelta(days=7)).replace(tzinfo=None).isoformat()},
+    ])
+    # Must NOT raise "has not closed yet" — the prior epoch closed at the Monday
+    # 05:00, which is in the past regardless of the late 13:00 publish.
+    assert _run(c) == "WR-PRIOR-CLOSED"

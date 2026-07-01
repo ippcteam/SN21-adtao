@@ -175,14 +175,29 @@ class HopeDataClient:
         # deadline = next_mining_close(releases[0].created_at) — the Monday close
         # that coincides with the new epoch's open.
         from datetime import datetime, timezone
-        from hope.validator.epoch_manager import next_mining_close
+        from hope.validator.epoch_manager import (
+            MINING_CLOSE_HOUR_UTC,
+            next_mining_close,
+        )
         newest_created = releases[0].get("created_at")
         if newest_created:
             try:
                 opened = datetime.fromisoformat(str(newest_created))
                 if opened.tzinfo is None:
                     opened = opened.replace(tzinfo=timezone.utc)
-                deadline = next_mining_close(opened)
+                # releases[1] (the epoch we score) closes at MINING_CLOSE_HOUR_UTC
+                # on the SAME day releases[0] is published — they coincide on the
+                # weekly Monday. Anchor the deadline on that publish-day close.
+                # next_mining_close() alone would roll a LATE-published releases[0]
+                # (created after the close hour) forward a full week, wrongly
+                # reporting releases[1] as still open and blocking scoring all week
+                # (e.g. W27 staged ~13:00 UTC → W26 wrongly "closes 07-06").
+                if opened.weekday() == 0:  # Monday cadence
+                    deadline = opened.replace(
+                        hour=MINING_CLOSE_HOUR_UTC, minute=0, second=0, microsecond=0
+                    )
+                else:
+                    deadline = next_mining_close(opened)
                 if datetime.now(timezone.utc) < deadline:
                     raise RuntimeError(
                         f"scoreable release {key} has not closed yet (deadline "
