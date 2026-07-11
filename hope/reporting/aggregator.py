@@ -68,20 +68,23 @@ def _qualifying_scores(artifact: EpochArtifact) -> list[float]:
     ]
 
 
-def _baseline_beat_rate(qualifying_scores: list[float]) -> float:
+def _baseline_beat_rate(
+    qualifying_scores: list[float], baseline: float = BASELINE_SCORE_V1
+) -> float:
     """Fraction of qualifying miners with raw_score strictly above baseline.
 
     Per contract §3.3: denominator is pool_size, numerator is the count
-    of qualifying miners whose miner_score beats the conditional-prior
-    baseline. In v1 with BASELINE_SCORE_V1=0 and a gate that already
-    requires raw_score > 0, this collapses to 1.0 for any non-empty
-    pool. Computed literally so that when richer per-miner baselines
-    plumb through, the same code produces a meaningful number.
+    of qualifying miners whose miner_score beats the epoch's baseline.
+    ``baseline`` is the artifact's ``baseline_score`` (the predict-zero
+    submission scored by the live scorer) so the published rate matches
+    the per-miner ``met_baseline`` flags on the leaderboard. Falls back
+    to BASELINE_SCORE_V1 (=0) for legacy artifacts without a baseline,
+    where the gate's raw_score > 0 makes the rate 1.0 by construction.
     """
     pool_size = len(qualifying_scores)
     if pool_size == 0:
         return 0.0
-    beats = sum(1 for s in qualifying_scores if s > BASELINE_SCORE_V1)
+    beats = sum(1 for s in qualifying_scores if s > baseline)
     return beats / pool_size
 
 
@@ -235,7 +238,10 @@ def aggregate(
         pool_size=pool_size,
         total_registered_uids=artifact.total_registered_uids,
         pool_size_below_distribution_floor=pool_below_floor,
-        baseline_beat_rate=_baseline_beat_rate(qualifying_scores),
+        baseline_beat_rate=_baseline_beat_rate(
+            qualifying_scores,
+            baseline=float(getattr(artifact, "baseline_score", 0.0) or 0.0),
+        ),
         baseline_score=max(0.0, min(1.0, float(getattr(artifact, "baseline_score", 0.0) or 0.0))),
         score_distribution=score_distribution,
         tier_distribution=tier_distribution,

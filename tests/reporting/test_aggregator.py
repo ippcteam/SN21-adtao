@@ -220,6 +220,23 @@ def test_baseline_beat_rate_handles_zero_scores():
     assert payload.baseline_beat_rate == 19.0 / 20.0
 
 
+def test_baseline_beat_rate_uses_artifact_baseline_score():
+    """With a real predict-zero baseline on the artifact, the published
+    rate counts only miners strictly above it — matching the per-miner
+    ``met_baseline`` leaderboard flags (not the legacy above-zero check)."""
+    artifact = _artifact(n_qualifying=20, raw_score_base=0.40, raw_score_step=0.02)
+    artifact.baseline_score = 0.699  # scores run 0.40..0.78; 5 exceed this
+    payload = aggregate(artifact)
+    assert payload.baseline_beat_rate == 5.0 / 20.0
+
+
+def test_baseline_beat_rate_zero_when_nobody_beats_baseline():
+    artifact = _artifact(n_qualifying=10, raw_score_base=0.40, raw_score_step=0.01)
+    artifact.baseline_score = 0.925  # flat week: baseline above the whole field
+    payload = aggregate(artifact)
+    assert payload.baseline_beat_rate == 0.0
+
+
 # ----------------------------------------------------------------------------
 # Determinism / structural invariants
 # ----------------------------------------------------------------------------
