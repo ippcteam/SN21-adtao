@@ -53,6 +53,8 @@ class DaemonConfig:
     wallet_hotkey: str = "default"
     reg_index: str = ""                 # path to sn21-reg-index.json (persistent)
     reg_index_archive_url: str = ""     # SN21_SUBTENSOR_URL for the builder
+    reg_index_head_network: str = "finney"  # fast LITE node for the head sweep
+                                            # (must NOT be the slow archive node)
     reg_index_cold_start_lookback_blocks: int = 0  # >0 bounds a no-checkpoint scan
     reg_index_max_blocks_per_tick: int = 0  # >0 caps each tick's scan (heartbeat safety)
     reg_index_staleness_alarm_blocks: int = 2000  # warn if head-last_scanned exceeds this
@@ -130,9 +132,16 @@ def build_commands(cfg: DaemonConfig) -> list:
         # so it never drops the block-scanned baseline.
         if not cfg.skip_reg_index_head:
             head_argv = [sys.executable, "-m", "scripts.refresh_reg_index_head",
-                         "--network", cfg.network, "--netuid", str(cfg.netuid),
+                         "--network", cfg.reg_index_head_network, "--netuid", str(cfg.netuid),
                          "--role", cfg.role, "--index", cfg.reg_index]
-            cmds.append(("reg-index-head", head_argv, {},
+            # The head sweep is a CURRENT-commitment read per hotkey and MUST run
+            # on a fast lite node — a slow archive endpoint (used elsewhere for
+            # historical reads) makes the 256-hotkey pass blow the timeout. Force
+            # the lite endpoint via this step's own env so the global
+            # SN21_SUBTENSOR_URL (which may point at an archive node for scoring)
+            # is not inherited here.
+            head_env = {"SN21_SUBTENSOR_URL": cfg.reg_index_head_network}
+            cmds.append(("reg-index-head", head_argv, head_env,
                          cfg.reg_index_head_timeout_seconds))
 
         # Archive block-scan for historical completeness (slow; bounded per tick
@@ -249,6 +258,14 @@ def main(argv: Optional[list] = None) -> int:
                    default=os.environ.get("SN21_REG_INDEX_ARCHIVE_URL", ""),
                    help="Archive RPC for the reg-index builder (SN21_SUBTENSOR_URL "
                         "for that subprocess only). Required for reg-index scanning.")
+    p.add_argument("--reg-index-head-network",
+                   default=os.environ.get(
+                       "SN21_REG_INDEX_HEAD_NETWORK",
+                       os.environ.get("BT_NETWORK", "finney")),
+                   help="Fast LITE-node endpoint for the head-only reg-index sweep. "
+                        "MUST NOT be the slow archive node — a 256-hotkey "
+                        "current-commitment pass on an archive endpoint blows the "
+                        "timeout. Defaults to finney regardless of SN21_SUBTENSOR_URL.")
     p.add_argument("--reg-index-cold-start-lookback-blocks", type=int,
                    default=int(os.environ.get("SN21_REG_INDEX_COLD_START_LOOKBACK_BLOCKS", "0")),
                    help="When the reg-index has no checkpoint yet, bound the first "
@@ -327,6 +344,7 @@ def main(argv: Optional[list] = None) -> int:
         network=args.network, netuid=args.netuid,
         wallet_name=args.wallet_name, wallet_hotkey=args.wallet_hotkey,
         reg_index=args.reg_index, reg_index_archive_url=args.reg_index_archive_url,
+        reg_index_head_network=args.reg_index_head_network,
         reg_index_cold_start_lookback_blocks=args.reg_index_cold_start_lookback_blocks,
         reg_index_max_blocks_per_tick=args.reg_index_max_blocks_per_tick,
         reg_index_staleness_alarm_blocks=args.reg_index_staleness_alarm_blocks,

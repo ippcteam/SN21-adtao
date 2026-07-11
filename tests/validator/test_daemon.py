@@ -42,9 +42,20 @@ def test_reg_index_head_uses_lite_node_and_refresh_script():
     assert "scripts.refresh_reg_index_head" in argv
     assert "--index" in argv and "/data/sn21-reg-index.json" in argv
     assert "--network" in argv and "finney" in argv
-    # NO archive override — the head refresh reads the lite node on purpose.
-    assert env == {}
+    # The head sweep MUST run on a fast lite node. It pins SN21_SUBTENSOR_URL to
+    # the lite endpoint via its own env so a globally-set archive SN21_SUBTENSOR_URL
+    # (used by scoring for historical reads) is NOT inherited here — otherwise the
+    # 256-hotkey pass runs on the slow archive node and blows the timeout.
+    assert env == {"SN21_SUBTENSOR_URL": "finney"}
     assert timeout == _cfg().reg_index_head_timeout_seconds
+
+
+def test_reg_index_head_network_override_pins_lite_endpoint():
+    argv, env, _t = _by_name(
+        build_commands(_cfg(reg_index_head_network="wss://lite.example:443")),
+        "reg-index-head")
+    assert argv[argv.index("--network") + 1] == "wss://lite.example:443"
+    assert env == {"SN21_SUBTENSOR_URL": "wss://lite.example:443"}
 
 
 def test_skip_reg_index_head_leaves_only_archive_scan():
@@ -72,9 +83,10 @@ def test_reg_index_uses_archive_env_override_only():
     assert "scripts.build_reg_index" in argv
     assert "--index" in argv and "/data/sn21-reg-index.json" in argv
     assert env == {"SN21_SUBTENSOR_URL": "wss://archive.example:443"}
-    # scoring + heartbeat get NO env override (they use the default endpoint)
+    # scoring + heartbeat get NO env override (they use the default endpoint).
+    # reg-index-head DOES pin its own lite endpoint (see its dedicated test).
     for n, _argv, e, _t in cmds:
-        if n != "reg-index":
+        if n not in ("reg-index", "reg-index-head"):
             assert e == {}
 
 
