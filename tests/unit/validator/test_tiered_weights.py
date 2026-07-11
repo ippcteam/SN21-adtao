@@ -70,15 +70,63 @@ def test_small_bucket_under_min_excluded():
     assert res.excluded["small_avoider"].startswith("small_bucket_under_min")
 
 
-def test_single_pool_when_fewer_than_15_qualifying():
+def test_fewer_than_15_qualifying_pays_through_tier_bands():
+    # Below the tier-split floor the allocator no longer collapses to a
+    # straight proportional pool — the winners are paid through the same
+    # 20/40/40 → 60/30/10 bands (top-up field is empty here, so the pool
+    # is just the 10 winners).
     alloc = TieredAllocator()
     miners = [_miner(f"hk{i}", raw=0.55 + i * 0.05) for i in range(10)]
     res = alloc.allocate(miners)
-    assert len(res.elite) == 0
     assert len(res.qualifying) == 10
-    # All qualifying miners share one proportional pool.
     assert len(res.weights) == 10
     assert abs(sum(res.weights.values()) - 1.0) < 1e-9
+    # 20/40/40 bands over 10: 2 elite / 4 competitive / 4 participating.
+    assert len(res.elite) == 2
+    assert len(res.competitive) == 4
+    assert len(res.participating) == 4
+    # Banded pools (60/30/10), NOT a straight split: an elite member's
+    # share dwarfs a participating member's despite clustered raw scores.
+    elite_min = min(res.weights[hk] for hk in res.elite)
+    part_max = max(res.weights[hk] for hk in res.participating)
+    assert elite_min > part_max
+
+
+def test_small_winner_week_tops_up_pool_through_tier_bands():
+    # A handful beat baseline (the W27 shape): 3 winners + a healthy
+    # below-baseline coverage-passing field. The pool tops up to
+    # max(winners, 50% of field, tier floor) and pays 60/30/10 — winners
+    # rank on top and land in Elite.
+    alloc = TieredAllocator()
+    winners = [_miner(f"win{i}", raw=0.93 + i * 0.001, baseline=0.925) for i in range(3)]
+    field = [_miner(f"hk{i:03d}", raw=0.80 + i * 0.0005, baseline=0.925) for i in range(100)]
+    res = alloc.allocate(winners + field)
+    # pool = max(3, round(103*0.5)=52, 15) = 52
+    assert len(res.weights) == 52
+    assert abs(sum(res.weights.values()) - 1.0) < 1e-9
+    assert len(res.elite) == 10 and len(res.competitive) == 21 and len(res.participating) == 21
+    # All three winners funded, in Elite, and out-earning the topped-up field.
+    for w in winners:
+        assert w.hotkey in res.elite
+    part_max = max(res.weights[hk] for hk in res.participating)
+    assert all(res.weights[w.hotkey] > part_max for w in winners)
+    # Proportional within bands — not flat.
+    assert len(set(round(v, 10) for v in res.weights.values())) > 1
+    # Unfunded below-baseline field stays excluded with its reason.
+    assert sum(1 for r in res.excluded.values() if r == "below_baseline") == 51
+
+
+def test_small_winner_week_frac_zero_funds_winners_only(monkeypatch):
+    # With the top-up fraction disabled, baseline-beaters are still paid
+    # (through the bands) but the below-baseline field is not topped up.
+    monkeypatch.setenv("SN21_FLATWEEK_FUND_FRACTION", "0")
+    alloc = TieredAllocator()
+    winners = [_miner(f"win{i}", raw=0.93 + i * 0.001, baseline=0.925) for i in range(3)]
+    field = [_miner(f"hk{i}", raw=0.85, baseline=0.925) for i in range(20)]
+    res = alloc.allocate(winners + field)
+    assert set(res.weights) == {w.hotkey for w in winners}
+    assert abs(sum(res.weights.values()) - 1.0) < 1e-9
+    assert sum(1 for r in res.excluded.values() if r == "below_baseline") == 20
 
 
 def test_tier_split_at_50_miners_with_distinct_scores():
