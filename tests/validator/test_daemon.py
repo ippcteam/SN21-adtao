@@ -69,6 +69,15 @@ def test_skip_reg_index_drops_both_reg_steps():
     assert "reg-index-head" not in names and "reg-index" not in names
 
 
+def test_skip_reg_index_block_leaves_only_head_sweep():
+    # Disabling just the slow archive block-scan keeps the fast head sweep
+    # (and everything else) — the head sweep + committed index hold coverage.
+    names = _names(build_commands(_cfg(skip_reg_index_block=True)))
+    assert "reg-index" not in names           # block-scan dropped
+    assert "reg-index-head" in names          # head sweep retained
+    assert names == ["staleness-alarm", "reg-index-head", "scoring", "heartbeat"]
+
+
 def test_each_command_carries_its_timeout():
     cmds = build_commands(_cfg())
     timeouts = {c[0]: c[3] for c in cmds}

@@ -59,6 +59,7 @@ class DaemonConfig:
     reg_index_max_blocks_per_tick: int = 0  # >0 caps each tick's scan (heartbeat safety)
     reg_index_staleness_alarm_blocks: int = 2000  # warn if head-last_scanned exceeds this
     skip_reg_index_head: bool = False   # disable the fast lite-node head refresh
+    skip_reg_index_block: bool = False  # disable the slow archive block-scan only
     skip_staleness_alarm: bool = False  # disable the reg-index staleness alarm
     role: str = "miner"
     ed25519_key_file: str = ""          # scorer --ed25519-key-file (9.C inner_sig)
@@ -146,19 +147,26 @@ def build_commands(cfg: DaemonConfig) -> list:
 
         # Archive block-scan for historical completeness (slow; bounded per tick
         # so it can't starve the heartbeat). No longer the critical path for
-        # catching new miners — the head refresh above handles that.
-        env = {}
-        if cfg.reg_index_archive_url:
-            env["SN21_SUBTENSOR_URL"] = cfg.reg_index_archive_url
-        argv = [sys.executable, "-m", "scripts.build_reg_index",
-                "--network", cfg.network, "--netuid", str(cfg.netuid),
-                "--role", cfg.role, "--index", cfg.reg_index, "--reconnect"]
-        if cfg.reg_index_cold_start_lookback_blocks > 0:
-            argv += ["--cold-start-lookback-blocks",
-                     str(cfg.reg_index_cold_start_lookback_blocks)]
-        if cfg.reg_index_max_blocks_per_tick > 0:
-            argv += ["--max-blocks-per-pass", str(cfg.reg_index_max_blocks_per_tick)]
-        cmds.append(("reg-index", argv, env, cfg.reg_index_timeout_seconds))
+        # catching new miners — the head refresh above handles that. Can be
+        # disabled independently of the head sweep: when its checkpoint is far
+        # behind head it re-scans the same window and times out every tick
+        # (~20 min) for zero new entries while loading the archive node. The
+        # committed index file + head sweep keep coverage; a proper backfill
+        # (run offline) is the way to close a historical gap, not this in-tick
+        # scan. Disable via SN21_SKIP_REG_INDEX_BLOCK when it's stuck.
+        if not cfg.skip_reg_index_block:
+            env = {}
+            if cfg.reg_index_archive_url:
+                env["SN21_SUBTENSOR_URL"] = cfg.reg_index_archive_url
+            argv = [sys.executable, "-m", "scripts.build_reg_index",
+                    "--network", cfg.network, "--netuid", str(cfg.netuid),
+                    "--role", cfg.role, "--index", cfg.reg_index, "--reconnect"]
+            if cfg.reg_index_cold_start_lookback_blocks > 0:
+                argv += ["--cold-start-lookback-blocks",
+                         str(cfg.reg_index_cold_start_lookback_blocks)]
+            if cfg.reg_index_max_blocks_per_tick > 0:
+                argv += ["--max-blocks-per-pass", str(cfg.reg_index_max_blocks_per_tick)]
+            cmds.append(("reg-index", argv, env, cfg.reg_index_timeout_seconds))
 
     if not cfg.skip_scoring:
         argv = ["hope-validator", "--release", "auto",
@@ -317,6 +325,12 @@ def main(argv: Optional[list] = None) -> int:
                    default=os.environ.get("SN21_SKIP_REG_INDEX_HEAD", "0") == "1",
                    help="Disable the fast lite-node head refresh (leave only the "
                         "archive block-scan).")
+    p.add_argument("--skip-reg-index-block", action="store_true",
+                   default=os.environ.get("SN21_SKIP_REG_INDEX_BLOCK", "0") == "1",
+                   help="Disable the slow archive block-scan (leave only the fast "
+                        "head refresh + committed index). Use when the block-scan "
+                        "is stuck re-scanning and timing out every tick; close a "
+                        "historical gap with an offline backfill instead.")
     p.add_argument("--reg-index-staleness-alarm-blocks", type=int,
                    default=int(os.environ.get("SN21_REG_INDEX_STALENESS_ALARM_BLOCKS", "2000")),
                    help="Warn loudly when chain head exceeds the reg-index's "
@@ -349,6 +363,7 @@ def main(argv: Optional[list] = None) -> int:
         reg_index_max_blocks_per_tick=args.reg_index_max_blocks_per_tick,
         reg_index_staleness_alarm_blocks=args.reg_index_staleness_alarm_blocks,
         skip_reg_index_head=args.skip_reg_index_head,
+        skip_reg_index_block=args.skip_reg_index_block,
         skip_staleness_alarm=args.skip_staleness_alarm,
         staleness_alarm_timeout_seconds=args.staleness_alarm_timeout_seconds,
         role=args.role,
