@@ -6,15 +6,20 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    # Pinned to 10.2.x: bittensor==10.3.1 has a regression in how
-    # `Commitments::RevealedCommitments` storage queries decode — it returns
-    # an empty list where 10.2.x correctly returns the auto-decrypted
-    # plaintexts. Confirmed by running the same chain_reader.py path
-    # against the same testnet 466 chain state on both versions:
-    # 10.2.1 → 8 of 15 miners with parseable v1 bundles; 10.3.1 → 0 of 15.
-    # Re-evaluate when upstream ships a fix or when our reader code is
-    # updated to match the new decode contract.
-    "bittensor>=10.2.0,<10.3.0",
+    # Requires >=10.5: a mainnet runtime upgrade (Jul 2026) changed the
+    # runtime-call param encoding, so bittensor 10.2.x can no longer encode
+    # `neurons_lite`/`set_weights` (ValueError in async_substrate_interface's
+    # _encode_scale) — the validator silently stops setting weights. 10.5.0
+    # speaks the new runtime.
+    #
+    # HISTORY: 10.2.x was previously pinned because 10.3.1 regressed
+    # `Commitments::RevealedCommitments` decode (returned empty). 10.4+ ships
+    # async-substrate-interface 2.x, which returns byte payloads as 0x-hex
+    # strings (and CommitmentOf `info.fields` as list-of-dicts). `chain_reader.py`
+    # now normalises BOTH the 1.x and 2.x shapes (`_scale_payload_to_bytes`),
+    # so the reveal/commitment decode works again — verified end-to-end on
+    # mainnet under 10.5.0 (miner bundles, reg-index, outcome anchor).
+    "bittensor>=10.5.0,<11.0.0",
     "pydantic>=2.0",
     "numpy>=1.24",
     "fastapi>=0.100",

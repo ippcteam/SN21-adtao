@@ -66,6 +66,41 @@ class RevealedEntry:
     payload_bytes: bytes  # full SCALE-encoded Data variant including tag
 
 
+def _scale_payload_to_bytes(payload) -> Optional[bytes]:
+    """Normalise a SCALE-decoded byte payload to bytes across
+    async-substrate-interface 1.x and 2.x.
+
+    The result shape of `substrate.query` for `Commitments` byte payloads
+    differs by version:
+      - 1.x (bittensor 10.2.x): bytes, or a tuple-of-byte-ints, sometimes
+        wrapped one level deep as ``(tuple-of-ints,)``.
+      - 2.x (bittensor >=10.4, cyscale): a ``0x``-prefixed hex string.
+
+    Returns the raw bytes for either, or None for shapes that don't carry
+    raw bytes (e.g. the ``TimelockEncrypted`` dict variant), so callers can
+    emit an empty marker instead of crashing.
+    """
+    # 2.x: 0x-hex string of the SCALE payload.
+    if isinstance(payload, str):
+        s = payload[2:] if payload[:2].lower() == "0x" else payload
+        try:
+            return bytes.fromhex(s)
+        except ValueError:
+            return None
+    # 1.x: unwrap a 1-tuple that nests a tuple-of-ints one level deep.
+    if (isinstance(payload, tuple) and len(payload) == 1
+            and isinstance(payload[0], (tuple, list))):
+        payload = payload[0]
+    if isinstance(payload, (bytes, bytearray)):
+        return bytes(payload)
+    if isinstance(payload, (tuple, list)):
+        try:
+            return bytes(payload) if payload else b""
+        except TypeError:
+            return None
+    return None
+
+
 def read_commitment_of(
     subtensor,
     netuid: int,
@@ -124,33 +159,22 @@ def read_commitment_of(
     # list and don't crash on unexpected payload types.
     out: list[RawCommitField] = []
     for outer in fields:
-        for entry in outer:
+        # `fields` nesting differs by async-substrate-interface version:
+        #   - 1.x: `outer` is a tuple/list of {variant: payload} dicts.
+        #   - 2.x: `outer` is the {variant: payload} dict itself.
+        entries = [outer] if isinstance(outer, dict) else outer
+        for entry in entries:
             if not isinstance(entry, dict) or len(entry) != 1:
                 continue
             variant, payload = next(iter(entry.items()))
-            # Unwrap 1-tuples that wrap a tuple-of-ints (some Substrate
-            # SCALE codecs nest the bytes one level deep).
-            if (isinstance(payload, tuple)
-                    and len(payload) == 1
-                    and isinstance(payload[0], (tuple, list))):
-                payload = payload[0]
-            if isinstance(payload, (bytes, bytearray)):
-                out.append(RawCommitField(variant=variant, bytes_=bytes(payload)))
-            elif isinstance(payload, (tuple, list)):
-                # Empty tuple → empty bytes; tuple-of-ints → bytes(...);
-                # if it's still nested (unexpected), guard against TypeError.
-                try:
-                    out.append(RawCommitField(
-                        variant=variant,
-                        bytes_=bytes(payload) if payload else b"",
-                    ))
-                except TypeError:
-                    out.append(RawCommitField(variant=variant, bytes_=b""))
-            elif isinstance(payload, dict):
-                # TimelockEncrypted / other structured variants — bytes are
-                # not directly accessible from CommitmentOf. Emit an empty
-                # marker so callers can see that the variant was present.
-                out.append(RawCommitField(variant=variant, bytes_=b""))
+            payload_bytes = _scale_payload_to_bytes(payload)
+            # None → structured variant (e.g. TimelockEncrypted dict) whose
+            # bytes aren't directly accessible from CommitmentOf. Emit an
+            # empty marker so callers still see the variant was present.
+            out.append(RawCommitField(
+                variant=variant,
+                bytes_=payload_bytes if payload_bytes is not None else b"",
+            ))
     return out
 
 
@@ -196,16 +220,14 @@ def read_revealed_commitments(
 
     out: list[RevealedEntry] = []
     for entry in val:
-        if not isinstance(entry, tuple) or len(entry) != 2:
+        if not isinstance(entry, (tuple, list)) or len(entry) != 2:
             continue
         payload, block_num = entry
-        if isinstance(payload, (tuple, list)):
-            payload_bytes = bytes(payload)
-        elif isinstance(payload, (bytes, bytearray)):
-            payload_bytes = bytes(payload)
-        else:
-            continue
         if not isinstance(block_num, int):
+            continue
+        # 1.x yields bytes/tuple-of-ints; 2.x yields a 0x-hex string.
+        payload_bytes = _scale_payload_to_bytes(payload)
+        if payload_bytes is None:
             continue
         out.append(RevealedEntry(block_number=block_num, payload_bytes=payload_bytes))
     return out
