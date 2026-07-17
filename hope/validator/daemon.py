@@ -343,7 +343,12 @@ def main(argv: Optional[list] = None) -> int:
                    default=float(os.environ.get("SN21_DAEMON_STALENESS_ALARM_TIMEOUT_SECS", "120")),
                    help="Kill the staleness alarm if it runs longer than this "
                         "(lite-node single head read; 0 = no limit).")
-    p.add_argument("--skip-scoring", action="store_true")
+    p.add_argument("--skip-scoring", action="store_true",
+                   default=os.environ.get("SN21_SKIP_SCORING", "0") == "1",
+                   help="Skip the scoring tool this tick; still run reg-index + "
+                        "heartbeat (keeps the validator's LastUpdate fresh). Set "
+                        "SN21_SKIP_SCORING=1 to pause scoring without touching the "
+                        "start command — e.g. while an epoch must not be re-scored.")
     p.add_argument("--skip-report", action="store_true")
     p.add_argument("--skip-heartbeat", action="store_true")
     p.add_argument("--once", action="store_true",
