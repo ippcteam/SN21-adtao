@@ -1,0 +1,67 @@
+"""D7 weight curve — pins: no cliff at crossover, threshold zeroing,
+ceiling, ratio preservation, determinism on ties."""
+import pytest
+
+from hope.scoring.weight_curve import CurveParams, curve_weights, earning_set
+
+
+def test_two_miners_split_top_and_second_ratio():
+    w = curve_weights({"a": 0.9, "b": 0.8})
+    # ratios of the published curve preserved: 0.55 : 0.20
+    assert w["a"] / w["b"] == pytest.approx(0.55 / 0.20)
+    assert sum(w.values()) == pytest.approx(1.0)
+
+
+def test_no_cliff_crossover_is_rank_swap_not_flip_to_100(A=0.800, B=0.801):
+    # strict winner-take-all would flip 100% of weight on any crossover;
+    # under the curve the winner gets top_share-normalized, never 1.0.
+    w = curve_weights({"a": A, "b": B})
+    assert w["b"] < 1.0
+    assert w["a"] > 0.0
+
+
+def test_threshold_zeroes_below():
+    p = CurveParams(score_threshold=0.5)
+    w = curve_weights({"good": 0.7, "bad": 0.4, "none": 0.5}, p)  # 0.5 NOT above threshold
+    assert w["bad"] == 0.0 and w["none"] == 0.0
+    assert w["good"] == pytest.approx(1.0)
+
+
+def test_none_standing_gets_zero():
+    w = curve_weights({"a": 0.9, "new": None})
+    assert w["new"] == 0.0
+
+
+def test_hard_ceiling_20():
+    standings = {f"m{i:02d}": 0.9 - i * 0.001 for i in range(30)}
+    w = curve_weights(standings)
+    assert sum(1 for v in w.values() if v > 0) == 20
+
+
+def test_geometric_tail():
+    standings = {f"m{i}": 0.9 - i * 0.01 for i in range(5)}
+    w = curve_weights(standings)
+    ordered = [w[f"m{i}"] for i in range(5)]
+    # tail: each after second is half the previous
+    assert ordered[3] == pytest.approx(ordered[2] * 0.5)
+    assert ordered[4] == pytest.approx(ordered[3] * 0.5)
+
+
+def test_deterministic_tiebreak():
+    w1 = curve_weights({"zeta": 0.8, "alpha": 0.8})
+    w2 = curve_weights({"alpha": 0.8, "zeta": 0.8})
+    assert w1 == w2
+    assert w1["alpha"] > w1["zeta"]  # id asc wins the tie
+
+
+def test_expected_earning_set_shape():
+    # 12 live models: expected set 5-15 per v0.5 — all earn under the curve
+    standings = {f"m{i}": 0.9 - i * 0.02 for i in range(12)}
+    assert len(earning_set(standings)) == 12
+
+
+def test_empty_and_all_below_threshold():
+    assert curve_weights({}) == {}
+    p = CurveParams(score_threshold=0.9)
+    w = curve_weights({"a": 0.5}, p)
+    assert w == {"a": 0.0}
