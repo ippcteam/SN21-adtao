@@ -404,3 +404,56 @@ class TestHelpers:
 
     def test_mean_empty(self):
         assert _mean([]) == 0.0
+
+
+class TestScoringV2:
+    """Spec-aligned 4-component scorer: must separate good from great where v1
+    was flat (band-insensitive CRPS)."""
+
+    TRUTH = {"7": HorizonTruth("7", 0, 100, 50, 100000, 50000)}
+
+    @staticmethod
+    def _pt(p50_err: int):
+        return {"horizons": [{
+            "h": "7",
+            "cost_q": [-50 + p50_err, 0 + p50_err, 50 + p50_err],
+            "conv_q": [50 + p50_err, 100 + p50_err, 150 + p50_err],
+            "eff_q": [0 + p50_err, 50 + p50_err, 100 + p50_err],
+            "miss_p": 100000, "instab_p": 50000,
+        }]}
+
+    def test_v1_is_flat_for_small_p50_errors(self):
+        # Documents the bug v2 fixes: v1 gives identical scores for 0 vs 50 dpct off.
+        from hope.scoring.onchain_adapter import score_one_miner
+        assert score_one_miner(self._pt(0), self.TRUTH) == score_one_miner(self._pt(50), self.TRUTH)
+
+    def test_v2_rewards_better_p50(self):
+        from hope.scoring.onchain_adapter import score_one_miner_v2
+        perfect = score_one_miner_v2(self._pt(0), self.TRUTH)
+        off = score_one_miner_v2(self._pt(50), self.TRUTH)
+        worse = score_one_miner_v2(self._pt(200), self.TRUTH)
+        # Strictly monotone: better P50 → strictly higher score (dynamic range).
+        assert perfect > off > worse
+        # And the spread is meaningful, not a rounding artifact.
+        assert perfect - off > 10_000  # > 0.01 in micro-units
+
+    def test_v2_penalises_wrong_direction(self):
+        from hope.scoring.onchain_adapter import score_one_miner_v2
+        # truth conv P50 = +100; predict the right vs wrong sign on it.
+        right = {"horizons": [{"h": "7", "cost_q": [-50, 0, 50],
+                               "conv_q": [50, 100, 150], "eff_q": [0, 50, 100],
+                               "miss_p": 100000, "instab_p": 50000}]}
+        wrong = {"horizons": [{"h": "7", "cost_q": [-50, 0, 50],
+                               "conv_q": [-150, -100, -50], "eff_q": [0, 50, 100],
+                               "miss_p": 100000, "instab_p": 50000}]}
+        assert score_one_miner_v2(right, self.TRUTH) > score_one_miner_v2(wrong, self.TRUTH)
+
+    def test_make_scorer_dispatches_on_env(self, monkeypatch):
+        from hope.scoring.onchain_adapter import make_scorer
+        pts = {b"m": self._pt(50)}
+        monkeypatch.delenv("SN21_SCORING_V2", raising=False)
+        v1 = make_scorer(self.TRUTH)("EP", pts)[b"m"]
+        monkeypatch.setenv("SN21_SCORING_V2", "1")
+        v2 = make_scorer(self.TRUTH)("EP", pts)[b"m"]
+        # Same inputs, different scorer wired in → different score.
+        assert v1 != v2

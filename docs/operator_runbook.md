@@ -28,7 +28,7 @@ Backup the PEM files offline (cold storage) — loss = forced re-registration.
 
 ```bash
 git clone <repo-url>
-cd tao-discovery
+cd SN21-adtao
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```

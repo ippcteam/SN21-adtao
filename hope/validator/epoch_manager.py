@@ -31,6 +31,23 @@ from hope.constants import (
     MINING_CLOSE_HOUR_UTC,
 )
 from hope.protocol.episode import Episode
+
+
+def next_mining_close(now: datetime) -> datetime:
+    """Next weekly mining close — Monday ``MINING_CLOSE_HOUR_UTC``:00 UTC.
+
+    Calendar-anchored and therefore RESTART-STABLE: the result depends only on
+    the wall-clock week, not on when the process started. (Computing a deadline
+    as ``now + window`` instead slides the close forward on every restart, which
+    is the bug this replaces.) If we're already past this week's close, target
+    next week's.
+    """
+    days_until_monday = (7 - now.weekday()) % 7
+    if days_until_monday == 0 and now.hour >= MINING_CLOSE_HOUR_UTC:
+        days_until_monday = 7  # already past this Monday's close
+    return now.replace(
+        hour=MINING_CLOSE_HOUR_UTC, minute=0, second=0, microsecond=0
+    ) + timedelta(days=days_until_monday)
 from hope.protocol.outcomes import Outcome
 from hope.protocol.prediction import Prediction
 from hope.scoring.scorer import EpochScorer, MinerScore
@@ -123,17 +140,10 @@ class EpochManager:
     def _compute_deadline(self, now: datetime) -> datetime:
         """Compute the next mining close time based on the weekly cadence.
 
-        Mining closes: Sunday midnight EST = Monday 05:00 UTC
-        If we're past this week's close, target next week's.
+        Mining closes: Sunday midnight EST = Monday 05:00 UTC. Delegates to the
+        shared, restart-stable ``next_mining_close`` helper.
         """
-        # Find next Monday 05:00 UTC
-        days_until_monday = (7 - now.weekday()) % 7
-        if days_until_monday == 0 and now.hour >= MINING_CLOSE_HOUR_UTC:
-            days_until_monday = 7  # Already past this Monday's close
-        next_close = now.replace(
-            hour=MINING_CLOSE_HOUR_UTC, minute=0, second=0, microsecond=0
-        ) + timedelta(days=days_until_monday)
-        return next_close
+        return next_mining_close(now)
 
     def prepare_episodes_only(self, episodes: list[Episode], release_key: str,
                                deadline_hours: float = PREDICTION_DEADLINE_HOURS) -> EpochContext:

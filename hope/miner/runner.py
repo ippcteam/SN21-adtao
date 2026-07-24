@@ -266,6 +266,36 @@ def main():
         validator_url=args.validator_url,
     )
 
+    # Pre-flight: catch the two most common silent-fail modes before
+    # the miner spends time generating predictions and writing to chain.
+    # Both checks degrade gracefully when the validator HTTP API is
+    # unreachable; they only HARD-FAIL on an authoritative negative.
+    from hope.miner.preflight import (
+        PreflightError,
+        check_registration,
+        check_submission_window,
+    )
+    import sys as _sys_preflight
+    try:
+        check_submission_window(args.validator_url)
+    except PreflightError as e:
+        print(f"\nERROR: {e}", file=_sys_preflight.stderr)
+        _sys_preflight.exit(2)
+
+    try:
+        sign_headers = runner.episode_client._sign_request(
+            "GET", "/v1/registration-status", b"",
+        )
+        check_registration(args.validator_url, sign_headers=sign_headers)
+    except PreflightError as e:
+        print(f"\nERROR: {e}", file=_sys_preflight.stderr)
+        _sys_preflight.exit(3)
+    except AttributeError:
+        # episode_client doesn't expose a sign helper — fall through
+        # quietly; the chain-commit path will surface registration
+        # issues post-hoc.
+        logger.debug("preflight: registration check skipped — no sign helper")
+
     try:
         result = _run_epoch_onchain_cli(args, runner, wallet)
     except RuntimeError as e:

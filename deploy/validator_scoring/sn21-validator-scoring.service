@@ -1,0 +1,49 @@
+[Unit]
+Description=SN21 Scoring Runner (one-shot per epoch)
+Documentation=https://github.com/ippcteam/SN21-adtao
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sn21
+Group=sn21
+WorkingDirectory=/opt/sn21
+EnvironmentFile=/etc/sn21/scoring.env
+ExecStart=/opt/sn21/deploy/validator_scoring/run.sh
+
+# Non-zero exit terminates the unit; the timer logs the failure. Re-runs
+# are safe because the runner checks `validator_already_scored_epoch` on
+# chain and bails if a 9.C.1 already exists for this epoch.
+SuccessExitStatus=0
+
+# Security hardening — the scorer reads chain + archives, writes to its
+# own wallet dir + ed25519 key path, and submits chain extrinsics.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/home/sn21/.bittensor
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+# Resource limits — a single scoring run does chain reads + archive
+# fetches + commit extrinsics; CPU bursts on EpochScorer over all miners.
+MemoryMax=2G
+CPUQuota=200%
+LimitNOFILE=4096
+
+# Don't restart automatically — the timer schedules the next run. Letting
+# systemd auto-retry could blow through the Commitments-pallet byte
+# budget on transient chain RPC failures.
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

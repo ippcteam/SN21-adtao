@@ -66,6 +66,41 @@ class RevealedEntry:
     payload_bytes: bytes  # full SCALE-encoded Data variant including tag
 
 
+def _scale_payload_to_bytes(payload) -> Optional[bytes]:
+    """Normalise a SCALE-decoded byte payload to bytes across
+    async-substrate-interface 1.x and 2.x.
+
+    The result shape of `substrate.query` for `Commitments` byte payloads
+    differs by version:
+      - 1.x (bittensor 10.2.x): bytes, or a tuple-of-byte-ints, sometimes
+        wrapped one level deep as ``(tuple-of-ints,)``.
+      - 2.x (bittensor >=10.4, cyscale): a ``0x``-prefixed hex string.
+
+    Returns the raw bytes for either, or None for shapes that don't carry
+    raw bytes (e.g. the ``TimelockEncrypted`` dict variant), so callers can
+    emit an empty marker instead of crashing.
+    """
+    # 2.x: 0x-hex string of the SCALE payload.
+    if isinstance(payload, str):
+        s = payload[2:] if payload[:2].lower() == "0x" else payload
+        try:
+            return bytes.fromhex(s)
+        except ValueError:
+            return None
+    # 1.x: unwrap a 1-tuple that nests a tuple-of-ints one level deep.
+    if (isinstance(payload, tuple) and len(payload) == 1
+            and isinstance(payload[0], (tuple, list))):
+        payload = payload[0]
+    if isinstance(payload, (bytes, bytearray)):
+        return bytes(payload)
+    if isinstance(payload, (tuple, list)):
+        try:
+            return bytes(payload) if payload else b""
+        except TypeError:
+            return None
+    return None
+
+
 def read_commitment_of(
     subtensor,
     netuid: int,
@@ -124,33 +159,22 @@ def read_commitment_of(
     # list and don't crash on unexpected payload types.
     out: list[RawCommitField] = []
     for outer in fields:
-        for entry in outer:
+        # `fields` nesting differs by async-substrate-interface version:
+        #   - 1.x: `outer` is a tuple/list of {variant: payload} dicts.
+        #   - 2.x: `outer` is the {variant: payload} dict itself.
+        entries = [outer] if isinstance(outer, dict) else outer
+        for entry in entries:
             if not isinstance(entry, dict) or len(entry) != 1:
                 continue
             variant, payload = next(iter(entry.items()))
-            # Unwrap 1-tuples that wrap a tuple-of-ints (some Substrate
-            # SCALE codecs nest the bytes one level deep).
-            if (isinstance(payload, tuple)
-                    and len(payload) == 1
-                    and isinstance(payload[0], (tuple, list))):
-                payload = payload[0]
-            if isinstance(payload, (bytes, bytearray)):
-                out.append(RawCommitField(variant=variant, bytes_=bytes(payload)))
-            elif isinstance(payload, (tuple, list)):
-                # Empty tuple → empty bytes; tuple-of-ints → bytes(...);
-                # if it's still nested (unexpected), guard against TypeError.
-                try:
-                    out.append(RawCommitField(
-                        variant=variant,
-                        bytes_=bytes(payload) if payload else b"",
-                    ))
-                except TypeError:
-                    out.append(RawCommitField(variant=variant, bytes_=b""))
-            elif isinstance(payload, dict):
-                # TimelockEncrypted / other structured variants — bytes are
-                # not directly accessible from CommitmentOf. Emit an empty
-                # marker so callers can see that the variant was present.
-                out.append(RawCommitField(variant=variant, bytes_=b""))
+            payload_bytes = _scale_payload_to_bytes(payload)
+            # None → structured variant (e.g. TimelockEncrypted dict) whose
+            # bytes aren't directly accessible from CommitmentOf. Emit an
+            # empty marker so callers still see the variant was present.
+            out.append(RawCommitField(
+                variant=variant,
+                bytes_=payload_bytes if payload_bytes is not None else b"",
+            ))
     return out
 
 
@@ -196,16 +220,14 @@ def read_revealed_commitments(
 
     out: list[RevealedEntry] = []
     for entry in val:
-        if not isinstance(entry, tuple) or len(entry) != 2:
+        if not isinstance(entry, (tuple, list)) or len(entry) != 2:
             continue
         payload, block_num = entry
-        if isinstance(payload, (tuple, list)):
-            payload_bytes = bytes(payload)
-        elif isinstance(payload, (bytes, bytearray)):
-            payload_bytes = bytes(payload)
-        else:
-            continue
         if not isinstance(block_num, int):
+            continue
+        # 1.x yields bytes/tuple-of-ints; 2.x yields a 0x-hex string.
+        payload_bytes = _scale_payload_to_bytes(payload)
+        if payload_bytes is None:
             continue
         out.append(RevealedEntry(block_number=block_num, payload_bytes=payload_bytes))
     return out
@@ -266,6 +288,13 @@ def read_events_at_block(
             continue
 
         # Best-effort extract netuid + hotkey from the event attributes.
+        # Substrate event attributes come in two shapes depending on the
+        # active substrate-interface / cyscale version:
+        #   - older list-of-dicts: [{"name": "netuid", "type": ..., "value": N}, ...]
+        #   - newer named-dict:    {"netuid": N, "who": "5..."}
+        # We handle both. The named-dict form is what runtime-decoded
+        # events look like under cyscale (bittensor>=10) and was missed
+        # by the original parser.
         attributes = ev_event.get("attributes") or ev_event.get("params") or []
         netuid: Optional[int] = None
         hotkey_ss58: Optional[str] = None
@@ -277,6 +306,25 @@ def read_events_at_block(
                         netuid = val
                     elif isinstance(val, str) and hotkey_ss58 is None and val.startswith("5"):
                         hotkey_ss58 = val
+        elif isinstance(attributes, dict):
+            # Try common Commitments-pallet attribute names first.
+            net_val = attributes.get("netuid")
+            if isinstance(net_val, int):
+                netuid = net_val
+            who_val = (
+                attributes.get("who")
+                or attributes.get("hotkey")
+                or attributes.get("account")
+            )
+            if isinstance(who_val, str) and who_val.startswith("5"):
+                hotkey_ss58 = who_val
+            # Fall back to a generic walk if the named keys didn't match.
+            if netuid is None or hotkey_ss58 is None:
+                for v in attributes.values():
+                    if isinstance(v, int) and netuid is None:
+                        netuid = v
+                    elif isinstance(v, str) and hotkey_ss58 is None and v.startswith("5"):
+                        hotkey_ss58 = v
         if netuid is None or hotkey_ss58 is None:
             # Skip events we can't attribute; probably not a commit event.
             continue
@@ -463,6 +511,97 @@ def read_commitments_budget(
     return used, max_space, last_epoch
 
 
+def _max_other_last_epoch(
+    subtensor,
+    netuid: int,
+    own_hotkey_ss58: str,
+    *,
+    block_hash: Optional[str] = None,
+    max_samples: int = 32,
+) -> Optional[int]:
+    """Conservative lower bound for the current pallet-epoch.
+
+    The Commitments pallet stores `(used_space, last_epoch)` per (netuid,
+    hotkey) and resets `used_space` on the FIRST commit landed in a new
+    pallet-epoch. There is no chain-side query for "what is the current
+    pallet-epoch" — the RateLimit constant that defines it is not
+    surfaced in metadata. But every active validator's `last_epoch`
+    field IS observable, and the maximum across the subnet is a tight
+    lower bound on the current pallet-epoch (it's the most recently
+    committed epoch). If our own `last_epoch` is strictly less than
+    that, the pallet-epoch HAS rolled over since our last commit and
+    `used_space` is stale — our next commit will reset it to 0.
+
+    Returns the max last_epoch observed across other hotkeys on the
+    subnet, or None if the metagraph read fails (caller falls back to
+    pessimistic behavior in that case).
+    """
+    try:
+        metagraph = subtensor.metagraph(netuid=netuid)
+        hotkeys = [hk for hk in metagraph.hotkeys if hk != own_hotkey_ss58]
+    except Exception:
+        return None
+    # Sample up to `max_samples` hotkeys to bound RPC cost
+    hotkeys = hotkeys[:max_samples]
+    max_epoch: Optional[int] = None
+    for hk in hotkeys:
+        try:
+            query_kwargs = {
+                "module": "Commitments", "storage_function": "UsedSpaceOf",
+                "params": [netuid, hk],
+            }
+            if block_hash is not None:
+                query_kwargs["block_hash"] = block_hash
+            raw = subtensor.substrate.query(**query_kwargs)
+            val = raw.value if hasattr(raw, "value") else raw
+            if isinstance(val, dict):
+                le = int(val.get("last_epoch", 0) or 0)
+                if le and (max_epoch is None or le > max_epoch):
+                    max_epoch = le
+        except Exception:
+            continue
+    return max_epoch
+
+
+# Empirically-derived Commitments-pallet RateLimit (blocks per pallet-epoch)
+# on Subtensor. The pallet's `RateLimit` config constant is NOT exposed in
+# chain metadata, so we cannot query it. Derivation:
+#   `current_pallet_epoch ≈ block_number // RATE_LIMIT_BLOCKS`
+# Verified against testnet 466 at multiple sample points: the implied
+# RateLimit lands at 360-361 blocks (matches Bittensor's standard subnet
+# tempo of 360). We use 360 as a conservative lower bound — if the true
+# RateLimit is slightly higher, we'd very occasionally over-estimate the
+# current pallet-epoch by 1 and treat a still-fresh used_space as stale,
+# which is harmless (chain just won't reset on commit since the epoch
+# actually matches, and the existing 1300/3100 byte budget would still
+# pass on a fresh validator). The opposite error (under-estimating) would
+# wrongly block scoring, so we err on the higher side.
+_PALLET_EPOCH_BLOCKS = 360
+
+
+def _current_pallet_epoch_from_block(subtensor) -> Optional[int]:
+    """Estimate the current pallet-epoch from `block_number // RateLimit`.
+
+    Independent of the max-other-last-epoch heuristic — needed for the
+    case where the calling validator is the ONLY recent committer on
+    the subnet (testnet conditions, or any subnet where most hotkeys
+    are inactive). In that case, the validator's own `last_epoch` is
+    the max across all hotkeys, so `_max_other_last_epoch` returns a
+    stale value and can't detect the rollover.
+
+    Returns the estimated current pallet-epoch, or None if the block-
+    number query fails (caller falls back to the other-validator signal).
+    """
+    try:
+        block = subtensor.substrate.get_block()
+        block_num = block["header"]["number"] if isinstance(block, dict) else None
+        if block_num is None:
+            return None
+        return int(block_num) // _PALLET_EPOCH_BLOCKS
+    except Exception:
+        return None
+
+
 def commitments_budget_sufficient(
     subtensor,
     netuid: int,
@@ -473,11 +612,45 @@ def commitments_budget_sufficient(
 ) -> tuple[bool, int, int]:
     """Return ``(sufficient, remaining_bytes, last_epoch)``.
 
-    ``sufficient`` is True iff ``max_space - used_space >= needed_bytes``.
+    ``sufficient`` is True iff the validator either:
+      a) has the bytes free in the current pallet-epoch, OR
+      b) has a stale `last_epoch` (older than the current pallet-epoch),
+         in which case `used_space` will reset to 0 on the next commit
+         and the full `max_space` will be available.
+
+    Stale-epoch detection uses two independent signals; either is enough
+    to conclude the budget is fresh:
+
+      1. **max-other-last-epoch:** if any OTHER validator has committed
+         in a strictly newer pallet-epoch than us, the epoch has rolled
+         over since our last commit.
+      2. **block-derived current-epoch:** `block_number // _PALLET_EPOCH_BLOCKS`
+         gives an independent estimate of the current pallet-epoch.
+         Needed for subnets where we're the only recent committer
+         (testnet conditions), since signal #1 trivially fails there.
+
+    Without both signals, validators get falsely blocked after the first
+    re-run of the cron in the same pallet-epoch even when the epoch has
+    long since rolled over — the pallet's stale (used_space, last_epoch)
+    storage does not update until they commit again.
     """
     used, max_space, last_epoch = read_commitments_budget(
         subtensor, netuid, hotkey_ss58, block_hash=block_hash,
     )
+
+    # Signal 1: other validators in newer epochs prove rollover happened.
+    current_epoch_lb = _max_other_last_epoch(
+        subtensor, netuid, hotkey_ss58, block_hash=block_hash,
+    )
+    if current_epoch_lb is not None and last_epoch < current_epoch_lb:
+        return True, max_space, current_epoch_lb
+
+    # Signal 2: block-number-based current-epoch estimate. Catches the
+    # "we're the only active validator" case where signal 1 is degenerate.
+    block_epoch_est = _current_pallet_epoch_from_block(subtensor)
+    if block_epoch_est is not None and last_epoch < block_epoch_est:
+        return True, max_space, block_epoch_est
+
     remaining = max_space - used
     return remaining >= needed_bytes, remaining, last_epoch
 

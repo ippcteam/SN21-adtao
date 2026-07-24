@@ -7,7 +7,7 @@
 | **Authoritative for launch** | Yes — gates, tier shape, EMA, governance. |
 | **Companion** | [SN21_EPOCH_STRUCTURE.md](./SN21_EPOCH_STRUCTURE.md) |
 
-**Implementation note:** This document is the authoritative spec for the launch reward mechanism *as designed*. The default `hope-validator` CLI at launch ships a simpler path — score-normalization + 95% burn — while the chain-side scoring pipeline is exercised end-to-end during the first operational cycle. The full tiered allocator is implemented in `hope/validator/tiered_weights.py:TieredAllocator` and unit-tested; operators can opt in immediately via `WeightSetter(tiered_allocator=TieredAllocator())`. The default runner is scheduled to switch to the tiered path after Review 1.
+**Implementation note:** This document is the authoritative spec for the launch reward mechanism *as designed*. The default `hope-validator` CLI at launch ships a simpler path — score-normalization + 95% burn — while the chain-side scoring pipeline is exercised end-to-end during the first operational cycle. The full tiered allocator is implemented in `hope/validator/tiered_weights.py:TieredAllocator` and unit-tested. The chain validator runner now wires it behind the `SN21_TIERED_WEIGHTS` opt-in — when enabled, the per-miner weight vector is built via the participation gate + Elite/Competitive/Participating pools (single proportional pool under 15 qualifying miners) instead of flat score-normalization (the legacy `WeightSetter(tiered_allocator=TieredAllocator())` path remains for the HTTP runner). The gate's baseline is the predict-zero score against the epoch truth. It defaults off pending Review 1, after which it becomes the default.
 
 ## Purpose
 
@@ -39,11 +39,13 @@ v1 is intentionally simple. Complexity deters miners who need to model returns b
 
 SN21 is centrally governed by the subnet operator at launch. Parameter changes are published with rationale and lead time. Decentralisation is on the Review 4 agenda. Governance is transparent and structured, but centralised until then.
 
+What is centralised at v1 is the canonical scoring spec and the operator-run canonical primary + shadow validators — not the on-chain consensus that determines emissions. Weight aggregation on SN21 is already multi-validator: every registered validator submits its own weight vector and Yuma stake-weighted median combines them. Convergence of registered validators on the canonical scoring code is what Phase 3 of the validator architecture (see whitepaper §10.2) is about.
+
 ## Validator architecture
 
-**At launch, third-party validator registration on SN21 is closed.** The subnet operator runs the primary validator (and a shadow validator on a separate hotkey, separate host) using this codebase. Opening validator registration to additional operators is on the Review 4 agenda.
+Validator registration on SN21 is **open by Bittensor protocol** — any operator meeting the chain's permit and stake requirements can register and submit weights. At launch, the AdTAO operator runs the canonical primary and shadow validators against the published scoring specification, and is coordinating with other registered validator operators to converge on canonical scoring. Validator decentralisation criteria — what a formal third-party operator programme looks like — is on the Review 4 agenda.
 
-The scoring implementation is open source: anyone can clone `tao-discovery`, run the validator binary against the chain, and reproduce scoring locally. **Running the code locally is open; submitting weights to the chain as a registered SN21 validator is not.** This is a deliberate launch-phase choice — see Review 4.
+The scoring implementation is open source: anyone can clone the repo and run the validator binary locally against the chain to reproduce scoring. A formal third-party validator programme (deployment guide, scoring spec reference implementation, operator coordination channels) is tracked at Review 4.
 
 ### Open-source scoring code
 
@@ -135,6 +137,8 @@ Per-horizon episode score:
 **Directional (15%):** Correct direction of primary goal metric.  
 **Goal (15%):** P50 on the account’s primary goal metric.  
 
+**Implementation status.** The launch scorer (`hope/scoring/onchain_adapter.py:score_one_miner`) shipped a simplified `0.7×CRPS + 0.3×Brier` proxy whose quantile term is band-insensitive (a perfect P50 and one a few percent off score identically, compressing the dynamic range). The full four-component score above is implemented in `score_one_miner_v2` (pinball quantile + coverage/width + directional + P50-goal) and enabled via `SN21_SCORING_V2` (default off; the matching verifier must set the same flag — recording the scorer version on chain is a tracked follow-up). It is scheduled to become the default after Review 1.
+
 **Horizon aggregation** (by measurement resolution).
 
 **Launch (Phase 1)** uses 7-day and 14-day horizons only:
@@ -214,7 +218,7 @@ Assume **7,200 α/day** → **50,400 α per week** at subnet level; **41%** to m
 | Epoch multipliers | Active | 1.0–3.0 | 2 |
 | Diversity bonus | Active | 0–0.05 | 3 |
 | Min pool for tiers | Active | 15 | 1 |
-| Open-source code | Active | tao-discovery | — |
+| Open-source code | Active | SN21-adtao | — |
 | External audit program | **Not committed** | TBD / intentional | — |
 | Red-team simulation | Pre-launch goal | 9-strategy bar | — |
 | Epoch-local accounting | Active | rescore / drop / cancel | — |
@@ -226,4 +230,4 @@ Assume **7,200 α/day** → **50,400 α per week** at subnet level; **41%** to m
 | 1.0 | 2026-04-16 | Initial |
 | 1.1 | 2026-04-16 | Validator section; EMA; tiers; diversity; economics example |
 | 1.2 | 2026-04-17 | Conditional prior; Elite floor; Championship scope; collusion/epoch rules; **repo** |
-| 1.2.1 | 2026-04-27 | Repo copy: third-party **audit program descoped** to transparency + TBD; canonical link tao-discovery |
+| 1.2.1 | 2026-04-27 | Repo copy: third-party **audit program descoped** to transparency + TBD; canonical link SN21-adtao |

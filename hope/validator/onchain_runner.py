@@ -22,7 +22,7 @@ client, or the legacy WeightSetter.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -54,6 +54,7 @@ from hope.validator.onchain_reader import (
     assemble_chain_commits,
     read_miner_for_epoch,
 )
+from hope.validator.registration_index import RegistrationIndex
 from hope.validator.weights_commit import (
     WeightsCommitResult,
     commit_weights_layer_9c3,
@@ -61,6 +62,18 @@ from hope.validator.weights_commit import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _pubkey_bytes_to_ss58(pubkey: bytes) -> str:
+    """Encode a 32-byte ed25519 hotkey pubkey as an SS58 address.
+
+    The miner side (`hope/miner/onchain_submitter.py`) uploads archive
+    objects under `/archive/{epoch_id}/{ss58}/{sha256}`. The validator
+    therefore must query the same SS58 path — passing the raw hex pubkey
+    silently 404s every miner.
+    """
+    from bittensor_wallet.bittensor_wallet import Keypair  # type: ignore
+    return Keypair(public_key="0x" + pubkey.hex(), ss58_format=42).ss58_address
 
 
 # Caller-supplied scorer signature: (epoch_id, plaintext_per_miner_hotkey)
@@ -79,7 +92,12 @@ class MinerOnChainInputs:
     """
 
     miner_uid: int
-    miner_hotkey: bytes  # 32-byte raw ed25519 pubkey
+    # 32-byte raw CHAIN hotkey pubkey (ss58_decode of metagraph.hotkeys[uid]).
+    # This is the on-chain identity / metagraph hotkey — NOT the ed25519
+    # inner-sig reg-key (that's resolved separately via RegistrationIndex.
+    # lookup(miner_hotkey)). ss58_encode(this, fmt=42) round-trips back to
+    # the miner's chain hotkey SS58 — which is what the leaderboard publishes.
+    miner_hotkey: bytes
     revealed_k: Optional[bytes]
     sha256_ct_commit: Optional[bytes]
     self_archive_url: Optional[str]
@@ -99,15 +117,72 @@ class EpochScoringOutcome:
     miner_reads: list[MinerReadResult] = field(default_factory=list)
     score_map: dict[bytes, int] = field(default_factory=dict)
     aborted_reason: Optional[str] = None
+    # On-chain footprint of this epoch — used by the leaderboard reporter
+    # and external verifiers to scope their chain queries. Derived from
+    # the earliest miner K-commit (or this validator's 9.C.1 when no
+    # miners are visible) through the validator's 9.C.3 weights commit.
+    block_range_start: Optional[int] = None
+    block_range_end: Optional[int] = None
+    # report-only run: scoring was computed but NO chain commits were made (the
+    # on-chain 9.C/weights already exist from the real run). Lets us rebuild the
+    # leaderboard artifact for a report correction without touching chain — so
+    # no Commitments space-budget spend, no weights rate-limit, retryable anytime.
+    report_only: bool = False
 
     @property
     def ok(self) -> bool:
+        if self.report_only:
+            # No commits in report-only mode; "ok" = scoring produced a result,
+            # which is all the artifact/reporter consumes.
+            return self.aborted_reason is None and bool(self.score_map)
         return (
             self.aborted_reason is None
             and self.pre_scoring_commit is not None and self.pre_scoring_commit.success
             and self.weights_commit is not None and self.weights_commit.success
             and self.post_scoring_commit is not None and self.post_scoring_commit.success
         )
+
+
+def compute_block_range(
+    miner_inputs: list["MinerOnChainInputs"],
+    pre_scoring_commit: Optional[CommitResult],
+    weights_commit: Optional[WeightsCommitResult],
+) -> tuple[Optional[int], Optional[int]]:
+    """Compute (block_range_start, block_range_end) for an epoch.
+
+    Convention per the leaderboard data contract:
+
+        block_range_start = earliest on-chain mining-window activity
+                            for this epoch on this RPC view.
+                            Falls back to the validator's 9.C.1 block
+                            when no miner K-commits are visible.
+
+        block_range_end   = the validator's 9.C.3 weights commit block.
+                            None when the run aborted before weights
+                            were submitted.
+
+    Both can be None on a fully-aborted run (e.g. insufficient budget,
+    no reveals visible). The reporter pipeline treats None as "skip the
+    block range fields in the payload" and surfaces the abort reason
+    out of band.
+    """
+    end: Optional[int] = None
+    if weights_commit is not None and weights_commit.success:
+        end = weights_commit.block_number
+
+    miner_blocks = [
+        inp.chain_block_at_k_commit
+        for inp in miner_inputs
+        if inp.chain_block_at_k_commit is not None and inp.chain_block_at_k_commit > 0
+    ]
+    if miner_blocks:
+        start: Optional[int] = min(miner_blocks)
+    elif pre_scoring_commit is not None and pre_scoring_commit.success:
+        start = pre_scoring_commit.block_number
+    else:
+        start = None
+
+    return start, end
 
 
 def run_epoch_scoring(
@@ -130,6 +205,10 @@ def run_epoch_scoring(
     blocks_until_pre_scoring_reveal: int,
     blocks_until_post_scoring_reveal: int,
     blocks_until_weights_reveal: int,
+    registration_index: Optional["RegistrationIndex"] = None,
+    report_only: bool = False,
+    ignore_already_scored: bool = False,
+    baseline_score: float = 0.0,
 ) -> EpochScoringOutcome:
     """Run the full Layer 9.C orchestration for one validator-epoch.
 
@@ -177,20 +256,29 @@ def run_epoch_scoring(
         )
         validator_ss58 = validator_wallet.hotkey.ss58_address
         if validator_already_scored_epoch(subtensor, netuid, validator_ss58, epoch_id):
-            return EpochScoringOutcome(
-                miner_reads=[],
-                aborted_reason=(
-                    f"already_scored: validator {validator_ss58[:12]}... has a "
-                    f"prior 9.C.1 commit for epoch_id={epoch_id}. Re-running this "
-                    f"epoch would double-spend the Commitments-pallet byte budget. "
-                    f"Skip until the next epoch."
-                ),
-            )
+            if ignore_already_scored or report_only:
+                logger.warning(
+                    "ignore_already_scored=True: bypassing already_scored guard "
+                    "for validator %s... epoch_id=%s. The pallet-byte-budget "
+                    "check remains as the second line of defence; if budget is "
+                    "exhausted the run will still abort cleanly.",
+                    validator_ss58[:12], epoch_id,
+                )
+            else:
+                return EpochScoringOutcome(
+                    miner_reads=[],
+                    aborted_reason=(
+                        f"already_scored: validator {validator_ss58[:12]}... has a "
+                        f"prior 9.C.1 commit for epoch_id={epoch_id}. Re-running this "
+                        f"epoch would double-spend the Commitments-pallet byte budget. "
+                        f"Skip until the next epoch."
+                    ),
+                )
         sufficient, remaining, last_epoch = commitments_budget_sufficient(
             subtensor, netuid, validator_ss58,
             needed_bytes=MIN_VALIDATOR_BUDGET_BYTES,
         )
-        if not sufficient:
+        if not sufficient and not report_only:
             return EpochScoringOutcome(
                 miner_reads=[],
                 aborted_reason=(
@@ -245,6 +333,11 @@ def run_epoch_scoring(
             chain_block_at_k_commit=inp.chain_block_at_k_commit,
             miner_hotkey=inp.miner_hotkey,
         )
+        inner_sig_pk = (
+            registration_index.lookup(inp.miner_hotkey)
+            if registration_index is not None
+            else None
+        )
         result = read_miner_for_epoch(
             chain_commits=cc,
             archive_client=archive_client,
@@ -252,8 +345,17 @@ def run_epoch_scoring(
             epoch_id=epoch_id,
             timing=timing,
             miner_uid=inp.miner_uid,
-            miner_identity_for_archive=inp.miner_hotkey.hex(),
+            miner_identity_for_archive=_pubkey_bytes_to_ss58(inp.miner_hotkey),
+            inner_sig_pubkey=inner_sig_pk,
         )
+        # When we HAD a registration index to check against and the miner is
+        # absent from it, the root cause of any scoreability failure is "not
+        # registered" — relabel so the leaderboard shows the accurate
+        # disqualified_not_registered (rather than a misleading invalid_commit
+        # from the inner_sig falling back to the chain hotkey). A registered
+        # miner whose commit is genuinely bad keeps its specific reason.
+        if not result.ok and inner_sig_pk is None and registration_index is not None:
+            result = replace(result, excluded_reason="not_registered")
         miner_reads.append(result)
 
         # The 9.C.1 miner_commits_root covers EVERY miner whose K and
@@ -287,35 +389,53 @@ def run_epoch_scoring(
                 ))
 
     # ---- 2. build + commit 9.C.1 pre-scoring state ----
-    pre_blob = build_pre_scoring_state(
-        validator_hotkey=validator_hotkey,
-        validator_signing_key=validator_signing_key,
-        epoch_id=epoch_id,
-        epoch_idx=epoch_idx,
-        outcomes_release_round=outcomes_release_round,
-        outcomes_fetched_at_round=outcomes_fetched_at_round,
-        miner_commits=miner_commits,
-        excluded_miners=excluded,
-    )
-    pre_commit = submit_pre_scoring_state_layer_9c1(
-        subtensor=subtensor,
-        validator_wallet=validator_wallet,
-        netuid=netuid,
-        pre_scoring_state_cbor=pre_blob,
-        blocks_until_reveal=blocks_until_pre_scoring_reveal,
-    )
-    if not pre_commit.success:
-        return EpochScoringOutcome(
-            pre_scoring_commit=pre_commit,
-            miner_reads=miner_reads,
-            aborted_reason=f"pre_scoring_commit_failed: {pre_commit.message}",
+    # (skipped in report-only mode — no chain write, so the score below still runs)
+    pre_commit: Optional[CommitResult] = None
+    if not report_only:
+        pre_blob = build_pre_scoring_state(
+            validator_hotkey=validator_hotkey,
+            validator_signing_key=validator_signing_key,
+            epoch_id=epoch_id,
+            epoch_idx=epoch_idx,
+            outcomes_release_round=outcomes_release_round,
+            outcomes_fetched_at_round=outcomes_fetched_at_round,
+            miner_commits=miner_commits,
+            excluded_miners=excluded,
         )
+        pre_commit = submit_pre_scoring_state_layer_9c1(
+            subtensor=subtensor,
+            validator_wallet=validator_wallet,
+            netuid=netuid,
+            pre_scoring_state_cbor=pre_blob,
+            blocks_until_reveal=blocks_until_pre_scoring_reveal,
+        )
+        if not pre_commit.success:
+            return EpochScoringOutcome(
+                pre_scoring_commit=pre_commit,
+                miner_reads=miner_reads,
+                aborted_reason=f"pre_scoring_commit_failed: {pre_commit.message}",
+            )
 
     # ---- 3. score accepted miners ----
     score_map = scorer(epoch_id, score_inputs)
     scored_records = [
         ScoredMinerRecord(miner_hotkey=hk, score_micro=v) for hk, v in score_map.items()
     ]
+
+    # report-only short-circuit: scoring is done; skip ALL chain commits (9.C.1/
+    # 9.C.3 weights/9.C.2/9.C.6). Used to (re)build the leaderboard artifact for a
+    # report correction when the on-chain 9.C already exists — no Commitments
+    # space-budget spend, no weights rate-limit, no consensus impact. The artifact
+    # is assembled from score_map + miner_reads.
+    if report_only:
+        start, end = compute_block_range(miner_inputs, None, None)
+        return EpochScoringOutcome(
+            miner_reads=miner_reads,
+            score_map=score_map,
+            report_only=True,
+            block_range_start=start,
+            block_range_end=end,
+        )
 
     # ---- 4. submit weights (Layer 9.C.3) ----
     uid_by_hotkey = {inp.miner_hotkey: inp.miner_uid for inp in miner_inputs}
@@ -324,6 +444,150 @@ def run_epoch_scoring(
         max(0.0, min(1.0, v / 1_000_000.0))
         for hk, v in score_map.items() if hk in uid_by_hotkey
     ]
+
+    # Optional weight allowlist. When SN21_WEIGHT_ALLOWLIST_UIDS is set (comma-
+    # separated UIDs), the computed per-miner vector is restricted to those UIDs
+    # BEFORE any override/burn split — i.e. only the listed miners can receive
+    # the miner share of the weight. Unset = no restriction (all scored miners).
+    # Applied here so it composes with SN21_BURN_FRACTION below.
+    import os as _os_allow
+    _allow_str = _os_allow.environ.get("SN21_WEIGHT_ALLOWLIST_UIDS", "").strip()
+    if _allow_str:
+        try:
+            _allow = {int(x) for x in _allow_str.replace(" ", "").split(",") if x}
+            _pairs = [(u, w) for u, w in zip(uids, weights) if u in _allow]
+            print(
+                f"[weight-allowlist] restricting {len(uids)} -> {len(_pairs)} "
+                f"miners (allowlist size {len(_allow)})",
+                flush=True,
+            )
+            uids = [u for u, _ in _pairs]
+            weights = [w for _, w in _pairs]
+        except ValueError as _e:
+            print(
+                f"[weight-allowlist] SN21_WEIGHT_ALLOWLIST_UIDS={_allow_str!r} "
+                f"invalid ({_e}); ignoring (no restriction)",
+                flush=True,
+            )
+
+    # Optional tiered allocation (SN21_REWARD_MECHANISM.md Components 1-2).
+    # When SN21_TIERED_WEIGHTS is set, the flat per-score miner vector is
+    # replaced with the participation gate + Elite/Competitive/Participating
+    # 60/30/10 split (single proportional pool under 15 qualifying miners, per
+    # spec). Applied AFTER the allowlist (only allowlisted miners are
+    # candidates) and BEFORE the override/burn split (which scales the resulting
+    # miner pool to 1 - burn_fraction). `baseline_score` is the predict-zero /
+    # conditional-prior gate threshold passed by the runner; per-episode
+    # coverage is unavailable in the aggregated chain path (the scoreability
+    # check is the de-facto submission gate), so coverage passes at 1.0.
+    _tiered = _os_allow.environ.get("SN21_TIERED_WEIGHTS", "").strip().lower()
+    if _tiered in ("1", "true", "yes", "on"):
+        from hope.validator.tiered_weights import MinerEpochInputs, TieredAllocator
+
+        _score_by_uid = {
+            uid_by_hotkey[hk]: v
+            for hk, v in score_map.items() if hk in uid_by_hotkey
+        }
+        _t_inputs = [
+            MinerEpochInputs(
+                hotkey=str(u),
+                raw_score=max(0.0, min(1.0, _score_by_uid.get(u, 0) / 1_000_000.0)),
+                baseline_score=baseline_score,
+                coverage_fraction=1.0,
+            )
+            for u in uids
+        ]
+        _res = TieredAllocator().allocate(_t_inputs)
+        _funded = [(int(h), w) for h, w in _res.weights.items() if w > 0.0]
+        print(
+            f"[tiered-weights] {len(_t_inputs)} candidates -> elite "
+            f"{len(_res.elite)} / competitive {len(_res.competitive)} / "
+            f"participating {len(_res.participating)}; gate-excluded "
+            f"{len(_res.excluded)}; funded {len(_funded)} "
+            f"(baseline={baseline_score:.4f}, "
+            f"elite_floor_cleared={_res.elite_floor_cleared})",
+            flush=True,
+        )
+        uids = [u for u, _ in _funded]
+        weights = [w for _, w in _funded]
+
+    # Optional weight-vector override. When SN21_OVERRIDE_WEIGHT_UID is set,
+    # the validator's normal per-miner weight vector is REPLACED with a
+    # single-entry vector that puts 100% weight on the override UID. This
+    # is used to align the validator's commit with the network consensus
+    # target when standalone real-scoring leaves us at vtrust=0; see
+    # docs/validator_setup.md for the operational rationale. The override
+    # bypasses scoring entirely — the scoreability + 9.C.1 path still runs
+    # for audit purposes, but 9.C.3 publishes the override instead of the
+    # computed per-miner allocation. Leave SN21_OVERRIDE_WEIGHT_UID unset
+    # (or empty) to keep the default scoring behaviour.
+    import os as _os
+    _override_uid_str = _os.environ.get("SN21_OVERRIDE_WEIGHT_UID", "").strip()
+    if _override_uid_str:
+        try:
+            _override_uid = int(_override_uid_str)
+            if _override_uid < 0 or _override_uid > 65535:
+                raise ValueError(f"out of u16 range: {_override_uid}")
+            # Optional partial burn. When SN21_BURN_FRACTION is set to a value
+            # strictly between 0 and 1, the override UID receives that fraction
+            # of the weight and the remaining (1 - fraction) is distributed
+            # across the computed per-miner vector in proportion to scores.
+            # Unset (or a value <=0 or >=1, or no scoreable miners) keeps the
+            # full 100% single-UID override.
+            _burn_str = _os.environ.get("SN21_BURN_FRACTION", "").strip()
+            _burn = None
+            if _burn_str:
+                try:
+                    _bf = float(_burn_str)
+                    if 0.0 < _bf < 1.0:
+                        _burn = _bf
+                    else:
+                        print(
+                            f"[weight-override] SN21_BURN_FRACTION={_burn_str!r} "
+                            f"outside (0,1); using full single-UID override",
+                            flush=True,
+                        )
+                except ValueError as _e:
+                    print(
+                        f"[weight-override] SN21_BURN_FRACTION={_burn_str!r} "
+                        f"invalid ({_e}); using full single-UID override",
+                        flush=True,
+                    )
+            _miner_pairs = [
+                (u, w) for u, w in zip(uids, weights) if u != _override_uid
+            ]
+            _miner_total = sum(w for _, w in _miner_pairs)
+            if _burn is not None and _miner_pairs and _miner_total > 0:
+                # e.g. SN21_BURN_FRACTION=0.75 -> 75% to override UID,
+                # 25% across miners in proportion to their scores.
+                _scaled = [
+                    (1.0 - _burn) * (w / _miner_total) for _, w in _miner_pairs
+                ]
+                _miner_uids = [u for u, _ in _miner_pairs]
+                uids = _miner_uids + [_override_uid]
+                weights = _scaled + [_burn]
+                print(
+                    f"[weight-override] partial burn: {_burn:.0%} -> UID "
+                    f"{_override_uid}, {1.0 - _burn:.0%} across {len(_miner_uids)} "
+                    f"miners by score",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[weight-override] SN21_OVERRIDE_WEIGHT_UID={_override_uid} set; "
+                    f"replacing the computed vector ({len(uids)} miners) with "
+                    f"{{ {_override_uid}: 1.0 }}",
+                    flush=True,
+                )
+                uids = [_override_uid]
+                weights = [1.0]
+        except ValueError as _e:
+            print(
+                f"[weight-override] SN21_OVERRIDE_WEIGHT_UID={_override_uid_str!r} "
+                f"invalid ({_e}); ignoring override and using computed vector",
+                flush=True,
+            )
+
     weights_commit = (
         commit_weights_layer_9c3(
             subtensor=subtensor,
@@ -371,6 +635,7 @@ def run_epoch_scoring(
         blocks_until_reveal=blocks_until_post_scoring_reveal,
     )
     if not post_commit.success:
+        start, end = compute_block_range(miner_inputs, pre_commit, weights_commit)
         return EpochScoringOutcome(
             pre_scoring_commit=pre_commit,
             weights_commit=weights_commit,
@@ -378,6 +643,8 @@ def run_epoch_scoring(
             miner_reads=miner_reads,
             score_map=score_map,
             aborted_reason=f"post_scoring_commit_failed: {post_commit.message}",
+            block_range_start=start,
+            block_range_end=end,
         )
 
     # ---- 6. optional 9.C.6 retry log ----
@@ -404,6 +671,7 @@ def run_epoch_scoring(
         epoch_id, len(score_map), len(excluded), retry_commit is not None,
         weights_commit.block_number,
     )
+    start, end = compute_block_range(miner_inputs, pre_commit, weights_commit)
     return EpochScoringOutcome(
         pre_scoring_commit=pre_commit,
         weights_commit=weights_commit,
@@ -412,4 +680,6 @@ def run_epoch_scoring(
         retry_log_blob=retry_blob,
         miner_reads=miner_reads,
         score_map=score_map,
+        block_range_start=start,
+        block_range_end=end,
     )

@@ -192,13 +192,19 @@ def stash_into_archive(
             "stash_into_archive expects an ArchiveStore (InMemoryStore / "
             "FilesystemStore); ArchiveClient.upload is not supported here"
         )
+    # The production runner queries the archive at /archive/{epoch_id}/{ss58}/{sha}.
+    # Migration replays must use the SAME path scheme so dual-mode rehearsal
+    # exercises the live read path; otherwise every synthesised miner appears
+    # as plaintext_unavailable. (Pre-SS58-fix code stored under the hex
+    # pubkey; that path is now obsolete.)
+    from hope.validator.onchain_runner import _pubkey_bytes_to_ss58
     for inp in miner_inputs:
         sha = inp.sha256_ct_commit
         if sha is None or sha not in ct_by_sha256:
             continue
         archive_client_or_store.put(
             epoch_id=epoch_id,
-            miner_identity=inp.miner_hotkey.hex(),
+            miner_identity=_pubkey_bytes_to_ss58(inp.miner_hotkey),
             sha256=sha,
             data=ct_by_sha256[sha],
         )

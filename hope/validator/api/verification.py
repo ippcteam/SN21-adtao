@@ -1,102 +1,188 @@
 """Verification endpoints — post-scoring reveal for transparency.
 
-After scoring is complete, miners and observers can:
-1. Download revealed outcomes
-2. See the scoring weights used
-3. Verify outcomes match the pre-committed hash
-4. Check individual episode scores
-5. Get Merkle inclusion proofs for their predictions
+The `/verification` endpoint reads the validator's 9.C.2 post-scoring
+artifacts directly from chain ``RevealedCommitments`` (via a short-lived
+subprocess to keep the long-running daemon's memory flat). The 9.C.2
+plaintext is chain-public once auto-decrypted, so the endpoint surfaces
+exactly the data any chain explorer would see — no per-miner score
+breakdowns, no privileged calculations: just the cryptographic
+commitments (final_score_root, scoring_hash, weights_commit_block_hash)
+that a third-party verifier needs to reproduce the run locally with
+`scripts/verify_epoch.py`.
+
+The legacy `/scores` and `/my-predictions` endpoints rely on in-memory
+state that was populated only in the now-superseded single-binary
+architecture. They return 501 with guidance toward the chain-based
+verification path until reimplemented for two-binary operation.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
+import subprocess
+import sys
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hope.validator.api.auth import MinerIdentity, verify_miner
-from hope.validator.integrity import compute_merkle_inclusion_proof
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Subprocess time budget. Chain reads should complete in <10s on a healthy
+# RPC; 30s gives generous headroom against websocket reconnection latency.
+_VERIFICATION_SUBPROCESS_TIMEOUT_SECS = 30
 
 
 @router.get("/{epoch_id}/verification")
 async def get_verification(epoch_id: str, request: Request):
-    """Get revealed outcomes and scoring weights after epoch scoring.
+    """Return the validator's 9.C.2 post-scoring artifact for an epoch.
 
-    Public endpoint — available after scoring is complete.
-    Contains everything needed to independently verify scores.
+    Reads ``Commitments.RevealedCommitments`` for the validator's hotkey
+    via a short-lived subprocess and locates the 9.C.2 plaintext whose
+    ``epoch_id`` field matches. Returns the chain-public fields verbatim
+    (bytes hex-encoded); the response is identical to what any chain
+    explorer would surface for the same query, so this endpoint adds no
+    privileged data — only convenience.
+
+    Response codes:
+      200 — 9.C.2 found and returned
+      404 — wallet hotkey / netuid not configured on this daemon
+      409 — chain has not yet auto-decrypted the 9.C.2 commit for this
+            epoch (TLE'd, awaiting drand reveal_round + subnet epoch
+            tick). Retry in a few minutes.
+      503 — chain RPC unreachable or subprocess failure
     """
     state = request.app.state.validator
-    current_epoch = state.get("current_epoch_id")
+    cfg = state.get("_chain_config", {})
+    validator_ss58 = state.get("validator_hotkey_ss58")
+    netuid = cfg.get("netuid")
+    network = cfg.get("network")
 
-    if epoch_id != current_epoch:
-        raise HTTPException(status_code=404, detail=f"Epoch {epoch_id} not found")
+    if cfg.get("no_chain"):
+        raise HTTPException(
+            status_code=503,
+            detail="Validator is running with --no-chain; verification unavailable",
+        )
+    if not validator_ss58 or netuid is None or not network:
+        raise HTTPException(
+            status_code=404,
+            detail="Validator hotkey / netuid not configured on this daemon",
+        )
 
-    reveal = state.get("reveal")
-    if not reveal:
+    cmd = [
+        sys.executable, "-m", "hope.validator.chain_verification_dump",
+        "--network", network,
+        "--netuid", str(netuid),
+        "--validator-hotkey", validator_ss58,
+        "--epoch-id", epoch_id,
+    ]
+    # Wrap the synchronous subprocess in asyncio.to_thread so the FastAPI
+    # event loop continues serving other requests while the chain read is
+    # in flight. Without this, a flood of /verification polls froze the
+    # whole daemon for up to _VERIFICATION_SUBPROCESS_TIMEOUT_SECS per
+    # call — every other request (including /health) timed out at Render's
+    # load-balancer ceiling.
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run,
+            cmd, capture_output=True, text=True,
+            timeout=_VERIFICATION_SUBPROCESS_TIMEOUT_SECS,
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Chain read timed out after {_VERIFICATION_SUBPROCESS_TIMEOUT_SECS}s; "
+                "RPC may be slow or unreachable. Retry shortly."
+            ),
+        )
+    except Exception as e:
+        logger.warning("verification subprocess failed to start: %s", e)
+        raise HTTPException(status_code=503, detail=f"Chain read subprocess failed: {e}")
+
+    if result.returncode != 0:
+        logger.warning(
+            "verification subprocess exit %d: %s",
+            result.returncode, result.stderr.strip()[:300],
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Chain read failed; retry shortly",
+        )
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=503,
+            detail="Chain read returned unparseable output",
+        )
+
+    if not payload.get("found"):
+        n_revealed = payload.get("n_revealed", 0)
         raise HTTPException(
             status_code=409,
-            detail="Scoring not yet complete — outcomes not revealed",
+            detail=(
+                f"9.C.2 post-scoring artifact for epoch_id={epoch_id} is not "
+                f"yet visible in RevealedCommitments for this validator "
+                f"({n_revealed} commits revealed so far). The chain has "
+                f"committed the artifact but not yet auto-decrypted it "
+                f"(TLE-encrypted, awaiting the drand reveal_round + the next "
+                f"subnet epoch tick). Retry in a few minutes."
+            ),
         )
 
     return {
         "epoch_id": epoch_id,
         "status": "revealed",
-        "commitment_hash": reveal.get("commitment_hash"),
-        "salt": reveal.get("salt"),
-        "scoring_weights": reveal.get("scoring_weights"),
-        "outcomes": reveal.get("outcomes"),
-        "scores": reveal.get("scores"),
-        # Integrity proofs
-        "episode_hash": reveal.get("episode_hash"),
-        "prediction_merkle_root": reveal.get("prediction_merkle_root"),
-        "prediction_count": reveal.get("prediction_count"),
-        "scoring_hash": reveal.get("scoring_hash"),
-        "outcomes_fetched_at": reveal.get("outcomes_fetched_at"),
-        "submissions_closed_at": reveal.get("submissions_closed_at"),
+        "source": "chain.RevealedCommitments",
+        "artifact": payload["data"],
         "verification_instructions": (
-            "To verify the commitment: compute "
-            "SHA256(episode_hash + prediction_merkle_root + merkle_root + outcomes_json + salt + weights_json) "
-            "where outcomes_json = json.dumps(outcomes, sort_keys=True, default=str). "
-            "The result must match commitment_hash. "
-            "To verify your score: re-run the scoring algorithm (hope/scoring/) "
-            "with the revealed outcomes and your predictions."
+            "This artifact contains the cryptographic commitments needed to "
+            "independently verify the validator's scoring run. To verify your "
+            "own miner score:  (1) fetch the operator's 9.A.2 outcomes for "
+            "this epoch_id;  (2) re-decrypt your own AES_ct using the K "
+            "revealed in your 9.B bundle commit;  (3) re-run the SN21 scoring "
+            "code (see scripts/verify_epoch.py in the SN21-adtao public repo) "
+            "with the revealed outcomes + your decrypted predictions;  (4) "
+            "check that your locally-computed score is consistent with the "
+            "`final_score_root` field above (it's the IMT root over all "
+            "scored miners; your Merkle inclusion proof can be reconstructed "
+            "locally from the same inputs)."
         ),
     }
 
 
 @router.get("/{epoch_id}/scores")
 async def get_scores(epoch_id: str, request: Request):
-    """Get per-miner scores for the epoch.
+    """Deprecated under the two-binary architecture.
 
-    Public endpoint — available after scoring is complete.
+    The previous implementation read per-miner score breakdowns from an
+    in-memory dict that was only populated when scoring ran in the same
+    Python process as the API daemon. Under the current two-binary split
+    (`hope-validator-api` + `hope-validator`), the scoring cron does not
+    write back to the daemon's memory, so this endpoint cannot serve the
+    granular per-component breakdowns it used to without re-introducing
+    cross-process state.
+
+    The chain-derived `/verification` endpoint provides the publicly-
+    verifiable scoring commitment (final_score_root + Merkle proof
+    reconstruction); per-miner breakdowns are no longer surfaced via
+    this API.
     """
-    state = request.app.state.validator
-    current_epoch = state.get("current_epoch_id")
-
-    if epoch_id != current_epoch:
-        raise HTTPException(status_code=404, detail=f"Epoch {epoch_id} not found")
-
-    scores = state.get("miner_scores")
-    if not scores:
-        raise HTTPException(status_code=409, detail="Scoring not yet complete")
-
-    return {
-        "epoch_id": epoch_id,
-        "miner_count": len(scores),
-        "scores": {
-            miner_id: {
-                "raw_score": s.raw_score,
-                "skill_score": s.skill_score,
-                "null_penalty": s.null_penalty,
-                "coverage_penalty": s.coverage_penalty,
-                "final_score": s.final_score,
-                "episodes_scored": s.episodes_scored,
-                "episodes_total": s.episodes_total,
-                "coverage_fraction": s.coverage_fraction,
-            }
-            for miner_id, s in scores.items()
-        },
-    }
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            f"GET /{epoch_id}/scores is no longer served via this API under the "
+            f"two-binary validator architecture. Use GET /{epoch_id}/verification "
+            f"for the chain-derived scoring commitment, and run "
+            f"scripts/verify_epoch.py locally to reproduce per-miner scores from "
+            f"public chain + operator-API data."
+        ),
+    )
 
 
 @router.get("/{epoch_id}/my-predictions")
@@ -105,50 +191,24 @@ async def get_my_prediction_proof(
     request: Request,
     miner: MinerIdentity = Depends(verify_miner),
 ):
-    """Get a miner's own prediction hashes and Merkle inclusion proof.
+    """Deprecated under the two-binary architecture.
 
-    Authenticated endpoint — miners can verify their predictions were included
-    in the scored set by checking against the prediction_merkle_root.
+    Originally returned a miner's per-prediction receipts + Merkle
+    inclusion proofs from in-memory state. The two-binary split means
+    that state isn't populated; rebuilding it from chain would require
+    re-decrypting the miner's own 9.B bundle + reconstructing the
+    Merkle tree locally — both of which the miner can already do
+    themselves with the data in /verification. Returning 501 with
+    guidance rather than synthesising a partial response.
     """
-    state = request.app.state.validator
-    current_epoch = state.get("current_epoch_id")
-
-    if epoch_id != current_epoch:
-        raise HTTPException(status_code=404, detail=f"Epoch {epoch_id} not found")
-
-    reveal = state.get("reveal")
-    if not reveal:
-        raise HTTPException(status_code=409, detail="Scoring not yet complete")
-
-    # Get this miner's prediction receipts
-    prediction_receipts = state.get("prediction_receipts", {})
-    miner_receipts = prediction_receipts.get(miner.hotkey, {})
-
-    if not miner_receipts:
-        return {
-            "epoch_id": epoch_id,
-            "miner_hotkey": miner.hotkey[:16] + "...",
-            "predictions_found": 0,
-            "prediction_merkle_root": reveal.get("prediction_merkle_root"),
-        }
-
-    # Build Merkle inclusion proofs with sibling hashes
-    prediction_merkle = state.get("prediction_merkle")
-    proofs = {}
-    for episode_id, receipt in miner_receipts.items():
-        if prediction_merkle:
-            proof = compute_merkle_inclusion_proof(prediction_merkle, miner.hotkey, episode_id)
-            proofs[episode_id] = {
-                **receipt,
-                "inclusion_proof": proof,
-            }
-        else:
-            proofs[episode_id] = receipt
-
-    return {
-        "epoch_id": epoch_id,
-        "miner_hotkey": miner.hotkey[:16] + "...",
-        "predictions_found": len(miner_receipts),
-        "prediction_merkle_root": reveal.get("prediction_merkle_root"),
-        "predictions": proofs,
-    }
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            f"GET /{epoch_id}/my-predictions is no longer served under the "
+            f"two-binary validator architecture. The Merkle proof of your "
+            f"prediction's inclusion can be reconstructed locally from "
+            f"(a) your own 9.B bundle on chain, (b) the operator's 9.A.2 "
+            f"outcomes, and (c) the `final_score_root` field returned by "
+            f"GET /{epoch_id}/verification. See scripts/verify_epoch.py."
+        ),
+    )

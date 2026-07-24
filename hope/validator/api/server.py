@@ -29,6 +29,7 @@ from hope.validator.api.predictions import router as predictions_router
 from hope.validator.api.commitments import router as commitments_router
 from hope.validator.api.verification import router as verification_router
 from hope.validator.api.training import router as training_router
+from hope.validator.api.registration import router as registration_router
 
 logger = logging.getLogger(__name__)
 
@@ -180,14 +181,25 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
     app.state.validator = state
 
     # Root: friendly 200 for health probes hitting `/`. The actual API
-    # endpoints live under `/v1/*` and `/health`.
+    # endpoints live under `/v1/*` and `/health`. The package version is
+    # echoed back so operators can `curl /` and immediately tell which
+    # build is live without needing log access — useful when chasing
+    # a memory issue across multiple deploys.
+    try:
+        from importlib.metadata import version as _pkg_version
+        _SN21_VERSION = _pkg_version("hope-sn21")
+    except Exception:
+        _SN21_VERSION = "unknown"
+
     @app.get("/")
     async def root():
         return {
             "service": "sn21-validator",
+            "version": _SN21_VERSION,
             "endpoints": {
                 "health": "/health",
                 "api": "/v1/epochs/{epoch_id}/...",
+                "debug": "/debug/memory",
             },
         }
 
@@ -201,12 +213,32 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
             len(p) if isinstance(p, (list, dict)) else 0
             for p in preds.values()
         )
+        # Surface the submission deadline + open/closed flag so miners
+        # can pre-check whether the window is still open before doing
+        # the work of generating predictions. Wall-clock deadline (ISO
+        # UTC string) — the same value the /predictions endpoint
+        # checks against.
+        from datetime import datetime as _dt, timezone as _tz
+        deadline_str = state.get("deadline")
+        submission_open_flag = bool(state.get("submission_open", False))
+        seconds_until_deadline: int | None = None
+        if deadline_str:
+            try:
+                deadline_dt = _dt.fromisoformat(deadline_str)
+                seconds_until_deadline = int(
+                    (deadline_dt - _dt.now(_tz.utc)).total_seconds()
+                )
+            except (TypeError, ValueError):
+                seconds_until_deadline = None
         return {
             "status": "ok",
             "service": "sn21-validator",
             "current_epoch": epoch_id,
             "episodes_loaded": episode_count,
             "predictions_received": predictions_count,
+            "deadline_utc": deadline_str,
+            "submission_open": submission_open_flag,
+            "seconds_until_deadline": seconds_until_deadline,
         }
 
     # Register routers
@@ -215,5 +247,81 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
     app.include_router(commitments_router, prefix="/v1/epochs", tags=["commitments"])
     app.include_router(verification_router, prefix="/v1/epochs", tags=["verification"])
     app.include_router(training_router, tags=["training"])
+    app.include_router(registration_router, prefix="/v1", tags=["registration"])
+
+    # Debug endpoints — always registered so a successful deploy is
+    # observable via curl, independent of which env vars happened to make
+    # it through to the running process. /debug/memory works even when
+    # tracemalloc isn't enabled (just returns RSS + GC stats from /proc
+    # and gc, both cheap). /debug/tracemalloc returns an explicit error
+    # when tracemalloc isn't active rather than 404'ing the route.
+    # Non-sensitive (file:line statistics only); operator-curl from any IP.
+    import gc as _gc
+    import os as _os
+    import tracemalloc as _tm
+
+    def _read_proc_status_kb(field: str) -> int | None:
+        try:
+            with open("/proc/self/status") as f:
+                for line in f:
+                    if line.startswith(f"{field}:"):
+                        return int(line.split()[1])
+        except Exception:
+            return None
+        return None
+
+    @app.get("/debug/memory")
+    async def debug_memory():
+        """Cheap process-memory snapshot. Always safe to call."""
+        current, peak = _tm.get_traced_memory() if _tm.is_tracing() else (0, 0)
+        return {
+            "version": _SN21_VERSION,
+            "pid": _os.getpid(),
+            "rss_kb": _read_proc_status_kb("VmRSS"),
+            "vmsize_kb": _read_proc_status_kb("VmSize"),
+            "tracemalloc_enabled": _tm.is_tracing(),
+            "tracemalloc_traced_bytes": current,
+            "tracemalloc_peak_bytes": peak,
+            "gc_counts": _gc.get_count(),
+            "gc_threshold": _gc.get_threshold(),
+            "gc_objects": len(_gc.get_objects()),
+            "env_SN21_TRACEMALLOC": _os.environ.get("SN21_TRACEMALLOC", "<unset>"),
+        }
+
+    @app.get("/debug/tracemalloc")
+    async def debug_tracemalloc(limit: int = 20, group_by: str = "lineno"):
+        """Top allocation sites by current tracked size.
+
+        Args:
+            limit: number of top sites to return (default 20).
+            group_by: 'lineno' for per-line stats (concise), 'traceback'
+                for full stack-trace clustering (verbose; useful when
+                the leaking allocation site has multiple callers).
+        """
+        if not _tm.is_tracing():
+            return {"error": "tracemalloc not enabled", "hint": "set SN21_TRACEMALLOC=1 and restart"}
+        snap = _tm.take_snapshot()
+        snap = snap.filter_traces((
+            _tm.Filter(False, "<frozen importlib._bootstrap>"),
+            _tm.Filter(False, "<frozen importlib._bootstrap_external>"),
+            _tm.Filter(False, _tm.__file__),
+        ))
+        stats = snap.statistics(group_by if group_by in ("lineno", "traceback", "filename") else "lineno")
+        out = []
+        for stat in stats[:limit]:
+            tb_lines = list(stat.traceback.format()) if group_by == "traceback" else None
+            out.append({
+                "size_kb": round(stat.size / 1024, 1),
+                "count": stat.count,
+                "avg_bytes": stat.size // max(1, stat.count),
+                "location": str(stat.traceback[0]),
+                **({"traceback": tb_lines} if tb_lines else {}),
+            })
+        current, peak = _tm.get_traced_memory()
+        return {
+            "tracemalloc_traced_mb": round(current / 1024 / 1024, 1),
+            "tracemalloc_peak_mb": round(peak / 1024 / 1024, 1),
+            "top": out,
+        }
 
     return app

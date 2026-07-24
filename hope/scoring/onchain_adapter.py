@@ -33,6 +33,7 @@ reproduce it byte-for-byte.
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -262,6 +263,117 @@ def score_one_miner(
     return int(round(max(0.0, min(1.0, avg)) * 1_000_000))
 
 
+# --- Scoring v2: spec-aligned 4-component horizon score --------------------
+# SN21_REWARD_MECHANISM.md §Scoring defines:
+#   episode_horizon_score = 0.50*quantile + 0.20*calibration
+#                           + 0.15*directional + 0.15*goal
+# v1 (`score_one_miner`) shipped a simplified 0.7*CRPS + 0.3*Brier proxy whose
+# quantile term is band-insensitive — a perfect P50 and one off by 5% score
+# identically, which collapses the dynamic range (good ≈ great) and blunts both
+# tier placement and within-tier ordering. v2 restores the spec's four
+# components using the same aggregated-plaintext data:
+#   * quantile (0.50)  — pinball loss on (P10,P50,P90); P50-SENSITIVE.
+#   * calibration(0.20)— interval coverage + convex width penalty, blended with
+#                        the miss/instability probability calibration.
+#   * directional(0.15)— correct sign of each metric's P50 vs truth.
+#   * goal (0.15)      — P50 accuracy (1 - |P50-truth|/scale) per metric.
+# Fully deterministic. Opt in via SN21_SCORING_V2 (the matching verifier must
+# set the same flag; recording the scorer version on chain is a follow-up).
+# Scale constants are in deci-percent and tunable at Review 1.
+# PINBALL_SCALE controls the pinball gradient (50% of the v2 score). It is the
+# dominant lever on score *differentiation*: at the legacy 300 a half-right
+# prediction, a do-nothing, and a wrong-direction one all score ~0.86 (flat
+# emissions); lowering it toward ~12–20 (matched to observed delta magnitudes)
+# restores a real ladder. Env-tunable so the scale can be calibrated per the
+# observed truth distribution WITHOUT a code change. NOTE: the score verifier
+# must use the SAME value (see task: record scorer params on chain) — changing
+# it is a scoring-spec change, not a silent tweak.
+PINBALL_SCALE = float(os.environ.get("SN21_PINBALL_SCALE", "300"))
+P50_GOAL_SCALE = 400.0
+INTERVAL_WIDTH_SCALE = 1000.0
+_QUANTILE_LEVELS = (0.1, 0.5, 0.9)
+
+
+def _pinball_score(triple: list[int], truth: int) -> float:
+    """Average pinball loss over (P10,P50,P90) mapped to a [0,1] score.
+
+    Unlike the band-CRPS in v1, the τ=0.5 term is directly proportional to the
+    P50 error, so a better P50 yields a strictly higher score.
+    """
+    total = 0.0
+    for tau, q in zip(_QUANTILE_LEVELS, triple):
+        diff = truth - q
+        total += diff * tau if diff >= 0 else -diff * (1.0 - tau)
+    return max(0.0, 1.0 - total / PINBALL_SCALE)
+
+
+def _coverage_score(triple: list[int], truth: int) -> float:
+    """Interval coverage of [P10,P90] with a convex width penalty (wider bands
+    that 'cheat' coverage are penalised)."""
+    q10, _q50, q90 = triple
+    covered = 1.0 if q10 <= truth <= q90 else 0.0
+    width_penalty = min(1.0, max(0, q90 - q10) / INTERVAL_WIDTH_SCALE)
+    return max(0.0, covered - 0.5 * width_penalty)
+
+
+def _direction_score(p50: int, truth: int) -> float:
+    """Directional accuracy of P50 vs truth (|x|<5 dpct = flat).
+
+    A correct NON-flat directional call earns full credit. "Both flat" earns
+    only HALF — predicting flat is the trivial predict-zero call, so it
+    shouldn't score the same as a skillful up/down call (giving it 1.0 floored
+    the predict-zero baseline higher than warranted on stable epochs).
+    """
+    sp = 0 if abs(p50) < 5 else (1 if p50 > 0 else -1)
+    st = 0 if abs(truth) < 5 else (1 if truth > 0 else -1)
+    if sp != st:
+        return 0.0
+    return 0.5 if sp == 0 else 1.0
+
+
+def _p50_goal_score(p50: int, truth: int) -> float:
+    """P50 accuracy: 1.0 at exact, decaying linearly with |P50 - truth|."""
+    return max(0.0, 1.0 - abs(p50 - truth) / P50_GOAL_SCALE)
+
+
+def score_one_miner_v2(
+    plaintext: dict[str, Any],
+    truth_by_horizon: dict[str, HorizonTruth],
+) -> int:
+    """Spec-aligned 4-component scorer (see module note above). Returns an
+    integer in [0, 1_000_000]; deterministic given (plaintext, truth)."""
+    horizon_scores: list[float] = []
+    for h_entry in plaintext.get("horizons", []):
+        truth = truth_by_horizon.get(h_entry.get("h"))
+        if truth is None:
+            continue
+        metrics = [
+            (h_entry.get("cost_q") or [0, 0, 0], truth.truth_cost_p50_dpct),
+            (h_entry.get("conv_q") or [0, 0, 0], truth.truth_conv_p50_dpct),
+            (h_entry.get("eff_q") or [0, 0, 0], truth.truth_eff_p50_dpct),
+        ]
+        miss_p = int(h_entry.get("miss_p") or 0)
+        instab_p = int(h_entry.get("instab_p") or 0)
+
+        quantile = sum(_pinball_score(q, t) for q, t in metrics) / 3.0
+        coverage = sum(_coverage_score(q, t) for q, t in metrics) / 3.0
+        prob_cal = (
+            _probability_score(miss_p, truth.goal_miss_freq_ppm)
+            + _probability_score(instab_p, truth.instab_freq_ppm)
+        ) / 2.0
+        calibration = 0.5 * coverage + 0.5 * prob_cal
+        directional = sum(_direction_score(q[1], t) for q, t in metrics) / 3.0
+        goal = sum(_p50_goal_score(q[1], t) for q, t in metrics) / 3.0
+
+        score = 0.50 * quantile + 0.20 * calibration + 0.15 * directional + 0.15 * goal
+        horizon_scores.append(max(0.0, min(1.0, score)))
+
+    if not horizon_scores:
+        return 0
+    avg = sum(horizon_scores) / len(horizon_scores)
+    return int(round(max(0.0, min(1.0, avg)) * 1_000_000))
+
+
 def make_scorer(
     truth_by_horizon: dict[str, HorizonTruth],
 ) -> Callable[[str, dict[bytes, dict[str, Any]]], dict[bytes, int]]:
@@ -271,15 +383,50 @@ def make_scorer(
 
         (epoch_id, plaintexts) -> {miner_hotkey: score_micro}
 
-    Args:
+    Uses the spec-aligned 4-component `score_one_miner_v2` when SN21_SCORING_V2
+    is set, otherwise the v1 simplified scorer. Args:
         truth_by_horizon: per-horizon HorizonTruth derived from outcomes.
 
     Returns:
         Callable suitable for `run_epoch_scoring(scorer=...)`.
     """
+    _score = _scoring_fn_for_env()
+
     def scorer(epoch_id: str, plaintexts: dict[bytes, dict[str, Any]]) -> dict[bytes, int]:
-        return {hk: score_one_miner(pt, truth_by_horizon) for hk, pt in plaintexts.items()}
+        return {hk: _score(pt, truth_by_horizon) for hk, pt in plaintexts.items()}
     return scorer
+
+
+def _scoring_fn_for_env():
+    """The single source of truth for which scorer is active (v1/v2).
+
+    `make_scorer` and the predict-zero baseline MUST agree, or the tiered gate
+    compares miner scores on one scale against a baseline on another.
+    """
+    import os as _os
+    _use_v2 = _os.environ.get("SN21_SCORING_V2", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+    return score_one_miner_v2 if _use_v2 else score_one_miner
+
+
+def predict_zero_baseline(truth_by_horizon: dict[str, HorizonTruth]) -> float:
+    """Score of a flat predict-zero submission, in [0,1].
+
+    Computed with the SAME scorer the miners are scored with (v2 when
+    SN21_SCORING_V2 is set) so the tiered participation gate compares
+    like-for-like. Previously this was hardcoded to v1 while miners were scored
+    with v2 — a scale mismatch that gate-excluded 100% of miners (baseline≈0.99
+    on v1, unbeatable by v2 scores) → permanent full burn.
+    """
+    zero_plaintext = {
+        "horizons": [
+            {"h": h, "cost_q": [0, 0, 0], "conv_q": [0, 0, 0],
+             "eff_q": [0, 0, 0], "miss_p": 0, "instab_p": 0}
+            for h in truth_by_horizon
+        ]
+    }
+    return _scoring_fn_for_env()(zero_plaintext, truth_by_horizon) / 1_000_000.0
 
 
 def compute_scoring_inputs_hash(

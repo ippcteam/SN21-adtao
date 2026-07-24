@@ -1,0 +1,2105 @@
+{
+  "episodes": [
+    {
+      "episode_id": "01bf5a6d838e9566",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 6.366002,
+            "conversions_delta_pct": 0.68254,
+            "cost_delta_pct": 0.044026,
+            "cpa_delta_pct": -0.379494,
+            "measured_at": "2026-06-20T08:48:05.347665+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 6.336656,
+            "conversions_delta_pct": -0.15873,
+            "cost_delta_pct": 0.070855,
+            "cpa_delta_pct": 0.272903,
+            "measured_at": "2026-06-20T08:48:05.347665+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "023483c5a0e3d77c",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.333333,
+            "conversions_delta_pct": 0.333333,
+            "cost_delta_pct": 0.689861,
+            "cpa_delta_pct": 0.267396,
+            "measured_at": "2026-06-20T08:48:09.196252+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 0.436715,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:09.196252+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "038a31c5bc690025",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.606312,
+            "conversions_delta_pct": 1.193878,
+            "cost_delta_pct": 0.677376,
+            "cpa_delta_pct": -0.235428,
+            "measured_at": "2026-06-20T08:48:06.869468+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.392027,
+            "conversions_delta_pct": 0.755102,
+            "cost_delta_pct": 0.333681,
+            "cpa_delta_pct": -0.240112,
+            "measured_at": "2026-06-20T08:48:06.869468+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "0483f0f481da3f68",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -0.160062,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:06.078191+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -0.290071,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:06.078191+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "0720a552ff2bdc06",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 4.765827,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:52.924364+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 2.93256,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:52.924364+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "0c983b460ed51881",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.003484,
+            "conversions_delta_pct": 0.034483,
+            "cost_delta_pct": 0.449339,
+            "cpa_delta_pct": 0.401028,
+            "measured_at": "2026-06-19T08:54:52.441392+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.003484,
+            "conversions_delta_pct": 0.064039,
+            "cost_delta_pct": 0.402011,
+            "cpa_delta_pct": 0.317631,
+            "measured_at": "2026-06-19T08:54:52.441392+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "0d22842d8a3bb9fe",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.102857,
+            "conversions_delta_pct": -0.234585,
+            "cost_delta_pct": -0.248852,
+            "cpa_delta_pct": -0.01864,
+            "measured_at": "2026-06-19T08:54:55.133311+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.317143,
+            "conversions_delta_pct": -0.693834,
+            "cost_delta_pct": -0.427781,
+            "cpa_delta_pct": 0.868982,
+            "measured_at": "2026-06-19T08:54:55.133311+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "0fab29a44337c5b2",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.394381,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:52.270677+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.367639,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:52.270677+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "119af21ae17606fd",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 1.816074,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:07.352101+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.617994,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:07.352101+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "13c633a0c3a34c3c",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.135714,
+            "conversions_delta_pct": 0.241834,
+            "cost_delta_pct": 0.811832,
+            "cpa_delta_pct": 0.458997,
+            "measured_at": "2026-06-21T08:55:29.360434+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.35,
+            "conversions_delta_pct": -0.743308,
+            "cost_delta_pct": 1.048065,
+            "cpa_delta_pct": 6.978688,
+            "measured_at": "2026-06-21T08:55:29.360434+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "15800868d67dc248",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -0.344032,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:08.910667+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -0.277074,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:08.910667+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "163024ed7258e320",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.999222,
+            "conversions_delta_pct": -0.8125,
+            "cost_delta_pct": -0.160862,
+            "cpa_delta_pct": 3.475404,
+            "measured_at": "2026-06-20T08:48:04.428171+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.371101,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:04.428171+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "18a5da1b35bc76e1",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.134837,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:08.829511+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.134837,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:08.829511+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "1b13ab4c961ee88b",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.688761,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:06.089027+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.596851,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:06.089027+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "1bbeb6c5b881b65a",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.037091,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:56.032849+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 0.13787,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:56.032849+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "1f48af9851533d11",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.234043,
+            "conversions_delta_pct": 0.044444,
+            "cost_delta_pct": -0.327348,
+            "cpa_delta_pct": -0.355971,
+            "measured_at": "2026-06-21T08:55:27.468645+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.234043,
+            "conversions_delta_pct": -0.477778,
+            "cost_delta_pct": -0.461237,
+            "cpa_delta_pct": 0.031674,
+            "measured_at": "2026-06-21T08:55:27.468645+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "2185dd66a348c25a",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.47619,
+            "conversions_delta_pct": 0.812857,
+            "cost_delta_pct": 0.356365,
+            "cpa_delta_pct": -0.251808,
+            "measured_at": "2026-06-20T08:48:07.360452+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.47619,
+            "conversions_delta_pct": 0.804286,
+            "cost_delta_pct": 0.42831,
+            "cpa_delta_pct": -0.208379,
+            "measured_at": "2026-06-20T08:48:07.360452+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "23efa8020f143fbd",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 1.472603,
+            "cost_delta_pct": 0.476865,
+            "cpa_delta_pct": -0.402708,
+            "measured_at": "2026-06-19T08:54:56.194428+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 1.082192,
+            "cost_delta_pct": 0.561053,
+            "cpa_delta_pct": -0.250284,
+            "measured_at": "2026-06-19T08:54:56.194428+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "240e626ff2a8bbe4",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -0.663769,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:06.911369+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -1.0,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:06.911369+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "2903ce752d02e406",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 2.114718,
+            "conversions_delta_pct": 1.424213,
+            "cost_delta_pct": 1.523078,
+            "cpa_delta_pct": 0.040782,
+            "measured_at": "2026-06-19T08:54:53.479000+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 2.807007,
+            "conversions_delta_pct": 1.864979,
+            "cost_delta_pct": 1.953172,
+            "cpa_delta_pct": 0.030783,
+            "measured_at": "2026-06-19T08:54:53.479000+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "29e6a1f726c8cbfe",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.009184,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:52.609904+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.126522,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:52.609904+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "2c40dddb4c45eb01",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.579547,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:06.415706+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.470873,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:06.415706+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "2ca5700aa7722dc0",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.301088,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:49.318402+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.423212,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:49.318402+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "2f8432f9ca0e10ee",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 1.357143,
+            "cost_delta_pct": -0.265135,
+            "cpa_delta_pct": -0.688239,
+            "measured_at": "2026-06-20T08:48:09.164033+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 2.142857,
+            "cost_delta_pct": -0.25962,
+            "cpa_delta_pct": -0.764424,
+            "measured_at": "2026-06-20T08:48:09.164033+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "307d7287a826abd9",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 2.428571,
+            "cost_delta_pct": 0.457587,
+            "cpa_delta_pct": -0.57487,
+            "measured_at": "2026-06-20T08:48:06.680655+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 3.714286,
+            "cost_delta_pct": 0.564279,
+            "cpa_delta_pct": -0.668183,
+            "measured_at": "2026-06-20T08:48:06.680655+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "34c94daf9104bf94",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.823352,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:09.096557+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.617262,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:09.096557+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "3584c2078ac15060",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.162228,
+            "conversions_delta_pct": -0.41344,
+            "cost_delta_pct": 0.730258,
+            "cpa_delta_pct": 1.949841,
+            "measured_at": "2026-06-21T08:55:29.284288+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.305085,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 0.882371,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-21T08:55:29.284288+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "3884bbf39d820c84",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.150338,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:55.994731+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.291155,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:55.994731+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "3a325665d9888711",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 54.8,
+            "conversions_delta_pct": -0.285714,
+            "cost_delta_pct": 1.812769,
+            "cpa_delta_pct": 2.937877,
+            "measured_at": "2026-06-20T08:48:06.369113+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 63.371429,
+            "conversions_delta_pct": -0.285714,
+            "cost_delta_pct": 1.481036,
+            "cpa_delta_pct": 2.47345,
+            "measured_at": "2026-06-20T08:48:06.369113+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "3e1b53f63c66cf82",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.247619,
+            "conversions_delta_pct": -0.519404,
+            "cost_delta_pct": -0.403574,
+            "cpa_delta_pct": 0.241013,
+            "measured_at": "2026-06-21T08:55:28.561816+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.104762,
+            "conversions_delta_pct": -0.279106,
+            "cost_delta_pct": -0.40406,
+            "cpa_delta_pct": -0.173332,
+            "measured_at": "2026-06-21T08:55:28.561816+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "404d02bae31ab45e",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.866071,
+            "conversions_delta_pct": -0.866071,
+            "cost_delta_pct": -0.167603,
+            "cpa_delta_pct": 5.21523,
+            "measured_at": "2026-06-19T08:54:53.609401+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.821429,
+            "conversions_delta_pct": -0.821429,
+            "cost_delta_pct": -0.366509,
+            "cpa_delta_pct": 2.547551,
+            "measured_at": "2026-06-19T08:54:53.609401+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "41eb61636563a851",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 1.121641,
+            "conversions_delta_pct": 0.071429,
+            "cost_delta_pct": -0.14185,
+            "cpa_delta_pct": -0.19906,
+            "measured_at": "2026-06-19T08:54:55.654914+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.414427,
+            "conversions_delta_pct": -0.285714,
+            "cost_delta_pct": -0.261867,
+            "cpa_delta_pct": 0.033386,
+            "measured_at": "2026-06-19T08:54:55.654914+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "4332a6515fcc9b8a",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 1.139244,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:53.714611+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 0.820307,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:53.714611+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "458d19ea34afb023",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -0.638776,
+            "cost_delta_pct": 0.05545,
+            "cpa_delta_pct": 1.921867,
+            "measured_at": "2026-06-19T08:54:51.402115+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -0.759184,
+            "cost_delta_pct": 0.262385,
+            "cpa_delta_pct": 4.242107,
+            "measured_at": "2026-06-19T08:54:51.402115+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "476adeea36761ef9",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.498559,
+            "conversions_delta_pct": -0.813447,
+            "cost_delta_pct": -0.768437,
+            "cpa_delta_pct": 0.241272,
+            "measured_at": "2026-06-19T08:54:51.241329+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.738928,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:51.241329+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "4c66435c027b4715",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.85679,
+            "conversions_delta_pct": -0.714286,
+            "cost_delta_pct": -0.354367,
+            "cpa_delta_pct": 1.259714,
+            "measured_at": "2026-06-20T08:48:08.903330+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.71358,
+            "conversions_delta_pct": -0.428571,
+            "cost_delta_pct": -0.347258,
+            "cpa_delta_pct": 0.142298,
+            "measured_at": "2026-06-20T08:48:08.903330+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "4fbb4ae70030f750",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.606814,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:08.843570+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.606814,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:08.843570+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "5202f4b7083aa435",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.029412,
+            "conversions_delta_pct": 0.214286,
+            "cost_delta_pct": 0.115732,
+            "cpa_delta_pct": -0.081162,
+            "measured_at": "2026-06-21T08:55:27.932670+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.10084,
+            "conversions_delta_pct": 0.214286,
+            "cost_delta_pct": 0.310981,
+            "cpa_delta_pct": 0.079632,
+            "measured_at": "2026-06-21T08:55:27.932670+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "53172ea46961a8b0",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 2.616736,
+            "conversions_delta_pct": 0.438571,
+            "cost_delta_pct": 0.410506,
+            "cpa_delta_pct": -0.019509,
+            "measured_at": "2026-06-19T08:54:54.972743+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 1.11668,
+            "conversions_delta_pct": -0.091429,
+            "cost_delta_pct": 0.209402,
+            "cpa_delta_pct": 0.331103,
+            "measured_at": "2026-06-19T08:54:54.972743+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "56cd8ba32d0ff89f",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.060749,
+            "conversions_delta_pct": 1.279763,
+            "cost_delta_pct": -0.279958,
+            "cpa_delta_pct": -0.684159,
+            "measured_at": "2026-06-19T08:54:51.982406+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.994822,
+            "conversions_delta_pct": 0.631795,
+            "cost_delta_pct": -0.426589,
+            "cpa_delta_pct": -0.648601,
+            "measured_at": "2026-06-19T08:54:51.982406+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "5a6c89905b1aa1ad",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.538095,
+            "conversions_delta_pct": 1.282583,
+            "cost_delta_pct": 2.005123,
+            "cpa_delta_pct": 0.316545,
+            "measured_at": "2026-06-21T08:55:27.699540+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.609524,
+            "conversions_delta_pct": 0.674295,
+            "cost_delta_pct": 1.943614,
+            "cpa_delta_pct": 0.758121,
+            "measured_at": "2026-06-21T08:55:27.699540+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "5a6ef1c32f1ef38d",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.543212,
+            "conversions_delta_pct": -0.408284,
+            "cost_delta_pct": -0.621945,
+            "cpa_delta_pct": -0.361087,
+            "measured_at": "2026-06-19T08:54:55.794303+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.505146,
+            "conversions_delta_pct": -0.358974,
+            "cost_delta_pct": -0.467496,
+            "cpa_delta_pct": -0.169294,
+            "measured_at": "2026-06-19T08:54:55.794303+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "5c0b89fac8639efa",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 1.872721,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-21T08:55:32.456775+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 1.960311,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-21T08:55:32.456775+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "5d43286005c69b09",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 0.454321,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:05.137521+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 0.832749,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:05.137521+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "5d5a57664d67d070",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.232809,
+            "conversions_delta_pct": -0.281301,
+            "cost_delta_pct": -0.544818,
+            "cpa_delta_pct": -0.366658,
+            "measured_at": "2026-06-19T08:54:55.737868+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.572891,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:55.737868+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "684a9baf10e609f3",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 4.371162,
+            "conversions_delta_pct": 2.857143,
+            "cost_delta_pct": 11.628468,
+            "cpa_delta_pct": 2.274047,
+            "measured_at": "2026-06-19T08:54:54.063019+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 4.551402,
+            "conversions_delta_pct": 4.4,
+            "cost_delta_pct": 10.50564,
+            "cpa_delta_pct": 1.130674,
+            "measured_at": "2026-06-19T08:54:54.063019+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "6c35d99c98e6d941",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.993355,
+            "conversions_delta_pct": 1.245333,
+            "cost_delta_pct": 0.721914,
+            "cpa_delta_pct": -0.233114,
+            "measured_at": "2026-06-20T08:48:06.821207+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 1.27907,
+            "conversions_delta_pct": 1.619555,
+            "cost_delta_pct": 0.638431,
+            "cpa_delta_pct": -0.374538,
+            "measured_at": "2026-06-20T08:48:06.821207+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "6c4a5544c869d355",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.066667,
+            "conversions_delta_pct": 0.5,
+            "cost_delta_pct": -0.150752,
+            "cpa_delta_pct": -0.433835,
+            "measured_at": "2026-06-21T08:55:31.646507+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.066667,
+            "conversions_delta_pct": 0.5,
+            "cost_delta_pct": -0.150752,
+            "cpa_delta_pct": -0.433835,
+            "measured_at": "2026-06-21T08:55:31.646507+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "6fca9a8069f59263",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.047619,
+            "conversions_delta_pct": 0.178571,
+            "cost_delta_pct": 1.916205,
+            "cpa_delta_pct": 1.474356,
+            "measured_at": "2026-06-20T08:48:06.689374+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.190476,
+            "conversions_delta_pct": 0.071429,
+            "cost_delta_pct": 1.880382,
+            "cpa_delta_pct": 1.688357,
+            "measured_at": "2026-06-20T08:48:06.689374+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "7158b6d5f51c4165",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.02381,
+            "conversions_delta_pct": 0.109505,
+            "cost_delta_pct": -0.438453,
+            "cpa_delta_pct": -0.493876,
+            "measured_at": "2026-06-21T08:55:32.325419+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.238095,
+            "conversions_delta_pct": -0.394816,
+            "cost_delta_pct": -0.45257,
+            "cpa_delta_pct": -0.095432,
+            "measured_at": "2026-06-21T08:55:32.325419+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "717e3dbd6de5ea90",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.416667,
+            "conversions_delta_pct": -0.714286,
+            "cost_delta_pct": -0.095116,
+            "cpa_delta_pct": 2.167094,
+            "measured_at": "2026-06-21T08:55:30.230064+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.416667,
+            "conversions_delta_pct": -0.714286,
+            "cost_delta_pct": -0.095116,
+            "cpa_delta_pct": 2.167094,
+            "measured_at": "2026-06-21T08:55:30.230064+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "73cda6a4962fefee",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.257185,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:09.210864+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.285161,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:09.210864+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "764127ad278cadde",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.941385,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:04.632593+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.545748,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:04.632593+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "76f8cf945910136b",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.064626,
+            "conversions_delta_pct": -0.168571,
+            "cost_delta_pct": 4.820953,
+            "cpa_delta_pct": 6.001146,
+            "measured_at": "2026-06-20T08:48:08.943681+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.752834,
+            "conversions_delta_pct": -0.571429,
+            "cost_delta_pct": 1.919596,
+            "cpa_delta_pct": 5.812391,
+            "measured_at": "2026-06-20T08:48:08.943681+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "78cb47828a17e405",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.030644,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-21T08:55:30.256671+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.146943,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-21T08:55:30.256671+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "7aeba51c78d395ad",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 20.056732,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:49.259069+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 37.366754,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:49.259069+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "802c5778288f1e11",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.210833,
+            "conversions_delta_pct": -0.210526,
+            "cost_delta_pct": -0.356337,
+            "cpa_delta_pct": -0.184693,
+            "measured_at": "2026-06-20T08:48:04.458644+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.39174,
+            "conversions_delta_pct": -0.323308,
+            "cost_delta_pct": -0.373101,
+            "cpa_delta_pct": -0.073582,
+            "measured_at": "2026-06-20T08:48:04.458644+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "8075219f14aaca26",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.261905,
+            "conversions_delta_pct": -0.785714,
+            "cost_delta_pct": -0.227434,
+            "cpa_delta_pct": 2.605309,
+            "measured_at": "2026-06-20T08:48:09.117301+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.190476,
+            "conversions_delta_pct": -0.571429,
+            "cost_delta_pct": -0.866996,
+            "cpa_delta_pct": -0.689656,
+            "measured_at": "2026-06-20T08:48:09.117301+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "877979334c215f97",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.22449,
+            "conversions_delta_pct": 0.766685,
+            "cost_delta_pct": -0.003933,
+            "cpa_delta_pct": -0.436195,
+            "measured_at": "2026-06-19T08:54:53.634156+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.081633,
+            "conversions_delta_pct": 0.17779,
+            "cost_delta_pct": 0.073584,
+            "cpa_delta_pct": -0.088476,
+            "measured_at": "2026-06-19T08:54:53.634156+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "8a2891c0fa8dd417",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.792286,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:49.453792+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -1.0,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:49.453792+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "8e6762ce142a833e",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.878256,
+            "conversions_delta_pct": -0.892857,
+            "cost_delta_pct": -0.275496,
+            "cpa_delta_pct": 5.762034,
+            "measured_at": "2026-06-21T08:55:27.867283+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.073529,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-21T08:55:27.867283+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "8f03e283817800be",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.775748,
+            "conversions_delta_pct": 1.147852,
+            "cost_delta_pct": 1.09024,
+            "cpa_delta_pct": -0.026823,
+            "measured_at": "2026-06-20T08:48:09.304131+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.561462,
+            "conversions_delta_pct": 0.808718,
+            "cost_delta_pct": 0.915562,
+            "cpa_delta_pct": 0.059072,
+            "measured_at": "2026-06-20T08:48:09.304131+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "9306937d0195a4b6",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.430952,
+            "conversions_delta_pct": 0.678278,
+            "cost_delta_pct": 0.862307,
+            "cpa_delta_pct": 0.109653,
+            "measured_at": "2026-06-21T08:55:31.737673+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.216667,
+            "conversions_delta_pct": 0.003523,
+            "cost_delta_pct": 0.934883,
+            "cpa_delta_pct": 0.928091,
+            "measured_at": "2026-06-21T08:55:31.737673+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "944228d2252cbace",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.709184,
+            "conversions_delta_pct": -0.693878,
+            "cost_delta_pct": -0.67049,
+            "cpa_delta_pct": 0.076401,
+            "measured_at": "2026-06-20T08:48:05.240580+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.663265,
+            "conversions_delta_pct": -0.632653,
+            "cost_delta_pct": -0.658819,
+            "cpa_delta_pct": -0.071231,
+            "measured_at": "2026-06-20T08:48:05.240580+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "96c7a9daa1350814",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.870756,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:49.369249+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.870756,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:49.369249+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "9862477ef8082158",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 2.05426,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:09.204272+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 1.312328,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:09.204272+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "9940015453d8f7f5",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 1.223273,
+            "conversions_delta_pct": 0.342857,
+            "cost_delta_pct": 0.599555,
+            "cpa_delta_pct": 0.191158,
+            "measured_at": "2026-06-19T08:54:54.715247+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 1.223273,
+            "conversions_delta_pct": 0.342857,
+            "cost_delta_pct": 0.67233,
+            "cpa_delta_pct": 0.245352,
+            "measured_at": "2026-06-19T08:54:54.715247+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "9ad8babe32698918",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.43,
+            "conversions_delta_pct": 0.714286,
+            "cost_delta_pct": 2.110552,
+            "cpa_delta_pct": 0.814489,
+            "measured_at": "2026-06-19T08:54:50.931093+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.717143,
+            "conversions_delta_pct": 1.0,
+            "cost_delta_pct": 2.010105,
+            "cpa_delta_pct": 0.505052,
+            "measured_at": "2026-06-19T08:54:50.931093+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "9b2c7cdb5c4c1de8",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.078947,
+            "conversions_delta_pct": 2.944247,
+            "cost_delta_pct": -0.266175,
+            "cpa_delta_pct": -0.81395,
+            "measured_at": "2026-06-20T08:48:09.437351+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.078947,
+            "conversions_delta_pct": 2.380783,
+            "cost_delta_pct": -0.175757,
+            "cpa_delta_pct": -0.756198,
+            "measured_at": "2026-06-20T08:48:09.437351+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "9d6e8a74058771a6",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.704643,
+            "conversions_delta_pct": 0.678393,
+            "cost_delta_pct": 1.328232,
+            "cpa_delta_pct": 0.387179,
+            "measured_at": "2026-06-20T08:48:05.253002+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.425,
+            "conversions_delta_pct": 0.213929,
+            "cost_delta_pct": 0.349488,
+            "cpa_delta_pct": 0.11167,
+            "measured_at": "2026-06-20T08:48:05.253002+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "9e5f7430bc22cfca",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.166667,
+            "conversions_delta_pct": 3.0,
+            "cost_delta_pct": 0.106623,
+            "cpa_delta_pct": -0.723344,
+            "measured_at": "2026-06-21T08:55:31.970402+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.166667,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.450533,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-21T08:55:31.970402+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "9fb2cb10a2bd5a00",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.235714,
+            "conversions_delta_pct": -0.52381,
+            "cost_delta_pct": -0.33999,
+            "cpa_delta_pct": 0.386022,
+            "measured_at": "2026-06-19T08:54:52.902256+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.164286,
+            "conversions_delta_pct": -0.365079,
+            "cost_delta_pct": 0.016711,
+            "cpa_delta_pct": 0.601319,
+            "measured_at": "2026-06-19T08:54:52.902256+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "a2880c300b764cb3",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 0.821429,
+            "cost_delta_pct": -0.522283,
+            "cpa_delta_pct": -0.737724,
+            "measured_at": "2026-06-19T08:54:51.848435+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 0.821429,
+            "cost_delta_pct": -0.517499,
+            "cpa_delta_pct": -0.735097,
+            "measured_at": "2026-06-19T08:54:51.848435+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "a66bf4a3884069fb",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 0.013888,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:05.327176+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.088912,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:05.327176+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "ab0e94cc14e6849b",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -0.623292,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:06.126738+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -0.641638,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:06.126738+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "ac472dc97cac863b",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.036364,
+            "conversions_delta_pct": -0.057143,
+            "cost_delta_pct": 0.233621,
+            "cpa_delta_pct": 0.308386,
+            "measured_at": "2026-06-19T08:54:51.644329+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.236364,
+            "conversions_delta_pct": -0.371429,
+            "cost_delta_pct": 0.365362,
+            "cpa_delta_pct": 1.172166,
+            "measured_at": "2026-06-19T08:54:51.644329+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "b76aee8a5603a8af",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.115152,
+            "conversions_delta_pct": 1.727273,
+            "cost_delta_pct": -0.078475,
+            "cpa_delta_pct": -0.662108,
+            "measured_at": "2026-06-19T08:54:54.580257+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.219048,
+            "conversions_delta_pct": 3.285714,
+            "cost_delta_pct": -0.265601,
+            "cpa_delta_pct": -0.82864,
+            "measured_at": "2026-06-19T08:54:54.580257+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "c2c61e38301b3641",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.113253,
+            "conversions_delta_pct": -0.326923,
+            "cost_delta_pct": -0.153976,
+            "cpa_delta_pct": 0.25695,
+            "measured_at": "2026-06-20T08:48:02.791002+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.113253,
+            "conversions_delta_pct": -0.838462,
+            "cost_delta_pct": -0.075082,
+            "cpa_delta_pct": 4.725684,
+            "measured_at": "2026-06-20T08:48:02.791002+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "c342f28cc3d3ec17",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.03125,
+            "conversions_delta_pct": 0.6,
+            "cost_delta_pct": 0.310428,
+            "cpa_delta_pct": -0.180983,
+            "measured_at": "2026-06-19T08:54:48.920147+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.03125,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.113121,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:48.920147+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "c781a4bbf35766d0",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 2.164216,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:09.342834+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 2.172037,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:09.342834+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "c81ceae55ae0c39c",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.342857,
+            "conversions_delta_pct": 1.008643,
+            "cost_delta_pct": 2.883215,
+            "cpa_delta_pct": 0.933253,
+            "measured_at": "2026-06-21T08:55:32.119566+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.014286,
+            "conversions_delta_pct": -0.269584,
+            "cost_delta_pct": 3.01003,
+            "cpa_delta_pct": 4.490065,
+            "measured_at": "2026-06-21T08:55:32.119566+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "ced4dbfa946fc2da",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 1.279001,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:06.981436+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.711215,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-20T08:48:06.981436+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "d50bb387dc5c82de",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -1.0,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:51.700891+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -1.0,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:51.700891+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "d5d3a8aa04ad804d",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 0.944444,
+            "cost_delta_pct": -0.25177,
+            "cpa_delta_pct": -0.615196,
+            "measured_at": "2026-06-19T08:54:53.799322+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 1.777778,
+            "cost_delta_pct": -0.160842,
+            "cpa_delta_pct": -0.697903,
+            "measured_at": "2026-06-19T08:54:53.799322+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "d817e044c50d733b",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 1.452095,
+            "conversions_delta_pct": 0.999084,
+            "cost_delta_pct": 1.26816,
+            "cpa_delta_pct": 0.1346,
+            "measured_at": "2026-06-19T08:54:50.897581+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 2.144023,
+            "conversions_delta_pct": 1.377289,
+            "cost_delta_pct": 1.179272,
+            "cpa_delta_pct": -0.083295,
+            "measured_at": "2026-06-19T08:54:50.897581+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "dad6e1c749457d87",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -0.5,
+            "cost_delta_pct": 0.29133,
+            "cpa_delta_pct": 1.58266,
+            "measured_at": "2026-06-20T08:48:08.936405+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 0.317932,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-20T08:48:08.936405+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "dcbce0acacb2e79a",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.034483,
+            "conversions_delta_pct": 2.222222,
+            "cost_delta_pct": -0.401267,
+            "cpa_delta_pct": -0.814186,
+            "measured_at": "2026-06-19T08:54:52.412009+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.034483,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": -0.73061,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-19T08:54:52.412009+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "ddc438888a45b8ac",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 1.091538,
+            "conversions_delta_pct": 0.337243,
+            "cost_delta_pct": -0.025217,
+            "cpa_delta_pct": -0.27105,
+            "measured_at": "2026-06-19T08:54:55.520658+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 1.801556,
+            "conversions_delta_pct": 0.716129,
+            "cost_delta_pct": -0.100865,
+            "cpa_delta_pct": -0.476068,
+            "measured_at": "2026-06-19T08:54:55.520658+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "dfdb013acace2b8f",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.034483,
+            "conversions_delta_pct": 2.222222,
+            "cost_delta_pct": -0.273067,
+            "cpa_delta_pct": -0.7744,
+            "measured_at": "2026-06-20T08:48:08.954652+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.034483,
+            "conversions_delta_pct": 4.8,
+            "cost_delta_pct": -0.078489,
+            "cpa_delta_pct": -0.841119,
+            "measured_at": "2026-06-20T08:48:08.954652+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "e834fe3391067cd5",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.642857,
+            "conversions_delta_pct": 0.642857,
+            "cost_delta_pct": 0.993188,
+            "cpa_delta_pct": 0.213245,
+            "measured_at": "2026-06-20T08:48:05.852817+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.357143,
+            "conversions_delta_pct": 0.357143,
+            "cost_delta_pct": 0.729155,
+            "cpa_delta_pct": 0.274114,
+            "measured_at": "2026-06-20T08:48:05.852817+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "eb01f02a46ae89d6",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.648333,
+            "conversions_delta_pct": 0.653846,
+            "cost_delta_pct": -0.130943,
+            "cpa_delta_pct": -0.474524,
+            "measured_at": "2026-06-20T08:48:09.185157+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": 0.02381,
+            "conversions_delta_pct": 0.02381,
+            "cost_delta_pct": 0.103721,
+            "cpa_delta_pct": 0.078053,
+            "measured_at": "2026-06-20T08:48:09.185157+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "ecc384b80520b79b",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 0.109131,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-21T08:55:28.267436+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -1.0,
+            "conversions_delta_pct": -1.0,
+            "cost_delta_pct": 0.330821,
+            "cpa_delta_pct": -1.0,
+            "measured_at": "2026-06-21T08:55:28.267436+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "f238bb4251b8b852",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.111389,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:49.667325+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 0.101932,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:49.667325+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "f4bc06847eab05fa",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.314286,
+            "conversions_delta_pct": -0.52381,
+            "cost_delta_pct": 0.4038,
+            "cpa_delta_pct": 1.947981,
+            "measured_at": "2026-06-20T08:48:06.491302+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.457143,
+            "conversions_delta_pct": -0.761905,
+            "cost_delta_pct": -0.006096,
+            "cpa_delta_pct": 3.174395,
+            "measured_at": "2026-06-20T08:48:06.491302+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "f88b423995c6bb13",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 2.75,
+            "cost_delta_pct": -0.636743,
+            "cpa_delta_pct": -0.903131,
+            "measured_at": "2026-06-19T08:54:54.224097+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": 2.75,
+            "cost_delta_pct": -0.636743,
+            "cpa_delta_pct": -0.903131,
+            "measured_at": "2026-06-19T08:54:54.224097+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "f8e010e6dad4bdae",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 144.659091,
+            "conversions_delta_pct": 1.181818,
+            "cost_delta_pct": -0.672911,
+            "cpa_delta_pct": -0.850084,
+            "measured_at": "2026-06-21T08:55:29.429951+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.25,
+            "conversions_delta_pct": 0.6,
+            "cost_delta_pct": -0.678621,
+            "cpa_delta_pct": -0.799138,
+            "measured_at": "2026-06-21T08:55:29.429951+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "f97a08eea1a9b63b",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -1.0,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-21T08:55:30.993657+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": -1.0,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-21T08:55:30.993657+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "fb7f545a3e98ec1b",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 4.850474,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:50.245345+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": null,
+            "conversions_delta_pct": null,
+            "cost_delta_pct": 5.286183,
+            "cpa_delta_pct": null,
+            "measured_at": "2026-06-19T08:54:50.245345+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "fee965eb44449eaf",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": -0.319728,
+            "conversions_delta_pct": -0.136195,
+            "cost_delta_pct": 1.325811,
+            "cpa_delta_pct": 1.69252,
+            "measured_at": "2026-06-21T08:55:28.323100+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.183673,
+            "conversions_delta_pct": -0.111769,
+            "cost_delta_pct": 1.939666,
+            "cpa_delta_pct": 2.309574,
+            "measured_at": "2026-06-21T08:55:28.323100+00:00"
+          }
+        }
+      }
+    },
+    {
+      "episode_id": "fef8988f589b91fb",
+      "validator_only_outcomes": {
+        "outcomes": {
+          "t14": {
+            "conversion_value_delta_pct": 0.145238,
+            "conversions_delta_pct": 0.556886,
+            "cost_delta_pct": -0.024882,
+            "cpa_delta_pct": -0.373674,
+            "measured_at": "2026-06-21T08:55:27.733681+00:00"
+          },
+          "t7": {
+            "conversion_value_delta_pct": -0.069048,
+            "conversions_delta_pct": -0.082977,
+            "cost_delta_pct": -0.241237,
+            "cpa_delta_pct": -0.17258,
+            "measured_at": "2026-06-21T08:55:27.733681+00:00"
+          }
+        }
+      }
+    }
+  ],
+  "epoch_id": "WR-2026-W26-PUB-E1"
+}

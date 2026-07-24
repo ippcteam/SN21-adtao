@@ -104,20 +104,68 @@ async def submit_predictions(
     if epoch_id != current_epoch:
         raise HTTPException(status_code=404, detail=f"Epoch {epoch_id} not found")
 
-    # C8: Default to closed, require explicit True
-    submission_open = state.get("submission_open", False)
-    if not submission_open:
+    # Reject unregistered hotkeys early with an actionable error. The
+    # gate only fires when the validator-api has been configured with a
+    # registration index path (SN21_REG_INDEX_PATH); when no index is
+    # loaded the set is empty and we fall back to metagraph-only auth.
+    # Without this check, submissions from un-registered miners would be
+    # silently accepted at HTTP, then excluded at scoring time a week
+    # later — by which point it is too late to fix.
+    registered = state.get("registered_ed25519_hotkeys") or set()
+    if registered and miner.hotkey not in registered:
         raise HTTPException(
             status_code=403,
-            detail="Submission window is closed. Predictions are no longer accepted.",
+            detail={
+                "error": "hotkey_not_registered",
+                "message": (
+                    f"Hotkey {miner.hotkey[:16]}... has no on-chain "
+                    f"sn21-reg-v1 binding for the miner role. Submissions "
+                    f"are accepted only from hotkeys with a verified "
+                    f"registration commit."
+                ),
+                "fix": (
+                    "Run `python scripts/sn21_keys.py register --role miner` "
+                    "ONCE per hotkey, then re-submit. See "
+                    "docs/miner_quickstart.md for the full flow."
+                ),
+            },
         )
 
-    # Check deadline explicitly
+    # Late-submission and explicitly-closed window share an actionable
+    # error: tell the miner the deadline timestamp, how late they are,
+    # and what to do next (wait for the next epoch's release). Without
+    # these specifics, miners can spend an entire week troubleshooting
+    # their model code thinking the issue is on their side.
     deadline_str = state.get("deadline")
-    if deadline_str:
-        deadline = datetime.fromisoformat(deadline_str)
-        if datetime.now(timezone.utc) > deadline:
-            raise HTTPException(status_code=403, detail="Prediction deadline has passed")
+    submission_open = state.get("submission_open", False)
+    now = datetime.now(timezone.utc)
+    deadline = (
+        datetime.fromisoformat(deadline_str) if deadline_str else None
+    )
+    is_late = deadline is not None and now > deadline
+
+    if is_late or not submission_open:
+        late_seconds = int((now - deadline).total_seconds()) if deadline else None
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "submission_window_closed",
+                "message": (
+                    f"Mining window for {epoch_id} has closed. Submissions "
+                    f"received after the deadline are not scored for this "
+                    f"epoch."
+                ),
+                "deadline_utc": deadline_str,
+                "now_utc": now.isoformat(),
+                "seconds_late": late_seconds,
+                "fix": (
+                    "Wait for the next weekly epoch to open. Poll "
+                    "GET /health on this validator — `current_epoch` will "
+                    "update once the next release is live and "
+                    "`submission_open` will return to true."
+                ),
+            },
+        )
 
     # C4: Rate limit by prediction count, not request count
     _check_rate_limit(miner.hotkey, epoch_id, len(submission.predictions))

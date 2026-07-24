@@ -6,7 +6,20 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "bittensor>=8.0.0",
+    # Requires >=10.5: a mainnet runtime upgrade (Jul 2026) changed the
+    # runtime-call param encoding, so bittensor 10.2.x can no longer encode
+    # `neurons_lite`/`set_weights` (ValueError in async_substrate_interface's
+    # _encode_scale) — the validator silently stops setting weights. 10.5.0
+    # speaks the new runtime.
+    #
+    # HISTORY: 10.2.x was previously pinned because 10.3.1 regressed
+    # `Commitments::RevealedCommitments` decode (returned empty). 10.4+ ships
+    # async-substrate-interface 2.x, which returns byte payloads as 0x-hex
+    # strings (and CommitmentOf `info.fields` as list-of-dicts). `chain_reader.py`
+    # now normalises BOTH the 1.x and 2.x shapes (`_scale_payload_to_bytes`),
+    # so the reveal/commitment decode works again — verified end-to-end on
+    # mainnet under 10.5.0 (miner bundles, reg-index, outcome anchor).
+    "bittensor>=10.5.0,<11.0.0",
     "pydantic>=2.0",
     "numpy>=1.24",
     "fastapi>=0.100",
@@ -51,8 +64,16 @@ miner = [
 hope-miner = "hope.miner.runner:main"
 hope-validator = "hope.validator.runner:main"
 hope-validator-api = "hope.validator.serve:main"
+hope-validator-heartbeat = "hope.validator.heartbeat:main"
+hope-validator-daemon = "hope.validator.daemon:main"
+hope-reg-index-builder = "scripts.build_reg_index:main"
+hope-reg-index-refresh = "scripts.refresh_reg_index_head:main"
+hope-reg-index-staleness = "scripts.check_reg_index_staleness:main"
+hope-commit-outcomes = "scripts.commit_outcomes:main"
+hope-verify-outcomes = "scripts.verify_outcomes:main"
 hope-archive-server = "hope.archive_server.serve:main"
 hope-score = "scripts.score_predictions:main"
+post-epoch-report = "scripts.post_epoch_report:main"
 
 [tool.setuptools.packages.find]
 include = ["hope*", "scripts"]

@@ -14,9 +14,105 @@ from hope.scoring.onchain_adapter import (
     bundle_to_predictions,
     compute_scoring_inputs_hash,
     make_scorer,
+    predict_zero_baseline,
     score_one_miner,
+    score_one_miner_v2,
     wrap_epoch_scorer,
 )
+
+
+class TestDirectionScore:
+    """Both-flat earns half credit (the trivial predict-zero call); a correct
+    non-flat directional call earns full credit; wrong direction earns zero."""
+
+    def test_both_flat_is_half(self):
+        from hope.scoring.onchain_adapter import _direction_score
+        assert _direction_score(0, 0) == 0.5      # zero vs flat truth
+        assert _direction_score(2, -3) == 0.5     # both within the ±5 flat band
+
+    def test_correct_nonflat_is_full(self):
+        from hope.scoring.onchain_adapter import _direction_score
+        assert _direction_score(20, 30) == 1.0    # both up
+        assert _direction_score(-20, -30) == 1.0  # both down
+
+    def test_wrong_direction_is_zero(self):
+        from hope.scoring.onchain_adapter import _direction_score
+        assert _direction_score(0, 30) == 0.0     # flat vs up
+        assert _direction_score(20, -30) == 0.0   # up vs down
+
+
+class TestPinballScaleDifferentiation:
+    """A lower PINBALL_SCALE widens the score gap between a meaningfully-better
+    prediction and do-nothing. At the legacy 300, half-right ≈ zero (the flat-
+    emissions bug); recalibrating restores a real gradient."""
+
+    def _truth(self):  # near-zero aggregate truth, like live W24
+        return {"7": HorizonTruth(horizon="7", truth_cost_p50_dpct=-2,
+                                  truth_conv_p50_dpct=-6, truth_eff_p50_dpct=-4,
+                                  goal_miss_freq_ppm=0, instab_freq_ppm=0)}
+
+    def _pred(self, frac):
+        t = self._truth()["7"]
+        return {"horizons": [{"h": "7",
+                "cost_q": [round(t.truth_cost_p50_dpct * frac)] * 3,
+                "conv_q": [round(t.truth_conv_p50_dpct * frac)] * 3,
+                "eff_q": [round(t.truth_eff_p50_dpct * frac)] * 3,
+                "miss_p": 0, "instab_p": 0}]}
+
+    def test_legacy_scale_is_flat_lower_scale_separates(self, monkeypatch):
+        import hope.scoring.onchain_adapter as A
+        t, half, zero = self._truth(), self._pred(0.5), self._pred(0.0)
+        monkeypatch.setattr(A, "PINBALL_SCALE", 300.0)
+        gap_legacy = (A.score_one_miner_v2(half, t) - A.score_one_miner_v2(zero, t)) / 1e6
+        monkeypatch.setattr(A, "PINBALL_SCALE", 15.0)
+        gap_recal = (A.score_one_miner_v2(half, t) - A.score_one_miner_v2(zero, t)) / 1e6
+        assert gap_legacy < 0.02          # half ≈ zero at 300 → flat emissions
+        assert gap_recal > gap_legacy     # recalibration separates them
+
+
+class TestPredictZeroBaselineMatchesActiveScorer:
+    """Regression: the tiered gate's predict-zero baseline MUST be computed with
+    the same scorer the miners are scored with. A hardcoded-v1 baseline (~0.97)
+    vs v2 miner scores gate-excluded 100% of miners → permanent full burn."""
+
+    def _truth(self):  # non-zero deltas → predict-zero is NOT perfect
+        return {"7": HorizonTruth(horizon="7", truth_cost_p50_dpct=30,
+                                  truth_conv_p50_dpct=-20, truth_eff_p50_dpct=15,
+                                  goal_miss_freq_ppm=100_000, instab_freq_ppm=50_000)}
+
+    def _zero(self, truth):
+        return {"horizons": [{"h": h, "cost_q": [0, 0, 0], "conv_q": [0, 0, 0],
+                              "eff_q": [0, 0, 0], "miss_p": 0, "instab_p": 0}
+                             for h in truth]}
+
+    def test_baseline_uses_v1_when_flag_unset(self, monkeypatch):
+        monkeypatch.delenv("SN21_SCORING_V2", raising=False)
+        t = self._truth()
+        assert predict_zero_baseline(t) == pytest.approx(
+            score_one_miner(self._zero(t), t) / 1_000_000.0)
+
+    def test_baseline_uses_v2_when_flag_set(self, monkeypatch):
+        monkeypatch.setenv("SN21_SCORING_V2", "1")
+        t = self._truth()
+        assert predict_zero_baseline(t) == pytest.approx(
+            score_one_miner_v2(self._zero(t), t) / 1_000_000.0)
+
+    def test_v1_baseline_higher_than_v2_on_nonzero_truth(self, monkeypatch):
+        t = self._truth()
+        monkeypatch.delenv("SN21_SCORING_V2", raising=False)
+        v1 = predict_zero_baseline(t)
+        monkeypatch.setenv("SN21_SCORING_V2", "1")
+        v2 = predict_zero_baseline(t)
+        assert v1 > v2  # v1 compresses near 1.0; v2 leaves room for miners to beat
+
+    def test_baseline_agrees_with_make_scorer(self, monkeypatch):
+        # the invariant that prevents the bug recurring: scoring predict-zero
+        # through make_scorer (the miner path) == predict_zero_baseline.
+        monkeypatch.setenv("SN21_SCORING_V2", "1")
+        t = self._truth()
+        scorer = make_scorer(t)
+        miner_path = scorer("EP", {b"x": self._zero(t)})[b"x"] / 1_000_000.0
+        assert predict_zero_baseline(t) == pytest.approx(miner_path)
 
 
 def _plaintext(epoch_id="EP-A", hk=None, cost_q=(-50, 0, 50), conv_q=(-30, 10, 50),

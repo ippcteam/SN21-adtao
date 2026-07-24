@@ -70,6 +70,7 @@ def commit_weights_layer_9c3(
     max_attempts: int = 5,
     wait_for_finalization: bool = True,
     raise_error: bool = False,
+    verify_applied: bool = True,
 ) -> WeightsCommitResult:
     """Submit weights via `subtensor.set_weights` with TLE commit-reveal v4.
 
@@ -93,6 +94,16 @@ def commit_weights_layer_9c3(
         )
     if not uids:
         raise ValueError("uids/weights must be non-empty")
+
+    # Capture LastUpdate BEFORE the commit so we can confirm afterwards that the
+    # weights actually landed. `set_weights` can return success=True even when
+    # the chain silently rejected the commit (e.g. WeightsSetRateLimit), and the
+    # empty-receipt fallback below would then stamp a bogus block — a false
+    # positive. LastUpdate only advances when the commit is genuinely accepted.
+    pre_last_update = (
+        _read_validator_last_update(subtensor, netuid, validator_wallet)
+        if verify_applied else None
+    )
 
     response = subtensor.set_weights(
         wallet=validator_wallet,
@@ -147,6 +158,33 @@ def commit_weights_layer_9c3(
             except (AttributeError, Exception) as e:
                 logger.warning("9.C.3 fallback block_hash lookup failed: %s", e)
 
+    # Post-commit verification: confirm the weights ACTUALLY landed. A
+    # success=True from set_weights does not guarantee application — the chain
+    # can reject within WeightsSetRateLimit and the SDK still reports success
+    # with an empty receipt. LastUpdate advances only on an accepted commit, so
+    # if it did not move, downgrade to failure (and drop the fallback block_hash
+    # so we never bind 9.C.2 to a commit that didn't happen). Best-effort: only
+    # downgrade on a CONFIDENT non-advance (clean pre + post reads); any read
+    # failure leaves the result untouched.
+    if success and verify_applied and pre_last_update is not None:
+        post_last_update = _read_validator_last_update(
+            subtensor, netuid, validator_wallet
+        )
+        if post_last_update is not None and post_last_update <= pre_last_update:
+            logger.warning(
+                "9.C.3 set_weights reported success but LastUpdate did not advance "
+                "(pre=%s post=%s) — likely WeightsSetRateLimit; treating as FAILED",
+                pre_last_update, post_last_update,
+            )
+            success = False
+            message = (
+                (message + " | " if message else "")
+                + f"not_applied: LastUpdate stuck at {post_last_update} "
+                f"(rate-limited / commit rejected)"
+            )
+            block_hash = None
+            block_number = None
+
     logger.info(
         "9.C.3 weights commit netuid=%d uids=%d success=%s block=%s",
         netuid, len(uids), success, block_number,
@@ -158,6 +196,36 @@ def commit_weights_layer_9c3(
         block_hash=block_hash,
         extrinsic_hash=extrinsic_hash,
     )
+
+
+def _read_validator_last_update(subtensor, netuid: int, validator_wallet) -> Optional[int]:
+    """Best-effort read of ``LastUpdate[netuid][validator_uid]`` (the block at
+    which this validator last successfully set weights).
+
+    Used to confirm a commit actually landed. Returns None on any failure
+    (no hotkey, uid not found, RPC error) — callers treat None as "could not
+    verify" and leave the success flag unchanged.
+    """
+    try:
+        ss58 = validator_wallet.hotkey.ss58_address
+    except Exception:
+        return None
+    try:
+        uid = subtensor.get_uid_for_hotkey_on_subnet(ss58, netuid)
+    except Exception as e:
+        logger.warning("LastUpdate verify: uid lookup failed: %s", e)
+        return None
+    if uid is None:
+        return None
+    try:
+        q = subtensor.substrate.query("SubtensorModule", "LastUpdate", [netuid])
+        v = q.value if hasattr(q, "value") else q
+        if v is None or uid >= len(v):
+            return None
+        return int(v[uid])
+    except Exception as e:
+        logger.warning("LastUpdate verify: storage read failed: %s", e)
+        return None
 
 
 def _resolve_block_hash(subtensor, block_number: int) -> Optional[bytes]:

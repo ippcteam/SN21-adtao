@@ -385,3 +385,286 @@ class TestRunEpochScoring:
         assert decoded["n_miners"] == 5
         assert decoded["n_excluded"] == 0
         assert decoded["validator_hotkey"] == setup["val_pk"]
+
+
+class _StubHotkey:
+    def __init__(self, ss58: str):
+        self.ss58_address = ss58
+
+
+class _StubWallet:
+    """Minimal wallet stub that exposes ``.hotkey.ss58_address`` so the
+    pre-flight idempotency check runs (instead of being skipped by the
+    AttributeError handler)."""
+    def __init__(self, ss58: str = "5GuiHBTfciFauoF1XuyvVuWYrQaS7LExrbsqV5EmDU2ibJEz"):
+        self.hotkey = _StubHotkey(ss58)
+
+
+class TestIgnoreAlreadyScored:
+    """The ``ignore_already_scored`` flag is an operator-only escape hatch
+    that bypasses the per-(validator, epoch_id) idempotency guard. The
+    byte-budget check remains active as a second line of defence."""
+
+    def test_default_blocks_when_prior_commit_exists(self, setup):
+        with (
+            patch(
+                "hope.commitment.chain_reader.validator_already_scored_epoch",
+                return_value=True,
+            ),
+            patch(
+                "hope.commitment.chain_reader.commitments_budget_sufficient",
+                return_value=(True, 3000, 22000),
+            ),
+        ):
+            out = run_epoch_scoring(
+                subtensor=object(),
+                validator_wallet=_StubWallet(),
+                netuid=21,
+                epoch_id="EPOCH-PRIOR",
+                epoch_idx=42,
+                validator_hotkey=setup["val_pk"],
+                validator_signing_key=setup["val_sk"],
+                miner_inputs=setup["inputs"],
+                archive_endpoints=setup["endpoints"],
+                archive_client=setup["archive"],
+                timing=setup["timing"],
+                outcomes_release_round=12000,
+                outcomes_fetched_at_round=12010,
+                scoring_inputs_hash=os.urandom(32),
+                scorer=_scorer_fixed(500_000),
+                blocks_until_pre_scoring_reveal=300,
+                blocks_until_post_scoring_reveal=600,
+                blocks_until_weights_reveal=360,
+            )
+        assert not out.ok
+        assert out.aborted_reason is not None
+        assert "already_scored" in out.aborted_reason
+
+    def test_flag_bypasses_guard(self, setup):
+        """When ignore_already_scored=True, the run proceeds past the
+        already_scored gate. We only check that the abort reason is NOT
+        'already_scored' — downstream scoring outcomes are covered by
+        other tests in this file."""
+        with (
+            patch(
+                "hope.commitment.chain_reader.validator_already_scored_epoch",
+                return_value=True,  # would block if not for the flag
+            ),
+            patch(
+                "hope.commitment.chain_reader.commitments_budget_sufficient",
+                return_value=(True, 3000, 22000),
+            ),
+            patch(
+                "hope.validator.onchain_runner.submit_pre_scoring_state_layer_9c1",
+                return_value=_ok_commit(7038910, reveal_round=12345710),
+            ),
+            patch(
+                "hope.validator.onchain_runner.commit_weights_layer_9c3",
+                return_value=WeightsCommitResult(
+                    success=True, message="OK",
+                    block_number=7038920, block_hash=os.urandom(32),
+                    extrinsic_hash="0x" + "cd" * 32,
+                ),
+            ),
+            patch(
+                "hope.validator.onchain_runner.submit_post_scoring_artifacts_layer_9c2",
+                return_value=_ok_commit(7038930, reveal_round=12345730),
+            ),
+        ):
+            out = run_epoch_scoring(
+                subtensor=object(),
+                validator_wallet=_StubWallet(),
+                netuid=21,
+                epoch_id="EPOCH-PRIOR",
+                epoch_idx=42,
+                validator_hotkey=setup["val_pk"],
+                validator_signing_key=setup["val_sk"],
+                miner_inputs=setup["inputs"],
+                archive_endpoints=setup["endpoints"],
+                archive_client=setup["archive"],
+                timing=setup["timing"],
+                outcomes_release_round=12000,
+                outcomes_fetched_at_round=12010,
+                scoring_inputs_hash=os.urandom(32),
+                scorer=_scorer_fixed(500_000),
+                blocks_until_pre_scoring_reveal=300,
+                blocks_until_post_scoring_reveal=600,
+                blocks_until_weights_reveal=360,
+                ignore_already_scored=True,
+            )
+        # The gate is bypassed: abort reason (if any) is something OTHER
+        # than the already_scored one.
+        if out.aborted_reason is not None:
+            assert "already_scored" not in out.aborted_reason
+
+    # ------------------------------------------------------------------
+    # SN21_OVERRIDE_WEIGHT_UID — operator escape hatch
+    # ------------------------------------------------------------------
+
+    def test_override_replaces_weights_with_single_uid(self, setup, monkeypatch):
+        """When SN21_OVERRIDE_WEIGHT_UID=135, 9.C.3 publishes {135: 1.0}
+        instead of the computed per-miner vector."""
+        captured: dict[str, list] = {}
+
+        def _capture_commit(*args, **kwargs):
+            captured["uids"] = kwargs["uids"]
+            captured["weights"] = kwargs["weights"]
+            return WeightsCommitResult(
+                success=True, message="OK",
+                block_number=7038920, block_hash=os.urandom(32),
+                extrinsic_hash="0x" + "ef" * 32,
+            )
+
+        monkeypatch.setenv("SN21_OVERRIDE_WEIGHT_UID", "135")
+
+        with (
+            patch(
+                "hope.commitment.chain_reader.validator_already_scored_epoch",
+                return_value=False,
+            ),
+            patch(
+                "hope.commitment.chain_reader.commitments_budget_sufficient",
+                return_value=(True, 3000, 22000),
+            ),
+            patch(
+                "hope.validator.onchain_runner.submit_pre_scoring_state_layer_9c1",
+                return_value=_ok_commit(7038910, reveal_round=12345710),
+            ),
+            patch(
+                "hope.validator.onchain_runner.commit_weights_layer_9c3",
+                side_effect=_capture_commit,
+            ),
+            patch(
+                "hope.validator.onchain_runner.submit_post_scoring_artifacts_layer_9c2",
+                return_value=_ok_commit(7038930, reveal_round=12345730),
+            ),
+            patch(
+                "hope.validator.onchain_runner.submit_retry_log_attestation_layer_9c6",
+            ),
+        ):
+            out = run_epoch_scoring(
+                subtensor=object(),
+                validator_wallet=_StubWallet(),
+                netuid=21,
+                epoch_id="EPOCH-OVERRIDE",
+                epoch_idx=42,
+                validator_hotkey=setup["val_pk"],
+                validator_signing_key=setup["val_sk"],
+                miner_inputs=setup["inputs"],
+                archive_endpoints=setup["endpoints"],
+                archive_client=setup["archive"],
+                timing=setup["timing"],
+                outcomes_release_round=12000,
+                outcomes_fetched_at_round=12010,
+                scoring_inputs_hash=os.urandom(32),
+                scorer=_scorer_fixed(500_000),
+                blocks_until_pre_scoring_reveal=300,
+                blocks_until_post_scoring_reveal=600,
+                blocks_until_weights_reveal=360,
+            )
+        assert out.ok
+        # The commit must have received the override vector, NOT the
+        # computed per-miner vector (which would have 5 entries from
+        # the test fixture's miner_inputs).
+        assert captured["uids"] == [135]
+        assert captured["weights"] == [1.0]
+
+    def test_override_invalid_value_does_not_crash(self, setup, monkeypatch):
+        """When SN21_OVERRIDE_WEIGHT_UID is set to an invalid value (non-int
+        or out of u16 range), the run completes without crashing — the
+        override is silently ignored and the normal scoring path runs.
+        We only assert that the run did not raise; the final commit-vector
+        shape depends on the fixture's downstream scoreability checks and
+        is covered by happy-path tests."""
+        monkeypatch.setenv("SN21_OVERRIDE_WEIGHT_UID", "not_a_number")
+
+        with (
+            patch(
+                "hope.commitment.chain_reader.validator_already_scored_epoch",
+                return_value=False,
+            ),
+            patch(
+                "hope.commitment.chain_reader.commitments_budget_sufficient",
+                return_value=(True, 3000, 22000),
+            ),
+            patch(
+                "hope.validator.onchain_runner.submit_pre_scoring_state_layer_9c1",
+                return_value=_ok_commit(7038910, reveal_round=12345710),
+            ),
+            patch(
+                "hope.validator.onchain_runner.commit_weights_layer_9c3",
+                return_value=WeightsCommitResult(
+                    success=True, message="OK",
+                    block_number=7038920, block_hash=os.urandom(32),
+                    extrinsic_hash="0x" + "cd" * 32,
+                ),
+            ),
+            patch(
+                "hope.validator.onchain_runner.submit_post_scoring_artifacts_layer_9c2",
+                return_value=_ok_commit(7038930, reveal_round=12345730),
+            ),
+            patch(
+                "hope.validator.onchain_runner.submit_retry_log_attestation_layer_9c6",
+            ),
+        ):
+            # Must not raise — invalid override is silently ignored, default
+            # scoring path runs, run completes cleanly.
+            run_epoch_scoring(
+                subtensor=object(),
+                validator_wallet=_StubWallet(),
+                netuid=21,
+                epoch_id="EPOCH-BAD-OVERRIDE",
+                epoch_idx=42,
+                validator_hotkey=setup["val_pk"],
+                validator_signing_key=setup["val_sk"],
+                miner_inputs=setup["inputs"],
+                archive_endpoints=setup["endpoints"],
+                archive_client=setup["archive"],
+                timing=setup["timing"],
+                outcomes_release_round=12000,
+                outcomes_fetched_at_round=12010,
+                scoring_inputs_hash=os.urandom(32),
+                scorer=_scorer_fixed(500_000),
+                blocks_until_pre_scoring_reveal=300,
+                blocks_until_post_scoring_reveal=600,
+                blocks_until_weights_reveal=360,
+            )
+
+
+    def test_budget_check_still_blocks_when_flag_set(self, setup):
+        """The byte-budget guard is independent of ignore_already_scored
+        and continues to abort if budget is insufficient."""
+        with (
+            patch(
+                "hope.commitment.chain_reader.validator_already_scored_epoch",
+                return_value=False,
+            ),
+            patch(
+                "hope.commitment.chain_reader.commitments_budget_sufficient",
+                return_value=(False, 200, 22000),
+            ),
+        ):
+            out = run_epoch_scoring(
+                subtensor=object(),
+                validator_wallet=_StubWallet(),
+                netuid=21,
+                epoch_id="EPOCH-BUDGET",
+                epoch_idx=42,
+                validator_hotkey=setup["val_pk"],
+                validator_signing_key=setup["val_sk"],
+                miner_inputs=setup["inputs"],
+                archive_endpoints=setup["endpoints"],
+                archive_client=setup["archive"],
+                timing=setup["timing"],
+                outcomes_release_round=12000,
+                outcomes_fetched_at_round=12010,
+                scoring_inputs_hash=os.urandom(32),
+                scorer=_scorer_fixed(500_000),
+                blocks_until_pre_scoring_reveal=300,
+                blocks_until_post_scoring_reveal=600,
+                blocks_until_weights_reveal=360,
+                ignore_already_scored=True,
+            )
+        assert not out.ok
+        assert out.aborted_reason is not None
+        assert "insufficient_budget" in out.aborted_reason

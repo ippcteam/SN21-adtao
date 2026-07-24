@@ -17,12 +17,12 @@ Bittensor Subnet 21 · MIT-licensed · Public verifier ships at launch
 | Mainnet netuid | **21** (Bittensor `finney`) | Subnet registration |
 | Testnet netuid | **466** (Bittensor `test`) | testnet validation |
 | Current phase | Pre-mainnet — testnet validation complete | Appendix B |
-| Validator registration | **Closed at launch.** Operator runs primary + shadow. Opening is on the Review 4 agenda | `docs/SN21_REWARD_MECHANISM.md` |
+| Validator registration | **Open by Bittensor protocol.** AdTAO operator runs the canonical primary + shadow validators and coordinates convergence to canonical scoring with other registered operators. Formal third-party validator programme tracked at Review 4 | `docs/SN21_REWARD_MECHANISM.md` |
 | Miner registration | Open on testnet 466 today; mainnet 21 opens when launch announces | `docs/miner_quickstart.md` |
 | Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
 | Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is being pursued as an upstream Bittensor change | §14.1 + adversarial test |
 | Per-episode artifacts | **Available via configuration.** `submit_miner_epoch(per_episode_entries=...)` builds the bundle, binds `episodes_root` + `episodes_bundle_sha256` in the aggregated plaintext, and uploads to the archives. The default `hope-miner` CLI submits aggregate-per-horizon at launch; per-episode is opt-in for miners that wire it. Default behaviour will move to per-episode after operational-cycle-1 | §14.2 |
-| Reward mechanism | **`TieredAllocator` available, default runner uses simple normalization + burn.** `hope/validator/tiered_weights.py:TieredAllocator` enforces the full participation gate / EMA tier placement / Elite floor / pool shares spec. The default `hope-validator` CLI runs `WeightSetter(burn_fraction=0.95)` + `normalize_scores(...)` at launch. To enable tiers, an operator constructs `WeightSetter(tiered_allocator=TieredAllocator())` and calls `allocate_tiered(...)`. Tier mechanics are scheduled to become the default after Review 1 | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
+| Reward mechanism | **`TieredAllocator` wired into the chain runner behind an opt-in; defaults to simple normalization + burn until Review 1.** `hope/validator/tiered_weights.py:TieredAllocator` enforces the full participation gate / EMA tier placement / Elite floor / pool shares spec. The chain `hope-validator` runner enables it via `SN21_TIERED_WEIGHTS` (gate baseline = predict-zero score against the epoch truth); unset, it uses flat score-normalization + burn. The legacy HTTP path can also wire `WeightSetter(tiered_allocator=TieredAllocator())`. Tier mechanics are scheduled to become the default after Review 1 | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
 | Conditional-prior baseline | **Live at launch.** The release artifact's `scoring_metadata.conditional_prior` per episode plumbs through `ScoringMetadata` and `SkillScoreCalculator.compute_baseline_prediction(...)`. Episodes with no published prior fall through to predict-zero — no crash, no silent gate-zeroing | §12 |
 
 When in doubt about a claim in the rest of this paper, this table is the
@@ -238,7 +238,7 @@ later sections shorter.
 | **Episode** | A single prediction challenge. "What will the cost-per-conversion of this campaign be over the next 7 days?" |
 | **Epoch** | A batch of episodes released together. Typically 4-24 hours from open to deadline. |
 | **Miner** | A Bittensor neuron that predicts outcomes. Anonymous, registered by hotkey. |
-| **Validator** | A Bittensor neuron that scores predictions and submits weights. The operator runs the primary; a shadow runs in parallel. |
+| **Validator** | A Bittensor neuron that scores predictions and submits weights. The AdTAO operator runs the canonical primary and shadow. |
 | **Prediction** | The miner's answer for one episode and one horizon: P10/P50/P90 quantiles + goal-miss probability + instability risk. |
 | **Outcome** | What actually happened: cost delta, conversion delta, efficiency delta, did the goal miss. |
 | **Commit-reveal** | A two-step protocol: post a hash now, post the bytes that hash to it later. Standard cryptographic pattern. |
@@ -765,15 +765,19 @@ collude with itself. The architecture mitigates this with three layers:
 2. **Phase 2**: operator primary + INDEPENDENT third-party shadow (a
    contracted audit firm or a validator-as-a-service operator) with a
    different operator key.
-3. **Phase 3+**: External validators register on netuid 21
-   organically. Yuma stake-weighted median consensus naturally clips
-   any 1-of-N malicious actor.
+3. **Phase 3+**: a critical mass of registered validators run
+   canonical scoring, naturally clipping any 1-of-N dishonest actor
+   through Yuma stake-weighted median consensus. Validator
+   registration is already open by Bittensor protocol; what Phase 3
+   adds is convergence on the canonical scoring spec across registered
+   operators, supported by the formal third-party validator programme
+   tracked at Review 4.
 
 The shadow buys us cryptographic-level defenses against
 single-validator dishonesty. It does NOT buy us protection against
 the operator-as-an-organization being dishonest. That requires Phase
-3's external validators or, ultimately, an upstream chain runtime
-change (see §14).
+3's critical mass of canonical-scoring validators or, ultimately, an
+upstream chain runtime change (see §14).
 
 ---
 
@@ -851,12 +855,14 @@ via simple normalization and submits via `set_weights`.
 
 > **Status (launch).** The tiered allocator is **available** in
 > `hope/validator/tiered_weights.py:TieredAllocator` and fully unit-
-> tested (`tests/validator/test_tiered_weights.py`), but it is
-> **not the default path in the production validator runner**. The
-> default `hope-validator` CLI constructs
-> `WeightSetter(burn_fraction=0.95)` and calls `normalize_scores(...)`
-> — simple linear normalisation of raw scores + 95% burn. Operators
-> who want tier mechanics on day one wire it explicitly:
+> tested (`tests/validator/test_tiered_weights.py`). The chain
+> `hope-validator` runner **wires it behind the `SN21_TIERED_WEIGHTS`
+> opt-in**: when set, the per-miner weight vector is built via the
+> participation gate + Elite/Competitive/Participating pools (single
+> proportional pool under 15 qualifying miners), with the gate baseline
+> taken as the predict-zero score against the epoch truth. Unset, the
+> runner uses simple linear normalisation of raw scores + burn. The
+> legacy HTTP path can also wire it explicitly:
 > ```python
 > setter = WeightSetter(burn_fraction=0.95,
 >                       tiered_allocator=TieredAllocator())
@@ -1215,10 +1221,12 @@ protocol is otherwise unchanged.
   (Google Ads + Meta + e-commerce) could be scored by a cross-subnet
   validator; their TAO emission would aggregate. Requires Bittensor
   multi-subnet weight protocols, currently exploratory.
-- **External validator participation**: Phase 3 of the architecture
-  opens validator slots to third-party operators. The operator runbook
-  is designed to make this a pure runtime operation — no special
-  privileges required.
+- **Convergence of registered validators on canonical scoring**: Phase
+  3 of the architecture is reached when a critical mass of the
+  validators already registered on the subnet are running the canonical
+  scoring code. The operator runbook is designed to make running the
+  canonical code a pure runtime operation — no special privileges
+  required.
 
 ---
 

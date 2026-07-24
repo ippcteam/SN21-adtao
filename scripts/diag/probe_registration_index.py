@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""Live-chain probe for RegistrationIndex against testnet 466.
+
+Reads chain events from a configurable block range, runs the full
+RegistrationIndex scan, and prints which (hotkey → ed25519_pk) bindings
+were recovered. Intended as a one-shot diagnostic to confirm that miners
+who ran `sn21_keys.py register` historically can still be picked up by
+the validator after their CommitmentOf slot was overwritten by later
+TLE bundle commits.
+
+Usage:
+    python scripts/diag/probe_registration_index.py \
+        --network test --netuid 466 \
+        --start-block 7100000 --end-block 7120000
+
+Set SN21_SUBTENSOR_URL to an archive-node RPC (e.g.
+wss://test-archive.chain.opentensor.ai) when scanning older block ranges,
+since the default testnet node prunes history beyond ~256 blocks.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+
+import bittensor as bt
+
+from hope.validator.registration_index import (
+    RegistrationIndex,
+    RegistrationRole,
+)
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--network", default="test")
+    p.add_argument("--netuid", type=int, default=466)
+    p.add_argument("--start-block", type=int, required=True,
+                   help="Block number to start the scan at (inclusive).")
+    p.add_argument("--end-block", type=int, default=None,
+                   help="Block number to end the scan at (inclusive). "
+                        "Default: chain head.")
+    p.add_argument("--filter-hotkey", action="append", default=[],
+                   help="If provided one or more times, only print bindings for "
+                        "these SS58 hotkeys. Other discovered bindings still "
+                        "count toward the summary but aren't dumped.")
+    p.add_argument("--role", choices=["miner", "validator", "outcome_signer"],
+                   default="miner")
+    p.add_argument("--output-json", type=str, default=None,
+                   help="If provided, write the full indexed result as a JSON "
+                        "file in the schema expected by `hope-validator "
+                        "--reg-index-prebuilt`. Useful for one-shot backfill: "
+                        "run this against an archive RPC, then ship the JSON "
+                        "to the cron container so it doesn't re-scan history "
+                        "on every run.")
+    p.add_argument("--progress-every", type=int, default=200,
+                   help="Print a progress heartbeat every N successfully-"
+                        "scanned blocks (default 200 ≈ ~5 min cadence at the "
+                        "observed ~1.5s/block testnet rate). Set to 0 to "
+                        "disable heartbeats.")
+    p.add_argument("--checkpoint-every", type=int, default=500,
+                   help="Rewrite --output-json every N successfully-scanned "
+                        "blocks (default 500 ≈ ~12 min). Lets long-running "
+                        "backfills survive process kills / system sleep with "
+                        "only partial work lost. No effect when --output-json "
+                        "isn't set.")
+    p.add_argument("--reconnect", action="store_true",
+                   help="Rebuild the substrate connection after 5 consecutive "
+                        "per-block read failures. Recommended for overnight "
+                        "backfill runs where the laptop may sleep mid-scan.")
+    args = p.parse_args()
+
+    url = os.environ.get("SN21_SUBTENSOR_URL")
+    if url:
+        print(f"[probe] using SN21_SUBTENSOR_URL={url}", flush=True)
+        sub = bt.Subtensor(network=url)
+    else:
+        sub = bt.Subtensor(network=args.network)
+    head = sub.get_current_block()
+    end = args.end_block if args.end_block is not None else head
+    print(f"[probe] current head={head}", flush=True)
+    print(f"[probe] scanning blocks [{args.start_block}, {end}] "
+          f"(span={end - args.start_block + 1} blocks)", flush=True)
+
+    role_map = {
+        "miner": RegistrationRole.MINER,
+        "validator": RegistrationRole.VALIDATOR,
+        "outcome_signer": RegistrationRole.OUTCOME_SIGNER,
+    }
+    reconnect_target = (url or args.network) if args.reconnect else None
+    index = RegistrationIndex(
+        sub, args.netuid,
+        expected_role=role_map[args.role],
+        reconnect_network=reconnect_target,
+    )
+
+    import json as _json
+    import os as _os
+
+    # Resume support: if --output-json points at an existing non-empty file,
+    # load its entries into the index BEFORE scanning. Lets us safely restart
+    # a long-running backfill from a higher --start-block without losing the
+    # registrations already recovered. Combined with --checkpoint-every, this
+    # means a killed scan can be resumed from the last checkpointed block.
+    if args.output_json and _os.path.exists(args.output_json):
+        try:
+            with open(args.output_json) as _f:
+                _existing = _json.load(_f)
+            if _existing:
+                merged = index.merge_json(_existing)
+                print(
+                    f"[probe] resumed: merged {merged} entries from existing "
+                    f"{args.output_json}",
+                    flush=True,
+                )
+        except Exception as _e:
+            print(
+                f"[probe] could not load existing {args.output_json} "
+                f"({type(_e).__name__}: {str(_e)[:120]}); proceeding without "
+                f"resume.",
+                flush=True,
+            )
+    import time as _time
+    scan_start_ts = _time.time()
+
+    def _checkpoint(block_num, entries):
+        """Atomically rewrite --output-json with the running index state."""
+        if not args.output_json:
+            return
+        tmp = args.output_json + ".tmp"
+        with open(tmp, "w") as f:
+            _json.dump(entries, f, indent=2, sort_keys=True)
+        _os.replace(tmp, args.output_json)
+        print(
+            f"[probe] checkpoint @block {block_num}: wrote {len(entries)} "
+            f"entries to {args.output_json}",
+            flush=True,
+        )
+
+    def _on_progress(block_num, start_block, end_block, stats, indexed_size):
+        span = max(1, end_block - start_block + 1)
+        done = block_num - start_block + 1
+        pct = 100.0 * done / span
+        elapsed = _time.time() - scan_start_ts
+        rate = done / elapsed if elapsed > 0 else 0.0
+        remaining = (span - done) / rate if rate > 0 else float("inf")
+        eta_min = remaining / 60 if remaining != float("inf") else None
+        print(
+            f"[probe] @block {block_num} ({done}/{span} = {pct:.1f}%) "
+            f"elapsed={elapsed:.0f}s rate={rate:.2f}b/s "
+            f"eta={eta_min:.0f}m " if eta_min is not None else
+            f"[probe] @block {block_num} ({done}/{span} = {pct:.1f}%) ",
+            flush=True,
+        )
+        print(
+            f"        events_seen={stats['events_seen']} "
+            f"candidates={stats['candidates_found']} "
+            f"verified={stats['verified']} indexed={indexed_size}",
+            flush=True,
+        )
+
+    callback = _on_progress if args.progress_every > 0 else None
+    checkpoint_cb = _checkpoint if (args.output_json and args.checkpoint_every > 0) else None
+    found = index.scan_range(
+        args.start_block, end,
+        progress_callback=callback,
+        progress_every=max(1, args.progress_every),
+        checkpoint_callback=checkpoint_cb,
+        checkpoint_every=max(1, args.checkpoint_every),
+    )
+    stats = index.stats
+
+    print()
+    print(f"[probe] scan complete: indexed={index.size} newly_found={found}")
+    print(f"[probe] stats: blocks_scanned={stats['blocks_scanned']} "
+          f"events_seen={stats['events_seen']} "
+          f"candidates={stats['candidates_found']} "
+          f"verified={stats['verified']}")
+
+    if args.output_json:
+        import json as _json
+        with open(args.output_json, "w") as f:
+            _json.dump(index.to_json(), f, indent=2, sort_keys=True)
+        print(f"[probe] wrote {index.size} entries to {args.output_json}")
+
+    if not index.size:
+        print("[probe] no valid registrations recovered in this range.")
+        return 1
+
+    print()
+    print(f"[probe] all valid {args.role.upper()} registrations:")
+    filter_set = set(args.filter_hotkey) if args.filter_hotkey else None
+    for entry in sorted(index.entries(), key=lambda e: e.block_number):
+        if filter_set is not None and entry.hotkey_ss58 not in filter_set:
+            continue
+        print(
+            f"  block={entry.block_number} "
+            f"hotkey={entry.hotkey_ss58} "
+            f"ed25519_pk={entry.ed25519_pk.hex()}"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

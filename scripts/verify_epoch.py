@@ -641,6 +641,16 @@ def _build_argparser() -> argparse.ArgumentParser:
         "--output", choices=["text", "json"], default="text",
         help="Verdict output format",
     )
+    p.add_argument(
+        "--emit-report", action="store_true",
+        help="(v1.1 fast-follow) Re-run scoring + aggregator and emit the "
+             "leaderboard report JSON to stdout. Useful for byte-identical "
+             "reproduction of the operator's published payload. v1 is a stub "
+             "that exits non-zero with an informational message because the "
+             "operator's truth file (9.A.2 reveal blob) is not yet publicly "
+             "hosted on testnet 466. Tracked as a fast-follow; lands when "
+             "truth-file hosting is in place.",
+    )
     return p
 
 
@@ -654,6 +664,24 @@ def main(argv: Optional[list[str]] = None) -> int:
     network_explicit = any(a == "--network" or a.startswith("--network=") for a in raw_argv)
     netuid_explicit = any(a == "--netuid" or a.startswith("--netuid=") for a in raw_argv)
     args = parser.parse_args(argv)
+
+    if args.emit_report:
+        sys.stderr.write(
+            "verify_epoch.py --emit-report is not yet supported on this "
+            "network.\n"
+            "\n"
+            "The leaderboard reporter's verifier path requires the operator's\n"
+            "truth file (9.A.2 reveal blob) to be publicly hosted so external\n"
+            "observers can recompute scores byte-identically to the operator.\n"
+            "On testnet 466 the truth file is not yet hosted; this flag will\n"
+            "land in v1.1 once that is in place. Tracked per Q12.\n"
+            "\n"
+            "For now, the operator-side reporter at scripts/post_epoch_report.py\n"
+            "consumes the same `hope.reporting.aggregator.aggregate(...)` to\n"
+            "produce the payload that is POSTed. Reproducibility is internally\n"
+            "byte-identical; public external verification is the v1.1 addition.\n"
+        )
+        return 4   # distinct exit code so cron / CI can detect the stub path
 
     print("verify_epoch.py — SN21 public verifier", file=sys.stderr)
     print(f"  epoch_id={args.epoch_id}", file=sys.stderr)
