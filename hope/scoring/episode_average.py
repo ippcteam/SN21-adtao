@@ -36,9 +36,13 @@ FULL_STANDING_PREDICTIONS = 1000
 
 @dataclass(frozen=True)
 class ScoredEpisode:
-    """One scored prediction: final score in [0,1] and the day it was scored."""
+    """One scored entry: final score in [0,1], the day it was scored, and an
+    entry weight. Under the daily stream (E1), entries are per-(episode,
+    horizon) with horizon blend weights summing to 1.0 per episode — so
+    `weight` defaults to 1.0 and legacy whole-episode callers are unchanged."""
     score: float
     scored_on: date
+    weight: float = 1.0
 
 
 def episode_weight(age_days: float, half_life_days: float = DEFAULT_HALF_LIFE_DAYS) -> float:
@@ -66,7 +70,7 @@ def episode_weighted_average(
         age = (as_of - ep.scored_on).days
         if age < 0 or age > window_days:
             continue
-        w = episode_weight(age, half_life_days)
+        w = episode_weight(age, half_life_days) * ep.weight
         num += w * ep.score
         den += w
     return (num / den) if den > 0 else None
@@ -74,10 +78,13 @@ def episode_weighted_average(
 
 def scored_prediction_count(
     episodes: Iterable[ScoredEpisode], as_of: date, window_days: int = DEFAULT_WINDOW_DAYS
-) -> int:
-    """Evidence mass inside the window — drives the cold-start floors."""
+) -> float:
+    """Evidence MASS inside the window — drives the cold-start floors.
+    Weighted entries count by weight (three horizon-entries of one episode
+    sum to 1.0 prediction, not 3), so the 250/1000 floors keep their
+    episode-denominated meaning under the daily stream."""
     return sum(
-        1 for ep in episodes
+        ep.weight for ep in episodes
         if 0 <= (as_of - ep.scored_on).days <= window_days
     )
 
