@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional
 
@@ -40,10 +41,11 @@ class RunResult:
 
 
 def docker_command(image_digest: str, memory: str = DEFAULT_MEMORY,
-                   cpus: str = DEFAULT_CPUS) -> list[str]:
+                   cpus: str = DEFAULT_CPUS, name: Optional[str] = None) -> list[str]:
     """The exact isolation flags are part of the published contract."""
     return [
         "docker", "run", "--rm", "-i",
+        *([f"--name={name}"] if name else []),
         "--network=none",
         f"--memory={memory}", f"--memory-swap={memory}",
         f"--cpus={cpus}",
@@ -76,13 +78,20 @@ def run_basket_docker(image_digest: str, episodes: Iterable[dict],
     eps = list(episodes)
     ids = {str(e["episode_id"]) for e in eps}
     stdin_blob = "\n".join(json.dumps(e, default=str) for e in eps) + "\n"
+    # Named container so a timeout can kill the DAEMON-side process too:
+    # subprocess timeout only kills the docker CLIENT — without an explicit
+    # kill the container survives as a zombie model run (found in the
+    # 2026-07-26 negative test round).
+    cname = f"sn21-run-{uuid.uuid4().hex[:12]}"
     try:
         proc = subprocess.run(
-            docker_command(image_digest, memory=memory),
+            docker_command(image_digest, memory=memory, name=cname),
             input=stdin_blob.encode(), capture_output=True, timeout=timeout_s,
         )
     except subprocess.TimeoutExpired:
-        return RunResult(ok=False, error=f"timeout>{timeout_s}s", episodes_in=len(eps))
+        subprocess.run(["docker", "kill", cname], capture_output=True, timeout=30)
+        return RunResult(ok=False, error=f"timeout>{timeout_s}s (container killed)",
+                         episodes_in=len(eps))
     except FileNotFoundError:
         return RunResult(ok=False, error="docker_not_available", episodes_in=len(eps))
     if proc.returncode != 0:

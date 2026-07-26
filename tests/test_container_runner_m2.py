@@ -9,6 +9,9 @@ from hope.backtest.container_runner import (
 class TestIsolationContract:
     def test_flags_are_the_published_contract(self):
         cmd = docker_command("sha256:abc")
+        assert not any(f.startswith("--name=") for f in cmd)  # unnamed by default
+        named = docker_command("sha256:abc", name="sn21-run-x")
+        assert "--name=sn21-run-x" in named
         joined = " ".join(cmd)
         for flag in ("--network=none", "--memory=1g", "--memory-swap=1g",
                      "--cpus=1", "--pids-limit=256", "--read-only",
