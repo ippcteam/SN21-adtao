@@ -511,6 +511,70 @@ def run_epoch_scoring(
         uids = [u for u, _ in _funded]
         weights = [w for _, w in _funded]
 
+    # Optional daily-stream allocation (Design v0.5 §12 — the M4 switch).
+    # When SN21_DAILY_STREAM_WEIGHTS is set, the per-epoch score vector is
+    # replaced by the standing-ledger allocation: D13 episode-age standings
+    # -> D7 published curve, with the [D8] promotion state machine observed
+    # and logged on the side. [D3]'s volume gate holds the PREVIOUS vector
+    # on thin days (gated=True -> no replacement). Composes like the tiered
+    # block: after the allowlist, before override/burn. Fail-safe by
+    # construction — any error keeps the epoch vector; weight submission is
+    # never aborted by the daily path.
+    _daily = _os_allow.environ.get("SN21_DAILY_STREAM_WEIGHTS", "").strip().lower()
+    if _daily in ("1", "true", "yes", "on"):
+        try:
+            from datetime import date as _date
+            from hope.validator.daily_stream_weights import allocation_from_ledger
+
+            _root = _os_allow.environ.get(
+                "SN21_STANDING_LEDGER_ROOT", "./sn21_ledger"
+            )
+            # Day volume for the [D3] gate is exported by the daily basket
+            # orchestration (it knows the episode count); absent -> 0, which
+            # with a configured D3 minimum fails CLOSED (weights hold) and
+            # with the default minimum of 0 leaves the gate disabled.
+            _vol_str = _os_allow.environ.get("SN21_DAY_EPISODE_VOLUME", "0")
+            _vol = int(_vol_str) if _vol_str.strip().isdigit() else 0
+            _alloc = allocation_from_ledger(_root, _date.today(), _vol)
+            if _alloc.gated:
+                print(
+                    f"[daily-stream] [D3] gate held weights: volume {_vol} < "
+                    f"minimum; epoch vector retained",
+                    flush=True,
+                )
+            elif not _alloc.weights or not any(w > 0 for w in _alloc.weights.values()):
+                print(
+                    "[daily-stream] no placement-eligible standings in ledger "
+                    f"({len(_alloc.standings)} standings); epoch vector retained",
+                    flush=True,
+                )
+            else:
+                _pairs = [
+                    (uid_by_hotkey[hk], w)
+                    for hk, w in _alloc.weights.items()
+                    if w > 0 and hk in uid_by_hotkey
+                ]
+                if _pairs:
+                    uids = [u for u, _ in _pairs]
+                    weights = [w for _, w in _pairs]
+                    _promo = _alloc.promotion
+                    print(
+                        f"[daily-stream] ledger allocation live: earning set "
+                        f"{len(_pairs)} (curve ceiling), champion="
+                        f"{_promo.state.champion if _promo else None}, "
+                        f"promoted_today={bool(_promo and _promo.promoted)}, "
+                        f"day_volume={_vol}",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        "[daily-stream] ledger standings map to no metagraph "
+                        "UIDs; epoch vector retained",
+                        flush=True,
+                    )
+        except Exception as _e:
+            print(f"[daily-stream] failed ({_e}); epoch vector retained", flush=True)
+
     # Optional weight-vector override. When SN21_OVERRIDE_WEIGHT_UID is set,
     # the validator's normal per-miner weight vector is REPLACED with a
     # single-entry vector that puts 100% weight on the override UID. This
