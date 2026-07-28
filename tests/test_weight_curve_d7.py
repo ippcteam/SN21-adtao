@@ -7,8 +7,8 @@ from hope.scoring.weight_curve import CurveParams, curve_weights, earning_set
 
 def test_two_miners_split_top_and_second_ratio():
     w = curve_weights({"a": 0.9, "b": 0.8})
-    # ratios of the published curve preserved: 0.55 : 0.20
-    assert w["a"] / w["b"] == pytest.approx(0.55 / 0.20)
+    # ratios of the published curve preserved (Rob 2026-07-28): 0.50 : 0.25
+    assert w["a"] / w["b"] == pytest.approx(0.50 / 0.25)
     assert sum(w.values()) == pytest.approx(1.0)
 
 
@@ -42,7 +42,7 @@ def test_geometric_tail():
     standings = {f"m{i}": 0.9 - i * 0.01 for i in range(5)}
     w = curve_weights(standings)
     ordered = [w[f"m{i}"] for i in range(5)]
-    # tail: each after second is half the previous
+    # tail: each after THIRD is half the previous (50/25/10 fixed shares)
     assert ordered[3] == pytest.approx(ordered[2] * 0.5)
     assert ordered[4] == pytest.approx(ordered[3] * 0.5)
 

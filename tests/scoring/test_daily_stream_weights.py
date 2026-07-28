@@ -121,9 +121,10 @@ def test_allocation_applies_curve_to_eligible_standings():
     assert set(alloc.standings) == {"alpha", "beta"}  # cold-start excluded
     assert alloc.weights["alpha"] > alloc.weights["beta"] > 0
     assert alloc.weights.get("coldstart", 0.0) == 0.0
-    # curve ratios preserved (top/second renormalized over 2 earners)
+    # curve ratios preserved (top/second renormalized over 2 earners;
+    # Rob 2026-07-28 shares 50/25)
     assert alloc.weights["alpha"] / alloc.weights["beta"] == pytest.approx(
-        0.55 / 0.20
+        0.50 / 0.25
     )
     assert alloc.earning_set_size == 2
 
