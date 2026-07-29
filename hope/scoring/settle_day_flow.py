@@ -122,6 +122,39 @@ def score_entry(pred: dict, actual: dict[str, float]) -> float:
     return round(0.7 * quantile + 0.3 * direction, 6)
 
 
+def entry_components(pred: dict, actual: dict[str, float]) -> tuple[float, float]:
+    """(quantile, direction) components of score_entry, same arithmetic.
+
+    Exposed for the J3 vertical-error series, which stores RAW components
+    so the weekly aggregate survives a formula recomposition (the goal-
+    metric term is in front of Rob). Kept as a separate walk of the same
+    logic rather than a refactor of score_entry so the scoring hot path
+    and its tests stay byte-identical.
+    """
+    losses: list[float] = []
+    scales: list[float] = []
+    dir_hits = 0
+    dir_total = 0
+    for m in METRICS:
+        a = actual[m]
+        trio = pred.get(m)
+        if trio:
+            for q, key in QUANTILES:
+                losses.append(pinball(a, float(trio[key]), q))
+            scales.append(abs(a))
+        if a != 0:
+            dir_total += 1
+            p50 = float(trio["p50"]) if trio else 0.0
+            if p50 != 0 and (a > 0) == (p50 > 0):
+                dir_hits += 1
+    if not losses:
+        return 0.0, 0.0
+    scale = max(sum(scales) / len(scales), MIN_ENTRY_SCALE)
+    quantile = max(0.0, 1.0 - (sum(losses) / len(losses)) / scale)
+    direction = (dir_hits / dir_total) if dir_total else 0.0
+    return round(quantile, 6), round(direction, 6)
+
+
 def score_settled(
     prediction_index: dict[str, dict[str, dict]],
     outcomes: Iterable[SettledHorizon],
@@ -154,6 +187,31 @@ def score_settled(
                 finalized_on=o.finalized_on,
             ))
     return results
+
+
+def score_settled_with_components(
+    prediction_index: dict,
+    outcomes: Iterable[SettledHorizon],
+) -> tuple[list[HorizonResult], dict]:
+    """score_settled plus a components map for the J3 vertical series:
+    {(episode_id, horizon_days, miner): (quantile, direction)} — raw
+    parts of each entry's score, stored so the series survives a formula
+    recomposition (Rob's pending decision)."""
+    outcomes = list(outcomes)  # consumed twice; a generator would starve pass 2
+    results = score_settled(prediction_index, outcomes)
+    comps: dict = {}
+    for o in outcomes:
+        actual = {
+            "cost_delta_pct": o.cost_delta_pct,
+            "conversions_delta_pct": o.conversions_delta_pct,
+            "efficiency_delta_pct": o.efficiency_delta_pct,
+        }
+        for miner, horizons in (prediction_index.get(o.episode_id) or {}).items():
+            pred = horizons.get(str(o.horizon_days))
+            if not pred:
+                continue
+            comps[(o.episode_id, o.horizon_days, miner)] = entry_components(pred, actual)
+    return results, comps
 
 
 # ---- shadow-ledger prediction lookup ----------------------------------------
@@ -245,7 +303,7 @@ def run_settle_day(
         if (str(o.episode_id), int(o.horizon_days)) not in already
     ]
     index = load_prediction_index(shadow_root)
-    results = score_settled(index, outcomes)
+    results, components = score_settled_with_components(index, outcomes)
 
     written = 0
     by_settle_date: dict[date, list[HorizonResult]] = {}
@@ -273,8 +331,10 @@ def run_settle_day(
     }
     if return_results:
         # in-process consumers only (daily_loop feeds these to the D11
-        # aggregation) — not part of the JSON-able summary contract
+        # aggregation and the J3 vertical series) — not part of the
+        # JSON-able summary contract
         out["horizon_results"] = results
+        out["components"] = components
     return out
 
 

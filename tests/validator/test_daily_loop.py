@@ -148,3 +148,42 @@ def test_capture_state_round_trip(tmp_path):
     root = str(tmp_path)
     save_capture_states(root, {"m": CaptureState("m", locked_alpha=42.0)})
     assert load_capture_states(root)["m"].locked_alpha == 42.0
+
+
+def test_vertical_series_step_tags_and_stores(tmp_path, monkeypatch):
+    """J3 wiring: settled entries get Jayesh's vertical tag + real components."""
+    from datetime import date as _date
+    from hope.validator.daily_loop import run_daily_loop
+    from hope.scoring.vertical_error_series import load_entries
+    from hope.scoring.settle_day_flow import SettledHorizon
+    from hope.backtest.shadow import ShadowModel, record_day
+    from hope.backtest.container_runner import RunResult
+
+    shadow_root = str(tmp_path / "shadow")
+    ledger_root = str(tmp_path / "ledger")
+    day = _date(2026, 8, 11)
+
+    preds = {"ep1": {"7": {"cost_delta_pct": {"p10": 0.1, "p50": 0.2, "p90": 0.3},
+                           "conversions_delta_pct": {"p10": 0.0, "p50": 0.1, "p90": 0.2},
+                           "efficiency_delta_pct": {"p10": -0.1, "p50": 0.0, "p90": 0.1}}}}
+    record_day(shadow_root, "2026-07-27",
+               ShadowModel("minerA", "img@sha256:x", "2026-07-27"),
+               RunResult(ok=True, predictions_out=1, error=None,
+                         predictions=preds))
+
+    outcomes = [SettledHorizon(episode_id="ep1", horizon_days=7,
+                               cost_delta_pct=0.25, conversions_delta_pct=0.1,
+                               efficiency_delta_pct=0.0,
+                               finalized_on=day)]
+    summary = run_daily_loop(
+        shadow_root, ledger_root, day,
+        outcomes_provider=lambda d: outcomes,
+        vertical_map_provider=lambda ids: {"ep1": "ecommerce"},
+    )
+    vs = summary["vertical_series"]
+    assert vs["entries_appended"] == 1 and vs["untagged"] == 0
+    stored = load_entries(ledger_root)[0]
+    assert stored["vertical"] == "ecommerce"
+    # real components, not the blended-score fallback
+    assert stored["pinball_component"] != stored["score"] or \
+           stored["direction_component"] != stored["score"]

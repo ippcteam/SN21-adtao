@@ -97,6 +97,7 @@ def run_daily_loop(
     chain_committer: Optional[Callable[[bytes], object]] = None,
     chain_reader: Optional[Callable[[str], Optional[float]]] = None,
     day_volume_provider: Optional[Callable[[date], int]] = None,
+    vertical_map_provider: Optional[Callable[[list], dict]] = None,
     environ=os.environ,
 ) -> dict:
     """One day, five fail-soft steps. Returns a per-step summary dict."""
@@ -104,13 +105,54 @@ def run_daily_loop(
 
     # 1. settle-day scoring -> standing ledger
     horizon_results = []
+    settle_components: dict = {}
     try:
         settle = run_settle_day(shadow_root, ledger_root, day,
                                 outcomes_provider, return_results=True)
         horizon_results = settle.pop("horizon_results", [])
+        settle_components = settle.pop("components", {})
         summary["settle"] = settle
     except Exception as e:
         summary["settle"] = {"error": str(e)}
+
+    # 1b. [D4 condition 2] vertical-error series — Jayesh's episode->vertical
+    # map tags each newly settled entry at entry time (J3, 2026-07-29).
+    # vertical_map_provider: Callable[[list[str]], dict[episode_id -> vertical]]
+    # (the reference implementation runs sql/j3_episode_vertical_map.sql over
+    # the same OBI connection the outcomes provider uses). Raw score
+    # components are stored so Rob's pending formula decision recomputes the
+    # series instead of rebuilding it. Skipped silently when no provider.
+    if vertical_map_provider is not None and horizon_results:
+        try:
+            from hope.scoring.vertical_error_series import (
+                SeriesEntry, append_entries as append_series,
+            )
+            from hope.scoring.daily_score_flow import horizon_entry_weight
+            vmap = vertical_map_provider(
+                sorted({r.episode_id for r in horizon_results}))
+            series = []
+            for r in horizon_results:
+                comps = settle_components.get(
+                    (r.episode_id, r.horizon_days, r.miner))
+                series.append(SeriesEntry(
+                    episode_id=r.episode_id,
+                    horizon_days=r.horizon_days,
+                    miner=r.miner,
+                    vertical=vmap.get(r.episode_id, "untagged"),
+                    score=r.score,
+                    pinball_component=comps[0] if comps else r.score,
+                    direction_component=comps[1] if comps else r.score,
+                    entry_weight=horizon_entry_weight(r.horizon_days,
+                                                      r.resolution),
+                    settled_on=str(r.finalized_on),
+                ))
+            summary["vertical_series"] = {
+                "entries_appended": append_series(ledger_root, series),
+                "untagged": sum(1 for e in series
+                                if e.vertical == "untagged"),
+            }
+        except Exception as e:
+            summary["vertical_series"] = {"error": str(e)}
 
     # 2. [D9] capture fold — persisted; pre-M4 the provider returns {}
     try:
