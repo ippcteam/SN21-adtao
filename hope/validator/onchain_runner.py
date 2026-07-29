@@ -531,12 +531,18 @@ def run_epoch_scoring(
             _root = _os_allow.environ.get(
                 "SN21_STANDING_LEDGER_ROOT", "./sn21_ledger"
             )
-            # Day volume for the [D3] gate is exported by the daily basket
-            # orchestration (it knows the episode count); absent -> 0, which
-            # with a configured D3 minimum fails CLOSED (weights hold) and
-            # with the default minimum of 0 leaves the gate disabled.
-            _vol_str = _os_allow.environ.get("SN21_DAY_EPISODE_VOLUME", "0")
-            _vol = int(_vol_str) if _vol_str.strip().isdigit() else 0
+            # Day volume for the [D3] gate: env var wins; absent, fall back
+            # to the day_volume.json the daily loop writes (audit 2026-07-29:
+            # the env contract had NO producer — daily_loop.read_day_volume
+            # is the documented handoff, stale-day files rejected). Still
+            # absent -> 0, which with a configured D3 minimum fails CLOSED
+            # (weights hold) and with the default 0 leaves the gate disabled.
+            _vol_str = _os_allow.environ.get("SN21_DAY_EPISODE_VOLUME", "")
+            if _vol_str.strip().isdigit():
+                _vol = int(_vol_str)
+            else:
+                from hope.validator.daily_loop import read_day_volume
+                _vol = read_day_volume(_root, _date.today()) or 0
             _alloc = allocation_from_ledger(_root, _date.today(), _vol)
             if _alloc.gated:
                 print(

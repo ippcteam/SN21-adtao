@@ -228,6 +228,7 @@ def run_settle_day(
     ledger_root: str,
     day: date,
     outcomes_provider: Callable[[date], list[SettledHorizon]],
+    return_results: bool = False,
 ) -> dict:
     """Enter every settled-but-not-yet-entered result as of `day`.
 
@@ -260,7 +261,7 @@ def run_settle_day(
     _mark_entered(ledger_root, {(str(o.episode_id), int(o.horizon_days))
                                 for o in outcomes}, day)
 
-    return {
+    out = {
         "status": "settled",
         "day": str(day),
         "new_outcomes": len(outcomes),
@@ -270,6 +271,11 @@ def run_settle_day(
         "miners": len({r.miner for r in results}),
         "settle_dates": sorted(str(d) for d in by_settle_date),
     }
+    if return_results:
+        # in-process consumers only (daily_loop feeds these to the D11
+        # aggregation) — not part of the JSON-able summary contract
+        out["horizon_results"] = results
+    return out
 
 
 # ---- production outcomes reader (reference implementation) -------------------

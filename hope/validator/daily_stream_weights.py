@@ -42,6 +42,13 @@ from hope.scoring import standing_ledger
 FLAG_ENV = "SN21_DAILY_STREAM_WEIGHTS"
 D3_MIN_ENV = "SN21_D3_MIN_DAILY_EPISODES"
 
+# [D3] ratified 2026-07-28 (Rob: "agree 150"): the published minimum daily
+# episode volume. The ENV VAR governs at runtime — unset keeps the gate off
+# until the M4 cutover sets SN21_D3_MIN_DAILY_EPISODES=150 (cutover
+# checklist step 1) — but the ratified number lives here so code, checklist
+# and amendment cannot drift apart.
+DEFAULT_D3_MIN_DAILY_EPISODES = 150
+
 
 def daily_stream_enabled(environ=os.environ) -> bool:
     return environ.get(FLAG_ENV, "").strip().lower() in ("1", "true", "yes", "on")
