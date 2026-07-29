@@ -84,3 +84,83 @@ class TestNonConsecutiveObservation:
         assert dec.promoted is False
         assert dec.state.champion == "champ"
         assert dec.state.lead_started == D0 + timedelta(days=7)
+
+
+class TestSameDayReobservation:
+    """2026-07-29 audit, production-blocking: the runner is a 30-minute
+    daemon — same-day re-observation must preserve the streak, not reset
+    lead_started to today (which made promotion unreachable)."""
+
+    def test_same_day_reobservation_mid_streak_survives(self):
+        st = seated()
+        standings = {"champ": 0.80, "chall": 0.85}
+        st = observe_day(st, D0, standings, SCORED).state
+        st = observe_day(st, D0 + timedelta(days=1), standings, SCORED).state
+        # re-observe day 1 (report-only re-run)
+        st = observe_day(st, D0 + timedelta(days=1), standings, SCORED).state
+        assert st.lead_started == D0  # streak anchor unchanged
+        st = observe_day(st, D0 + timedelta(days=2), standings, SCORED).state
+        assert st.lead_started == D0
+
+    def test_thirty_minute_daemon_promotes_on_schedule(self):
+        st = seated()
+        standings = {"champ": 0.80, "chall": 0.85}
+        promoted_on = None
+        for i in range(8):
+            day = D0 + timedelta(days=i)
+            for _ in range(2):  # two ticks per day
+                dec = observe_day(st, day, standings, SCORED)
+                st = dec.state
+                if dec.promoted and promoted_on is None:
+                    promoted_on = day
+        assert st.champion == "chall"
+        assert promoted_on == D0 + timedelta(days=6)  # 7th consecutive day
+
+    def test_same_day_leader_change_restarts_streak(self):
+        st = seated()
+        a = {"champ": 0.80, "chall": 0.85, "other": 0.70}
+        b = {"champ": 0.80, "chall": 0.70, "other": 0.85}
+        scored = {"champ": 30, "chall": 30, "other": 30}
+        st = observe_day(st, D0, a, scored).state
+        st = observe_day(st, D0, b, scored).state  # same day, new leader
+        assert st.challenger == "other"
+        assert st.lead_started == D0
+
+
+class TestChampionWithoutStanding:
+    def test_no_margin_waiver_still_requires_hold(self):
+        """Champion aged out: challenger leads all standings but must still
+        hold for 7 days — no instant promotion."""
+        st = seated()
+        standings = {"chall": 0.60, "other": 0.50}  # champ absent
+        dec = observe_day(st, D0, standings, SCORED)
+        assert dec.promoted is False
+        assert dec.state.champion == "champ"
+        assert dec.state.challenger == "chall"
+
+    def test_leader_of_all_standings_promotes_after_hold(self):
+        st = seated()
+        standings = {"chall": 0.60, "other": 0.50}
+        st_, ev = run_days(st, [standings] * 7)
+        assert st_.champion == "chall"
+        assert ev[-1]["margin_met"] is False  # margin was unmeasurable
+
+
+class TestSeatAndTieBreaks:
+    def test_initial_seat_picks_best_eligible_not_overall_best(self):
+        dec = observe_day(
+            PromotionState(), D0,
+            {"young_topper": 0.99, "veteran": 0.80},
+            {"young_topper": 3, "veteran": 20},
+        )
+        assert dec.state.champion == "veteran"
+        assert dec.event["type"] == "initial_seat"
+
+    def test_tie_break_matches_curve_direction(self):
+        # equal standings -> ascending miner id wins (same as weight_curve)
+        dec = observe_day(
+            PromotionState(), D0,
+            {"zeta": 0.80, "alpha": 0.80},
+            {"zeta": 20, "alpha": 20},
+        )
+        assert dec.state.champion == "alpha"
