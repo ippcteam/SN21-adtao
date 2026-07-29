@@ -21,10 +21,13 @@ def test_no_cliff_crossover_is_rank_swap_not_flip_to_100(A=0.800, B=0.801):
 
 
 def test_threshold_zeroes_below():
+    # Inclusive semantics (audit 2026-07-29): AT the threshold earns,
+    # only BELOW is zeroed.
     p = CurveParams(score_threshold=0.5)
-    w = curve_weights({"good": 0.7, "bad": 0.4, "none": 0.5}, p)  # 0.5 NOT above threshold
-    assert w["bad"] == 0.0 and w["none"] == 0.0
-    assert w["good"] == pytest.approx(1.0)
+    w = curve_weights({"good": 0.7, "bad": 0.4, "at": 0.5}, p)
+    assert w["bad"] == 0.0
+    assert w["at"] > 0.0
+    assert w["good"] > w["at"]
 
 
 def test_none_standing_gets_zero():
@@ -65,3 +68,13 @@ def test_empty_and_all_below_threshold():
     p = CurveParams(score_threshold=0.9)
     w = curve_weights({"a": 0.5}, p)
     assert w == {"a": 0.0}
+
+
+def test_at_threshold_standing_earns():
+    """Audit 2026-07-29: threshold is inclusive — AT the published
+    threshold earns; only BELOW is zeroed."""
+    w = curve_weights({"at": 0.30, "below": 0.29, "above": 0.40},
+                      CurveParams(score_threshold=0.30))
+    assert w["at"] > 0
+    assert w["below"] == 0.0
+    assert w["above"] > w["at"]
