@@ -25,9 +25,18 @@ floors) without fabricating a judgement they never made. Abstention
 economics are handled where they belong: coverage requirements at
 admission ([M1] ≥90%) and the participation gate at weights.
 
-Idempotency: a settle-day is recorded in <ledger_root>/standing/
-_settled_days.json after a successful append; re-running that day is a
-loud no-op (double-appending would double-count evidence).
+Date basis (audit 2026-07-29): an entry's day is its SETTLE-CLOCK date —
+action_window_end + 1 + horizon + OUTCOME_SETTLING_WINDOW_DAYS — never
+the operational write date (measured_at). A pipeline outage that delays
+measurement therefore shifts nothing: the late-measured row still enters
+on (well, dated to) its true settle date at the next run.
+
+Idempotency (audit 2026-07-29): per-(episode, horizon) entered-markers in
+<ledger_root>/standing/_entered_results.jsonl replace the old per-day
+marker. A re-run enters exactly the not-yet-entered settled results, so
+the same-day race the old marker had — measurement landing after the
+settle run had already marked the DAY done, silently skipping those
+outcomes forever — cannot occur: they simply enter on the next run.
 """
 
 from __future__ import annotations
@@ -35,7 +44,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Iterable, Optional
 
 from hope.backtest.gate import METRICS, QUANTILES, pinball
@@ -48,16 +57,36 @@ from hope.scoring import standing_ledger
 # treats as a real magnitude.
 MIN_ENTRY_SCALE = 0.01
 
+# Settle clock (mirrors OBI constants.py: OUTCOME_SETTLING_WINDOW_DAYS=7;
+# settle date = window_end + 1 + horizon + settle).
+SETTLING_WINDOW_DAYS = 7
+
+# Legacy-corpus boundary (audit 2026-07-29): 3,136 outcome rows measured
+# before the settle-clock cutover ran under the old 17-day launch clock
+# and are frozen at values that were NOT final when written. They must
+# never enter live standings; the reference provider excludes them and
+# reports the exclusion count loudly.
+SETTLE_CLOCK_CUTOVER_UTC = datetime(2026, 7, 22, 10, 10, tzinfo=timezone.utc)
+
 
 @dataclass(frozen=True)
 class SettledHorizon:
-    """One finalised (episode, horizon) truth, in delta fractions."""
+    """One finalised (episode, horizon) truth, in delta fractions.
+
+    ``finalized_on`` is the SETTLE-CLOCK date (window_end+1+h+7), not the
+    measurement write date.
+    """
     episode_id: str
     horizon_days: int
     cost_delta_pct: float
     conversions_delta_pct: float
     efficiency_delta_pct: float
     finalized_on: date
+
+
+def settle_date(action_window_end: date, horizon_days: int) -> date:
+    """The settle-clock date for an (episode, horizon)."""
+    return action_window_end + timedelta(days=1 + horizon_days + SETTLING_WINDOW_DAYS)
 
 
 def score_entry(pred: dict, actual: dict[str, float]) -> float:
@@ -96,20 +125,18 @@ def score_entry(pred: dict, actual: dict[str, float]) -> float:
 def score_settled(
     prediction_index: dict[str, dict[str, dict]],
     outcomes: Iterable[SettledHorizon],
-    day: date,
 ) -> list[HorizonResult]:
-    """Every (settled outcome × miner prediction) finalised on `day`.
+    """Every (settled outcome × miner prediction), dated to each outcome's
+    OWN settle date.
 
     ``prediction_index``: episode_id -> miner -> horizons dict (the model
     output shape: {"7": {...}, "14": {...}, "28": {...}}). Episodes with
     no prediction from a miner yield no entry for that miner (see module
-    docstring). Outcomes finalised on other days are ignored — they enter
-    on their own settle days, nothing is rescored (v0.5 §4).
+    docstring). Nothing is rescored (v0.5 §4) — the caller's entered-
+    markers guarantee each (episode, horizon) flows exactly once.
     """
     results: list[HorizonResult] = []
     for o in outcomes:
-        if o.finalized_on != day:
-            continue
         actual = {
             "cost_delta_pct": o.cost_delta_pct,
             "conversions_delta_pct": o.conversions_delta_pct,
@@ -124,7 +151,7 @@ def score_settled(
                 horizon_days=o.horizon_days,
                 miner=miner,
                 score=score_entry(pred, actual),
-                finalized_on=day,
+                finalized_on=o.finalized_on,
             ))
     return results
 
@@ -162,29 +189,36 @@ def load_prediction_index(shadow_root: str) -> dict[str, dict[str, dict]]:
     return index
 
 
-# ---- idempotency marker ------------------------------------------------------
+# ---- entered-result markers (idempotency) ------------------------------------
 
-def _marker_path(ledger_root: str) -> str:
+def _entered_path(ledger_root: str) -> str:
     return os.path.join(standing_ledger.standing_dir(ledger_root),
-                        "_settled_days.json")
+                        "_entered_results.jsonl")
 
 
-def settled_days(ledger_root: str) -> set[str]:
-    path = _marker_path(ledger_root)
+def entered_results(ledger_root: str) -> set[tuple[str, int]]:
+    """The (episode_id, horizon) pairs whose results already entered."""
+    path = _entered_path(ledger_root)
     if not os.path.exists(path):
         return set()
+    out: set[tuple[str, int]] = set()
     with open(path) as f:
-        return set(json.load(f).get("days", []))
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            out.add((str(rec["episode_id"]), int(rec["horizon_days"])))
+    return out
 
 
-def _mark_settled(ledger_root: str, day: date) -> None:
-    days = settled_days(ledger_root)
-    days.add(str(day))
+def _mark_entered(ledger_root: str, pairs: Iterable[tuple[str, int]],
+                  run_day: date) -> None:
     os.makedirs(standing_ledger.standing_dir(ledger_root), exist_ok=True)
-    tmp = _marker_path(ledger_root) + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump({"days": sorted(days)}, f)
-    os.replace(tmp, _marker_path(ledger_root))
+    with open(_entered_path(ledger_root), "a") as f:
+        for ep, h in pairs:
+            f.write(json.dumps({"episode_id": ep, "horizon_days": h,
+                                "entered_on_run": str(run_day)}) + "\n")
 
 
 # ---- the daily entrypoint ----------------------------------------------------
@@ -195,38 +229,53 @@ def run_settle_day(
     day: date,
     outcomes_provider: Callable[[date], list[SettledHorizon]],
 ) -> dict:
-    """Score everything that settled on `day` into the standing ledger.
+    """Enter every settled-but-not-yet-entered result as of `day`.
 
-    Injected ``outcomes_provider(day)`` returns that day's finalised
-    horizons (see obi_outcomes_provider for the production reader).
-    Loud skip when the day was already processed.
+    ``outcomes_provider(day)`` returns ALL measured rows whose settle date
+    is <= day (see obi_outcomes_provider); the entered-markers reduce that
+    to exactly the new ones, so re-runs are cheap no-ops and late-measured
+    rows enter on the next run, dated to their true settle date. Entries
+    are flowed through day_flow PER settle date, preserving D13's
+    entry-day semantics even for backfill.
     """
-    if str(day) in settled_days(ledger_root):
-        return {"status": "already_settled", "day": str(day),
-                "reason": "settle-day marker present; re-append would "
-                          "double-count evidence"}
-
-    outcomes = outcomes_provider(day)
+    already = entered_results(ledger_root)
+    outcomes = [
+        o for o in outcomes_provider(day)
+        if (str(o.episode_id), int(o.horizon_days)) not in already
+    ]
     index = load_prediction_index(shadow_root)
-    results = score_settled(index, outcomes, day)
-    entries = day_flow(results, day)
-    written = standing_ledger.append_entries(ledger_root, entries)
-    _mark_settled(ledger_root, day)
+    results = score_settled(index, outcomes)
+
+    written = 0
+    by_settle_date: dict[date, list[HorizonResult]] = {}
+    for r in results:
+        by_settle_date.setdefault(r.finalized_on, []).append(r)
+    for settle_day_, day_results in sorted(by_settle_date.items()):
+        entries = day_flow(day_results, settle_day_)
+        written += standing_ledger.append_entries(ledger_root, entries)
+
+    # Mark every processed (episode,horizon) — including ones with zero
+    # matching predictions: their outcome is final and no later prediction
+    # can legitimately appear (models predict before windows close).
+    _mark_entered(ledger_root, {(str(o.episode_id), int(o.horizon_days))
+                                for o in outcomes}, day)
 
     return {
         "status": "settled",
         "day": str(day),
-        "outcomes": len(outcomes),
+        "new_outcomes": len(outcomes),
+        "already_entered": len(already),
         "results_scored": len(results),
         "entries_written": written,
         "miners": len({r.miner for r in results}),
+        "settle_dates": sorted(str(d) for d in by_settle_date),
     }
 
 
 # ---- production outcomes reader (reference implementation) -------------------
 
 def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
-    """Read the day's finalised horizons from OBI's outcome table.
+    """All measured rows settle-dated on or before `day`, post-cutover.
 
     Reference implementation for the validator/ops host — requires the
     OBI repo importable (same pattern as scripts/run_shadow_day_bd.py);
@@ -235,6 +284,11 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
     fractions, possibly saturated at ±9999.999999 (the outcome writer's
     numeric(10,6) clamp) — passed through unchanged; the per-entry scale
     normalisation keeps saturated actuals from distorting neighbours.
+
+    finalized_on is COMPUTED from the settle clock (action_window_end +
+    1 + horizon + 7), never taken from measured_at. Rows measured before
+    SETTLE_CLOCK_CUTOVER_UTC (the old 17-day launch clock — values not
+    final when written) are excluded, loudly.
     """
     import sys
     sys.path.insert(0, "/Users/macbookm1/Documents/Projects/obi")
@@ -244,19 +298,33 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
     with get_session() as s:
         rows = s.execute(T("""
             SELECT o.episode_candidate_id, o.horizon_days,
-                   o.cost_delta_pct, o.conversions_delta_pct, o.cpa_delta_pct
+                   o.cost_delta_pct, o.conversions_delta_pct, o.cpa_delta_pct,
+                   c.action_window_end, o.measured_at
             FROM bittensor_episode_outcomes o
-            WHERE o.measured_at::date = :day
-        """), {"day": day}).fetchall()
+            JOIN bittensor_episode_candidates c ON c.id = o.episode_candidate_id
+            WHERE o.measured_at >= :cutover
+              AND (c.action_window_end::date
+                   + make_interval(days => 1 + o.horizon_days + :settle)) <= :day
+        """), {"day": day, "cutover": SETTLE_CLOCK_CUTOVER_UTC,
+               "settle": SETTLING_WINDOW_DAYS}).fetchall()
+        legacy = s.execute(T("""
+            SELECT count(*) FROM bittensor_episode_outcomes
+            WHERE measured_at < :cutover
+        """), {"cutover": SETTLE_CLOCK_CUTOVER_UTC}).scalar() or 0
 
-    return [
-        SettledHorizon(
+    if legacy:
+        print(f"[settle-day] excluded {legacy} pre-cutover legacy outcome rows "
+              f"(old launch clock; values not final when written)", flush=True)
+
+    out = []
+    for r in rows:
+        we = r[5].date() if hasattr(r[5], "date") else r[5]
+        out.append(SettledHorizon(
             episode_id=str(r[0]),
             horizon_days=int(r[1]),
             cost_delta_pct=float(r[2] or 0),
             conversions_delta_pct=float(r[3] or 0),
             efficiency_delta_pct=float(r[4] or 0),
-            finalized_on=day,
-        )
-        for r in rows
-    ]
+            finalized_on=settle_date(we, int(r[1])),
+        ))
+    return out
