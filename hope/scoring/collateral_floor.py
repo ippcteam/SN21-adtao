@@ -137,7 +137,13 @@ def compliance_view(
     return {
         "policy": {
             "floor_alpha": floor_alpha,
-            "enforcement": "soft",  # flips to "chain" on v435 activation
+            # Soft phase until v435 activates network-wide; per-miner
+            # native reads may already supersede bookkeeping (see
+            # "source" per miner). chain_available reports whether a
+            # reader was wired — the honest signal the audit asked for
+            # in place of a hardcoded promise.
+            "enforcement": "soft",
+            "chain_available": chain_reader is not None,
             "suggested_lock_share_p": list(SUGGESTED_LOCK_SHARE_P),
             "suggested_drain_ratio_k": SUGGESTED_DRAIN_RATIO_K,
         },

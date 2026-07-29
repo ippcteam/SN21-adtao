@@ -17,7 +17,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Optional
+from datetime import date, datetime
+from typing import Any, Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -27,9 +28,25 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 RAIL_SCHEMA_VERSION = "rail-v1"
 
 
+def _canonical_default(value: Any) -> str:
+    """Explicit canonical coercions only (audit 2026-07-29: default=str
+    silently coerced ANY type, so date(2026,9,1) and "2026-09-01"
+    canonicalised identically — a hash ambiguity across semantically
+    different documents). Dates/datetimes canonicalise to ISO strings;
+    everything else is a caller bug and raises."""
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    raise TypeError(
+        f"canonical_bytes: unsupported type {type(value).__name__!r} — "
+        "rail documents may contain only str/int/float/bool/None/list/"
+        "dict/date/datetime"
+    )
+
+
 def canonical_bytes(doc: dict) -> bytes:
     """Deterministic encoding: sorted keys, compact separators, UTF-8."""
-    return json.dumps(doc, sort_keys=True, separators=(",", ":"), default=str).encode()
+    return json.dumps(doc, sort_keys=True, separators=(",", ":"),
+                      default=_canonical_default).encode()
 
 
 def document_sha256(doc: dict) -> str:
@@ -88,9 +105,17 @@ def verify(att: AttestedDocument) -> bool:
 
 def chain_ok(docs: list[dict]) -> bool:
     """Validate a feed series: each document's prev_sha256 equals the
-    previous document's canonical hash (first may be None)."""
+    previous document's canonical hash (first may be None), and every
+    document belongs to the SAME feed — per-feed chaining is a property
+    of the rail, not of directory discipline (audit 2026-07-29: a
+    document from another feed spliced in cleanly before this check)."""
     prev = None
+    feed = None
     for d in docs:
+        if feed is None:
+            feed = d.get("feed")
+        elif d.get("feed") != feed:
+            return False
         if d.get("prev_sha256") != prev:
             return False
         prev = document_sha256(d)

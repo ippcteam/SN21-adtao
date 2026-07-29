@@ -93,6 +93,14 @@ def publish_day(
             "append-only (a rewrite forks the hash chain)"
         )
 
+    if head is not None and str(day) <= head["day"]:
+        raise ValueError(
+            f"accuracy feed head is {head['day']}; publishing {day} out of "
+            "order would fork the hash chain (audit 2026-07-29: the "
+            "already-published guard alone let an OLDER unpublished day "
+            "splice in before the head and break chain_ok for the feed)"
+        )
+
     zero_day = not results
     metrics = build_accuracy_metrics(results)
     if zero_day:

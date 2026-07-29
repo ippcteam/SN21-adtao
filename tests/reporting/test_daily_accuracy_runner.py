@@ -78,3 +78,31 @@ def test_metrics_aggregate_without_miner_identities(tmp_path):
     m = doc["metrics"]
     assert m["miners_scored"] == 2
     assert "alpha" not in str(m) and "beta" not in str(m)  # aggregates only
+
+
+def test_out_of_order_day_refused(tmp_path):
+    """Audit 2026-07-29: an older unpublished day after a newer head would
+    silently fork the chain; it must refuse."""
+    root = str(tmp_path)
+    publish_day(root, DAY, _results(DAY), KEY, "t1")
+    publish_day(root, DAY + timedelta(days=2), _results(DAY), KEY, "t2")
+    with pytest.raises(ValueError):
+        publish_day(root, DAY + timedelta(days=1), _results(DAY), KEY, "t3")
+
+
+def test_chain_ok_rejects_foreign_feed_document(tmp_path):
+    from hope.publication.rail import build_document, chain_ok, document_sha256
+    a = build_document("feed-A", "2026-08-01", {"x": 1}, "t", None)
+    foreign = build_document("feed-B", "2026-08-02", {"x": 2}, "t",
+                             document_sha256(a))
+    assert chain_ok([a]) is True
+    assert chain_ok([a, foreign]) is False
+
+
+def test_canonical_bytes_rejects_unknown_types():
+    from hope.publication.rail import canonical_bytes
+    from datetime import date as _d
+    canonical_bytes({"ok": [_d(2026, 9, 1), "s", 1, 1.5, True, None]})
+    class Weird: pass
+    with pytest.raises(TypeError):
+        canonical_bytes({"bad": Weird()})
