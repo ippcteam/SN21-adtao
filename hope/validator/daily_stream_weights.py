@@ -139,3 +139,30 @@ def allocation_from_ledger(
         if alloc.promotion.event:
             standing_ledger.append_promotion_event(root, alloc.promotion.event)
     return alloc
+
+
+def pairs_for_uids(
+    weights: dict,
+    uid_by_hotkey: dict,
+    allowed_uids: Optional[set] = None,
+) -> list:
+    """(uid, weight) pairs for the runner — allowlist-aware and pure.
+
+    Audit 2026-07-29: the runner's daily block built pairs from the raw
+    uid_by_hotkey map, silently bypassing SN21_WEIGHT_ALLOWLIST_UIDS.
+    ``allowed_uids=None`` means no restriction; a set (even empty)
+    restricts exactly. Deterministic order (hotkey asc) for stable
+    vectors; zero/negative weights and unmapped hotkeys drop.
+    """
+    pairs = []
+    for hk in sorted(weights):
+        w = weights[hk]
+        if w is None or w <= 0:
+            continue
+        uid = uid_by_hotkey.get(hk)
+        if uid is None:
+            continue
+        if allowed_uids is not None and uid not in allowed_uids:
+            continue
+        pairs.append((uid, float(w)))
+    return pairs

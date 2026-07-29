@@ -219,3 +219,23 @@ def test_allocation_from_ledger_end_to_end(tmp_path):
                                     min_daily_episodes=0)
     assert alloc2.promotion.state.champion == "alpha"
     assert not alloc2.promotion.promoted
+
+
+# ---- runner pair-building (allowlist-aware) ---------------------------------
+
+def test_pairs_for_uids_respects_allowlist():
+    from hope.validator.daily_stream_weights import pairs_for_uids
+    weights = {"a": 0.5, "b": 0.3, "c": 0.2, "ghost": 0.1}
+    uid_map = {"a": 1, "b": 2, "c": 3}
+    # no restriction
+    assert pairs_for_uids(weights, uid_map) == [(1, 0.5), (2, 0.3), (3, 0.2)]
+    # allowlist restricts (audit 2026-07-29: was silently bypassed)
+    assert pairs_for_uids(weights, uid_map, allowed_uids={1, 3}) == [
+        (1, 0.5), (3, 0.2)]
+    # empty allowlist = nothing passes (restriction, not None)
+    assert pairs_for_uids(weights, uid_map, allowed_uids=set()) == []
+
+
+def test_pairs_for_uids_drops_zero_and_unmapped():
+    from hope.validator.daily_stream_weights import pairs_for_uids
+    assert pairs_for_uids({"a": 0.0, "b": None, "x": 0.4}, {"a": 1, "b": 2}) == []

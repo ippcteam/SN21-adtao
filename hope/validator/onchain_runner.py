@@ -451,10 +451,12 @@ def run_epoch_scoring(
     # the miner share of the weight. Unset = no restriction (all scored miners).
     # Applied here so it composes with SN21_BURN_FRACTION below.
     import os as _os_allow
+    _daily_allow = None  # captured for the daily-stream block (audit 2026-07-29)
     _allow_str = _os_allow.environ.get("SN21_WEIGHT_ALLOWLIST_UIDS", "").strip()
     if _allow_str:
         try:
             _allow = {int(x) for x in _allow_str.replace(" ", "").split(",") if x}
+            _daily_allow = _allow
             _pairs = [(u, w) for u, w in zip(uids, weights) if u in _allow]
             print(
                 f"[weight-allowlist] restricting {len(uids)} -> {len(_pairs)} "
@@ -549,11 +551,12 @@ def run_epoch_scoring(
                     flush=True,
                 )
             else:
-                _pairs = [
-                    (uid_by_hotkey[hk], w)
-                    for hk, w in _alloc.weights.items()
-                    if w > 0 and hk in uid_by_hotkey
-                ]
+                from hope.validator.daily_stream_weights import pairs_for_uids
+                # Allowlist-aware (audit 2026-07-29: raw uid_by_hotkey here
+                # silently bypassed SN21_WEIGHT_ALLOWLIST_UIDS).
+                _pairs = pairs_for_uids(
+                    _alloc.weights, uid_by_hotkey, allowed_uids=_daily_allow
+                )
                 if _pairs:
                     uids = [u for u, _ in _pairs]
                     weights = [w for _, w in _pairs]
