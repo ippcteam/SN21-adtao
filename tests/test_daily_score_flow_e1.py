@@ -44,7 +44,7 @@ class TestDayFlow:
         entries = day_flow(rs, D)
         assert len(entries) == 1
         assert entries[0].horizon_days == 7
-        assert entries[0].weight == pytest.approx(0.30)
+        assert entries[0].weight == pytest.approx(0.20)  # 7d high per spec table
 
     def test_one_episode_three_days_total_weight_one(self):
         rs = [

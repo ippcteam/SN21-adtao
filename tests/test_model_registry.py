@@ -8,8 +8,19 @@ D2 = "sha256:" + "b" * 64
 
 
 class TestParsing:
-    def test_valid(self):
-        assert parse_model_commitment(MODEL_COMMIT_PREFIX + D1) == D1
+    def test_valid_digest_only_legacy(self):
+        assert parse_model_commitment(MODEL_COMMIT_PREFIX + D1) == {
+            "image_ref": None, "digest": D1}
+
+    def test_valid_bundle_repo_at_digest(self):
+        raw = MODEL_COMMIT_PREFIX + "ghcr.io/acme/model@" + D1
+        assert parse_model_commitment(raw) == {
+            "image_ref": "ghcr.io/acme/model", "digest": D1}
+
+    def test_bundle_rejects_bad_repo(self):
+        for repo in ("GHCR.io/x", "-lead/x", "a b/x", "repo:tag", "x/" + "y" * 120):
+            assert parse_model_commitment(
+                MODEL_COMMIT_PREFIX + repo + "@" + D1) is None
 
     def test_garbage_never_crashes(self):
         for raw in (None, 42, "", "hello", MODEL_COMMIT_PREFIX,
