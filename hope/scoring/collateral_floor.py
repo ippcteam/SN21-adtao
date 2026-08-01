@@ -68,6 +68,40 @@ SUGGESTED_LOCK_SHARE_P = (0.75, 0.90)
 SUGGESTED_DRAIN_RATIO_K = 0.5
 
 
+# Rob's IM launch date arrives as CONFIGURATION, never as a code edit. The
+# ladder is the only thing in either repo that needs to know the date (verified
+# by grep across hope-sn21 and OBI), so this one env value is what stands
+# between "Rob names a date" and "the ladder starts stepping" — no deploy, no
+# release, no code review on launch day.
+IM_LAUNCH_DATE_ENV = "SN21_IM_LAUNCH_DATE"
+
+
+def launch_date_from(environ) -> Optional[date]:
+    """Rob's IM launch date from config, or None if unset.
+
+    Unset and MALFORMED both return None, and None means "hold at week 0".
+    That direction is deliberate: a typo in a deploy variable must never
+    silently promote every miner to a higher collateral floor. Failing to the
+    lowest rung is the only safe failure for an obligation.
+    """
+    raw = (environ.get(IM_LAUNCH_DATE_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        print(f"[collateral] {IM_LAUNCH_DATE_ENV}={raw!r} is not an ISO date "
+              f"— holding the floor at week 0 ({ALPHA_LADDER[0]} a)", flush=True)
+        return None
+
+
+def active_floor(day: date, environ) -> float:
+    """The floor in force on `day` per configuration. Week 0 until Rob's date
+    is set, then the ladder steps on its own with no further intervention."""
+    launch = launch_date_from(environ)
+    return ALPHA_LADDER[0] if launch is None else floor_for_day(day, launch)
+
+
 def floor_for_day(day: date, launch_day: date) -> float:
     """The flat floor in force on `day`, per ALPHA_LADDER.
 

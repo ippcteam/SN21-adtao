@@ -56,6 +56,7 @@ from hope.scoring import standing_ledger
 from hope.scoring.collateral_floor import (
     CaptureState,
     LAUNCH_FLOOR_ALPHA,
+    active_floor,
     compliance_view,
     fold_day,
 )
@@ -153,7 +154,7 @@ def run_daily_loop(
     day: date,
     outcomes_provider: Callable[[date], list],
     earnings_provider: Optional[Callable[[date], dict[str, float]]] = None,
-    floor_alpha: float = LAUNCH_FLOOR_ALPHA,
+    floor_alpha: Optional[float] = None,
     key_loader: Optional[Callable[[], object]] = None,
     chain_committer: Optional[Callable[[bytes], object]] = None,
     chain_reader: Optional[Callable[[str], Optional[float]]] = None,
@@ -294,6 +295,17 @@ def run_daily_loop(
     except Exception as e:
         summary["liveness"] = {"error": str(e)}
 
+    # THE FLOOR IN FORCE TODAY. An explicit floor_alpha still wins (tests, and
+    # the review-restatement override the policy reserves), but the default is
+    # now resolved from configuration: SN21_IM_LAUNCH_DATE drives the ladder,
+    # and until Rob names a date it holds at week 0. This is what makes his
+    # launch date a value we set rather than a code change and a deploy — the
+    # ladder was previously pinned to LAUNCH_FLOOR_ALPHA here and could never
+    # step, no matter what collateral_floor computed.
+    effective_floor = (float(floor_alpha) if floor_alpha is not None
+                       else active_floor(day, environ))
+    summary["collateral_floor_alpha"] = effective_floor
+
     # 2. [D9] capture fold — persisted; pre-M4 the provider returns {}
     try:
         earned = (earnings_provider or (lambda d: {}))(day)
@@ -301,7 +313,7 @@ def run_daily_loop(
         escrowed = paid = 0.0
         for hk, alpha in sorted(earned.items()):
             st = states.get(hk) or CaptureState(hotkey=hk)
-            folded = fold_day(st, float(alpha), floor_alpha)
+            folded = fold_day(st, float(alpha), effective_floor)
             states[hk] = folded.state
             escrowed += folded.escrowed_alpha
             paid += folded.paid_alpha
@@ -316,7 +328,7 @@ def run_daily_loop(
     # 3. advisory compliance view (never touches weights)
     try:
         states = load_capture_states(ledger_root)
-        view = compliance_view(states, floor_alpha, chain_reader=chain_reader)
+        view = compliance_view(states, effective_floor, chain_reader=chain_reader)
         os.makedirs(_collateral_dir(ledger_root), exist_ok=True)
         out_path = os.path.join(_collateral_dir(ledger_root),
                                 f"compliance_{day}.json")

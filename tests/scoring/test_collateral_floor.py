@@ -8,6 +8,8 @@ from datetime import timedelta
 
 from hope.scoring.collateral_floor import (
     ALPHA_LADDER,
+    active_floor,
+    launch_date_from,
     LAUNCH_FLOOR_ALPHA,
     TERMINAL_FLOOR_ALPHA,
     CaptureState,
@@ -124,3 +126,30 @@ def test_chain_reader_supersedes_bookkeeping_when_it_answers():
     # chain silent for this miner -> soft bookkeeping stands
     assert view["miners"]["offchain"]["source"] == "capture_bookkeeping"
     assert view["miners"]["offchain"]["floor_met"] is False
+
+
+# ---- the launch date is CONFIGURATION, not a code change --------------------
+
+def test_ladder_holds_at_week_zero_until_a_launch_date_is_configured():
+    """Before Rob names a date the floor must be the lowest rung. The ladder
+    existing is not the same as the ladder running."""
+    assert active_floor(date(2026, 12, 25), {}) == LAUNCH_FLOOR_ALPHA
+
+
+def test_a_malformed_launch_date_fails_DOWN_not_up():
+    """A typo in a deploy variable must never silently promote every miner to
+    a higher collateral obligation. Failing to the lowest rung is the only
+    safe direction here, so this asserts the direction, not just that it
+    survives."""
+    assert active_floor(date(2026, 12, 25),
+                        {"SN21_IM_LAUNCH_DATE": "next tuesday"}) == LAUNCH_FLOOR_ALPHA
+    assert launch_date_from({"SN21_IM_LAUNCH_DATE": "2026-13-45"}) is None
+    assert launch_date_from({"SN21_IM_LAUNCH_DATE": "   "}) is None
+
+
+def test_a_configured_launch_date_makes_the_ladder_step():
+    env = {"SN21_IM_LAUNCH_DATE": "2026-08-10"}
+    L = date(2026, 8, 10)
+    assert launch_date_from(env) == L
+    assert [active_floor(L + timedelta(days=d), env) for d in (0, 7, 14, 21, 28, 90)] \
+        == [300.0, 475.0, 650.0, 825.0, 1000.0, 1000.0]
