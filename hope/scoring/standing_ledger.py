@@ -10,6 +10,8 @@ Layout:
     <root>/standing/<hotkey>.jsonl      one line per WeightedEntry
     <root>/standing/_promotion.json     current PromotionState ([D8])
     <root>/standing/_promotion_log.jsonl  promotion events, append-only
+    <root>/standing/_eviction_state.json  current EvictionStates (liveness)
+    <root>/standing/_strikes.jsonl        strike/lifecycle events, append-only
 
 Entries older than `window_days` contribute nothing to the D13 average
 (the window cut in episode_weighted_average), so `load_entries` drops them
@@ -31,6 +33,11 @@ from hope.scoring.episode_average import (
     ScoredEpisode,
 )
 from hope.scoring.champion_promotion import PromotionState
+from hope.scoring.chronic_failure import (
+    OBSERVATION_KINDS,
+    EvictionState,
+    StrikeEvent,
+)
 
 _SAFE_HOTKEY = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
 
@@ -148,6 +155,9 @@ def load_promotion_state(root: str) -> PromotionState:
                       if rec.get("lead_started") else None),
         last_observed=(date.fromisoformat(rec["last_observed"])
                        if rec.get("last_observed") else None),
+        vacated_on=(date.fromisoformat(rec["vacated_on"])
+                    if rec.get("vacated_on") else None),
+        vacate_reason=rec.get("vacate_reason"),
     )
 
 
@@ -158,6 +168,8 @@ def save_promotion_state(root: str, state: PromotionState) -> None:
         "challenger": state.challenger,
         "lead_started": str(state.lead_started) if state.lead_started else None,
         "last_observed": str(state.last_observed) if state.last_observed else None,
+        "vacated_on": str(state.vacated_on) if state.vacated_on else None,
+        "vacate_reason": state.vacate_reason,
     }
     tmp = _promotion_path(root) + ".tmp"
     with open(tmp, "w") as f:
@@ -170,3 +182,155 @@ def append_promotion_event(root: str, event: dict) -> None:
     os.makedirs(standing_dir(root), exist_ok=True)
     with open(os.path.join(standing_dir(root), "_promotion_log.jsonl"), "a") as f:
         f.write(json.dumps(event) + "\n")
+
+
+# ---- chronic-failure (liveness) persistence ---------------------------------
+# Same shape as the [D8] pair above, and deliberately in the STANDING root:
+# the shadow tree is the raw execution record (facts), standing is derived
+# judgement. Both control files are underscore-prefixed, which `load_entries`
+# and `compact` already skip — a control file can never be mistaken for a
+# miner's score file.
+
+def _eviction_state_path(root: str) -> str:
+    return os.path.join(standing_dir(root), "_eviction_state.json")
+
+
+def _strikes_path(root: str) -> str:
+    return os.path.join(standing_dir(root), "_strikes.jsonl")
+
+
+def _opt_date(raw) -> Optional[date]:
+    return date.fromisoformat(raw) if raw else None
+
+
+def load_eviction_states(root: str) -> dict[str, EvictionState]:
+    path = _eviction_state_path(root)
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        raw = json.load(f)
+    out: dict[str, EvictionState] = {}
+    for hotkey, rec in raw.items():
+        out[hotkey] = EvictionState(
+            hotkey=rec.get("hotkey", hotkey),
+            evicted_on=_opt_date(rec.get("evicted_on")),
+            evictions_total=int(rec.get("evictions_total", 0)),
+            last_eviction_on=_opt_date(rec.get("last_eviction_on")),
+            reinstate_not_before=_opt_date(rec.get("reinstate_not_before")),
+        )
+    return out
+
+
+def save_eviction_states(root: str, states: dict[str, EvictionState]) -> None:
+    os.makedirs(standing_dir(root), exist_ok=True)
+    rec = {
+        hotkey: {
+            "hotkey": st.hotkey,
+            "evicted_on": str(st.evicted_on) if st.evicted_on else None,
+            "evictions_total": st.evictions_total,
+            "last_eviction_on": (str(st.last_eviction_on)
+                                 if st.last_eviction_on else None),
+            "reinstate_not_before": (str(st.reinstate_not_before)
+                                     if st.reinstate_not_before else None),
+        }
+        for hotkey, st in sorted(states.items())
+    }
+    tmp = _eviction_state_path(root) + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(rec, f, indent=1)
+    os.replace(tmp, _eviction_state_path(root))
+
+
+def append_strike_events(root: str, events: Iterable[StrikeEvent]) -> int:
+    """Liveness log is append-only — the miner-facing audit trail. Order is
+    chronological, which is what makes `last record wins` well defined."""
+    events = list(events)
+    if not events:
+        return 0
+    os.makedirs(standing_dir(root), exist_ok=True)
+    with open(_strikes_path(root), "a") as f:
+        for e in events:
+            f.write(json.dumps({
+                "day": str(e.day), "hotkey": e.hotkey, "kind": e.kind,
+                "fault": e.fault, "error": e.error, "reason": e.reason,
+                "detail": e.detail,
+            }) + "\n")
+    return len(events)
+
+
+def _strike_event(rec: dict) -> StrikeEvent:
+    return StrikeEvent(
+        day=date.fromisoformat(rec["day"]),
+        hotkey=rec["hotkey"],
+        kind=rec["kind"],
+        fault=rec.get("fault", "none"),
+        error=rec.get("error"),
+        reason=rec.get("reason", "ok"),
+        detail=rec.get("detail"),
+    )
+
+
+def _strike_event_in_window(ev: StrikeEvent, cutoff: Optional[date]) -> bool:
+    """Which events a windowed read keeps.
+
+    OBSERVATION events (strike/clean/excluded) are only ever consulted by
+    chronic_failure.strikes_in_window, which cuts at `window_days` anyway —
+    so anything older than the cutoff is dead weight and is dropped at read
+    time, exactly as load_entries drops out-of-window scores. LIFECYCLE
+    events (evicted/reinstated/eviction_retracted) are ALWAYS kept: they are
+    O(evictions) not O(miners x days), and chronic_failure.retract_eviction
+    reconstructs `evictions_total` from them, so pruning them would corrupt
+    state rather than merely shrink an audit trail.
+    """
+    if cutoff is None or ev.kind not in OBSERVATION_KINDS:
+        return True
+    return ev.day >= cutoff
+
+
+def load_strike_events(
+    root: str,
+    as_of: Optional[date] = None,
+    window_days: Optional[int] = None,
+) -> list[StrikeEvent]:
+    """The liveness log. With `as_of` + `window_days`, observation events
+    older than the window are dropped at read time (see
+    _strike_event_in_window); without them the whole file is returned."""
+    path = _strikes_path(root)
+    if not os.path.exists(path):
+        return []
+    cutoff = (as_of - timedelta(days=int(window_days) - 1)
+              if as_of is not None and window_days else None)
+    out: list[StrikeEvent] = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            ev = _strike_event(json.loads(line))
+            if _strike_event_in_window(ev, cutoff):
+                out.append(ev)
+    return out
+
+
+def compact_strike_events(root: str, as_of: date,
+                          window_days: int = DEFAULT_WINDOW_DAYS) -> int:
+    """Rewrite _strikes.jsonl keeping what a windowed read would keep;
+    returns lines shed. The counterpart `compact` deliberately skips
+    underscore-prefixed control files, which left this one file with no
+    pruning path at all — the docstring's "never needs unbounded growth"
+    promise now has a producer for the liveness log too."""
+    path = _strikes_path(root)
+    if not os.path.exists(path):
+        return 0
+    cutoff = as_of - timedelta(days=int(window_days) - 1)
+    with open(path) as f:
+        lines = [ln for ln in f if ln.strip()]
+    kept = [ln for ln in lines
+            if _strike_event_in_window(_strike_event(json.loads(ln)), cutoff)]
+    if len(kept) == len(lines):
+        return 0
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.writelines(kept)
+    os.replace(tmp, path)
+    return len(lines) - len(kept)

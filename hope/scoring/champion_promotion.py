@@ -37,6 +37,13 @@ class PromotionState:
     challenger: Optional[str] = None
     lead_started: Optional[date] = None
     last_observed: Optional[date] = None
+    # Set by vacate_seat and cleared by the reseat it causes. Its only job is
+    # to keep the audit trail honest: without it an EMERGENCY replacement of
+    # an evicted champion is logged as `initial_seat` and is indistinguishable
+    # from a cold start for every downstream reader (onchain_runner prints
+    # promoted_today=True for both).
+    vacated_on: Optional[date] = None
+    vacate_reason: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +61,45 @@ def _rank_key(item: tuple[str, float]) -> tuple[float, str]:
     return (-standing, miner)
 
 
+def vacate_seat(state: PromotionState, day: date, reason: str) -> PromotionDecision:
+    """Force the champion seat EMPTY. Used by chronic-failure eviction.
+
+    Removing an evicted champion from `standings` is NOT sufficient: the
+    champion-with-no-standing rule below then keeps the incumbent seated
+    until a challenger leads ALL standings for the full hold period — i.e.
+    a model that has been evicted precisely because it does not run would
+    stay live across real accounts for another week.
+
+    TIMING, stated exactly (the earlier wording said "the NEXT observation"
+    and was wrong): the caller that vacates — daily_stream_weights.
+    allocation_from_ledger — feeds the vacated state straight into the SAME
+    day's observe_day, so the best eligible survivor takes the seat within
+    that one call. The seat is empty only if nobody is eligible. That is
+    deliberate and is not the "raw crossover" §1 forbids: [D8] hysteresis
+    exists to stop the seat oscillating between two LIVE models on noise,
+    and there is no incumbent left to protect — the incumbent was removed
+    for not running at all. Leaving the seat empty for a day would mean no
+    live model rather than a safer one.
+
+    What the hysteresis-free reseat DOES owe the reader is an honest label,
+    so `vacated_on`/`vacate_reason` ride on the state and observe_day emits
+    `seat_after_vacate` (not `initial_seat`) for the replacement.
+
+    Returns a no-op decision when the seat is already empty. `last_observed`
+    is preserved so the [D8] consecutive-day clock is not falsified.
+    """
+    if state.champion is None:
+        return PromotionDecision(state, False, None)
+    return PromotionDecision(
+        PromotionState(champion=None, challenger=None, lead_started=None,
+                       last_observed=state.last_observed,
+                       vacated_on=day, vacate_reason=reason),
+        False,
+        {"type": "vacate", "old": state.champion, "day": str(day),
+         "reason": reason},
+    )
+
+
 def observe_day(
     state: PromotionState,
     day: date,
@@ -66,7 +112,11 @@ def observe_day(
     Rules:
     - no champion yet: the best ELIGIBLE miner (meeting min_scored_days)
       is seated — a young table-topper does not block an eligible second
-      place (cold start: nobody seats before condition 3 is satisfiable)
+      place (cold start: nobody seats before condition 3 is satisfiable).
+      The event is `initial_seat` for a genuine cold start and
+      `seat_after_vacate` when the seat was force-emptied (vacate_seat set
+      `vacated_on`) — the second is an emergency replacement of an evicted
+      champion and must not read as a cold start in the promotion log
     - a lead streak belongs to ONE challenger; if a different miner leads
       today, the streak restarts with them (consecutive-days is per-miner)
     - non-consecutive observations break the streak (a missed day is a
@@ -98,10 +148,16 @@ def observe_day(
         if eligible:
             best = min(eligible, key=_rank_key)[0]
             new = PromotionState(champion=best, last_observed=day)
-            return PromotionDecision(
-                new, True,
-                {"type": "initial_seat", "champion": best, "day": str(day)},
-            )
+            if state.vacated_on is not None:
+                # Emergency replacement, not a cold start. Same seating rule,
+                # different event, so an auditor can tell the two apart.
+                event = {"type": "seat_after_vacate", "champion": best,
+                         "day": str(day), "vacated_on": str(state.vacated_on),
+                         "reason": state.vacate_reason}
+            else:
+                event = {"type": "initial_seat", "champion": best,
+                         "day": str(day)}
+            return PromotionDecision(new, True, event)
         return PromotionDecision(replace(state, last_observed=day), False)
 
     champ_avg = standings.get(state.champion)

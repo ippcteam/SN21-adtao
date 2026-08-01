@@ -11,6 +11,17 @@ built and tested pure:
     standing_ledger           — persistence for entries + promotion state
 
 Flag: SN21_DAILY_STREAM_WEIGHTS (off by default — Rob's switch, M4).
+Flag: SN21_CHRONIC_FAILURE_POLICY (off by default — the liveness/eviction
+amendment). Off, evicted miners still earn; the state machine observes and
+records regardless (chronic_failure module docstring).
+ON, the unstated blast radius is this: evicting every placement-eligible
+model empties the WHOLE weight vector, and on this subnet today that is one
+model (reference-v1, ours — the only model that has ever run in shadow). The
+failure is soft (onchain_runner retains the previous epoch vector) but no
+weight moves at all. That is a governance question, not something the code
+should quietly floor around, so allocation_from_ledger logs a
+refusal-level warning and sets DailyAllocation.
+enforcement_emptied_earning_set instead of inventing a survivor.
 [D3] gate: SN21_D3_MIN_DAILY_EPISODES (0 = gate disabled until Rob sets
 the published threshold against the verified ~330/weekday figure). On a
 gated day the standings still update (scores are facts); only the WEIGHT
@@ -24,8 +35,9 @@ Pure core (compute_daily_allocation) + a thin I/O convenience
 
 from __future__ import annotations
 
+import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Optional
 
@@ -34,10 +46,18 @@ from hope.scoring.champion_promotion import (
     PromotionParams,
     PromotionState,
     observe_day,
+    vacate_seat,
+)
+from hope.scoring import chronic_failure
+from hope.scoring.chronic_failure import (
+    chronic_failure_policy_enabled,
+    evicted_hotkeys,
 )
 from hope.scoring.episode_average import ScoredEpisode, standing
 from hope.scoring.weight_curve import CurveParams, curve_weights
 from hope.scoring import standing_ledger
+
+logger = logging.getLogger(__name__)
 
 FLAG_ENV = "SN21_DAILY_STREAM_WEIGHTS"
 D3_MIN_ENV = "SN21_D3_MIN_DAILY_EPISODES"
@@ -72,6 +92,11 @@ class DailyAllocation:
     weights: dict = field(default_factory=dict)          # hotkey → curve weight
     earning_set_size: int = 0
     promotion: Optional[PromotionDecision] = None        # [D8], never gated
+    evicted: tuple = ()                                  # liveness exclusions
+    # True when eviction ENFORCEMENT is what emptied the earning set: the
+    # same day would have paid somebody with the flag off. Not a patched
+    # behaviour — a declared blast radius. See allocation_from_ledger.
+    enforcement_emptied_earning_set: bool = False
 
 
 def compute_daily_allocation(
@@ -82,6 +107,7 @@ def compute_daily_allocation(
     min_daily_episodes: int = 0,
     curve_params: CurveParams = CurveParams(),
     promotion_params: PromotionParams = PromotionParams(),
+    evicted: frozenset = frozenset(),
 ) -> DailyAllocation:
     """One day's standings → weights (D7) + promotion observation (D8).
 
@@ -91,9 +117,20 @@ def compute_daily_allocation(
     Placement uses only placement-eligible miners (cold-start floor,
     GAP-2 v2 §3.4); their D13 average drives both curve rank and the
     promotion margin.
+
+    `evicted` is the chronic-failure exclusion set (hope.scoring.
+    chronic_failure). It is applied HERE, at the one place that feeds both
+    the D7 curve and the D8 promotion margin, so money and champion move
+    together. The curve renormalises over whoever is left
+    (weight_curve.curve_weights), so removal needs no special-casing. Note
+    what eviction does NOT do: ledger entries are untouched (scores are
+    facts) and the container keeps being executed daily — that execution is
+    how re-entry is observed.
     """
     placements: dict[str, float] = {}
     for hotkey, eps in entries.items():
+        if hotkey in evicted:
+            continue
         st = standing(eps, as_of=day)
         if st["average"] is not None and st["placement_eligible"]:
             placements[hotkey] = st["average"]
@@ -113,6 +150,7 @@ def compute_daily_allocation(
         weights=weights,
         earning_set_size=sum(1 for w in weights.values() if w > 0),
         promotion=promotion,
+        evicted=tuple(sorted(evicted)),
     )
 
 
@@ -123,6 +161,7 @@ def allocation_from_ledger(
     min_daily_episodes: Optional[int] = None,
     curve_params: CurveParams = CurveParams(),
     promotion_params: PromotionParams = PromotionParams(),
+    environ=os.environ,
 ) -> DailyAllocation:
     """Load ledger + promotion state, compute, persist state + log events.
 
@@ -130,17 +169,71 @@ def allocation_from_ledger(
     compute_daily_allocation is ledger I/O. Promotion state is persisted
     every call (last_observed advances even on uneventful days — the [D8]
     consecutive-day rule depends on it); events append to the audit log.
+
+    Liveness enforcement is applied here and ONLY when
+    SN21_CHRONIC_FAILURE_POLICY is on. With the flag off the state machine
+    still runs and still records (daily_loop step 1c) — the evidence base
+    accumulates from day one — but the weight vector is byte-identical to
+    what it would have been, because eviction retracts a promise the spec
+    has already published and must not reach miners before the amendment.
     """
     if min_daily_episodes is None:
-        min_daily_episodes = d3_min_daily_episodes()
+        min_daily_episodes = d3_min_daily_episodes(environ)
     entries = standing_ledger.load_entries(root, as_of=day)
     state = standing_ledger.load_promotion_state(root)
+
+    evicted: frozenset = frozenset()
+    if chronic_failure_policy_enabled(environ):
+        evicted = evicted_hotkeys(
+            standing_ledger.load_eviction_states(root), day)
+        if state.champion is not None and state.champion in evicted:
+            # Force-vacate: omission alone would leave a crashing incumbent
+            # seated for the full [D8] hold (champion_promotion.vacate_seat).
+            vac = vacate_seat(state, day, "chronic_failure_eviction")
+            state = vac.state
+            if vac.event:
+                standing_ledger.append_promotion_event(root, vac.event)
+
     alloc = compute_daily_allocation(
         entries, day, day_episode_volume, state,
         min_daily_episodes=min_daily_episodes,
         curve_params=curve_params,
         promotion_params=promotion_params,
+        evicted=evicted,
     )
+
+    # BLAST RADIUS, declared not patched: with the flag on, evicting every
+    # placement-eligible model empties the whole weight vector. On this
+    # subnet today that is one model (reference-v1, ours), so a single
+    # eviction stops all weight movement. Whether that is acceptable is a
+    # GOVERNANCE call — a floor that keeps a non-running model earning is
+    # exactly the punishment-free promise the amendment retracts — so the
+    # behaviour is left alone and made LOUD instead. The counterfactual is
+    # computed only on the empty-vector path, and only to prove enforcement
+    # (rather than a thin field) is the cause.
+    if evicted and not alloc.gated and alloc.earning_set_size == 0:
+        counterfactual = compute_daily_allocation(
+            entries, day, day_episode_volume, state,
+            min_daily_episodes=min_daily_episodes,
+            curve_params=curve_params,
+            promotion_params=promotion_params,
+            evicted=frozenset(),
+        )
+        if counterfactual.earning_set_size > 0:
+            alloc = replace(alloc, enforcement_emptied_earning_set=True)
+            logger.warning(
+                "REFUSING NOTHING, BUT SAY IT LOUD: %s=on emptied the entire "
+                "earning set on %s. Evicted %s; without enforcement %d model(s) "
+                "would have earned (%s). No model is weighted today, so the "
+                "runner will retain the previous epoch vector and no weight "
+                "moves at all. This is the declared blast radius of enabling "
+                "the chronic-failure policy on a subnet with this few "
+                "placement-eligible models — not a bug to route around.",
+                chronic_failure.FLAG_ENV, day, list(alloc.evicted),
+                counterfactual.earning_set_size,
+                sorted(counterfactual.weights),
+            )
+
     if alloc.promotion is not None:
         standing_ledger.save_promotion_state(root, alloc.promotion.state)
         if alloc.promotion.event:

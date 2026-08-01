@@ -30,6 +30,14 @@ DEFAULT_MEMORY = "1g"
 DEFAULT_CPUS = "1"
 DEFAULT_TIMEOUT_S = 15 * 60  # 15 min per basket (M0 budget)
 
+# Error-string markers. These are the FAULT TAXONOMY the liveness policy
+# reads back off the shadow ledger (hope.scoring.chronic_failure), so they
+# are constants rather than inline literals: renaming one must break an
+# import, never silently reclassify a subnet fault as a miner fault.
+ERR_TIMEOUT_PREFIX = "timeout>"            # miner fault (time budget)
+ERR_EXIT_PREFIX = "exit="                  # miner fault (crash / OOM kill)
+ERR_DOCKER_UNAVAILABLE = "docker_not_available"   # SUBNET fault (our host)
+
 
 @dataclass
 class RunResult:
@@ -90,13 +98,17 @@ def run_basket_docker(image_digest: str, episodes: Iterable[dict],
         )
     except subprocess.TimeoutExpired:
         subprocess.run(["docker", "kill", cname], capture_output=True, timeout=30)
-        return RunResult(ok=False, error=f"timeout>{timeout_s}s (container killed)",
-                         episodes_in=len(eps))
+        return RunResult(
+            ok=False,
+            error=f"{ERR_TIMEOUT_PREFIX}{timeout_s}s (container killed)",
+            episodes_in=len(eps))
     except FileNotFoundError:
-        return RunResult(ok=False, error="docker_not_available", episodes_in=len(eps))
+        return RunResult(ok=False, error=ERR_DOCKER_UNAVAILABLE, episodes_in=len(eps))
     if proc.returncode != 0:
-        return RunResult(ok=False, error=f"exit={proc.returncode}: {proc.stderr[:200]!r}",
-                         episodes_in=len(eps))
+        return RunResult(
+            ok=False,
+            error=f"{ERR_EXIT_PREFIX}{proc.returncode}: {proc.stderr[:200]!r}",
+            episodes_in=len(eps))
     preds = _parse_output(proc.stdout.decode(errors="replace"), ids)
     return RunResult(ok=True, predictions=preds,
                      episodes_in=len(eps), predictions_out=len(preds))

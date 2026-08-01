@@ -52,6 +52,19 @@ STATUS_REJECTED_DIGEST_MISMATCH = "rejected_digest_mismatch"
 STATUS_PULL_FAILED = "pull_failed"
 STATUS_INVALID_COMMITMENT = "invalid_commitment"
 
+# Pull-side error markers, constants for the same reason as
+# container_runner's (hope.scoring.chronic_failure classifies against them).
+# Fault ownership of a pull timeout is UNRULED — the miner's registry could
+# be down or our network could be — so it currently counts toward nothing.
+ERR_PULL_TIMEOUT_PREFIX = "pull timeout>"
+ERR_DOCKER_UNAVAILABLE = "docker_not_available"   # SUBNET fault (our host)
+# A non-zero `docker pull` exit. Deliberately NOT container_runner's bare
+# "exit=": that prefix means "the miner's container ran and died", and a
+# registry-side pull failure (bad credentials, image deleted, rate limit,
+# our network) shares none of that ownership. When the two strings collided
+# a pull failure classified as FAULT_MINER and would have struck the miner.
+ERR_PULL_EXIT_PREFIX = "pull exit="
+
 
 @dataclass(frozen=True)
 class ModelCommitment:
@@ -96,11 +109,12 @@ def _default_puller(pinned_ref: str) -> tuple[bool, str]:
         proc = subprocess.run(["docker", "pull", pinned_ref],
                               capture_output=True, timeout=600)
     except subprocess.TimeoutExpired:
-        return False, "pull timeout>600s"
+        return False, f"{ERR_PULL_TIMEOUT_PREFIX}600s"
     except FileNotFoundError:
-        return False, "docker_not_available"
+        return False, ERR_DOCKER_UNAVAILABLE
     if proc.returncode != 0:
-        return False, f"exit={proc.returncode}: {proc.stderr.decode(errors='replace')[:200]}"
+        return False, (f"{ERR_PULL_EXIT_PREFIX}{proc.returncode}: "
+                       f"{proc.stderr.decode(errors='replace')[:200]}")
     return True, ""
 
 

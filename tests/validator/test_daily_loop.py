@@ -5,7 +5,7 @@ Every step fail-soft, idempotent per day, injected fakes throughout.
 
 import json
 import os
-from datetime import date
+from datetime import date, timedelta
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -148,6 +148,243 @@ def test_capture_state_round_trip(tmp_path):
     root = str(tmp_path)
     save_capture_states(root, {"m": CaptureState("m", locked_alpha=42.0)})
     assert load_capture_states(root)["m"].locked_alpha == 42.0
+
+
+# ---- step 1c: liveness (chronic failure) ------------------------------------
+
+def _shadow_run(root, day, hotkey, ok, error=None):
+    from hope.backtest.container_runner import RunResult
+    from hope.backtest.shadow import ShadowModel, record_day, record_run_marker
+    record_day(root, str(day), ShadowModel(hotkey, "img@sha256:a", str(day)),
+               RunResult(ok=ok, error=error))
+    record_run_marker(root, str(day), episodes=10, models=1)
+
+
+def test_liveness_skips_a_day_the_subnet_never_ran(tmp_path):
+    """The 2026-07-30 case: no shadow day means WE did not run. No strike,
+    no observation, no state written — for anybody."""
+    root = str(tmp_path)
+    summary = run_daily_loop(root, root, DAY, outcomes_provider=lambda d: [],
+                             environ={})
+    assert summary["liveness"]["strikes"] == 0
+    assert "skipped" in summary["liveness"]
+    from hope.scoring import standing_ledger as sl
+    assert sl.load_strike_events(root) == []
+    assert sl.load_eviction_states(root) == {}
+
+
+# ---- step 1c: the day basis (the blocking 2026-08-01 finding) ---------------
+#
+# The shadow ledger is keyed by BASKET day and shadow_daily.sh runs
+# BD-<yesterday>, so the loop's own day is never a shadow day. The old code
+# asked subnet_ran(shadow_root, str(day)) and therefore skipped every real
+# day forever. These tests fold the ledger's days, not the loop's.
+
+def test_liveness_observes_yesterdays_basket_not_the_loop_day(tmp_path):
+    """PRODUCTION SHAPE: shadow_daily.sh wrote BD-<DAY-1>; the loop runs on
+    DAY. The strike must land. Against the pre-fix code this returned
+    {'skipped': 'subnet did not run this day', 'strikes': 0} and wrote
+    nothing to the ledger."""
+    from hope.backtest.container_runner import ERR_EXIT_PREFIX
+    from hope.scoring import standing_ledger as sl
+
+    root = str(tmp_path)
+    basket_day = DAY - timedelta(days=1)
+    _shadow_run(root, basket_day, "alpha", ok=False,
+                error=f"{ERR_EXIT_PREFIX}1: b'boom'")
+
+    summary = run_daily_loop(root, root, DAY, outcomes_provider=lambda d: [],
+                             environ={})
+    assert summary["liveness"]["shadow_days_observed"] == [str(basket_day)]
+    assert summary["liveness"]["struck"] == ["alpha"]
+    assert summary["liveness"]["strikes"] == 1
+
+    events = sl.load_strike_events(root)
+    assert [(str(e.day), e.hotkey, e.kind) for e in events] == \
+           [(str(basket_day), "alpha", "strike")]
+
+
+def test_liveness_reaches_the_whole_live_ledger_shape_including_the_gap(tmp_path):
+    """The live ledger on 2026-08-01: 07-27/28/29/31 present, 07-30 absent
+    (manual script, missed a day). One loop run on 08-01 must observe the
+    four days that exist, and never the one that does not."""
+    from hope.backtest.container_runner import ERR_EXIT_PREFIX
+    from hope.scoring import standing_ledger as sl
+
+    root = str(tmp_path)
+    loop_day = date(2026, 8, 1)
+    for d, ok in (("2026-07-27", True), ("2026-07-28", False),
+                  ("2026-07-29", True), ("2026-07-31", False)):
+        _shadow_run(root, d, "reference-v1", ok=ok,
+                    error=None if ok else f"{ERR_EXIT_PREFIX}1: b''")
+
+    summary = run_daily_loop(root, root, loop_day,
+                             outcomes_provider=lambda d: [], environ={})
+    assert summary["liveness"]["shadow_days_observed"] == [
+        "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-31"]
+    assert summary["liveness"]["strikes"] == 2
+    assert [str(e.day) for e in sl.load_strike_events(root)] == [
+        "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-31"]
+    # 07-30 never appears: absence is OUR non-run, never a miner failure
+    assert "2026-07-30" not in {str(e.day) for e in sl.load_strike_events(root)}
+
+
+def test_liveness_does_not_refold_old_days_on_the_next_run(tmp_path):
+    """Catch-up must not turn into a rewind: re-observing an ancient CLEAN
+    day against today's state would reinstate a currently evicted miner."""
+    from hope.backtest.container_runner import ERR_EXIT_PREFIX
+    from hope.scoring import standing_ledger as sl
+
+    root = str(tmp_path)
+    start = date(2026, 8, 1)
+    _shadow_run(root, start, "alpha", ok=True)            # a clean day first
+    for i in range(1, 6):                                  # then five failures
+        _shadow_run(root, start + timedelta(days=i), "alpha", ok=False,
+                    error=f"{ERR_EXIT_PREFIX}1: b''")
+
+    first = run_daily_loop(root, root, start + timedelta(days=6),
+                           outcomes_provider=lambda d: [], environ={})
+    assert first["liveness"]["evicted"] == ["alpha"]
+    assert sl.load_eviction_states(root)["alpha"].evicted_on == \
+        start + timedelta(days=5)
+
+    # next day: nothing new in the ledger -> only the last observed day is
+    # eligible for a re-fold, and it is still a strike, so nothing changes.
+    second = run_daily_loop(root, root, start + timedelta(days=7),
+                            outcomes_provider=lambda d: [], environ={})
+    assert second["liveness"]["shadow_days_observed"] == \
+        [str(start + timedelta(days=5))]
+    assert second["liveness"]["events_written"] == 0
+    assert second["liveness"]["reinstated"] == []
+    assert sl.load_eviction_states(root)["alpha"].evicted_on == \
+        start + timedelta(days=5)
+
+
+def test_liveness_lookback_bounds_the_cold_start_fold(tmp_path):
+    """A cold ledger reaches back `liveness_lookback_days` and no further —
+    a shadow day older than that is not silently re-litigated."""
+    from hope.backtest.container_runner import ERR_EXIT_PREFIX
+
+    root = str(tmp_path)
+    old = DAY - timedelta(days=30)
+    recent = DAY - timedelta(days=2)
+    for d in (old, recent):
+        _shadow_run(root, d, "alpha", ok=False, error=f"{ERR_EXIT_PREFIX}1: b''")
+
+    summary = run_daily_loop(root, root, DAY, outcomes_provider=lambda d: [],
+                             liveness_lookback_days=14, environ={})
+    assert summary["liveness"]["shadow_days_observed"] == [str(recent)]
+
+
+def test_liveness_ignores_a_shadow_day_after_the_loop_day(tmp_path):
+    """Never let a future-dated basket evict anybody."""
+    from hope.backtest.container_runner import ERR_EXIT_PREFIX
+
+    root = str(tmp_path)
+    _shadow_run(root, DAY + timedelta(days=1), "alpha", ok=False,
+                error=f"{ERR_EXIT_PREFIX}1: b''")
+    summary = run_daily_loop(root, root, DAY, outcomes_provider=lambda d: [],
+                             environ={})
+    assert summary["liveness"]["strikes"] == 0
+    assert "skipped" in summary["liveness"]
+
+
+def test_liveness_policy_numbers_come_from_the_environment(tmp_path):
+    """[finding 5] N/M/K are overridable at deploy time, so ratifying Rob's
+    numbers is a setting and not a code edit. Two failed days evict only
+    because SN21_CHRONIC_STRIKES=2."""
+    from hope.backtest.container_runner import ERR_EXIT_PREFIX
+    from hope.scoring import standing_ledger as sl
+
+    root = str(tmp_path)
+    for i in (2, 1):
+        _shadow_run(root, DAY - timedelta(days=i), "alpha", ok=False,
+                    error=f"{ERR_EXIT_PREFIX}1: b''")
+
+    default_run = run_daily_loop(root, root, DAY,
+                                 outcomes_provider=lambda d: [], environ={})
+    assert default_run["liveness"]["evicted"] == []   # 2 strikes, policy is 5
+
+    root2 = str(tmp_path / "override")
+    for i in (2, 1):
+        _shadow_run(root2, DAY - timedelta(days=i), "alpha", ok=False,
+                    error=f"{ERR_EXIT_PREFIX}1: b''")
+    over = run_daily_loop(root2, root2, DAY, outcomes_provider=lambda d: [],
+                          environ={"SN21_CHRONIC_STRIKES": "2"})
+    assert over["liveness"]["evicted"] == ["alpha"]
+    ev = [e for e in sl.load_strike_events(root2) if e.kind == "evicted"][0]
+    assert ev.detail["strikes_to_evict"] == 2
+
+
+def test_a_shadow_record_with_no_ok_field_is_not_a_failed_run(tmp_path):
+    """[finding 6] The repo's own prediction-only record shape carries no
+    `ok`. bool(None) made it a failed run and the loop recorded an
+    `excluded` observation against the miner for it."""
+    from hope.scoring import standing_ledger as sl
+
+    root = str(tmp_path)
+    basket_day = DAY - timedelta(days=1)
+    _shadow(root, day=str(basket_day))          # writes {day,hotkey,predictions}
+
+    summary = run_daily_loop(root, root, DAY, outcomes_provider=lambda d: [],
+                             environ={})
+    assert summary["liveness"]["excluded"] == []
+    assert summary["liveness"]["events_written"] == 0
+    assert sl.load_strike_events(root) == []
+
+
+def test_liveness_records_a_strike_from_a_real_execution_failure(tmp_path):
+    from hope.backtest.container_runner import ERR_EXIT_PREFIX
+    from hope.scoring import standing_ledger as sl
+
+    root = str(tmp_path)
+    _shadow_run(root, DAY, "alpha", ok=False,
+                error=f"{ERR_EXIT_PREFIX}1: b'boom'")
+    summary = run_daily_loop(root, root, DAY, outcomes_provider=lambda d: [],
+                             environ={})
+    assert summary["liveness"]["struck"] == ["alpha"]
+    assert summary["liveness"]["evicted"] == []      # 1 strike, not 5
+    assert summary["liveness"]["enforced"] is False  # flag off by default
+    events = sl.load_strike_events(root)
+    assert [e.kind for e in events] == ["strike"]
+    assert events[0].hotkey == "alpha" and events[0].fault == "miner"
+
+
+def test_liveness_does_not_double_count_a_rerun_of_the_loop(tmp_path):
+    from hope.backtest.container_runner import ERR_EXIT_PREFIX
+    from hope.scoring import standing_ledger as sl
+
+    root = str(tmp_path)
+    _shadow_run(root, DAY, "alpha", ok=False, error=f"{ERR_EXIT_PREFIX}1: b''")
+    kwargs = dict(outcomes_provider=lambda d: [], environ={})
+    run_daily_loop(root, root, DAY, **kwargs)
+    second = run_daily_loop(root, root, DAY, **kwargs)
+    assert second["liveness"]["events_written"] == 0
+    assert len(sl.load_strike_events(root)) == 1
+
+
+def test_liveness_never_strikes_a_subnet_side_failure(tmp_path):
+    from hope.backtest.container_runner import ERR_DOCKER_UNAVAILABLE
+    from hope.scoring import standing_ledger as sl
+
+    root = str(tmp_path)
+    _shadow_run(root, DAY, "alpha", ok=False, error=ERR_DOCKER_UNAVAILABLE)
+    summary = run_daily_loop(root, root, DAY, outcomes_provider=lambda d: [],
+                             environ={})
+    assert summary["liveness"]["struck"] == []
+    assert summary["liveness"]["excluded"] == ["alpha"]
+    assert [e.kind for e in sl.load_strike_events(root)] == ["excluded"]
+
+
+def test_liveness_failure_never_silences_the_other_steps(tmp_path, monkeypatch):
+    root = str(tmp_path)
+    _shadow(root, day=str(DAY))
+    monkeypatch.setattr("hope.backtest.shadow.day_run_status",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    summary = run_daily_loop(root, root, DAY, outcomes_provider=_outcomes,
+                             key_loader=lambda: KEY, environ={})
+    assert "error" in summary["liveness"]
+    assert summary["publish"]["published"] is True
 
 
 def test_vertical_series_step_tags_and_stores(tmp_path, monkeypatch):
