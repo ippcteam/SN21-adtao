@@ -37,6 +37,50 @@ marker. A re-run enters exactly the not-yet-entered settled results, so
 the same-day race the old marker had — measurement landing after the
 settle run had already marked the DAY done, silently skipping those
 outcomes forever — cannot occur: they simply enter on the next run.
+
+Formula restoration (2026-07-30), behind SN21_SETTLE_SCORING_V2
+-----------------------------------------------------------------
+The gate pair above is the SIMPLIFIED formula. The published spec
+(docs/SN21_REWARD_MECHANISM.md:133) is four components:
+
+    0.50×quantile + 0.20×calibration + 0.15×directional + 0.15×goal
+
+with directional and goal both scoring "the account's primary goal
+metric" (spec:137-138), not the three-metric average. The simplification
+dropped calibration and goal wholesale on the grounds that the outcome
+tables carry no truth for them. Re-excavation found that half true:
+
+  * calibration = probability-calibration (goal_miss / instability
+    frequencies) AND interval coverage. The probability half genuinely
+    has no truth in our tables and stays dropped. The COVERAGE half —
+    does [P10,P90] contain the actual — is computable from exactly the
+    data we already have, and comes back at its own half-weight (0.10).
+  * goal = P50 accuracy on the goal metric. Fully computable. The
+    legacy scorer already implements it (onchain_adapter._p50_goal_score)
+    and the resolver that reads each account's configured goal already
+    runs in production (OBI episode_payload_builder_service:282-307).
+
+So v2 = 0.50 quantile + 0.10 coverage + 0.15 directional + 0.15 goal,
+renormalised by 0.90 (the dropped probability half is removed from the
+denominator, not silently redistributed — a miner cannot be scored on a
+component we cannot measure, and must not be diluted by it either).
+
+Nothing here is invented: each component is the legacy implementation
+ported to this module's units (see the constants block). The ONE
+deliberate deviation is the quantile term, which keeps this module's
+per-entry normalisation (by the entry's own actual magnitudes) rather
+than the legacy fixed PINBALL_SCALE=300 dpct — the legacy constant's own
+code comment records that at 300 "a half-right prediction, a do-nothing,
+and a wrong-direction one all score ~0.86", i.e. it does not
+differentiate. The spec names the component, not the constant.
+
+The goal metric is `efficiency_delta_pct` in prediction space; which
+COLUMN feeds its truth (cpa_delta_pct vs conversion_value_delta_pct)
+is the account-goal question, resolved in obi_outcomes_provider.
+
+Default OFF. The composition and the efficiency-truth basis are both
+miner-facing and ship with Rob's governance amendment; the flag is the
+single switch for both, so one announcement covers one behaviour change.
 """
 
 from __future__ import annotations
@@ -61,6 +105,34 @@ MIN_ENTRY_SCALE = 0.01
 # settle date = window_end + 1 + horizon + settle).
 SETTLING_WINDOW_DAYS = 7
 
+# ---- v2 restoration constants ------------------------------------------------
+# Ported from hope/scoring/onchain_adapter.py, converted from that module's
+# DECI-PERCENT integers to this module's DELTA FRACTIONS. The conversion is
+# ÷1000: deci-percent = percent×10, fraction = percent÷100. OBI writes these
+# as ratios — outcome_measurement_service:191 `(o_cpa - b_cpa) / max(b_cpa, 1)`
+# — so 0.40 here is the +40% that is 400 dpct there.
+#
+# The account's primary goal metric, in prediction space. Miners always
+# predict a metric named efficiency_delta_pct; the account's goal decides
+# which measured column supplies its truth (see obi_outcomes_provider).
+GOAL_METRIC = "efficiency_delta_pct"
+
+# _p50_goal_score: 1.0 at exact, decaying linearly to 0. Legacy 400 dpct.
+P50_GOAL_SCALE = 0.40
+# _coverage_score: convex width penalty — a band this wide earns no coverage
+# credit at all, so coverage cannot be bought with [-inf, +inf]. Legacy 1000 dpct.
+INTERVAL_WIDTH_SCALE = 1.0
+# _direction_score: below this magnitude a move is "flat". Legacy 5 dpct.
+DIRECTION_FLAT_BAND = 0.005
+
+# Spec weights (docs/SN21_REWARD_MECHANISM.md:133), with the probability half
+# of calibration removed and the remainder renormalised — see module docstring.
+W_QUANTILE = 0.50
+W_COVERAGE = 0.10      # = 0.20 calibration × the computable half
+W_DIRECTION = 0.15
+W_GOAL = 0.15
+W_TOTAL = W_QUANTILE + W_COVERAGE + W_DIRECTION + W_GOAL   # 0.90
+
 # Legacy-corpus boundary (audit 2026-07-29): 3,136 outcome rows measured
 # before the settle-clock cutover ran under the old 17-day launch clock
 # and are frozen at values that were NOT final when written. They must
@@ -82,6 +154,13 @@ class SettledHorizon:
     conversions_delta_pct: float
     efficiency_delta_pct: float
     finalized_on: date
+    # Which measured column supplied efficiency_delta_pct: "cpa" (the
+    # account's goal is cost-per-acquisition, or it has no configured goal)
+    # or "conversion_value" (a ROAS/value goal). Recorded, never scored on —
+    # it exists so a verifier can see WHY an entry's goal metric is what it
+    # is without re-running the resolver. Default preserves the pre-v2
+    # behaviour, where efficiency was always CPA.
+    goal_basis: str = "cpa"
 
 
 def settle_date(action_window_end: date, horizon_days: int) -> date:
@@ -155,6 +234,173 @@ def entry_components(pred: dict, actual: dict[str, float]) -> tuple[float, float
     return round(quantile, 6), round(direction, 6)
 
 
+# ---- v2 components (spec restoration; see module docstring) ------------------
+# Each is the legacy onchain_adapter implementation in this module's units.
+# A MISSING metric scores 0 in all three rather than being skipped: the
+# quantile term averages only over metrics the miner supplied, so omission
+# must cost somewhere or a partial predictor drops their hard metrics and
+# gains. This matches the existing direction term, which already counts an
+# omitted metric as a miss.
+
+def _coverage_score(trio: Optional[dict], actual: float) -> float:
+    """Does [P10,P90] contain the actual, less a convex width penalty.
+
+    Note what the legacy formula does and does not do (measured, not
+    assumed): the penalty saturates at 1.0 and carries a 0.5 coefficient,
+    so ANY covering band scores at least 0.5 no matter how absurdly wide.
+    Coverage alone therefore does not punish a band-inflation strategy —
+    the QUANTILE term does, and decisively. A [-5.0, +5.0] band against a
+    0.4 actual takes coverage 0.5 but drives pinball loss to the
+    normalisation scale, collapsing the 0.50-weighted quantile term to
+    0.0. Net, inflation is heavily loss-making. Ported unchanged from
+    onchain_adapter._coverage_score — the shape is the system's own.
+    """
+    if not trio:
+        return 0.0
+    p10, p90 = float(trio["p10"]), float(trio["p90"])
+    covered = 1.0 if p10 <= actual <= p90 else 0.0
+    width_penalty = min(1.0, max(0.0, p90 - p10) / INTERVAL_WIDTH_SCALE)
+    return max(0.0, covered - 0.5 * width_penalty)
+
+
+def _goal_p50_score(trio: Optional[dict], actual: float) -> float:
+    """P50 accuracy on the goal metric: 1.0 exact, decaying linearly to 0."""
+    if not trio:
+        return 0.0
+    return max(0.0, 1.0 - abs(float(trio["p50"]) - actual) / P50_GOAL_SCALE)
+
+
+def _goal_direction_score(trio: Optional[dict], actual: float) -> float:
+    """Direction of the goal metric only (spec:137), legacy semantics.
+
+    Both-flat earns HALF, not full: predicting flat is the trivial call and
+    must not score like a committed up/down one. The legacy comment records
+    why — giving it 1.0 floored the predict-zero baseline higher than it
+    deserved on stable epochs. This is the v2 form of the same abstention
+    discipline the gate formula enforces with its zero-p50 rule.
+    """
+    if not trio:
+        return 0.0
+    p50 = float(trio["p50"])
+    sp = 0 if abs(p50) < DIRECTION_FLAT_BAND else (1 if p50 > 0 else -1)
+    st = 0 if abs(actual) < DIRECTION_FLAT_BAND else (1 if actual > 0 else -1)
+    if sp != st:
+        return 0.0
+    return 0.5 if sp == 0 else 1.0
+
+
+def entry_components_v2(pred: dict, actual: dict[str, float]) -> dict:
+    """The four spec components for one (episode, horizon) entry.
+
+    Quantile is this module's per-entry-normalised term (shared with the v1
+    scorer — one implementation, no drift). Coverage averages the three
+    metrics; direction and goal score the GOAL metric alone, per spec:137-138.
+    """
+    quantile, _v1_direction = entry_components(pred, actual)
+    coverage = sum(_coverage_score(pred.get(m), actual[m])
+                   for m in METRICS) / len(METRICS)
+    goal_trio = pred.get(GOAL_METRIC)
+    goal_actual = actual[GOAL_METRIC]
+    return {
+        "quantile": quantile,
+        "coverage": round(coverage, 6),
+        "direction": round(_goal_direction_score(goal_trio, goal_actual), 6),
+        "goal": round(_goal_p50_score(goal_trio, goal_actual), 6),
+    }
+
+
+def score_entry_v2(pred: dict, actual: dict[str, float]) -> float:
+    """Spec-restored formula for ONE (episode, horizon). See module docstring.
+
+    An empty prediction still scores exactly 0.0, as under v1.
+    """
+    c = entry_components_v2(pred, actual)
+    blended = (
+        W_QUANTILE * c["quantile"]
+        + W_COVERAGE * c["coverage"]
+        + W_DIRECTION * c["direction"]
+        + W_GOAL * c["goal"]
+    ) / W_TOTAL
+    return round(max(0.0, min(1.0, blended)), 6)
+
+
+# ---- goal-basis resolution (Rob, 2026-07-31) ---------------------------------
+# "yes, ecomm ROAS, lead gen CPA. Yes, go with account configured (or implied)
+# goal, not campaign bid strategy."
+#
+# Configured = accountgoals.metric_type. IMPLIED = the account's taxonomy root,
+# which is the account-level ecommerce signal the system already carries; the
+# campaign's bid strategy is deliberately NOT consulted, per Rob.
+#
+# Then the GUARD, which is not optional. outcome_measurement_service.py:195
+# computes conversion-value delta as
+#     cv_delta = (o_cv - b_cv) / max(b_cv, 1) if b_cv else 0
+# so when an account's baseline conversion value is zero the truth is a CONSTANT
+# ZERO no matter what happened. Scoring such an episode on conversion value hands
+# any miner who predicts zero a near-perfect goal term, the both-flat half of
+# direction, trivial coverage and a third of quantile — roughly 30% of the
+# composed score, free and deterministic. So a value basis requires that the
+# account actually recorded conversion value in the baseline window.
+#
+# Measured 2026-08-01 (jayesh, exact per-episode signal): of 874 measured
+# ecommerce-tagged episodes 554 (63%) survive the guard and 320 (37%) fall back
+# to CPA — value-based truth is ~7% of all episodes, NOT the ~10% an
+# account-level proxy suggested. The gap is the point: an account can record
+# conversion value somewhere over six months yet have none in a specific
+# episode's baseline window. Per-episode catches those; account-level misses them.
+VALUE_GOAL_MARKERS = ("ROAS", "VALUE", "REVENUE")
+TAXONOMY_VALUE_ROOT = "retail"
+
+
+def resolve_goal_basis(goal_metric_type: Optional[str],
+                       taxonomy_root: Optional[str],
+                       baseline_conv_value_micros) -> tuple[str, bool]:
+    """(basis, guard_applied) for one episode. Pure.
+
+    Cascade: configured account goal -> implied account taxonomy -> CPA.
+    Then the zero-baseline guard vetoes a value basis. Returned separately
+    from the basis so the veto is countable rather than silent.
+    """
+    metric = (goal_metric_type or "").strip()
+    if metric:
+        # A CONFIGURED goal wins outright — taxonomy must never override it.
+        # Same precedence jayesh's J3 map states: "goal type is present and
+        # says not-ecommerce, so taxonomy does NOT override." Without this
+        # branch a configured CPA goal on a retail account was silently
+        # flipped to conversion_value.
+        intended = ("conversion_value"
+                    if any(m in metric.upper() for m in VALUE_GOAL_MARKERS)
+                    else "cpa")
+    elif (taxonomy_root or "").strip().lower() == TAXONOMY_VALUE_ROOT:
+        intended = "conversion_value"
+    else:
+        intended = "cpa"
+
+    if intended == "conversion_value" and not float(baseline_conv_value_micros or 0) > 0:
+        return "cpa", True
+    return intended, False
+
+
+def settle_scoring_v2_enabled(environ=os.environ) -> bool:
+    """Single source of truth for which settle formula is active.
+
+    Default OFF: the composition and the efficiency-truth basis are
+    miner-facing and ship with Rob's governance amendment.
+    """
+    return environ.get("SN21_SETTLE_SCORING_V2", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def score_entry_active(pred: dict, actual: dict[str, float],
+                       environ=os.environ) -> float:
+    """The active per-entry scorer. Every scoring path goes through here so
+    the ledger can never mix formulas within a run."""
+    if settle_scoring_v2_enabled(environ):
+        return score_entry_v2(pred, actual)
+    return score_entry(pred, actual)
+
+
 def score_settled(
     prediction_index: dict[str, dict[str, dict]],
     outcomes: Iterable[SettledHorizon],
@@ -183,7 +429,7 @@ def score_settled(
                 episode_id=o.episode_id,
                 horizon_days=o.horizon_days,
                 miner=miner,
-                score=score_entry(pred, actual),
+                score=score_entry_active(pred, actual),
                 finalized_on=o.finalized_on,
             ))
     return results
@@ -194,9 +440,16 @@ def score_settled_with_components(
     outcomes: Iterable[SettledHorizon],
 ) -> tuple[list[HorizonResult], dict]:
     """score_settled plus a components map for the J3 vertical series:
-    {(episode_id, horizon_days, miner): (quantile, direction)} — raw
-    parts of each entry's score, stored so the series survives a formula
-    recomposition (Rob's pending decision)."""
+    {(episode_id, horizon_days, miner): (quantile, direction, coverage, goal)}
+    — raw parts of each entry's score, stored so the series survives a
+    formula recomposition (Rob's pending decision).
+
+    Positions 0 and 1 keep their original meaning for existing consumers.
+    Position 1 is the ACTIVE formula's direction term: the three-metric
+    average under v1, the goal metric alone under v2 (spec:137). Coverage
+    and goal are computed either way — under v1 they are unused by the
+    score but still recorded, which is the whole point of the series.
+    """
     outcomes = list(outcomes)  # consumed twice; a generator would starve pass 2
     results = score_settled(prediction_index, outcomes)
     comps: dict = {}
@@ -210,7 +463,13 @@ def score_settled_with_components(
             pred = horizons.get(str(o.horizon_days))
             if not pred:
                 continue
-            comps[(o.episode_id, o.horizon_days, miner)] = entry_components(pred, actual)
+            v1_quantile, v1_direction = entry_components(pred, actual)
+            c2 = entry_components_v2(pred, actual)
+            direction = (c2["direction"] if settle_scoring_v2_enabled()
+                         else v1_direction)
+            comps[(o.episode_id, o.horizon_days, miner)] = (
+                v1_quantile, direction, c2["coverage"], c2["goal"],
+            )
     return results, comps
 
 
@@ -345,8 +604,7 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
 
     Reference implementation for the validator/ops host — requires the
     OBI repo importable (same pattern as scripts/run_shadow_day_bd.py);
-    the module itself stays importable without it. Efficiency maps to
-    cpa_delta_pct (see hope/backtest/corpus.py). Values arrive as delta
+    the module itself stays importable without it. Values arrive as delta
     fractions, possibly saturated at ±9999.999999 (the outcome writer's
     numeric(10,6) clamp) — passed through unchanged; the per-entry scale
     normalisation keeps saturated actuals from distorting neighbours.
@@ -355,22 +613,71 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
     1 + horizon + 7), never taken from measured_at. Rows measured before
     SETTLE_CLOCK_CUTOVER_UTC (the old 17-day launch clock — values not
     final when written) are excluded, loudly.
+
+    EFFICIENCY TRUTH. Under v1 this is always cpa_delta_pct. Under v2 it is
+    the account's own goal metric per resolve_goal_basis — cpa_delta_pct or
+    conversion_value_delta_pct — which is Rob's 2026-07-31 ruling. The flag
+    gates the truth basis and the formula together on purpose: both are
+    miner-facing and ship with one amendment, so there is one switch and one
+    announcement, never a window where miners are scored on a basis that was
+    not published.
+
+    KNOWN LIMITATION — freeze at reveal. The guard reads
+    baseline_avg_conv_value_micros off the OUTCOME row, which is written at
+    measurement time, i.e. after reveal. If a baseline-window conversion
+    value settles late it could in principle flip an episode from cpa to
+    conversion_value between reveal and scoring — the exact "scored on
+    something you could not see" gap we are closing. J1 measurement says the
+    baseline is effectively settled by reveal (91% of conversions land within
+    7 days, and the baseline window is older than that), so the residual risk
+    is small but not zero. The canonical fix is to resolve the basis AT
+    REVEAL, persist it on the candidate, and publish it in the episode
+    payload beside goal.type; this reader then reads the frozen value instead
+    of recomputing. That is OBI-side work and is tracked separately.
     """
     import sys
     sys.path.insert(0, "/Users/macbookm1/Documents/Projects/obi")
     from app.models import get_session
     from sqlalchemy import text as T
 
+    goal_aware = settle_scoring_v2_enabled()
+
     with get_session() as s:
         rows = s.execute(T("""
-            SELECT o.episode_candidate_id, o.horizon_days,
-                   o.cost_delta_pct, o.conversions_delta_pct, o.cpa_delta_pct,
-                   c.action_window_end, o.measured_at
-            FROM bittensor_episode_outcomes o
-            JOIN bittensor_episode_candidates c ON c.id = o.episode_candidate_id
-            WHERE o.measured_at >= :cutover
-              AND (c.action_window_end::date
-                   + make_interval(days => 1 + o.horizon_days + :settle)) <= :day
+            WITH ep AS (
+                SELECT o.episode_candidate_id      AS episode_id,
+                       o.horizon_days              AS horizon_days,
+                       o.cost_delta_pct            AS cost_delta,
+                       o.conversions_delta_pct     AS conv_delta,
+                       o.cpa_delta_pct             AS cpa_delta,
+                       o.conversion_value_delta_pct AS cv_delta,
+                       COALESCE(o.baseline_avg_conv_value_micros, 0) AS b_cv,
+                       c.action_window_end         AS window_end,
+                       r.google_ads_account_id     AS gads_id,
+                       r.customer_id               AS customer_id
+                FROM bittensor_episode_outcomes o
+                JOIN bittensor_episode_candidates c ON c.id = o.episode_candidate_id
+                LEFT JOIN bittensor_account_registry r ON r.id = c.bittensor_account_id
+                WHERE o.measured_at >= :cutover
+                  AND (c.action_window_end::date
+                       + make_interval(days => 1 + o.horizon_days + :settle)) <= :day
+            )
+            SELECT ep.*,
+                -- CONFIGURED goal (Rob: "account configured ... goal")
+                (SELECT g.metric_type FROM accountgoals g
+                  WHERE g.googleadsaccountid = ep.gads_id
+                    AND g.is_active = true AND g.goal_kind = 'main'
+                  ORDER BY g.priority DESC LIMIT 1) AS goal_metric_type,
+                -- IMPLIED goal: account taxonomy root. lineage->>0 is the same
+                -- accessor jayesh's verified J3 map uses, so this code and the
+                -- measured ~7% coverage describe the same population. Ordering
+                -- is explicit: an unordered LIMIT 1 under multiple assignments
+                -- was an audit finding on the OBI side.
+                (SELECT aha.lineage->>0 FROM account_hierarchy_assignment aha
+                  WHERE aha.customer_id = ep.customer_id
+                  ORDER BY aha.updated_at DESC NULLS LAST, aha.id DESC
+                  LIMIT 1) AS taxonomy_root
+            FROM ep
         """), {"day": day, "cutover": SETTLE_CLOCK_CUTOVER_UTC,
                "settle": SETTLING_WINDOW_DAYS}).fetchall()
         legacy = s.execute(T("""
@@ -383,14 +690,45 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
               f"(old launch clock; values not final when written)", flush=True)
 
     out = []
+    basis_counts = {"cpa": 0, "conversion_value": 0}
+    guarded = 0
     for r in rows:
-        we = r[5].date() if hasattr(r[5], "date") else r[5]
+        m = r._mapping
+        we = m["window_end"]
+        we = we.date() if hasattr(we, "date") else we
+
+        if goal_aware:
+            basis, guard_hit = resolve_goal_basis(
+                m["goal_metric_type"], m["taxonomy_root"], m["b_cv"])
+            guarded += 1 if guard_hit else 0
+        else:
+            basis, guard_hit = "cpa", False
+
+        efficiency = (m["cv_delta"] if basis == "conversion_value"
+                      else m["cpa_delta"])
+        basis_counts[basis] += 1
+
         out.append(SettledHorizon(
-            episode_id=str(r[0]),
-            horizon_days=int(r[1]),
-            cost_delta_pct=float(r[2] or 0),
-            conversions_delta_pct=float(r[3] or 0),
-            efficiency_delta_pct=float(r[4] or 0),
-            finalized_on=settle_date(we, int(r[1])),
+            episode_id=str(m["episode_id"]),
+            horizon_days=int(m["horizon_days"]),
+            cost_delta_pct=float(m["cost_delta"] or 0),
+            conversions_delta_pct=float(m["conv_delta"] or 0),
+            efficiency_delta_pct=float(efficiency or 0),
+            finalized_on=settle_date(we, int(m["horizon_days"])),
+            goal_basis=basis,
         ))
+
+    # Fail loud, with denominators — a coverage number without its denominator
+    # is exactly what the 2026-08-01 bus rule forbids, and these two lines are
+    # the ones that end up quoted in the amendment.
+    total = len(out)
+    if goal_aware and total:
+        value_n = basis_counts["conversion_value"]
+        print(f"[settle-day] goal basis: {value_n}/{total} "
+              f"({100.0 * value_n / total:.1f}%) conversion_value, "
+              f"{basis_counts['cpa']}/{total} cpa; "
+              f"zero-baseline guard moved {guarded} to cpa", flush=True)
+    elif total:
+        print(f"[settle-day] goal basis: cpa for all {total} rows "
+              f"(SN21_SETTLE_SCORING_V2 off)", flush=True)
     return out
