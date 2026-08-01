@@ -4,9 +4,12 @@ from datetime import date
 
 import pytest
 
+from datetime import timedelta
+
 from hope.scoring.collateral_floor import (
+    ALPHA_LADDER,
     LAUNCH_FLOOR_ALPHA,
-    PLUS_4WK_FLOOR_ALPHA,
+    TERMINAL_FLOOR_ALPHA,
     CaptureState,
     add_voluntary,
     compliance_view,
@@ -17,10 +20,36 @@ from hope.scoring.collateral_floor import (
 LAUNCH = date(2026, 8, 10)
 
 
-def test_floor_steps_at_four_weeks():
-    assert floor_for_day(LAUNCH, LAUNCH) == LAUNCH_FLOOR_ALPHA
-    assert floor_for_day(date(2026, 9, 6), LAUNCH) == LAUNCH_FLOOR_ALPHA   # day 27
-    assert floor_for_day(date(2026, 9, 7), LAUNCH) == PLUS_4WK_FLOOR_ALPHA # day 28
+def test_ladder_is_robs_published_schedule():
+    """Rob 2026-08-01: 300 -> 475 -> 650 -> 825 -> 1,000, one step per week.
+    Pinned literally: these are published numbers miners plan around, so a
+    silent edit to the tuple must fail here rather than in a miner's wallet."""
+    assert ALPHA_LADDER == (300.0, 475.0, 650.0, 825.0, 1000.0)
+    assert LAUNCH_FLOOR_ALPHA == 300.0
+    assert TERMINAL_FLOOR_ALPHA == 1000.0
+
+
+@pytest.mark.parametrize("day_offset,expected", [
+    (0, 300.0), (6, 300.0),      # week 0
+    (7, 475.0), (13, 475.0),     # week 1
+    (14, 650.0), (20, 650.0),    # week 2
+    (21, 825.0), (27, 825.0),    # week 3
+    (28, 1000.0), (60, 1000.0),  # week 4+, holds at terminal
+])
+def test_floor_steps_weekly_and_holds_at_terminal(day_offset, expected):
+    assert floor_for_day(LAUNCH + timedelta(days=day_offset), LAUNCH) == expected
+
+
+def test_pre_launch_day_gets_the_launch_floor_not_an_error():
+    """Back-dated folds happen when a settle run catches up. A miner must
+    never be judged against a floor that did not exist yet."""
+    assert floor_for_day(LAUNCH - timedelta(days=3), LAUNCH) == LAUNCH_FLOOR_ALPHA
+
+
+def test_ladder_is_monotonic():
+    """A floor that fell would release collateral the capture path never
+    drains — the frozen-floor rule assumes floors only ever rise."""
+    assert list(ALPHA_LADDER) == sorted(ALPHA_LADDER)
 
 
 def test_capture_fills_floor_before_payout():

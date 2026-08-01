@@ -19,7 +19,18 @@ validators score against them SOFTLY — this module is that soft phase:
 
 Floor amounts are FLAT alpha, restated at four-weekly reviews (per-miner
 earnings vary too much under the §7 curve for a rewards-denominated
-floor): 300 a at IM launch -> 600 a at +4 weeks.
+floor). Rob restated the schedule on 2026-08-01, replacing the original
+single step (300 a -> 600 a at +4 weeks) with a WEEKLY ramp:
+
+    week 0   300 a   (IM launch)
+    week 1   475 a
+    week 2   650 a
+    week 3   825 a
+    week 4+  1000 a
+
+Same start, higher ceiling, and it climbs every week instead of one cliff
+at day 28 — so a miner's obligation grows with their exposure rather than
+jumping. See ALPHA_LADDER.
 
 When v435 activates, native `min_locked` reads replace this bookkeeping;
 `ChainFloorReader` is the injection seam (suggested owner params travel
@@ -35,10 +46,21 @@ from dataclasses import dataclass, replace
 from datetime import date
 from typing import Callable, Optional
 
-# Review-restated flat floors (v0.5 §8) — the +4-week step is relative to
-# the IM launch date, which is Rob's; both numbers restate at reviews.
-LAUNCH_FLOOR_ALPHA = 300.0
-PLUS_4WK_FLOOR_ALPHA = 600.0
+# Review-restated flat floors (v0.5 §8), weeks measured from the IM launch
+# date, which is Rob's to set. Rob 2026-08-01: "Alpha hold: 300 -> 475 -> 650
+# -> 825 -> 1,000 a, one step per week over four weeks."
+#
+# Index IS the week number, so ALPHA_LADDER[n] is the floor in force during
+# week n and the last entry is the terminal floor. Restating at a review is
+# editing this tuple — floor_for_day derives everything from it, so the
+# schedule cannot drift out of step with the published numbers.
+ALPHA_LADDER = (300.0, 475.0, 650.0, 825.0, 1000.0)
+
+# First and terminal rungs, named for callers that need one or the other
+# without knowing the shape. LAUNCH_FLOOR_ALPHA is kept because daily_loop
+# imports it as a default.
+LAUNCH_FLOOR_ALPHA = ALPHA_LADDER[0]
+TERMINAL_FLOOR_ALPHA = ALPHA_LADDER[-1]
 
 # Suggested owner-set chain params for v435 activation (documented here so
 # the policy travels as one object; enforced by the CHAIN, not this module).
@@ -47,9 +69,19 @@ SUGGESTED_DRAIN_RATIO_K = 0.5
 
 
 def floor_for_day(day: date, launch_day: date) -> float:
-    """The flat floor in force on `day` (300 a launch, 600 a from +4 weeks).
-    Review restatements override by passing explicit floors to fold_day."""
-    return LAUNCH_FLOOR_ALPHA if (day - launch_day).days < 28 else PLUS_4WK_FLOOR_ALPHA
+    """The flat floor in force on `day`, per ALPHA_LADDER.
+
+    Week n runs [launch_day + 7n, launch_day + 7(n+1)); the ladder holds at
+    its terminal rung thereafter. A day BEFORE launch returns the week-0
+    floor rather than raising: back-dated folds happen when a settle run
+    catches up, and a miner must never be judged against a floor that did
+    not exist yet. Review restatements can still bypass the schedule
+    entirely by passing an explicit floor to fold_day.
+    """
+    week = (day - launch_day).days // 7
+    if week < 0:
+        return ALPHA_LADDER[0]
+    return ALPHA_LADDER[min(week, len(ALPHA_LADDER) - 1)]
 
 
 @dataclass(frozen=True)
