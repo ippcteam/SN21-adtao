@@ -105,6 +105,36 @@ def load_entries(
     return out
 
 
+def first_scored_day(root: str) -> Optional[date]:
+    """The EARLIEST day any result ever entered the ledger — i.e. the day the
+    subnet first settled anything, or None if it never has.
+
+    Deliberately unwindowed, unlike load_entries: this is an anchor date, not
+    evidence. The collateral ladder can be configured to start its clock here
+    rather than at the IM launch date, and that anchor must not drift out of
+    the 35-day window and silently reset the schedule months later.
+    """
+    d = standing_dir(root)
+    if not os.path.isdir(d):
+        return None
+    earliest: Optional[date] = None
+    for name in sorted(os.listdir(d)):
+        if not name.endswith(".jsonl") or name.startswith("_"):
+            continue
+        with open(os.path.join(d, name)) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    day = date.fromisoformat(json.loads(line)["day"])
+                except (ValueError, KeyError, json.JSONDecodeError):
+                    continue
+                if earliest is None or day < earliest:
+                    earliest = day
+    return earliest
+
+
 def scored_day_counts(entries: dict[str, list[ScoredEpisode]]) -> dict[str, int]:
     """Distinct scored DAYS per miner — [D8] condition 3 is calendar-denominated."""
     return {hk: len({e.scored_on for e in eps}) for hk, eps in entries.items()}

@@ -95,11 +95,56 @@ def launch_date_from(environ) -> Optional[date]:
         return None
 
 
-def active_floor(day: date, environ) -> float:
-    """The floor in force on `day` per configuration. Week 0 until Rob's date
-    is set, then the ladder steps on its own with no further intervention."""
-    launch = launch_date_from(environ)
-    return ALPHA_LADDER[0] if launch is None else floor_for_day(day, launch)
+# WHAT THE LADDER'S CLOCK COUNTS FROM — [PENDING ROB]. He gave the rungs
+# ("one step per week over four weeks") but never said what week 1 counts
+# from, and the two candidates are not equivalent:
+#
+#   launch           week 1 begins at the IM launch date. Inherited default —
+#                    the schedule this replaced read "300 a at IM launch".
+#   first_settlement week 1 begins the day the subnet first settles anything.
+#
+# It matters because of cold start: nobody is placement-eligible until
+# predictions settle (~day 15), and the capture path escrows from EARNINGS —
+# so under `launch` the 475 and 650 rungs arrive before any miner has earned
+# anything to escrow. Whether that is acceptable is Rob's call.
+#
+# Both are CONFIG. This exists so his one-word answer stays a flag flip
+# instead of becoming a code change and a deploy on launch day, which is the
+# single thing the launch-date work set out to eliminate.
+LADDER_ANCHOR_ENV = "SN21_LADDER_ANCHOR"
+ANCHOR_LAUNCH = "launch"
+ANCHOR_FIRST_SETTLEMENT = "first_settlement"
+
+
+def ladder_anchor_from(environ) -> str:
+    """Which anchor is configured. Unknown values fall back to `launch` — the
+    inherited default — rather than guessing at the stricter one."""
+    raw = (environ.get(LADDER_ANCHOR_ENV) or "").strip().lower()
+    if raw in (ANCHOR_LAUNCH, ANCHOR_FIRST_SETTLEMENT):
+        return raw
+    if raw:
+        print(f"[collateral] {LADDER_ANCHOR_ENV}={raw!r} unrecognised — "
+              f"anchoring to {ANCHOR_LAUNCH}", flush=True)
+    return ANCHOR_LAUNCH
+
+
+def active_floor(day: date, environ,
+                 first_settlement: Optional[date] = None) -> float:
+    """The floor in force on `day` per configuration.
+
+    Holds at the opening rung until its anchor exists: no launch date set, or
+    `first_settlement` anchoring before anything has settled. Both hold DOWN,
+    never up — an unresolved anchor must not raise a miner's obligation.
+
+    `first_settlement` is injected rather than read, keeping this module pure;
+    the daily loop supplies it from standing_ledger.first_scored_day.
+    """
+    anchor = ladder_anchor_from(environ)
+    if anchor == ANCHOR_FIRST_SETTLEMENT:
+        start = first_settlement
+    else:
+        start = launch_date_from(environ)
+    return ALPHA_LADDER[0] if start is None else floor_for_day(day, start)
 
 
 def floor_for_day(day: date, launch_day: date) -> float:

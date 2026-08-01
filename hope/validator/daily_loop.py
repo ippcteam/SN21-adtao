@@ -54,9 +54,11 @@ from typing import Callable, Optional
 
 from hope.scoring import standing_ledger
 from hope.scoring.collateral_floor import (
+    ANCHOR_FIRST_SETTLEMENT,
     CaptureState,
     LAUNCH_FLOOR_ALPHA,
     active_floor,
+    ladder_anchor_from,
     compliance_view,
     fold_day,
 )
@@ -302,8 +304,14 @@ def run_daily_loop(
     # launch date a value we set rather than a code change and a deploy — the
     # ladder was previously pinned to LAUNCH_FLOOR_ALPHA here and could never
     # step, no matter what collateral_floor computed.
+    # first_settlement is only READ when the anchor is configured to use it;
+    # computing it unconditionally would scan the whole ledger every day for a
+    # value the launch anchor never looks at.
+    _first_settled = (standing_ledger.first_scored_day(ledger_root)
+                      if ladder_anchor_from(environ) == ANCHOR_FIRST_SETTLEMENT
+                      else None)
     effective_floor = (float(floor_alpha) if floor_alpha is not None
-                       else active_floor(day, environ))
+                       else active_floor(day, environ, _first_settled))
     summary["collateral_floor_alpha"] = effective_floor
 
     # 2. [D9] capture fold — persisted; pre-M4 the provider returns {}

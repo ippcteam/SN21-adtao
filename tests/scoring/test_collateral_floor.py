@@ -8,6 +8,9 @@ from datetime import timedelta
 
 from hope.scoring.collateral_floor import (
     ALPHA_LADDER,
+    ANCHOR_FIRST_SETTLEMENT,
+    ANCHOR_LAUNCH,
+    ladder_anchor_from,
     active_floor,
     launch_date_from,
     LAUNCH_FLOOR_ALPHA,
@@ -153,3 +156,33 @@ def test_a_configured_launch_date_makes_the_ladder_step():
     assert launch_date_from(env) == L
     assert [active_floor(L + timedelta(days=d), env) for d in (0, 7, 14, 21, 28, 90)] \
         == [300.0, 475.0, 650.0, 825.0, 1000.0, 1000.0]
+
+
+# ---- the ladder's clock ANCHOR is also configuration ------------------------
+
+def test_anchor_defaults_to_launch_and_rejects_junk_downward():
+    """Unknown anchor values fall back to the inherited default rather than
+    guessing at the stricter one — same fail-down rule as the date itself."""
+    assert ladder_anchor_from({}) == ANCHOR_LAUNCH
+    assert ladder_anchor_from({"SN21_LADDER_ANCHOR": "whenever"}) == ANCHOR_LAUNCH
+    assert ladder_anchor_from({"SN21_LADDER_ANCHOR": "FIRST_SETTLEMENT"}) \
+        == ANCHOR_FIRST_SETTLEMENT
+
+
+def test_the_two_anchors_produce_genuinely_different_schedules():
+    """If both anchors gave the same answer the [PENDING ROB] question would be
+    cosmetic. They do not: same day, different rung."""
+    day, settled = date(2026, 9, 10), date(2026, 8, 20)
+    launch_env = {"SN21_IM_LAUNCH_DATE": "2026-08-10"}
+    settle_env = {**launch_env, "SN21_LADDER_ANCHOR": ANCHOR_FIRST_SETTLEMENT}
+    assert active_floor(day, launch_env, settled) == 1000.0   # launch+31d, wk4
+    assert active_floor(day, settle_env, settled) == 825.0    # settle+21d, wk3
+
+
+def test_first_settlement_anchor_holds_at_the_opening_rung_before_anything_settles():
+    """The cold-start case this anchor exists to address: until the subnet has
+    settled anything there is no clock to start, and the floor must hold DOWN
+    rather than run off the launch date it was told to ignore."""
+    env = {"SN21_IM_LAUNCH_DATE": "2026-08-10",
+           "SN21_LADDER_ANCHOR": ANCHOR_FIRST_SETTLEMENT}
+    assert active_floor(date(2026, 12, 25), env, None) == LAUNCH_FLOOR_ALPHA
