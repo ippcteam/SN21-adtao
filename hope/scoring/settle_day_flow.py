@@ -381,6 +381,33 @@ def resolve_goal_basis(goal_metric_type: Optional[str],
     return intended, False
 
 
+def basis_for_row(frozen_basis: Optional[str],
+                  frozen_guarded,
+                  goal_metric_type: Optional[str],
+                  taxonomy_root: Optional[str],
+                  baseline_conv_value_micros) -> tuple[str, bool, bool]:
+    """(basis, guard_applied, was_frozen) for one measured row.
+
+    THE FROZEN VALUE WINS. OBI resolves the basis at REVEAL and persists it on
+    ``bittensor_episode_candidates.goal_basis`` (see
+    app/services/bittensor/goal_basis_service.py). When it is present, this
+    reader uses it verbatim and does not consult accountgoals, the taxonomy or
+    the baseline at all — that is the whole point: the tables those come from
+    keep moving after reveal, and re-deriving here would re-open the gap the
+    freeze closes.
+
+    ``resolve_goal_basis`` is the PRE-FREEZE FALLBACK, not dead code: the
+    4,377 candidates reserved before the freeze shipped carry NULL and must
+    still score. Their basis is recomputed, and the counts are reported
+    separately so the residual is visible rather than assumed away.
+    """
+    if frozen_basis:
+        return str(frozen_basis), bool(frozen_guarded), True
+    basis, guarded = resolve_goal_basis(
+        goal_metric_type, taxonomy_root, baseline_conv_value_micros)
+    return basis, guarded, False
+
+
 def settle_scoring_v2_enabled(environ=os.environ) -> bool:
     """Single source of truth for which settle formula is active.
 
@@ -599,6 +626,49 @@ def run_settle_day(
 
 # ---- production outcomes reader (reference implementation) -------------------
 
+def _has_frozen_basis_column(session) -> bool:
+    """Whether the OBI database has migration 20260801_btc_goal_basis applied.
+
+    The validator host and OBI deploy independently, so this reader can run
+    against a database that predates the freeze columns. A probe beats a
+    validator that crashes on `column c.goal_basis does not exist`; without the
+    columns everything simply recomputes, which is the documented pre-freeze
+    behaviour, and the provenance line says so out loud.
+
+    Three things this gets right that the first cut did not:
+
+    * SAVEPOINT. A failed statement poisons the whole transaction on
+      PostgreSQL, so a bare try/except here would leave the session unusable
+      and the very next query — the real one — would fail with
+      "current transaction is aborted". begin_nested() rolls back just the
+      probe. This is the same defect the OBI side was repaired for; it lived
+      on in this twin.
+    * BOTH columns. The query this gates selects goal_basis AND
+      goal_basis_guarded. Probing only the first means a half-applied
+      migration reads as applied and the reader crashes on the second — the
+      exact failure the probe exists to prevent.
+    * table_schema pinned. Without it, a same-named table in another schema
+      on the search_path answers for ours.
+    """
+    from sqlalchemy import text as T
+    try:
+        with session.begin_nested():
+            n = session.execute(T("""
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'bittensor_episode_candidates'
+                  AND column_name IN ('goal_basis', 'goal_basis_guarded')
+            """)).scalar() or 0
+        if 0 < n < 2:
+            print(f"[settle-day] PARTIAL freeze migration: {n}/2 goal_basis "
+                  f"columns present — recomputing every basis", flush=True)
+        return n == 2
+    except Exception as err:  # noqa: BLE001
+        print(f"[settle-day] frozen-basis column probe failed ({err}) — "
+              f"recomputing every basis", flush=True)
+        return False
+
+
 def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
     """All measured rows settle-dated on or before `day`, post-cutover.
 
@@ -618,22 +688,40 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
     the account's own goal metric per resolve_goal_basis — cpa_delta_pct or
     conversion_value_delta_pct — which is Rob's 2026-07-31 ruling. The flag
     gates the truth basis and the formula together on purpose: both are
-    miner-facing and ship with one amendment, so there is one switch and one
-    announcement, never a window where miners are scored on a basis that was
-    not published.
+    miner-facing and ship with one amendment, so there is one announcement
+    rather than two silent changes.
 
-    KNOWN LIMITATION — freeze at reveal. The guard reads
-    baseline_avg_conv_value_micros off the OUTCOME row, which is written at
-    measurement time, i.e. after reveal. If a baseline-window conversion
-    value settles late it could in principle flip an episode from cpa to
-    conversion_value between reveal and scoring — the exact "scored on
-    something you could not see" gap we are closing. J1 measurement says the
-    baseline is effectively settled by reveal (91% of conversions land within
-    7 days, and the baseline window is older than that), so the residual risk
-    is small but not zero. The canonical fix is to resolve the basis AT
-    REVEAL, persist it on the candidate, and publish it in the episode
-    payload beside goal.type; this reader then reads the frozen value instead
-    of recomputing. That is OBI-side work and is tracked separately.
+    WHAT THE FLAG DOES NOT GUARANTEE. It does not make "scored on a basis that
+    was never published" impossible, and the previous version of this paragraph
+    said it did. Two gaps: (1) the pre-freeze population below is scored on a
+    RECOMPUTED basis while the payload publishes nothing for a NULL frozen
+    column, so those episodes are scored on a basis no miner ever saw; (2) this
+    flag is read in the validator process, while the one that turns the payload
+    disclosure on (goal_basis_service.publish_goal_basis_enabled) is read in
+    the OBI web process on another host — setting it here does not set it
+    there. The pairing is a deployment convention, not an interlock.
+
+    FREEZE AT REVEAL — shipped, with a residual. OBI now resolves the basis at
+    REVEAL (the reservation UPDATE in daily_basket_service / release_service)
+    and persists it on bittensor_episode_candidates.goal_basis /
+    .goal_basis_guarded; app/services/bittensor/goal_basis_service.py is the
+    authority and mirrors resolve_goal_basis byte-for-byte. This reader prefers
+    the frozen value and never recomputes when it is present, so accountgoals
+    edits, account_hierarchy_assignment retags and late-settling baselines can
+    no longer move an episode's basis after a miner has seen it.
+
+    THE RESIDUAL, stated rather than buried: episodes revealed BEFORE the
+    freeze shipped have goal_basis NULL — 4,377 already-reserved candidates,
+    2,041 of them in BD- baskets. They are deliberately not backfilled, since
+    writing today's resolution onto them would assert a freeze that never
+    happened. They fall back to resolve_goal_basis here, exactly as before, and
+    the summary below reports frozen vs recomputed with denominators so the
+    residual shrinks visibly as the pre-freeze population settles out.
+
+    The frozen columns are read defensively (see _has_frozen_basis_column): a
+    validator host whose OBI database has not yet had migration
+    20260801_btc_goal_basis applied recomputes everything and says so, instead
+    of crashing on an undefined column.
     """
     import sys
     sys.path.insert(0, "/Users/macbookm1/Documents/Projects/obi")
@@ -643,7 +731,12 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
     goal_aware = settle_scoring_v2_enabled()
 
     with get_session() as s:
-        rows = s.execute(T("""
+        frozen_cols = ("c.goal_basis AS frozen_basis, "
+                       "c.goal_basis_guarded AS frozen_guarded"
+                       if _has_frozen_basis_column(s)
+                       else "NULL::text AS frozen_basis, "
+                            "NULL::boolean AS frozen_guarded")
+        rows = s.execute(T(f"""
             WITH ep AS (
                 SELECT o.episode_candidate_id      AS episode_id,
                        o.horizon_days              AS horizon_days,
@@ -653,6 +746,7 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
                        o.conversion_value_delta_pct AS cv_delta,
                        COALESCE(o.baseline_avg_conv_value_micros, 0) AS b_cv,
                        c.action_window_end         AS window_end,
+                       {frozen_cols},
                        r.google_ads_account_id     AS gads_id,
                        r.customer_id               AS customer_id
                 FROM bittensor_episode_outcomes o
@@ -692,21 +786,29 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
     out = []
     basis_counts = {"cpa": 0, "conversion_value": 0}
     guarded = 0
+    frozen_n = 0
+    recomputed_n = 0
     for r in rows:
         m = r._mapping
         we = m["window_end"]
         we = we.date() if hasattr(we, "date") else we
 
         if goal_aware:
-            basis, guard_hit = resolve_goal_basis(
+            basis, guard_hit, was_frozen = basis_for_row(
+                m["frozen_basis"], m["frozen_guarded"],
                 m["goal_metric_type"], m["taxonomy_root"], m["b_cv"])
             guarded += 1 if guard_hit else 0
+            frozen_n += 1 if was_frozen else 0
+            recomputed_n += 0 if was_frozen else 1
         else:
             basis, guard_hit = "cpa", False
 
         efficiency = (m["cv_delta"] if basis == "conversion_value"
                       else m["cpa_delta"])
-        basis_counts[basis] += 1
+        # .get, not [basis]: the frozen column is written by another repo, and
+        # an unrecognised value must show up in the summary rather than take
+        # the validator down with a KeyError.
+        basis_counts[basis] = basis_counts.get(basis, 0) + 1
 
         out.append(SettledHorizon(
             episode_id=str(m["episode_id"]),
@@ -728,6 +830,16 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
               f"({100.0 * value_n / total:.1f}%) conversion_value, "
               f"{basis_counts['cpa']}/{total} cpa; "
               f"zero-baseline guard moved {guarded} to cpa", flush=True)
+        # Frozen vs recomputed, with denominators. recomputed > 0 is not an
+        # error — it is the pre-freeze population (episodes revealed before
+        # 20260801_btc_goal_basis) still being scored on a basis derived after
+        # the fact. It should fall to 0 as those settle out; if it climbs, the
+        # freeze has stopped writing on one of the reveal paths.
+        print(f"[settle-day] basis provenance: {frozen_n}/{total} "
+              f"({100.0 * frozen_n / total:.1f}%) frozen at reveal, "
+              f"{recomputed_n}/{total} recomputed at settle "
+              f"(pre-freeze episodes — no frozen basis exists for them)",
+              flush=True)
     elif total:
         print(f"[settle-day] goal basis: cpa for all {total} rows "
               f"(SN21_SETTLE_SCORING_V2 off)", flush=True)

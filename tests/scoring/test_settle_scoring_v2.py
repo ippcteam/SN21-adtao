@@ -10,6 +10,7 @@ _the_guard — it pins the exploit the guard exists to close, so nobody can
 delete the guard later and still see green.
 """
 
+
 import pytest
 
 from hope.scoring.settle_day_flow import (
@@ -21,10 +22,13 @@ from hope.scoring.settle_day_flow import (
     W_QUANTILE,
     W_TOTAL,
     _coverage_score,
+    _has_frozen_basis_column,
     _goal_direction_score,
     _goal_p50_score,
     entry_components,
+    basis_for_row,
     entry_components_v2,
+    obi_outcomes_provider,
     resolve_goal_basis,
     score_entry,
     score_entry_active,
@@ -222,3 +226,222 @@ def test_flag_defaults_closed(raw):
     pred, actual = _pred(0.4), _actual(0.4)
     assert score_entry_active(pred, actual,
                               environ={"SN21_SETTLE_SCORING_V2": raw}) == score_entry(pred, actual)
+
+
+# ---- freeze at reveal --------------------------------------------------------
+#
+# OBI now decides the basis at REVEAL and persists it on
+# bittensor_episode_candidates (migration 20260801_btc_goal_basis,
+# app/services/bittensor/goal_basis_service.py). This reader must PREFER that
+# value: the tables resolve_goal_basis reads keep moving after reveal, so
+# recomputing when a frozen value exists would re-open the gap the freeze
+# closes. resolve_goal_basis stays as the pre-freeze fallback — 4,377
+# candidates were reserved before the freeze shipped and are deliberately not
+# backfilled, since writing today's answer onto them would assert a freeze
+# that never happened.
+
+def test_frozen_basis_wins_and_nothing_is_recomputed():
+    """Every recompute input says CPA; the frozen value says conversion_value.
+    The frozen value must win, or the freeze is decorative."""
+    basis, guarded, was_frozen = basis_for_row(
+        "conversion_value", False,
+        goal_metric_type="CPA", taxonomy_root="home_services",
+        baseline_conv_value_micros=0)
+    assert (basis, guarded, was_frozen) == ("conversion_value", False, True)
+
+
+def test_frozen_basis_wins_even_when_the_live_cascade_would_say_value():
+    """The mirror case: a retag to `retail` after reveal must not upgrade an
+    episode that was revealed as CPA."""
+    basis, _guarded, was_frozen = basis_for_row(
+        "cpa", False, None, "retail", 5_000_000)
+    assert (basis, was_frozen) == ("cpa", True)
+
+
+def test_frozen_guard_flag_is_carried_not_re_derived():
+    """A frozen row that was guarded stays guarded even though the baseline has
+    since settled — the veto is part of what was frozen."""
+    _basis, guarded, was_frozen = basis_for_row(
+        "cpa", True, "TARGET_ROAS", "retail", 9_000_000)
+    assert (guarded, was_frozen) == (True, True)
+
+
+@pytest.mark.parametrize("frozen", [None, ""])
+def test_null_frozen_basis_falls_back_to_the_live_cascade(frozen):
+    """Pre-freeze episodes must still score, not crash."""
+    assert basis_for_row(frozen, None, "TARGET_ROAS", None, 5_000_000) == (
+        "conversion_value", False, False)
+    assert basis_for_row(frozen, None, None, "retail", 0) == ("cpa", True, False)
+    assert basis_for_row(frozen, None, None, None, 0) == ("cpa", False, False)
+
+
+def test_fallback_is_exactly_resolve_goal_basis():
+    """The fallback must not become a second, drifting implementation."""
+    for args in [("TARGET_ROAS", "retail", 0), (None, "retail", 5),
+                 ("CPA", "retail", 5), (None, None, 0)]:
+        basis, guarded, was_frozen = basis_for_row(None, None, *args)
+        assert (basis, guarded) == resolve_goal_basis(*args)
+        assert was_frozen is False
+
+
+def test_pre_migration_database_recomputes_instead_of_crashing():
+    """A validator host whose OBI database predates 20260801_btc_goal_basis
+    must degrade to recomputation, not `column c.goal_basis does not exist`."""
+    class _Boom:
+        def execute(self, *_a, **_k):
+            raise RuntimeError("no such table information_schema.columns")
+
+    assert _has_frozen_basis_column(_Boom()) is False
+
+
+# ---- the provider, RUN (not grepped) ----------------------------------------
+#
+# obi_outcomes_provider reaches into the OBI repo for its session. The fake
+# below is injected as `app.models` before the provider's own import runs, and
+# it behaves like the database it stands in for: when the freeze migration is
+# absent, selecting c.goal_basis raises UndefinedColumn exactly as Postgres
+# does. That is what makes "degrades to recomputation" a test rather than an
+# assertion about source text.
+
+class _FakeRow:
+    def __init__(self, **kw):
+        self._mapping = kw
+
+
+class _FakeUndefinedColumn(RuntimeError):
+    pass
+
+
+class _FakeSession:
+    def __init__(self, rows, columns_present=True):
+        self.rows = rows
+        self.columns_present = columns_present
+        self.sql_seen = []
+
+    def execute(self, stmt, params=None):
+        sql = str(stmt)
+        self.sql_seen.append(sql)
+        session = self
+
+        class _R:
+            def fetchall(_self):
+                if "c.goal_basis" in sql and not session.columns_present:
+                    raise _FakeUndefinedColumn(
+                        'column c.goal_basis does not exist')
+                return session.rows
+
+            def scalar(_self):
+                if "information_schema.columns" in sql:
+                    return 1 if session.columns_present else None
+                return 0
+        return _R()
+
+
+def _install_fake_obi(monkeypatch, session):
+    import sys
+    import types
+
+    module = types.ModuleType("app.models")
+
+    class _CM:
+        def __enter__(self_inner):
+            return session
+
+        def __exit__(self_inner, *exc):
+            return False
+
+    module.get_session = lambda: _CM()
+    monkeypatch.setitem(sys.modules, "app", types.ModuleType("app"))
+    monkeypatch.setitem(sys.modules, "app.models", module)
+
+
+def _outcome_row(episode_id, frozen_basis=None, frozen_guarded=None,
+                 goal_metric_type=None, taxonomy_root=None, b_cv=0,
+                 cpa_delta=-10.0, cv_delta=25.0):
+    from datetime import date as _date
+    return _FakeRow(
+        episode_id=episode_id, horizon_days=7, cost_delta=1.0, conv_delta=2.0,
+        cpa_delta=cpa_delta, cv_delta=cv_delta, b_cv=b_cv,
+        window_end=_date(2026, 7, 20), frozen_basis=frozen_basis,
+        frozen_guarded=frozen_guarded, gads_id=1, customer_id="123",
+        goal_metric_type=goal_metric_type, taxonomy_root=taxonomy_root)
+
+
+def test_provider_scores_a_frozen_row_on_its_frozen_basis(monkeypatch, capsys):
+    """The frozen row's efficiency must come from cv_delta even though every
+    live input says cpa; the unfrozen row beside it is recomputed and lands on
+    cpa_delta. One run, two provenances, both observed on the output."""
+    monkeypatch.setenv("SN21_SETTLE_SCORING_V2", "true")
+    session = _FakeSession([
+        _outcome_row("frozen-1", frozen_basis="conversion_value",
+                     frozen_guarded=False, goal_metric_type="CPA",
+                     taxonomy_root="home_services"),
+        _outcome_row("prefreeze-1", frozen_basis=None, taxonomy_root=None),
+    ])
+    _install_fake_obi(monkeypatch, session)
+
+    from datetime import date as _date
+    out = obi_outcomes_provider(_date(2026, 8, 1))
+
+    by_id = {h.episode_id: h for h in out}
+    assert by_id["frozen-1"].goal_basis == "conversion_value"
+    assert by_id["frozen-1"].efficiency_delta_pct == 25.0     # cv_delta
+    assert by_id["prefreeze-1"].goal_basis == "cpa"
+    assert by_id["prefreeze-1"].efficiency_delta_pct == -10.0  # cpa_delta
+
+    printed = capsys.readouterr().out
+    assert "1/2 (50.0%) frozen at reveal" in printed
+    assert "1/2 recomputed at settle" in printed
+
+
+def test_provider_never_recomputes_over_a_frozen_value(monkeypatch):
+    """A retag to `retail` after reveal must not upgrade an episode that was
+    revealed as cpa — through the whole provider, not just basis_for_row."""
+    monkeypatch.setenv("SN21_SETTLE_SCORING_V2", "true")
+    session = _FakeSession([
+        _outcome_row("frozen-cpa", frozen_basis="cpa", frozen_guarded=False,
+                     taxonomy_root="retail", b_cv=9_000_000),
+    ])
+    _install_fake_obi(monkeypatch, session)
+    from datetime import date as _date
+    (settled,) = obi_outcomes_provider(_date(2026, 8, 1))
+    assert settled.goal_basis == "cpa"
+    assert settled.efficiency_delta_pct == -10.0
+
+
+def test_provider_survives_a_database_without_the_freeze_columns(monkeypatch, capsys):
+    """The pre-migration host, end to end: the probe says no, the query must
+    therefore not name c.goal_basis (the fake raises UndefinedColumn if it
+    does), and every row is recomputed."""
+    monkeypatch.setenv("SN21_SETTLE_SCORING_V2", "true")
+    session = _FakeSession([_outcome_row("old-1", taxonomy_root="retail",
+                                         b_cv=9_000_000)],
+                           columns_present=False)
+    _install_fake_obi(monkeypatch, session)
+    from datetime import date as _date
+    (settled,) = obi_outcomes_provider(_date(2026, 8, 1))
+    assert settled.goal_basis == "conversion_value"   # recomputed live
+    assert "1/1 recomputed at settle" in capsys.readouterr().out
+
+
+def test_provider_reports_an_unrecognised_frozen_basis_instead_of_crashing(monkeypatch):
+    """goal_basis is written by another repo. An unknown value must appear in
+    the summary, not raise KeyError inside the validator."""
+    monkeypatch.setenv("SN21_SETTLE_SCORING_V2", "true")
+    session = _FakeSession([_outcome_row("weird-1", frozen_basis="roas_v3")])
+    _install_fake_obi(monkeypatch, session)
+    from datetime import date as _date
+    (settled,) = obi_outcomes_provider(_date(2026, 8, 1))
+    assert settled.goal_basis == "roas_v3"
+    assert settled.efficiency_delta_pct == -10.0      # falls back to cpa_delta
+
+
+def test_provider_is_inert_while_the_v2_flag_is_off(monkeypatch):
+    monkeypatch.setenv("SN21_SETTLE_SCORING_V2", "0")
+    session = _FakeSession([_outcome_row("frozen-1",
+                                         frozen_basis="conversion_value")])
+    _install_fake_obi(monkeypatch, session)
+    from datetime import date as _date
+    (settled,) = obi_outcomes_provider(_date(2026, 8, 1))
+    assert settled.goal_basis == "cpa"
+    assert settled.efficiency_delta_pct == -10.0
