@@ -26,17 +26,59 @@ def _client(releases):
     return c
 
 
+def _deadline_for(opened):
+    """The deadline the guard will compute for a given newest-release
+    created_at — mirrors data_client's two branches.
+
+    Kept in the test rather than imported so a change to the RULE has to be
+    made deliberately in both places, not silently inherited.
+    """
+    from hope.validator.epoch_manager import MINING_CLOSE_HOUR_UTC
+    if opened.weekday() == 0:            # Monday cadence: same-day close
+        return opened.replace(hour=MINING_CLOSE_HOUR_UTC, minute=0,
+                              second=0, microsecond=0)
+    return next_mining_close(opened)
+
+
 def test_blocks_release_that_has_not_closed():
+    """The guard must refuse to score an epoch whose window is still open.
+
+    DATE-INDEPENDENT BY CONSTRUCTION. The original seeded the newest release at
+    `now` and asserted it ALWAYS raises. That held six days a week and failed
+    every Monday after 05:00 UTC: a Monday created_at takes the same-day-close
+    branch, so the deadline is 05:00 TODAY, already past — and the epoch really
+    has closed, so not raising is correct. The test was wrong, not the code, but
+    it cost real time to prove that on 2026-08-03. This version picks a
+    created_at whose deadline is genuinely in the future on ANY day.
+    """
     now = datetime.now(timezone.utc)
-    # newest created "now" → its Monday-close (= the prior epoch's deadline) is
-    # in the future → the prior epoch is still open → must NOT be scoreable.
+    # Walk back to a created_at whose computed deadline is still ahead of now.
+    opened = next(o for o in (now + timedelta(days=d) for d in range(0, 8))
+                  if _deadline_for(o) > now)
     c = _client([
-        {"release_key": "W_NEW", "created_at": now.isoformat()},
-        {"release_key": "W_PRIOR", "created_at": (now - timedelta(days=7)).isoformat()},
+        {"release_key": "W_NEW", "created_at": opened.isoformat()},
+        {"release_key": "W_PRIOR",
+         "created_at": (opened - timedelta(days=7)).isoformat()},
     ])
-    if next_mining_close(now) > now:  # essentially always (next close is ahead)
-        with pytest.raises(RuntimeError, match="has not closed yet"):
-            asyncio.run(c.discover_scoreable_release())
+    assert _deadline_for(opened) > now, "test setup failed to find an open epoch"
+    with pytest.raises(RuntimeError, match="has not closed yet"):
+        asyncio.run(c.discover_scoreable_release())
+
+
+def test_the_monday_branch_allows_scoring_once_the_close_hour_has_passed():
+    """The other half of the rule, which the old test never covered: on a
+    Monday AFTER 05:00 the prior epoch has genuinely closed and must be
+    scoreable. This is the case that exposed the flaw above."""
+    from hope.validator.epoch_manager import MINING_CLOSE_HOUR_UTC
+    monday = datetime.now(timezone.utc) - timedelta(days=datetime.now(timezone.utc).weekday())
+    opened = monday.replace(hour=MINING_CLOSE_HOUR_UTC, minute=0, second=0,
+                            microsecond=0) - timedelta(days=7)
+    c = _client([
+        {"release_key": "W_NEW", "created_at": opened.isoformat()},
+        {"release_key": "W_PRIOR",
+         "created_at": (opened - timedelta(days=7)).isoformat()},
+    ])
+    assert asyncio.run(c.discover_scoreable_release()) == "W_PRIOR"
 
 
 def test_returns_release_once_closed():
