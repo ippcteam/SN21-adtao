@@ -7,14 +7,17 @@ pin the SAFETY properties first (a day we did not run can never strike
 anybody; a subnet-side failure can never strike anybody) before the policy
 arithmetic.
 
-Numbers under test are Rob's PROPOSALS (5 in 14, repeat wait 14), not
-ratified — the tests pass explicit params wherever the number is the point,
-so a ratification is a one-line change in chronic_failure.py and not a test
-rewrite.
+Numbers under test are Rob's RULING of 2026-08-03: 5 strikes in a rolling 14
+days, re-entry wait 7 (he moved it from 14: "I would suggest 7 is better").
+He also ruled that the field must never be emptied — "we have to not evict all
+miners - we need at least 1 house model" — which is why every eviction
+scenario carries a healthy BYSTANDER: with one model in the population nothing
+can be evicted at all, and that is correct.
 """
 
 import json
 import os
+from dataclasses import replace
 from datetime import date, timedelta
 
 from hope.backtest.container_runner import (
@@ -36,6 +39,11 @@ from hope.backtest.shadow import (
 )
 from hope.scoring import standing_ledger as sl
 from hope.scoring.chronic_failure import (
+    min_survivors_from,
+    house_hotkey_from,
+    MIN_SURVIVORS_ENV,
+    HOUSE_HOTKEY_ENV,
+    KIND_EVICTION_WITHHELD,
     FAULT_MINER,
     FAULT_NONE,
     FAULT_SUBNET,
@@ -76,12 +84,27 @@ def _d(n):
     return DAY - timedelta(days=n)
 
 
-def _fail(hotkey=HK, error=f"{ERR_EXIT_PREFIX}1: b'boom'"):
-    return {hotkey: (False, error)}
+# A HEALTHY SECOND MODEL in every eviction scenario. Rob ruled 2026-08-03 that
+# the field must never be emptied ("we have to not evict all miners"), so with
+# only one model in the population NOTHING can ever be evicted — the guard
+# withholds it. That is correct behaviour, and it means an eviction test needs
+# somebody left standing. Adding a bystander is not a workaround; it is the
+# only shape in which an eviction is legal at all.
+BYSTANDER = "healthy-bystander"
 
 
-def _ok(hotkey=HK):
-    return {hotkey: (True, None)}
+def _fail(hotkey=HK, error=f"{ERR_EXIT_PREFIX}1: b'boom'", with_bystander=True):
+    runs = {hotkey: (False, error)}
+    if with_bystander and hotkey != BYSTANDER:
+        runs[BYSTANDER] = (True, None)
+    return runs
+
+
+def _ok(hotkey=HK, with_bystander=True):
+    runs = {hotkey: (True, None)}
+    if with_bystander and hotkey != BYSTANDER:
+        runs[BYSTANDER] = (True, None)
+    return runs
 
 
 def _run_days(states, events, days_and_runs, params=P):
@@ -95,14 +118,21 @@ def _run_days(states, events, days_and_runs, params=P):
     return states, log, last
 
 
-# ---- defaults are Rob's proposals, and are the only numbers in the code ----
+# ---- defaults ARE Rob's ruling, and are the only numbers in the code -------
 
-def test_pending_rob_defaults_are_the_proposed_numbers():
+def test_defaults_are_robs_ruled_numbers():
+    """Rob 2026-08-03: "are you saying that if a miner fails submit (ie bad
+    code) 5x in 14 days then 14 days before return? I would suggest 7 is
+    better." So N=5 and M=14 stand; the RE-ENTRY WAIT drops 14 -> 7.
+
+    The default must BE the ruling, not an env override on top of a superseded
+    proposal — a host that misses the variable would otherwise lock a miner
+    out for twice as long as Rob decided."""
     assert (PENDING_ROB_STRIKES_TO_EVICT, PENDING_ROB_WINDOW_DAYS,
-            PENDING_ROB_REPEAT_REVIEW_DAYS) == (5, 14, 14)
+            PENDING_ROB_REPEAT_REVIEW_DAYS) == (5, 14, 7)
     assert P.strikes_to_evict == 5
     assert P.window_days == 14
-    assert P.repeat_review_days == 14
+    assert P.repeat_review_days == 7
     # "repeat" lookback deliberately unset: any prior eviction is a repeat
     # until Rob rules on what the review period means.
     assert P.repeat_lookback_days is None
@@ -325,7 +355,8 @@ def test_strikes_accrue_one_per_failed_day():
     days = [(_d(i), _fail()) for i in (4, 3, 2)]
     _, log, _ = _run_days({}, [], days, P)
     assert strikes_in_window(log, HK, DAY, P.window_days) == 3
-    assert [e.kind for e in log] == [KIND_STRIKE] * 3
+    # scoped to HK: the healthy bystander logs its own clean days
+    assert [e.kind for e in log if e.hotkey == HK] == [KIND_STRIKE] * 3
 
 
 def test_timeout_and_nonzero_exit_both_strike():
@@ -543,7 +574,9 @@ def test_first_eviction_returns_on_the_first_clean_run():
     assert back.reinstated == (HK,)
     assert back.states[HK].evicted_on is None
     assert evicted_hotkeys(back.states, ev_day + timedelta(days=1)) == frozenset()
-    assert [e.kind for e in back.events] == [KIND_CLEAN, KIND_REINSTATED]
+    # scoped to HK: the healthy bystander logs its own clean day too
+    assert [e.kind for e in back.events if e.hotkey == HK] == \
+        [KIND_CLEAN, KIND_REINSTATED]
     # history survives re-entry — it is what makes the next one a repeat
     assert back.states[HK].evictions_total == 1
     assert back.states[HK].last_eviction_on == ev_day
@@ -1015,3 +1048,102 @@ def test_a_genuine_prior_eviction_still_counts_after_a_retraction():
     new, _ = retract_eviction(st, events, date(2026, 8, 20))
     assert new.evictions_total == 1
     assert new.last_eviction_on == date(2026, 8, 5)
+
+
+# ---- ROB'S FLOOR: the field must never be emptied (ruled 2026-08-03) --------
+#
+# "We have to not evict all miners - we need at least 1 house model (Rabbia)."
+#
+# With the policy on, evicting the last placement-eligible model empties the
+# weight vector and the subnet pays NOBODY. Not a distant edge case: the
+# reference model is the only model that has ever run, so today the last model
+# IS the only model — and five validators mirror our vector within the hour.
+
+def test_the_only_model_is_never_evicted():
+    """THE ONE ROB RULED ON. Five failed days, eviction fully earned, and it
+    must still not happen because there is nobody else."""
+    states, log, last = _run_days({}, [], [
+        (_d(n), _fail(with_bystander=False)) for n in (4, 3, 2, 1, 0)
+    ])
+    assert last.evicted == ()
+    assert last.withheld == (HK,)
+    assert states[HK].evicted_on is None
+    assert evicted_hotkeys(states, DAY) == frozenset()
+
+
+def test_the_withheld_eviction_is_recorded_not_swallowed():
+    """A blocked eviction must be visible. Silently skipping it would make the
+    subnet look healthy while a model that earned eviction kept earning."""
+    _, log, last = _run_days({}, [], [
+        (_d(n), _fail(with_bystander=False)) for n in (4, 3, 2, 1, 0)
+    ])
+    withheld = [e for e in log if e.kind == KIND_EVICTION_WITHHELD]
+    assert len(withheld) == 1
+    assert withheld[0].hotkey == HK
+    assert "below the floor" in withheld[0].reason
+
+
+def test_the_strike_history_survives_so_eviction_can_land_later():
+    """The floor delays the eviction, it does not forgive it. Once a second
+    model exists the same strike record must still evict."""
+    states, log, _ = _run_days({}, [], [
+        (_d(n), _fail(with_bystander=False)) for n in (5, 4, 3, 2, 1)
+    ])
+    assert strikes_in_window(log, HK, DAY, P.window_days) >= P.strikes_to_evict
+    # a second model appears, then HK fails again
+    after = observe_day(states, log, DAY, _fail(), P)
+    assert after.evicted == (HK,)
+
+
+def test_eviction_proceeds_normally_when_someone_remains():
+    """The guard must not become a blanket amnesty."""
+    states, _, last = _run_days({}, [], [
+        (_d(n), _fail()) for n in (4, 3, 2, 1, 0)
+    ])
+    assert last.evicted == (HK,)
+    assert last.withheld == ()
+    assert states[BYSTANDER].evicted_on is None
+
+
+def test_the_last_survivor_of_a_larger_field_is_also_protected():
+    """Not just 'one model total' — the floor is about what REMAINS. Evict
+    them one at a time and the last one standing must still be spared, or the
+    guard is trivially defeated by doing it slowly."""
+    a, b = "model-a", "model-b"
+    P2 = replace(P, strikes_to_evict=1)
+    states, log, _ = _run_days({}, [], [
+        (_d(2), {a: (False, f"{ERR_EXIT_PREFIX}1: b'boom'"), b: (True, None)}),
+    ], params=P2)
+    assert states[a].evicted_on is not None          # a is gone
+    last = observe_day(states, log, _d(1),
+                       {b: (False, f"{ERR_EXIT_PREFIX}1: b'boom'")}, P2)
+    assert last.evicted == ()                        # b is all that is left
+    assert last.withheld == (b,)
+
+
+def test_the_house_model_is_never_evicted_even_with_others_present():
+    """Rob's second requirement: a designated house model. Distinct from the
+    survivor floor — this one holds even when the field is healthy."""
+    P3 = replace(P, house_hotkey=HK)
+    states, _, last = _run_days({}, [], [
+        (_d(n), _fail()) for n in (4, 3, 2, 1, 0)
+    ], params=P3)
+    assert last.evicted == ()
+    assert last.withheld == (HK,)
+    assert "house model" in [e.reason for e in last.events
+                             if e.kind == KIND_EVICTION_WITHHELD][0]
+
+
+def test_house_hotkey_and_min_survivors_come_from_env():
+    assert house_hotkey_from({}) is None
+    assert house_hotkey_from({HOUSE_HOTKEY_ENV: "  rabbia  "}) == "rabbia"
+    assert min_survivors_from({}) == 1
+    assert min_survivors_from({MIN_SURVIVORS_ENV: "3"}) == 3
+
+
+def test_min_survivors_cannot_be_set_to_zero():
+    """Zero would reinstate exactly the failure Rob ruled against, so a deploy
+    typo must not be able to switch his floor off."""
+    assert min_survivors_from({MIN_SURVIVORS_ENV: "0"}) == 1
+    assert min_survivors_from({MIN_SURVIVORS_ENV: "-5"}) == 1
+    assert min_survivors_from({MIN_SURVIVORS_ENV: "none"}) == 1

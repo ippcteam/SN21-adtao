@@ -35,10 +35,14 @@ def test_a_running_model_that_delivers_nothing_has_NOT_submitted():
     assert day_verdict(700, 0, subnet_ran=True, params=P) == MISSED
 
 
-def test_full_and_half_coverage_submit_and_a_token_does_not():
+def test_coverage_at_robs_75_percent_bar():
+    """Rob ruled 0.75 on 2026-08-03: "I would set a 75% floor not 50%".
+    Half the bundle NO LONGER counts as showing up — that is the whole point
+    of the change, so it is pinned explicitly."""
     assert day_verdict(700, 700, True, P) == SUBMITTED
-    assert day_verdict(700, 350, True, P) == SUBMITTED     # exactly the bar
-    assert day_verdict(700, 349, True, P) == MISSED        # a hair under
+    assert day_verdict(700, 525, True, P) == SUBMITTED     # exactly 75%
+    assert day_verdict(700, 524, True, P) == MISSED        # a hair under
+    assert day_verdict(700, 350, True, P) == MISSED        # 50% — was passing
     assert day_verdict(700, 1, True, P) == MISSED          # one prediction
 
 
@@ -90,9 +94,12 @@ def test_recovery_restores_full_weight_immediately():
 
 # ---- Rob's numbers are configuration ----------------------------------------
 
-def test_defaults_are_the_pending_proposals():
+def test_defaults_are_robs_ratified_numbers():
+    """The default must BE the ruling. Leaving 0.50 in the code and relying on
+    an env var to carry Rob's 0.75 means any host that misses the variable
+    quietly pays miners who only turned up half the time."""
     p = params_from_env({})
-    assert p.min_coverage == PENDING_ROB_MIN_COVERAGE == 0.50
+    assert p.min_coverage == PENDING_ROB_MIN_COVERAGE == 0.75
     assert (p.decay_per_miss, p.misses_to_zero) == (0.5, 3)
 
 
@@ -102,7 +109,8 @@ def test_ratifying_robs_numbers_is_an_env_change_not_a_code_change():
     assert (p.min_coverage, p.decay_per_miss, p.misses_to_zero) == (0.8, 0.25, 2)
     # and the override GOVERNS the arithmetic, not just the dataclass
     assert day_verdict(100, 70, True, p) == MISSED      # 70% < 80% bar
-    assert day_verdict(100, 70, True, P) == SUBMITTED   # but clears the 50% one
+    assert day_verdict(100, 76, True, P) == SUBMITTED   # clears Rob's 75%
+    assert day_verdict(100, 70, True, P) == MISSED      # 70% now FAILS
 
 
 @pytest.mark.parametrize("bad", ["", "   ", "abc", "5.0", "-0.2", "0"])

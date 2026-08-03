@@ -100,8 +100,14 @@ def test_capture_states_persist_across_days(tmp_path):
     run_daily_loop(root, root, DAY, outcomes_provider=lambda d: [],
                    earnings_provider=lambda d: {"m1": 200.0}, environ={})
     states = load_capture_states(root)
-    assert states["m1"].locked_alpha == 300.0  # capped at floor
-    assert states["m1"].total_paid_alpha == 100.0
+    # Capped at the floor IN FORCE ON DAY (2026-08-11). Under Rob's dated
+    # schedule that is 150 a — the 10 Aug rung. It was 300 under the
+    # superseded weekly ramp, which opened at 300 on day one.
+    assert states["m1"].locked_alpha == 150.0
+    # 400 earned across two runs, 150 escrowed to the floor, so 250 paid out
+    # (was 100 when the floor was 300). The lower opening rung means miners
+    # start being PAID sooner, which is the point of Rob starting at zero.
+    assert states["m1"].total_paid_alpha == 250.0
 
 
 def test_anchor_gated_off_by_default(tmp_path):
@@ -237,10 +243,16 @@ def test_liveness_does_not_refold_old_days_on_the_next_run(tmp_path):
 
     root = str(tmp_path)
     start = date(2026, 8, 1)
+    # A healthy BYSTANDER throughout. Rob ruled 2026-08-03 that the field
+    # must never be emptied, so a LONE model can never be evicted — the
+    # eviction is withheld and recorded instead. An eviction test therefore
+    # needs somebody left standing.
     _shadow_run(root, start, "alpha", ok=True)            # a clean day first
+    _shadow_run(root, start, "bystander", ok=True)
     for i in range(1, 6):                                  # then five failures
         _shadow_run(root, start + timedelta(days=i), "alpha", ok=False,
                     error=f"{ERR_EXIT_PREFIX}1: b''")
+        _shadow_run(root, start + timedelta(days=i), "bystander", ok=True)
 
     first = run_daily_loop(root, root, start + timedelta(days=6),
                            outcomes_provider=lambda d: [], environ={})
@@ -300,6 +312,8 @@ def test_liveness_policy_numbers_come_from_the_environment(tmp_path):
     for i in (2, 1):
         _shadow_run(root, DAY - timedelta(days=i), "alpha", ok=False,
                     error=f"{ERR_EXIT_PREFIX}1: b''")
+        # see above: without a survivor Rob's floor withholds the eviction
+        _shadow_run(root, DAY - timedelta(days=i), "bystander", ok=True)
 
     default_run = run_daily_loop(root, root, DAY,
                                  outcomes_provider=lambda d: [], environ={})
@@ -309,6 +323,8 @@ def test_liveness_policy_numbers_come_from_the_environment(tmp_path):
     for i in (2, 1):
         _shadow_run(root2, DAY - timedelta(days=i), "alpha", ok=False,
                     error=f"{ERR_EXIT_PREFIX}1: b''")
+        # see above: without a survivor Rob's floor withholds the eviction
+        _shadow_run(root2, DAY - timedelta(days=i), "bystander", ok=True)
     over = run_daily_loop(root2, root2, DAY, outcomes_provider=lambda d: [],
                           environ={"SN21_CHRONIC_STRIKES": "2"})
     assert over["liveness"]["evicted"] == ["alpha"]

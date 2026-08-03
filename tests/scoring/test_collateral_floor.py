@@ -8,6 +8,10 @@ from datetime import timedelta
 
 from hope.scoring.collateral_floor import (
     ALPHA_LADDER,
+    ALPHA_SCHEDULE,
+    BURN_SCHEDULE,
+    FIRST_LIVE_BUNDLE_DAY,
+    burn_for_day,
     ANCHOR_FIRST_SETTLEMENT,
     ANCHOR_LAUNCH,
     ladder_anchor_from,
@@ -25,36 +29,100 @@ from hope.scoring.collateral_floor import (
 LAUNCH = date(2026, 8, 10)
 
 
-def test_ladder_is_robs_published_schedule():
-    """Rob 2026-08-01: 300 -> 475 -> 650 -> 825 -> 1,000, one step per week.
-    Pinned literally: these are published numbers miners plan around, so a
-    silent edit to the tuple must fail here rather than in a miner's wallet."""
-    assert ALPHA_LADDER == (300.0, 475.0, 650.0, 825.0, 1000.0)
-    assert LAUNCH_FLOOR_ALPHA == 300.0
+def test_ladder_is_robs_dated_schedule():
+    """Rob's timetable sheet, 2026-08-03. SUPERSEDES the 2026-08-01 weekly ramp
+    (300 -> 475 -> 650 -> 825 -> 1000) in three ways: it starts at ZERO, it has
+    SIX rungs, and it is keyed to calendar dates rather than weeks.
+
+    Pinned literally. These are published numbers miners plan around, so a
+    silent edit must fail here rather than in a miner's wallet."""
+    assert ALPHA_SCHEDULE == (
+        (date(2026, 8, 3), 0.0),
+        (date(2026, 8, 10), 150.0),
+        (date(2026, 8, 18), 300.0),
+        (date(2026, 8, 25), 450.0),
+        (date(2026, 9, 8), 700.0),
+        (date(2026, 9, 15), 1000.0),
+    )
+    assert ALPHA_LADDER == (0.0, 150.0, 300.0, 450.0, 700.0, 1000.0)
+    assert LAUNCH_FLOOR_ALPHA == 0.0        # was 300.0 under the old ramp
     assert TERMINAL_FLOOR_ALPHA == 1000.0
 
 
-@pytest.mark.parametrize("day_offset,expected", [
-    (0, 300.0), (6, 300.0),      # week 0
-    (7, 475.0), (13, 475.0),     # week 1
-    (14, 650.0), (20, 650.0),    # week 2
-    (21, 825.0), (27, 825.0),    # week 3
-    (28, 1000.0), (60, 1000.0),  # week 4+, holds at terminal
+def test_burn_is_robs_dated_schedule():
+    """45% -> 30% (10 Aug) -> 15% (25 Aug) -> 0% (15 Sep). The validator host
+    carries a STATIC 0.45, which is right only until 10 August."""
+    assert BURN_SCHEDULE == (
+        (date(2026, 8, 3), 0.45),
+        (date(2026, 8, 10), 0.30),
+        (date(2026, 8, 25), 0.15),
+        (date(2026, 9, 15), 0.00),
+    )
+
+
+@pytest.mark.parametrize("day,alpha,burn", [
+    ("2026-08-03", 0.0, 0.45),
+    ("2026-08-09", 0.0, 0.45),      # day before the first step
+    ("2026-08-10", 150.0, 0.30),    # steps ON the date, not after it
+    ("2026-08-17", 150.0, 0.30),
+    ("2026-08-18", 300.0, 0.30),    # first 7-day payout
+    ("2026-08-24", 300.0, 0.30),
+    ("2026-08-25", 450.0, 0.15),    # first 14-day payout
+    ("2026-09-07", 450.0, 0.15),
+    ("2026-09-08", 700.0, 0.15),    # first 28-day payout
+    ("2026-09-14", 700.0, 0.15),
+    ("2026-09-15", 1000.0, 0.00),   # terminal
+    ("2026-12-25", 1000.0, 0.00),   # holds
 ])
-def test_floor_steps_weekly_and_holds_at_terminal(day_offset, expected):
-    assert floor_for_day(LAUNCH + timedelta(days=day_offset), LAUNCH) == expected
+def test_every_row_of_robs_sheet(day, alpha, burn):
+    d = date.fromisoformat(day)
+    assert floor_for_day(d) == alpha
+    assert burn_for_day(d) == burn
 
 
-def test_pre_launch_day_gets_the_launch_floor_not_an_error():
+def test_the_rungs_land_on_payout_milestones():
+    """WHY the gaps are uneven (8, 7, 14, 7 days) rather than weekly. Each rung
+    lands on the day a new payout horizon starts paying, derived from the settle
+    clock: action_window_end + 1 + horizon + 7, applied to the first live daily
+    bundle on 2026-08-03. If this drifts, the ladder and the payout calendar
+    have come apart and miners' obligations no longer track their income."""
+    first = FIRST_LIVE_BUNDLE_DAY
+    assert first + timedelta(days=1 + 7 + 7) == date(2026, 8, 18)
+    assert first + timedelta(days=1 + 14 + 7) == date(2026, 8, 25)
+    assert first + timedelta(days=1 + 28 + 7) == date(2026, 9, 8)
+    stepped = [d for d, _ in ALPHA_SCHEDULE]
+    for milestone in (date(2026, 8, 18), date(2026, 8, 25), date(2026, 9, 8)):
+        assert milestone in stepped, milestone
+
+
+def test_a_moved_launch_moves_the_whole_schedule_with_it():
+    """SN21_IM_LAUNCH_DATE now means the FIRST LIVE DAILY BUNDLE date. If the
+    launch slips, every rung must slip with it and stay on its payout
+    milestone — otherwise the ladder steps on calendar dates that no longer
+    mean anything and miners are charged before they are paid."""
+    shifted = date(2026, 8, 10)          # a week late
+    assert floor_for_day(date(2026, 8, 18), shifted) == 150.0   # was 300
+    assert floor_for_day(date(2026, 8, 25), shifted) == 300.0   # was 450
+    assert floor_for_day(date(2026, 9, 15), shifted) == 700.0   # was 1000
+
+
+def test_pre_schedule_day_gets_the_opening_rung_not_an_error():
     """Back-dated folds happen when a settle run catches up. A miner must
     never be judged against a floor that did not exist yet."""
-    assert floor_for_day(LAUNCH - timedelta(days=3), LAUNCH) == LAUNCH_FLOOR_ALPHA
+    assert floor_for_day(date(2026, 7, 1)) == LAUNCH_FLOOR_ALPHA
 
 
 def test_ladder_is_monotonic():
     """A floor that fell would release collateral the capture path never
     drains — the frozen-floor rule assumes floors only ever rise."""
     assert list(ALPHA_LADDER) == sorted(ALPHA_LADDER)
+
+
+def test_burn_only_ever_falls():
+    """Burn steps down to zero. A rise would take pay away from miners after
+    they had planned around it."""
+    vals = [b for _, b in BURN_SCHEDULE]
+    assert vals == sorted(vals, reverse=True)
 
 
 def test_capture_fills_floor_before_payout():
@@ -133,56 +201,54 @@ def test_chain_reader_supersedes_bookkeeping_when_it_answers():
 
 # ---- the launch date is CONFIGURATION, not a code change --------------------
 
-def test_ladder_holds_at_week_zero_until_a_launch_date_is_configured():
-    """Before Rob names a date the floor must be the lowest rung. The ladder
-    existing is not the same as the ladder running."""
-    assert active_floor(date(2026, 12, 25), {}) == LAUNCH_FLOOR_ALPHA
+def test_no_launch_date_configured_uses_the_sheets_literal_dates():
+    """Rob's sheet carries real calendar dates, so an unset launch date is not
+    "hold at rung zero forever" any more — it means run the published schedule
+    exactly as miners were shown it."""
+    assert active_floor(date(2026, 8, 3), {}) == 0.0
+    assert active_floor(date(2026, 8, 18), {}) == 300.0
+    assert active_floor(date(2026, 12, 25), {}) == TERMINAL_FLOOR_ALPHA
 
 
-def test_a_malformed_launch_date_fails_DOWN_not_up():
-    """A typo in a deploy variable must never silently promote every miner to
-    a higher collateral obligation. Failing to the lowest rung is the only
-    safe direction here, so this asserts the direction, not just that it
-    survives."""
-    assert active_floor(date(2026, 12, 25),
-                        {"SN21_IM_LAUNCH_DATE": "next tuesday"}) == LAUNCH_FLOOR_ALPHA
+def test_a_malformed_launch_date_falls_through_to_the_published_sheet():
+    """A typo in a deploy variable must never silently move a miner's
+    obligation. Falling through to the published dates is the only safe
+    behaviour: it is what miners were actually told."""
+    env = {"SN21_IM_LAUNCH_DATE": "next tuesday"}
+    assert active_floor(date(2026, 8, 18), env) == floor_for_day(date(2026, 8, 18))
     assert launch_date_from({"SN21_IM_LAUNCH_DATE": "2026-13-45"}) is None
     assert launch_date_from({"SN21_IM_LAUNCH_DATE": "   "}) is None
 
 
-def test_a_configured_launch_date_makes_the_ladder_step():
+def test_a_configured_launch_date_shifts_the_whole_schedule():
+    """SN21_IM_LAUNCH_DATE now means the FIRST LIVE DAILY BUNDLE date. A
+    launch a week late must push every rung a week later, so obligations keep
+    tracking payouts."""
     env = {"SN21_IM_LAUNCH_DATE": "2026-08-10"}
-    L = date(2026, 8, 10)
-    assert launch_date_from(env) == L
-    assert [active_floor(L + timedelta(days=d), env) for d in (0, 7, 14, 21, 28, 90)] \
-        == [300.0, 475.0, 650.0, 825.0, 1000.0, 1000.0]
+    assert launch_date_from(env) == date(2026, 8, 10)
+    assert active_floor(date(2026, 8, 10), env) == 0.0      # was 150 unshifted
+    assert active_floor(date(2026, 8, 17), env) == 150.0
+    assert active_floor(date(2026, 8, 25), env) == 300.0
 
 
-# ---- the ladder's clock ANCHOR is also configuration ------------------------
-
-def test_anchor_defaults_to_launch_and_rejects_junk_downward():
-    """Unknown anchor values fall back to the inherited default rather than
-    guessing at the stricter one — same fail-down rule as the date itself."""
-    assert ladder_anchor_from({}) == ANCHOR_LAUNCH
-    assert ladder_anchor_from({"SN21_LADDER_ANCHOR": "whenever"}) == ANCHOR_LAUNCH
-    assert ladder_anchor_from({"SN21_LADDER_ANCHOR": "FIRST_SETTLEMENT"}) \
-        == ANCHOR_FIRST_SETTLEMENT
-
-
-def test_the_two_anchors_produce_genuinely_different_schedules():
-    """If both anchors gave the same answer the [PENDING ROB] question would be
-    cosmetic. They do not: same day, different rung."""
-    day, settled = date(2026, 9, 10), date(2026, 8, 20)
-    launch_env = {"SN21_IM_LAUNCH_DATE": "2026-08-10"}
-    settle_env = {**launch_env, "SN21_LADDER_ANCHOR": ANCHOR_FIRST_SETTLEMENT}
-    assert active_floor(day, launch_env, settled) == 1000.0   # launch+31d, wk4
-    assert active_floor(day, settle_env, settled) == 825.0    # settle+21d, wk3
+def test_the_anchor_env_is_dead_and_says_so():
+    """SN21_LADDER_ANCHOR asked launch-vs-first-settlement. Rob's sheet answers
+    NEITHER — the rungs sit on payout dates. The variable is ignored rather
+    than quietly honoured, because a stale setting silently changing what
+    miners owe is exactly the failure the pending markers existed to prevent.
+    ladder_anchor_from still parses for callers, but active_floor does not
+    consult it: same day, same rung, whatever it says."""
+    day = date(2026, 8, 25)
+    base = {"SN21_IM_LAUNCH_DATE": "2026-08-03"}
+    assert active_floor(day, base) == 450.0
+    assert active_floor(day, {**base, "SN21_LADDER_ANCHOR": ANCHOR_FIRST_SETTLEMENT},
+                        date(2026, 8, 20)) == 450.0
+    assert active_floor(day, {**base, "SN21_LADDER_ANCHOR": ANCHOR_LAUNCH}) == 450.0
 
 
-def test_first_settlement_anchor_holds_at_the_opening_rung_before_anything_settles():
-    """The cold-start case this anchor exists to address: until the subnet has
-    settled anything there is no clock to start, and the floor must hold DOWN
-    rather than run off the launch date it was told to ignore."""
-    env = {"SN21_IM_LAUNCH_DATE": "2026-08-10",
-           "SN21_LADDER_ANCHOR": ANCHOR_FIRST_SETTLEMENT}
-    assert active_floor(date(2026, 12, 25), env, None) == LAUNCH_FLOOR_ALPHA
+def test_first_settlement_argument_is_accepted_but_ignored():
+    """daily_loop still passes it. Kept in the signature so the call site did
+    not have to change, but it must not move the floor."""
+    day = date(2026, 9, 8)
+    assert active_floor(day, {}, None) == active_floor(day, {}, date(2026, 8, 20))
+

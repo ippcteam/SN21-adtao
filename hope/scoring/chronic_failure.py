@@ -62,15 +62,21 @@ from hope.backtest.image_intake import (
     ERR_PULL_TIMEOUT_PREFIX,
 )
 
-# ---- Rob's proposed numbers — PENDING ROB, NOT RATIFIED ---------------------
-# Same discipline as DEFAULT_D3_MIN_DAILY_EPISODES (daily_stream_weights.py):
-# the DEFAULT lives here so code, cutover checklist and governance amendment
-# cannot drift apart, and the ENV VARS below govern at runtime so ratifying
-# Rob's numbers is a deploy-time setting, not a code change. None of them may
-# be quoted as ratified in any published artifact until he rules.
+# ---- Rob's numbers — RULED 2026-08-03 ---------------------------------------
+# The DEFAULT lives here so code, cutover checklist and governance amendment
+# cannot drift apart, and the ENV VARS below still govern at runtime so a later
+# restatement stays a setting rather than a code change.
+#
+# What he was asked and what he answered: "are you saying that if a miner fails
+# submit (ie bad code) 5x in 14 days then 14 days before return? I would
+# suggest 7 is better. Let's see if its a problem."
+#
+# So N=5 and M=14 stand as proposed; the RE-ENTRY WAIT drops 14 -> 7. He also
+# added the constraint that is NOT yet implemented: "We have to not evict all
+# miners - we need at least 1 house model (Rabbia)". See LAST_MODEL_GUARD below.
 PENDING_ROB_STRIKES_TO_EVICT = 5      # N failed days …
 PENDING_ROB_WINDOW_DAYS = 14          # … within M rolling calendar days
-PENDING_ROB_REPEAT_REVIEW_DAYS = 14   # K: repeat offender's cooldown
+PENDING_ROB_REPEAT_REVIEW_DAYS = 7    # K: repeat offender's cooldown (was 14)
 
 # Runtime overrides — exactly the SN21_D3_MIN_DAILY_EPISODES pattern
 # (daily_stream_weights.d3_min_daily_episodes): unset keeps the proposal,
@@ -79,6 +85,61 @@ STRIKES_ENV = "SN21_CHRONIC_STRIKES"
 WINDOW_ENV = "SN21_CHRONIC_WINDOW_DAYS"
 REVIEW_ENV = "SN21_CHRONIC_REVIEW_DAYS"
 REPEAT_LOOKBACK_ENV = "SN21_CHRONIC_REPEAT_LOOKBACK_DAYS"
+
+# ---- ROB'S FLOOR: the field must never be emptied (ruled 2026-08-03) --------
+# "We have to not evict all miners - we need at least 1 house model (Rabbia)."
+#
+# WHY THIS IS NOT OPTIONAL. With the policy on, evicting the last
+# placement-eligible model empties the weight vector entirely and the subnet
+# pays NOBODY. That is not a distant edge case: the reference model is the only
+# model that has ever run, so today the last model IS the only model. Five other
+# validators mirror our vector within the hour, so an empty vector propagates
+# subnet-wide before anyone looks.
+#
+# Two protections, because Rob's sentence contains two requirements:
+#
+#   MIN_SURVIVORS      never let the non-evicted field fall below this. Answers
+#                      "not evict all miners" for ANY population, including one
+#                      with no house model in it.
+#   HOUSE_HOTKEY_ENV   a named hotkey that is never evicted at all. Answers
+#                      "we need at least 1 house model". Config, not a
+#                      hardcoded key — which model is the house model is a
+#                      governance choice and it will change.
+#
+# A withheld eviction is RECORDED (KIND_EVICTION_WITHHELD), never silently
+# skipped. The strike history stands, so the moment a second model exists the
+# eviction can proceed on its own merits. Hiding it would make the subnet look
+# healthy while a model that earned eviction kept earning.
+MIN_SURVIVORS = 1
+HOUSE_HOTKEY_ENV = "SN21_HOUSE_HOTKEY"
+MIN_SURVIVORS_ENV = "SN21_MIN_SURVIVORS"
+
+
+def house_hotkey_from(environ) -> Optional[str]:
+    """The protected house model, or None. Blank/unset means no protection —
+    MIN_SURVIVORS still applies, so the field cannot empty either way."""
+    raw = (environ.get(HOUSE_HOTKEY_ENV) or "").strip()
+    return raw or None
+
+
+def min_survivors_from(environ) -> int:
+    """How many models must always remain. Below 1 is rejected: zero would
+    reinstate exactly the failure Rob ruled against."""
+    raw = (environ.get(MIN_SURVIVORS_ENV) or "").strip()
+    if not raw:
+        return MIN_SURVIVORS
+    try:
+        n = int(raw)
+    except ValueError:
+        print(f"[chronic] {MIN_SURVIVORS_ENV}={raw!r} is not an integer — "
+              f"keeping {MIN_SURVIVORS}", flush=True)
+        return MIN_SURVIVORS
+    if n < 1:
+        print(f"[chronic] {MIN_SURVIVORS_ENV}={n} would allow an empty field — "
+              f"keeping {MIN_SURVIVORS}", flush=True)
+        return MIN_SURVIVORS
+    return n
+
 
 # Flag gate. Default OFF: strikes are still RECORDED and would-be evictions
 # still decided (observation is free and builds the evidence base Rob needs
@@ -109,11 +170,13 @@ KIND_EXCLUDED = "excluded"        # ran, failed, not the miner's fault
 KIND_EVICTED = "evicted"          # lifecycle
 KIND_REINSTATED = "reinstated"    # lifecycle
 KIND_EVICTION_RETRACTED = "eviction_retracted"   # lifecycle (see observe_day)
+KIND_EVICTION_WITHHELD = "eviction_withheld"     # lifecycle — Rob's floor
 
 # Only these three are day OBSERVATIONS; lifecycle events never participate
 # in strike counting.
 OBSERVATION_KINDS = (KIND_STRIKE, KIND_CLEAN, KIND_EXCLUDED)
-LIFECYCLE_KINDS = (KIND_EVICTED, KIND_REINSTATED, KIND_EVICTION_RETRACTED)
+LIFECYCLE_KINDS = (KIND_EVICTED, KIND_REINSTATED, KIND_EVICTION_RETRACTED,
+                   KIND_EVICTION_WITHHELD)
 
 _EXIT_CODE_RE = re.compile(re.escape(ERR_EXIT_PREFIX) + r"(-?\d+)")
 
@@ -122,6 +185,11 @@ _EXIT_CODE_RE = re.compile(re.escape(ERR_EXIT_PREFIX) + r"(-?\d+)")
 class ChronicFailureParams:
     """The policy numbers. Defaults are Rob's PROPOSALS, not ratified."""
     strikes_to_evict: int = PENDING_ROB_STRIKES_TO_EVICT
+    # Rob's floor. Defaults protect the field even if a caller
+    # never reads the env — an unset variable must not be able to
+    # empty the subnet.
+    min_survivors: int = MIN_SURVIVORS
+    house_hotkey: Optional[str] = None
     window_days: int = PENDING_ROB_WINDOW_DAYS
     repeat_review_days: int = PENDING_ROB_REPEAT_REVIEW_DAYS
     # Whether an ANCIENT prior eviction still makes the next one a "repeat".
@@ -169,6 +237,7 @@ class EvictionDecision:
     reinstated: tuple = ()      # hotkeys re-admitted today
     excluded: tuple = ()        # hotkeys whose failure was not their fault
     retracted: tuple = ()       # hotkeys whose SAME-DAY eviction was undone
+    withheld: tuple = ()        # earned eviction, blocked by Rob's floor
 
 
 def chronic_failure_policy_enabled(environ=os.environ) -> bool:
@@ -487,6 +556,35 @@ def reinstate(states: Mapping[str, EvictionState], hotkey: str, day: date,
     return new_states, event
 
 
+def _eviction_blocked(hotkey: str, states: Mapping[str, EvictionState],
+                      known: frozenset,
+                      params: "ChronicFailureParams") -> Optional[str]:
+    """Why this eviction must not proceed, or None if it may.
+
+    Two independent reasons, both from Rob's 2026-08-03 ruling:
+      * the hotkey is the designated house model
+      * evicting it would drop the surviving field below min_survivors
+
+    Survivors are counted from the CURRENT states, so evictions already
+    applied earlier in the same day are taken into account — otherwise five
+    models could each be evicted in turn, every one of them believing four
+    others remained.
+    """
+    if params.house_hotkey and hotkey == params.house_hotkey:
+        return (f"house model {hotkey!r} is protected from eviction "
+                f"({HOUSE_HOTKEY_ENV})")
+    surviving = {
+        hk for hk in known
+        if hk != hotkey and (states.get(hk) or EvictionState(hotkey=hk)).evicted_on is None
+    }
+    floor = max(1, int(params.min_survivors))
+    if len(surviving) < floor:
+        return (f"evicting {hotkey!r} would leave {len(surviving)} model(s), "
+                f"below the floor of {floor} — the weight vector would empty "
+                f"and the subnet would pay nobody")
+    return None
+
+
 def observe_day(
     states: Mapping[str, EvictionState],
     events: Sequence[StrikeEvent],
@@ -518,6 +616,11 @@ def observe_day(
     reinstated_today: list = []
     excluded_today: list = []
     retracted_today: list = []
+    withheld_today: list = []
+    # Every model we know about, not just today's runners: a model
+    # that did not run today is still part of the field, and
+    # counting only day_runs would let a quiet day look empty.
+    known_hotkeys = frozenset(states) | frozenset(day_runs)
 
     for hotkey in sorted(day_runs):
         ok, error = day_runs[hotkey]
@@ -565,10 +668,25 @@ def observe_day(
                 n = strikes_in_window(log, hotkey, day, params.window_days,
                                       since=st.last_eviction_on)
                 if n >= max(1, int(params.strikes_to_evict)):
-                    st, lifecycle = evict(st, day, params, strikes=n)
-                    log.append(lifecycle)
-                    emitted.append(lifecycle)
-                    evicted_today.append(hotkey)
+                    # ROB'S FLOOR, checked BEFORE the eviction lands. Evicting
+                    # the last placement-eligible model empties the weight
+                    # vector and the subnet pays nobody — and five validators
+                    # mirror us within the hour.
+                    block = _eviction_blocked(
+                        hotkey, new_states, known_hotkeys, params)
+                    if block is not None:
+                        lifecycle = StrikeEvent(
+                            day=day, hotkey=hotkey,
+                            kind=KIND_EVICTION_WITHHELD, fault=FAULT_MINER,
+                            error=None, reason=block)
+                        log.append(lifecycle)
+                        emitted.append(lifecycle)
+                        withheld_today.append(hotkey)
+                    else:
+                        st, lifecycle = evict(st, day, params, strikes=n)
+                        log.append(lifecycle)
+                        emitted.append(lifecycle)
+                        evicted_today.append(hotkey)
             new_states[hotkey] = st
         else:
             new_states[hotkey] = st
@@ -587,6 +705,7 @@ def observe_day(
         reinstated=tuple(reinstated_today),
         excluded=tuple(excluded_today),
         retracted=tuple(retracted_today),
+        withheld=tuple(withheld_today),
     )
 
 

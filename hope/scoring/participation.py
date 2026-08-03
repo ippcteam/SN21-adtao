@@ -42,13 +42,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-# ---- [PENDING ROB] ----------------------------------------------------------
+# ---- RATIFIED BY ROB, 2026-08-03 --------------------------------------------
 # Share of the day's bundle a miner must actually predict for the day to count
-# as a submission. NOT "did the container exit 0". Proposed 0.50: one prediction
-# must not buy a week's bridge, but half survives a miner having a bad morning.
-# The 0.90 admission bar (backtest.gate min_coverage_ratio) stays where it is —
-# that one is about quality, this one is about showing up.
-PENDING_ROB_MIN_COVERAGE = 0.50
+# as a submission. NOT "did the container exit 0".
+#
+# We proposed 0.50. Rob ruled 0.75: "I would set a 75% floor not 50% - I think
+# the scoring level is higher but 75% = submit". So the bar for "you showed up"
+# is three quarters of the day's episodes, not half.
+#
+# The 0.90 admission bar (backtest.gate min_coverage_ratio) is a DIFFERENT
+# number and stays where it is — that one is about quality of a submitted
+# model, this one is about turning up each day.
+#
+# Name kept as PENDING_ROB_MIN_COVERAGE so every import site keeps working;
+# the value is no longer pending.
+PENDING_ROB_MIN_COVERAGE = 0.75
 
 # Weight retained after each consecutive missed day. Rob: "miss a day, weight
 # decays; miss several, it zeroes."

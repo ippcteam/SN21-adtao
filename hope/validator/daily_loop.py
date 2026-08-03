@@ -258,6 +258,7 @@ def run_daily_loop(
             evicted: list = []
             reinstated: list = []
             retracted: list = []
+            withheld: list = []
             observed = 0
             for d in days:
                 runs = day_run_status(shadow_root, str(d))
@@ -271,6 +272,7 @@ def run_daily_loop(
                 evicted.extend(decision.evicted)
                 reinstated.extend(decision.reinstated)
                 retracted.extend(decision.retracted)
+                withheld.extend(decision.withheld)
             # EVENTS BEFORE STATE, deliberately. retract_eviction reconstructs
             # evictions_total purely from the KIND_EVICTED lines in the log, so
             # a crash between these two writes must not leave an eviction in
@@ -290,6 +292,12 @@ def run_daily_loop(
                 "evicted": evicted,
                 "reinstated": reinstated,
                 "retracted": retracted,
+                # Rob's floor firing. MUST be surfaced: a withheld eviction
+                # means a model that earned removal is still earning, and the
+                # only reason it is still here is that removing it would have
+                # emptied the subnet. Silent is exactly wrong — the operator
+                # needs to see it every day it happens.
+                "withheld": withheld,
                 "events_written": written,
                 "enforced": cf.chronic_failure_policy_enabled(environ),
                 "currently_evicted": sorted(cf.evicted_hotkeys(states, day)),

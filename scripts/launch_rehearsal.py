@@ -170,9 +170,23 @@ def main():
         check("no miner was struck on a clean day",
               not (summary.get("liveness") or {}).get("struck"),
               str((summary.get("liveness") or {}).get("struck")))
+        # Rob's dated schedule (2026-08-03) replaced the weekly ramp, so the
+        # floor is whatever his sheet says for the settle day — not a week
+        # index. Derived from the schedule rather than hardcoded, so the
+        # rehearsal cannot drift from the published numbers.
+        from hope.scoring.collateral_floor import floor_for_day
+        from datetime import date as _date
         floor = summary.get("collateral_floor_alpha")
-        check("alpha ladder stepped from the configured launch date",
-              floor == 650.0, f"settle day is launch+15d -> week 2 -> {floor}")
+        # LAUNCH_FLAGS configures SN21_IM_LAUNCH_DATE, which now means the
+        # first-live-bundle date and SHIFTS the whole schedule. Compare against
+        # the shifted schedule, not the published one — asserting the literal
+        # sheet here would fail precisely BECAUSE the shift is working.
+        _launch = LAUNCH_FLAGS.get("SN21_IM_LAUNCH_DATE")
+        expected = floor_for_day(_date.fromisoformat(summary["day"]),
+                                 _date.fromisoformat(_launch) if _launch else None)
+        check("alpha floor matches Rob's dated schedule for the settle day",
+              floor == expected,
+              f"{summary['day']} (launch {_launch}) -> {expected}, got {floor}")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -186,8 +200,19 @@ def main():
         w2 = _load_weights((summary2.get("weights") or {}).get("path"))
         check("the sole model was struck for a failed execution day",
               bool(live.get("struck")), str(live.get("struck")))
-        check("EVICTING THE ONLY MODEL EMPTIES THE WEIGHT VECTOR",
-              w2 == {}, f"weights={w2} — this is the behaviour Rob must ratify")
+        # WAS: "EVICTING THE ONLY MODEL EMPTIES THE WEIGHT VECTOR" — asserted
+        # the hazard, because at the time it was real and Rob had not ruled.
+        # He ruled on 2026-08-03: "We have to not evict all miners - we need at
+        # least 1 house model". The floor is now built, so the assertion
+        # INVERTS: the sole model must survive its own eviction and keep the
+        # vector alive. If this ever goes back to {} the subnet pays nobody and
+        # five copying validators propagate it within the hour.
+        check("ROB'S FLOOR HOLDS: the only model is not evicted",
+              w2 != {} and "solo" in w2,
+              f"weights={w2} — the sole model must survive")
+        check("the withheld eviction is recorded, not silently skipped",
+              bool(live.get("withheld")),
+              f"withheld={live.get('withheld')}")
     finally:
         shutil.rmtree(root2, ignore_errors=True)
 
@@ -198,9 +223,16 @@ def main():
         check("settle still ran with all flags off",
               "error" not in (summary3.get("settle") or {}),
               str(summary3.get("settle"))[:90])
-        check("floor holds at week 0 with no launch date configured",
-              summary3.get("collateral_floor_alpha") == 300.0,
-              str(summary3.get("collateral_floor_alpha")))
+        # No launch date configured no longer means "hold at rung zero" — Rob's
+        # sheet carries real calendar dates, so the published schedule runs as
+        # miners were shown it.
+        from hope.scoring.collateral_floor import floor_for_day as _ffd
+        from datetime import date as _d2
+        expect3 = _ffd(_d2.fromisoformat(summary3["day"]))
+        check("with no launch date set, the published sheet governs",
+              summary3.get("collateral_floor_alpha") == expect3,
+              f"{summary3['day']} -> sheet says {expect3}, "
+              f"got {summary3.get('collateral_floor_alpha')}")
     finally:
         shutil.rmtree(root3, ignore_errors=True)
 

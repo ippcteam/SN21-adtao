@@ -43,22 +43,68 @@ Pure module: no I/O, no chain calls.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 from typing import Callable, Optional
 
-# Review-restated flat floors (v0.5 §8), weeks measured from the IM launch
-# date, which is Rob's to set. Rob 2026-08-01: "Alpha hold: 300 -> 475 -> 650
-# -> 825 -> 1,000 a, one step per week over four weeks."
+# ROB'S DATED SCHEDULE (timetable sheet, 2026-08-03). This SUPERSEDES the
+# 2026-08-01 weekly ramp (300 -> 475 -> 650 -> 825 -> 1000), which was five even
+# steps measured in weeks from an anchor. The sheet is different in three ways
+# and every one of them matters:
 #
-# Index IS the week number, so ALPHA_LADDER[n] is the floor in force during
-# week n and the last entry is the terminal floor. Restating at a review is
-# editing this tuple — floor_for_day derives everything from it, so the
-# schedule cannot drift out of step with the published numbers.
-ALPHA_LADDER = (300.0, 475.0, 650.0, 825.0, 1000.0)
+#   1. It STARTS AT ZERO. Miners hold nothing until 10 August. The old ladder
+#      opened at 300 a on day one.
+#   2. It has SIX rungs, not five: 0, 150, 300, 450, 700, 1000.
+#   3. It is keyed to FIXED CALENDAR DATES, not weeks-since-launch. The gaps
+#      are deliberately uneven (8 days, 7, 14, 7).
+#
+# The uneven gaps are the tell, and they answer a question we had open. Each
+# rung lands exactly on a PAYOUT MILESTONE:
+#
+#   2026-08-10  bridge payout begins (prior week carried over)      ->  150 a
+#   2026-08-18  first daily 7-day score payout                      ->  300 a
+#   2026-08-25  first 14-day score payout                           ->  450 a
+#   2026-09-08  first 28-day (35 settled) payout                    ->  700 a
+#   2026-09-15  terminal                                            -> 1000 a
+#
+# Those dates are not arbitrary: they fall out of the settle clock
+# (action_window_end + 1 + horizon + 7) applied to the first live daily bundle
+# on 2026-08-03. Verified exactly — 7d -> 18 Aug, 14d -> 25 Aug, 28d -> 8 Sep.
+# So a miner's obligation rises precisely when a new payout horizon starts
+# paying them, which is the coherent reading of the policy and resolves the
+# open SN21_LADDER_ANCHOR question: the anchor is NEITHER `launch` NOR
+# `first_settlement`. It is the settlement calendar.
+FIRST_LIVE_BUNDLE_DAY = date(2026, 8, 3)
+
+ALPHA_SCHEDULE = (
+    (date(2026, 8, 3), 0.0),
+    (date(2026, 8, 10), 150.0),
+    (date(2026, 8, 18), 300.0),
+    (date(2026, 8, 25), 450.0),
+    (date(2026, 9, 8), 700.0),
+    (date(2026, 9, 15), 1000.0),
+)
+
+# Planned burn, same sheet, same dated shape. Currently a STATIC
+# SN21_BURN_FRACTION=0.45 on the validator host, which is correct only until
+# 10 August — after that a static value over-burns.
+BURN_SCHEDULE = (
+    (date(2026, 8, 3), 0.45),
+    (date(2026, 8, 10), 0.30),
+    (date(2026, 8, 25), 0.15),
+    (date(2026, 9, 15), 0.00),
+)
+
+# The values alone, kept for display and for callers that want the shape
+# without the dates.
+ALPHA_LADDER = tuple(a for _, a in ALPHA_SCHEDULE)
 
 # First and terminal rungs, named for callers that need one or the other
-# without knowing the shape. LAUNCH_FLOOR_ALPHA is kept because daily_loop
-# imports it as a default.
+# without knowing the shape. daily_loop imports LAUNCH_FLOOR_ALPHA as a default.
+#
+# LAUNCH_FLOOR_ALPHA IS NOW 0.0, NOT 300.0. Rob's schedule starts miners
+# holding nothing until 10 August; the superseded weekly ramp opened at 300 a
+# on day one. Anything that treated "the launch floor" as a non-zero obligation
+# is now wrong by 300 alpha.
 LAUNCH_FLOOR_ALPHA = ALPHA_LADDER[0]
 TERMINAL_FLOOR_ALPHA = ALPHA_LADDER[-1]
 
@@ -132,35 +178,76 @@ def active_floor(day: date, environ,
                  first_settlement: Optional[date] = None) -> float:
     """The floor in force on `day` per configuration.
 
-    Holds at the opening rung until its anchor exists: no launch date set, or
-    `first_settlement` anchoring before anything has settled. Both hold DOWN,
-    never up — an unresolved anchor must not raise a miner's obligation.
+    Rob's dated schedule (2026-08-03) replaced the week-counting model, so the
+    anchor question this used to resolve — `launch` vs `first_settlement` — no
+    longer applies: the rungs are pinned to PAYOUT MILESTONES on the settlement
+    calendar, which is neither. `first_settlement` is still accepted so the
+    signature and daily_loop's call site are unchanged, but it is not consulted.
 
-    `first_settlement` is injected rather than read, keeping this module pure;
-    the daily loop supplies it from standing_ledger.first_scored_day.
+    SN21_IM_LAUNCH_DATE now means THE FIRST LIVE DAILY BUNDLE DATE. Setting it
+    shifts the entire schedule by its offset from 2026-08-03, so if the launch
+    moves, every rung moves with it and stays on its payout milestone. Unset
+    means use the sheet's literal dates.
+
+    Unset and MALFORMED both fall through to the sheet as published. A typo in
+    a deploy variable must never silently move a miner's obligation.
     """
-    anchor = ladder_anchor_from(environ)
-    if anchor == ANCHOR_FIRST_SETTLEMENT:
-        start = first_settlement
-    else:
-        start = launch_date_from(environ)
-    return ALPHA_LADDER[0] if start is None else floor_for_day(day, start)
+    if (environ.get(LADDER_ANCHOR_ENV) or "").strip():
+        print(f"[collateral] {LADDER_ANCHOR_ENV} is set but no longer used — "
+              f"Rob's 2026-08-03 timetable pins the ladder to payout dates, "
+              f"not to weeks from an anchor. Ignoring.", flush=True)
+    return floor_for_day(day, launch_date_from(environ))
 
 
-def floor_for_day(day: date, launch_day: date) -> float:
-    """The flat floor in force on `day`, per ALPHA_LADDER.
+def _step_value(day: date, schedule, shift_days: int = 0) -> float:
+    """Value of the latest step whose date has arrived. Shared by both
+    schedules so they cannot diverge in how a boundary day is treated.
 
-    Week n runs [launch_day + 7n, launch_day + 7(n+1)); the ladder holds at
-    its terminal rung thereafter. A day BEFORE launch returns the week-0
-    floor rather than raising: back-dated folds happen when a settle run
-    catches up, and a miner must never be judged against a floor that did
-    not exist yet. Review restatements can still bypass the schedule
-    entirely by passing an explicit floor to fold_day.
+    A step takes effect ON its date, not the day after — Rob's sheet reads
+    "Monday 10 August ... 150", so the 10th is already 150.
+
+    Before the first step, returns the FIRST value. Back-dated folds happen
+    when a settle run catches up, and a miner must never be judged against a
+    floor that did not exist yet.
     """
-    week = (day - launch_day).days // 7
-    if week < 0:
-        return ALPHA_LADDER[0]
-    return ALPHA_LADDER[min(week, len(ALPHA_LADDER) - 1)]
+    value = schedule[0][1]
+    for when, v in schedule:
+        if day >= when + timedelta(days=shift_days):
+            value = v
+        else:
+            break
+    return value
+
+
+def floor_for_day(day: date, launch_day: Optional[date] = None) -> float:
+    """The flat alpha floor in force on `day`, per Rob's dated ALPHA_SCHEDULE.
+
+    `launch_day` is the FIRST LIVE DAILY BUNDLE date. Passing one shifts the
+    whole schedule by the difference from 2026-08-03, so if the launch moves
+    the rungs move WITH it and stay pinned to their payout milestones —
+    rather than the schedule silently stepping on calendar dates that no
+    longer mean anything. Omit it and the sheet's literal dates are used.
+
+    Note the shape change: this used to compute a week index from a launch
+    date. Rob's sheet is not weekly — the gaps are 8, 7, 14 and 7 days,
+    because each rung lands on a payout milestone. A week-based reading
+    cannot express it.
+    """
+    shift = 0 if launch_day is None else (launch_day - FIRST_LIVE_BUNDLE_DAY).days
+    return _step_value(day, ALPHA_SCHEDULE, shift)
+
+
+def burn_for_day(day: date, launch_day: Optional[date] = None) -> float:
+    """Planned burn fraction in force on `day`, per Rob's BURN_SCHEDULE.
+
+    45% -> 30% (10 Aug) -> 15% (25 Aug) -> 0% (15 Sep). The validator host
+    currently carries a STATIC SN21_BURN_FRACTION=0.45, which is correct only
+    until 10 August; after that a static value over-burns every day. This
+    function is the schedule; wiring it to the weight setter is a separate,
+    deliberate step because burn changes what miners are paid.
+    """
+    shift = 0 if launch_day is None else (launch_day - FIRST_LIVE_BUNDLE_DAY).days
+    return _step_value(day, BURN_SCHEDULE, shift)
 
 
 @dataclass(frozen=True)
