@@ -32,6 +32,14 @@ from hope.protocol.outcomes import (
 
 logger = logging.getLogger(__name__)
 
+# Weekly release-key prefix. Miners submit prediction bundles to the WEEKLY
+# epochs (`WR-YYYY-Www-PUB-En`, plus `WR-...-RERUN/COR` variants). The
+# daily-stream publishes `BD-YYYY-MM-DD` releases into the SAME `/releases`
+# listing, but no miner submits to those — so a `BD-` epoch scores 0/256 and
+# the weight override burns 100%. The scoreable-release resolver filters on
+# this prefix so its open/closed pair stays on the weekly cadence it assumes.
+WEEKLY_RELEASE_PREFIX = "WR-"
+
 
 @dataclass
 class EpochData:
@@ -152,6 +160,25 @@ class HopeDataClient:
                 "no releases returned from the operator data backend; cannot "
                 "resolve a scoreable release. Verify HOPE_API_URL / HOPE_API_KEY."
             )
+        # Score ONLY weekly (WR-) epochs. The daily-stream publishes
+        # BD-YYYY-MM-DD releases into the same listing; miners never submit to
+        # them, so scoring a BD- epoch yields 0/256 and the override path burns
+        # the whole epoch. Filtering here keeps releases[0]/[1] (open/closed) on
+        # the weekly cadence this resolver assumes. (2026-08-03: a BD- epoch
+        # resolved as releases[1] and burned W31 — this is the guard.)
+        weekly = [
+            r for r in releases
+            if str(r.get("release_key", "")).startswith(WEEKLY_RELEASE_PREFIX)
+        ]
+        if not weekly:
+            raise RuntimeError(
+                "no weekly (WR-) releases in the backend listing; cannot resolve "
+                "a scoreable weekly epoch (the listing holds only non-weekly "
+                f"releases, e.g. daily BD- epochs). Present keys: "
+                f"{[str(r.get('release_key','?')) for r in releases[:5]]}. Verify "
+                "the weekly release was published, or pin --release <EPOCH_ID>."
+            )
+        releases = weekly
         releases.sort(key=lambda r: r.get("created_at", ""), reverse=True)
         if len(releases) < 2:
             raise RuntimeError(

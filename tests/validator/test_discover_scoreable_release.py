@@ -57,22 +57,54 @@ def test_raises_when_no_releases():
 
 
 def test_raises_when_second_release_lacks_key():
+    # A release with no release_key can't be a weekly WR- epoch, so the WR-
+    # filter drops it — leaving only one weekly release to consider.
     c = _FakeClient([
         {"release_key": "WR-2026-W23-PUB-E1", "created_at": "2026-06-01T02:00:00"},
-        {"created_at": "2026-05-25T02:00:00"},  # no release_key
+        {"created_at": "2026-05-25T02:00:00"},  # no release_key -> filtered out
     ])
-    with pytest.raises(RuntimeError, match="no `release_key`"):
+    with pytest.raises(RuntimeError, match="only one release"):
         _run(c)
 
 
 def test_does_not_use_newest_even_if_input_unsorted():
     # input deliberately unsorted; newest by created_at must be excluded
     c = _FakeClient([
-        {"release_key": "OLD", "created_at": "2026-01-01T00:00:00"},
-        {"release_key": "NEWEST_OPEN", "created_at": "2026-06-02T00:00:00"},
-        {"release_key": "CLOSED", "created_at": "2026-05-25T00:00:00"},
+        {"release_key": "WR-2026-W20-PUB-E1", "created_at": "2026-01-01T00:00:00"},
+        {"release_key": "WR-2026-W24-PUB-E1", "created_at": "2026-06-02T00:00:00"},
+        {"release_key": "WR-2026-W23-PUB-E1", "created_at": "2026-05-25T00:00:00"},
     ])
-    assert _run(c) == "CLOSED"
+    assert _run(c) == "WR-2026-W23-PUB-E1"
+
+
+def test_ignores_daily_bd_releases():
+    """Daily-stream BD-YYYY-MM-DD releases share the /releases listing but no
+    miner submits to them — so they must be filtered out, and the scorer must
+    resolve to the second-newest WEEKLY epoch, never a daily one.
+
+    Regression for 2026-08-03: a BD- epoch resolved as releases[1], scored
+    0/256, and the weight override burned the whole W31 epoch on-chain.
+    """
+    c = _FakeClient([
+        {"release_key": "BD-2026-05-26", "created_at": "2026-05-26T02:00:00"},
+        {"release_key": "BD-2026-05-25", "created_at": "2026-05-25T02:00:00"},
+        {"release_key": "WR-2026-W23-PUB-E1", "created_at": "2026-05-25T01:00:00"},
+        {"release_key": "WR-2026-W22-PUB-E1", "created_at": "2026-05-18T02:00:00"},
+    ])
+    # BD- entries (newest by created_at) are ignored; open weekly = W23,
+    # scoreable (closed) weekly = W22.
+    assert _run(c) == "WR-2026-W22-PUB-E1"
+
+
+def test_raises_when_only_daily_releases_present():
+    """If the listing holds ONLY daily BD- epochs (no weekly), the resolver
+    must raise a clear error rather than silently scoring a daily epoch."""
+    c = _FakeClient([
+        {"release_key": "BD-2026-08-03", "created_at": "2026-08-03T02:00:00"},
+        {"release_key": "BD-2026-08-02", "created_at": "2026-08-02T02:00:00"},
+    ])
+    with pytest.raises(RuntimeError, match="no weekly"):
+        _run(c)
 
 
 def test_late_staged_newest_does_not_block_prior_scoring():
