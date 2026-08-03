@@ -28,15 +28,18 @@ def _client(releases):
 
 def test_blocks_release_that_has_not_closed():
     now = datetime.now(timezone.utc)
-    # newest created "now" → its Monday-close (= the prior epoch's deadline) is
-    # in the future → the prior epoch is still open → must NOT be scoreable.
+    # Anchor the newest release on a FUTURE Monday-close so the test is
+    # deterministic regardless of the wall-clock day it runs (a "created now"
+    # anchor has its own 05:00 close already in the past when run on a Monday
+    # afternoon, which would not block). newest close in the future → the prior
+    # epoch is still open → must NOT be scoreable.
+    future_close = next_mining_close(now)  # next Mon 05:00 UTC, always > now
     c = _client([
-        {"release_key": "W_NEW", "created_at": now.isoformat()},
-        {"release_key": "W_PRIOR", "created_at": (now - timedelta(days=7)).isoformat()},
+        {"release_key": "WR-2026-W31-PUB-E1", "created_at": future_close.isoformat()},
+        {"release_key": "WR-2026-W30-PUB-E1", "created_at": (future_close - timedelta(days=7)).isoformat()},
     ])
-    if next_mining_close(now) > now:  # essentially always (next close is ahead)
-        with pytest.raises(RuntimeError, match="has not closed yet"):
-            asyncio.run(c.discover_scoreable_release())
+    with pytest.raises(RuntimeError, match="has not closed yet"):
+        asyncio.run(c.discover_scoreable_release())
 
 
 def test_returns_release_once_closed():
@@ -44,7 +47,7 @@ def test_returns_release_once_closed():
     # newest created 14 days ago → its Monday-close is long past → prior epoch
     # is closed → scoreable.
     c = _client([
-        {"release_key": "W_NEW", "created_at": (now - timedelta(days=14)).isoformat()},
-        {"release_key": "W_PRIOR", "created_at": (now - timedelta(days=21)).isoformat()},
+        {"release_key": "WR-2026-W31-PUB-E1", "created_at": (now - timedelta(days=14)).isoformat()},
+        {"release_key": "WR-2026-W30-PUB-E1", "created_at": (now - timedelta(days=21)).isoformat()},
     ])
-    assert asyncio.run(c.discover_scoreable_release()) == "W_PRIOR"
+    assert asyncio.run(c.discover_scoreable_release()) == "WR-2026-W30-PUB-E1"

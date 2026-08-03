@@ -572,6 +572,32 @@ def run_epoch_scoring(
                     f"miners by score",
                     flush=True,
                 )
+            elif _burn is not None and not score_map:
+                # PARTIAL burn configured (SN21_BURN_FRACTION set) but ZERO miners
+                # were SCORED AT ALL (score_map empty) — a DATA failure (wrong
+                # epoch resolved, archive unreachable, reveals not landed), NOT a
+                # legitimate "everyone lost". Do NOT fall through to a 100%
+                # single-UID burn: emptying the vector routes to the
+                # weights-commit skip below, keeping the prior vector live (the
+                # heartbeat re-asserts it) until a healthy run lands. (2026-08-03:
+                # a daily BD- epoch resolved as scoreable → 0 miners scored →
+                # 100% burn on-chain; the WR- filter in discover_scoreable_release
+                # is the primary fix, this is the safety net.)
+                #
+                # The `not score_map` guard is load-bearing: a genuine ZERO-WINNER
+                # week (miners WERE scored but none cleared the tiered gate with
+                # the flat-week top-up disabled) leaves score_map NON-empty and
+                # falls to the `else` — an INTENTIONAL full burn per the reward
+                # spec. A DELIBERATE full burn uses the override WITHOUT a burn
+                # fraction (`_burn is None`), also handled by `else`.
+                print(
+                    f"[weight-override] burn {_burn:.0%} configured but 0 miners "
+                    f"SCORED (data failure); skipping weight commit "
+                    f"(NOT a full-burn fallback)",
+                    flush=True,
+                )
+                uids = []
+                weights = []
             else:
                 print(
                     f"[weight-override] SN21_OVERRIDE_WEIGHT_UID={_override_uid} set; "
