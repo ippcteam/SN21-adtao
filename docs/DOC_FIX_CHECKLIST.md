@@ -41,8 +41,9 @@ Leaderboard, changelog, and mirrored docs live there. The site is being updated 
 - [ ] **Rewrite [README.md](../README.md) miner path** for daily stream (container + digest, not weekly `hope-miner` / TLE archives).
 - [ ] **README links** point to scoring / rewards / staking / transition / model spec / quickstart — **not** to obsolete reward/epoch/economics specs as primary.
 - [ ] **README “How it works / scoring / emissions”** sections match daily standing + weight curve (or clearly say “see SN21_SCORING / SN21_REWARDS”).
-- [ ] **[DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md)** — remove “proposed / nothing changes today” tone; align with cutover-in-progress; keep as the short “why”.
-- [ ] **README (or quickstart §1)** includes a short commercial/practical “why daily” blurb linking to DAILY_STREAM_DIRECTION.
+- [ ] **Finalize [SN21_WHY_DAILY.md](./SN21_WHY_DAILY.md)** (draft why doc) — then retire or pointer-ize [DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md).
+- [ ] **README (or quickstart §1)** includes a short “why daily” blurb linking to the finalized why doc.
+- [ ] Discord / site announcement **derived from** finalized `SN21_WHY_DAILY.md` (not a third source of truth).
 
 ---
 

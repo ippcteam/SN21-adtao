@@ -2,7 +2,7 @@
 
 | | |
 | :---- | :---- |
-| **Version** | 1.1 |
+| **Version** | 1.2 |
 | **Audience** | Miners |
 | **Status** | Authoritative for cutover dates and bridge rules |
 | **Last updated** | 2026-08-04 |
@@ -81,6 +81,17 @@ These figures may change without waiting for the next four-weekly parameter revi
 | 7-day | **Tue 18 Aug** |
 | 14-day | **Tue 25 Aug** |
 | 28-day (35 settled) | **Tue 8 Sep** |
+
+### Emissions while horizons are still ramping in — **full pool, thinner signal**
+
+Qualifying miners are **not** paid a reduced share of emissions just because only 7-day (or only 7+14-day) rows have settled yet.
+
+- After the indicative **burn**, **100% of the miner emission pool** still flows through current weights (bridge, then the daily curve) to **eligible** miners.
+- Horizons are **not** separate emission pots. We do **not** “give 100% to 7-day, then resplit when 14-day arrives.”
+- What ramps is **evidence in your standing**: each settled (episode × horizon) enters at its published blend weight (see [SN21_SCORING.md](./SN21_SCORING.md)). Early on you have fewer rows, so standings are thinner / noisier — but the pie paid to the earning set is still the full post-burn miner pool.
+- When 14-day and 28-day rows land, they **add** to standings; they do not unlock a larger emission budget by themselves.
+
+You can still earn **zero** if you fail bridge eligibility, miss the alpha hold, or (once on the curve) fall outside the earning set — that is eligibility, not a horizon-based haircut on the pool.
 
 ---
 
