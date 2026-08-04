@@ -20,7 +20,7 @@ This checklist comes from a miner-eye review of the repo as an instruction set.
 - [docs/SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md)
 - [docs/DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md)
 
-**Open product decision (do not invent in docs):** daily wall-clock cut-off for basket reveal / model run / digest commit.
+**Decided:** daily miner-submission wall clock is **midnight EST** each day (published in quickstart §3, MINER_MODEL_SPEC §4, SN21_SCORING, transition plan, DAILY_STREAM_DIRECTION).
 
 **Public site (human-readable mirror + ops UI):** [https://adtao.io/sn21/](https://adtao.io/sn21/)  
 Leaderboard, changelog, and mirrored docs live there. The site is being updated for the daily stream **during the week of 4 August 2026**. Repo docs remain authoritative where the site disagrees (as the site itself states). Until the site cutover finishes, miner docs should still point miners at `/sn21/` for leaderboard / changelog, and call out that mirrored pages may briefly lag the repo.
@@ -68,7 +68,7 @@ Miner must have a written path for each. If tooling is missing, say so explicitl
 - [ ] Document registry requirements (public pull, digest pin, auth if any).
 - [ ] Document gate intake: who runs it, when, how miners are notified of pass/fail.
 - [ ] Document that live baskets are **operator-executed** (miner does not POST daily predictions).
-- [ ] When product decides: publish **daily cut-off** (timezone + what must be true by that time: digest committed / image pullable / etc.) in MINER_MODEL_SPEC + quickstart + transition (if cutover-relevant).
+- [x] Publish **daily cut-off**: **midnight EST** each day — in MINER_MODEL_SPEC + quickstart + scoring + transition + direction note.
 
 ### Check submission succeeded
 
@@ -165,7 +165,7 @@ A new miner can answer from docs alone:
 
 - Implementing `SN21_DAILY_STREAM_WEIGHTS` production cutover (code/ops).
 - Changing Bittensor emissions methodology.
-- Inventing a daily cut-off time before the product decision lands.
+- ~~Inventing a daily cut-off time before the product decision lands.~~ → **Decided: midnight EST daily.**
 
 ---
 
@@ -175,3 +175,4 @@ A new miner can answer from docs alone:
 | :---- | :---- | :---- |
 | 2026-08-04 | Checklist created | From miner-eye review; no doc rewrites in that pass beyond prior suite |
 | 2026-08-04 | Website note added | Leaderboard/changelog at https://adtao.io/sn21/ — site updating this week for daily stream |
+| 2026-08-04 | Daily wall clock | Miner submissions: **midnight EST** daily — quickstart, model spec, scoring, transition, direction |

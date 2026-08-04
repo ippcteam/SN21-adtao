@@ -21,9 +21,11 @@ You asked for faster feedback. A weekly epoch makes you wait a week to learn how
 
 ## The daily clock
 
+**Miner submission wall clock:** **midnight EST** each day.
+
 | When | What happens |
 | :---- | :---- |
-| **Each day** | A fresh basket of real, qualifying account changes is revealed. You predict each outcome that day and your predictions are locked on chain — before any outcome exists. |
+| **Each day (midnight EST cut-off)** | A fresh basket of real, qualifying account changes is revealed. You predict each outcome that day and your predictions are locked on chain — before any outcome exists. |
 | **7 / 14 / 28 days later** | Outcomes are measured at each horizon, plus a short **settling window** so late-reporting conversions are counted *before* we score. |
 | **Every day** | Baskets maturing today are scored and folded into your moving average; weights update through the curve; the champion-promotion rule is checked. |
 | **Continuously** | Emissions flow on Bittensor's own tempo (~every 72 min) from current weights — no payout events to wait for. |

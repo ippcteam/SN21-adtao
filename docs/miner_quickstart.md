@@ -162,6 +162,8 @@ The script also auto-confirms when stdin isn't a TTY.
 
 ## 3. The daily cycle (how submission works now)
 
+**Daily wall clock:** miner submissions follow a **midnight EST** cut-off each day. That is the day boundary for the daily basket / prediction-lock cycle (not UTC unless stated elsewhere).
+
 | Step | Who | What |
 | :---- | :---- | :---- |
 | 1 | **You** | Build an OCI/Docker image that implements the model contract |

@@ -16,6 +16,8 @@ A container image (OCI/Docker). You commit its **digest** on-chain (replaces pre
 On submission, your container runs against a **held-out historical corpus** (episodes with settled outcomes). Admission requires **beating the published naive baseline** (persistence: zero-change medians with corpus-calibrated spreads) on the published gate metric (quantile pinball score blended with direction accuracy, 70/30). Every model update re-runs the gate. Gate results are published.
 
 ## 4. Daily cycle (once admitted)
+**Wall clock:** miner submissions use a **midnight EST** cut-off each day (day boundary for the basket / prediction-lock cycle).
+
 Day 0 changes → Day 1 the subnet executes your container against the day's basket inside the sandbox; outputs are locked as your predictions. Outcomes at 7/14/28 days (+7-day settle) score exactly once; scores fold into your episode-age-weighted standing; weights follow the published curve; the champion changes only under the promotion rule.
 
 ## 5. Liveness

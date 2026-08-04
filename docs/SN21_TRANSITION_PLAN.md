@@ -2,13 +2,15 @@
 
 | | |
 | :---- | :---- |
-| **Version** | 1.2 |
+| **Version** | 1.3 |
 | **Audience** | Miners |
 | **Status** | Authoritative for cutover dates and bridge rules |
 | **Last updated** | 2026-08-04 |
 | **Update independently of** | [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_STAKING.md](./SN21_STAKING.md) |
 
 This document is the **cutover schedule** from the last weekly epoch to the daily prediction stream. Steady-state scoring and rewards are in the companion docs; this file is only about **what happens when**.
+
+**Daily wall clock:** miner submissions use a **midnight EST** cut-off each day (same clock as the daily basket / prediction-lock cycle). See [miner_quickstart.md](./miner_quickstart.md) §3 and [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md).
 
 ---
 
@@ -101,7 +103,7 @@ From **Monday 10 August**, carried-over weekly weights are paid **only** to mine
 
 ### 1. Submitted (participating on the daily stream)
 
-A miner **submitted** on a day if, when the subnet ran a live daily basket that day:
+Days follow the **midnight EST** wall clock. A miner **submitted** on a day if, when the subnet ran a live daily basket that day:
 
 - they delivered valid predictions for at least **50%** of the episodes in that day’s basket  
   (`predictions_out / episodes_in ≥ 0.50`), **and**

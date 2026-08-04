@@ -2,7 +2,7 @@
 
 | | |
 | :---- | :---- |
-| **Version** | 1.1 |
+| **Version** | 1.2 |
 | **Audience** | Miners |
 | **Status** | Authoritative for daily-stream scoring |
 | **Last updated** | 2026-08-04 |
@@ -18,9 +18,11 @@ Each day a basket of real account changes is revealed; you predict outcomes; lat
 
 ## The daily clock (scoring side)
 
+**Miner submission wall clock:** **midnight EST** each day. That is the day boundary for the daily basket and prediction lock.
+
 | When | What happens |
 | :---- | :---- |
-| **Each day** | A fresh basket ships. Your predictions for that basket are locked **before** any outcome exists. |
+| **Each day (midnight EST cut-off)** | A fresh basket ships. Your predictions for that basket are locked **before** any outcome exists. |
 | **Horizon + settle** | Outcomes are measured at **7 / 14 / 28 days**, then held for a **7-day settling window** so late conversions are included. |
 | **Settle day** | That (episode, horizon) is scored once. The score enters your standing. It is never re-scored. |
 
