@@ -1,5 +1,10 @@
 # SN21 — Miner Quickstart (daily stream)
 
+> **Reading order:** [Why daily](./SN21_WHY_DAILY.md) →
+> [Transition plan](./SN21_TRANSITION_PLAN.md) → this quickstart →
+> [Scoring](./SN21_SCORING.md) → [Rewards](./SN21_REWARDS.md) →
+> [Staking](./SN21_STAKING.md) → [Model spec](./MINER_MODEL_SPEC.md)
+
 **For:** Miners joining SN21 on Bittensor  
 **Subnet:** SN21 (testnet netuid **466** / mainnet netuid **21**)  
 **Validator URL:** https://validator.adtao.io  
@@ -175,7 +180,7 @@ The script also auto-confirms when stdin isn't a TTY.
 Full contract: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md).  
 You do **not** fetch live baskets and POST predictions yourself — the operator sandbox runs your image.
 
-During cutover, “submitted” for bridge pay means your container delivered usable predictions for **≥50%** of that day’s basket — see [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md).
+During cutover, “submitted” for bridge pay means your container delivered usable predictions for **≥75%** of that day’s basket — see [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md).
 
 ---
 
@@ -186,7 +191,7 @@ During cutover, “submitted” for bridge pay means your container delivered us
 - **In:** one episode JSON per line on **stdin**
 - **Out:** one prediction JSON per line on **stdout**
 - Horizons: **`7`**, **`14`**, **`28`**
-- Per horizon: monotone p10/p50/p90 for `cost_delta_pct`, `conversions_delta_pct`, `efficiency_delta_pct`; plus `goal_miss_probability` and `instability_risk` in `[0, 1]`
+- Per horizon: monotone p10/p50/p90 for `cost_delta_pct`, `conversions_delta_pct`, `efficiency_delta_pct`; plus `goal_miss_probability` and `instability_risk` in `[0, 1]` (accepted, **not scored** — no ground truth)
 - **No network** inside the sandbox — bake weights / constants into the image
 - Budget: **1 GB RAM**, **15 CPU-minutes** per daily basket (~250 episodes)
 
@@ -265,6 +270,19 @@ Example:
 sn21-model:v1:ghcr.io/you/sn21-miner@sha256:0123abcd...  (64 hex chars)
 ```
 
+How to commit it (no dedicated CLI yet — python SDK, same wallet as
+registration):
+
+```python
+import bittensor as bt
+wallet = bt.wallet(name="my_miner", hotkey="default")
+sub = bt.subtensor(network="test")             # "finney" at mainnet cutover
+sub.commit(wallet=wallet, netuid=466,
+           data="sn21-model:v1:ghcr.io/<you>/sn21-miner@sha256:<64hex>")
+# Verify what actually landed (last write wins):
+print(sub.get_commitment(netuid=466, uid=<your_uid>))
+```
+
 Rules (enforced by `hope/backtest/model_registry.py`):
 
 - Repo lowercase, no image tag on the name segment (digest pins the bits)
@@ -281,6 +299,55 @@ Updating your model = **new digest** = re-enters the backtest gate.
 
 ---
 
+## 5b. Check your submission actually landed
+
+Four checks, in the order things can fail. Where a self-serve surface does not
+exist yet, the interim path is the operator via Discord — stated plainly rather
+than pretending a CLI exists.
+
+**1. Is the digest commitment on chain for your hotkey?**
+
+```python
+import bittensor as bt
+sub = bt.subtensor(network="test")           # or "finney" at mainnet cutover
+print(sub.get_commitment(netuid=466, uid=<your_uid>))
+# Expect exactly: sn21-model:v1:<repo>@sha256:<64hex>
+```
+
+The Commitments slot is last-write-wins: whatever this prints is what the
+subnet will pull. If it shows an older digest, re-commit.
+
+**2. Did intake pull the matching image?**
+
+Intake pulls by digest and verifies the image's `RepoDigests` against your
+commitment; a registry serving different bits fails intake. Pull-failures and
+digest mismatches are surfaced with the gate result (below). Self-check first:
+
+```bash
+docker pull <repo>@sha256:<digest>   # if this fails publicly, intake fails too
+```
+
+**3. Did your model pass the admission gate?**
+
+The gate (beat the naive baseline; ≥90% of reference coverage on the backtest)
+is run by the operator when a new digest lands. Results are announced in the
+Discord miner channel and on [adtao.io/sn21](https://adtao.io/sn21/) as
+admission completes. There is no self-serve gate API yet — interim path is the
+Discord announcement or asking the operator. *(Code TODO: publish per-digest
+gate verdicts to the site automatically.)*
+
+**4. Is your model being run each day, and did the day count?**
+
+Per-day, per-miner coverage (`episodes_in` / `predictions_out`) is recorded by
+the validator's shadow ledger. A day counts as **submitted** when
+`predictions_out / episodes_in ≥ 0.75` — delivered predictions, not "the
+container exited 0". The leaderboard at
+[adtao.io/sn21](https://adtao.io/sn21/) shows standing / rank as the daily
+cutover lands there this week; until then coverage questions go to the Discord
+miner channel and are answered from the ledger.
+
+---
+
 ## 6. Train before you ship
 
 Use settled historical baskets (training bundle from the transition, public
@@ -288,7 +355,8 @@ exports under `data/episodes/` / `data/outcomes/` when available, plus the
 bundled sample):
 
 ```bash
-# Bundled sample (small; pipeline check)
+# Bundled sample — a PIPELINE CHECK only (10 episodes). A model trained
+# on this alone will not clear the gate; train on the full bundle.
 python scripts/train_example_model.py \
     --data-file data/training/training_episodes.json
 
@@ -409,7 +477,7 @@ Public RPCs flake under load. Retry 2–3 times on a fresh WebSocket.
 
 Non-JSON lines are ignored. Ensure every episode gets a valid JSON prediction
 line with `episode_id` and `horizons`. Crashes / OOM / timeout → **no scores
-that day** (self-penalising via the standing average). Aim for ≥50% coverage
+that day** (self-penalising via the standing average). Aim for ≥75% coverage
 on live days during the bridge.
 
 ### Image fails the gate
@@ -443,3 +511,16 @@ commit a **new digest**.
 *Weekly epoch quickstart material (per-epoch `hope-miner` TimelockEncrypted
 bundles, Monday–Sunday mining windows, Tier-2/3 archives) is retired. Registration
 and ed25519 binding steps above remain authoritative.*
+
+---
+
+## 10. Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Gate FAIL on submit | Model under naive baseline, or coverage < 90% of reference | Train on the bundle; make sure you emit a prediction line for (almost) every episode |
+| Digest mismatch at intake | Registry tag moved after you committed | Re-commit the digest you actually pushed; never rely on tags |
+| `predictions_out = 0` on a day | Container ran but printed nothing usable — malformed NDJSON is recorded as zero predictions | Test locally: one episode line on stdin must produce one valid prediction line on stdout |
+| Paid nothing despite scoring | Below the 250-unit evidence floor, below the score threshold, or stake below the day's alpha hold | Check standing and the [staking ladder](./SN21_STAKING.md) |
+| Weight fell after missed days | Bridge miss decay (1 miss 50%, 2 misses 25%, 3+ zero) | Submit ≥75% of a day's basket; weight restores immediately on return |
+| Evicted | 5 miner-fault failed days in a rolling 14 | Fix the container; return after 7 days on a clean run |

@@ -1,5 +1,12 @@
 # SN21 Whitepaper
 
+> **Weekly-era sections are historical.** This whitepaper predates the daily
+> stream (cutover 4 Aug 2026). Where it describes weekly epochs, tempo, tier
+> allocation defaults or `hope-miner` submission, the daily suite is
+> authoritative: [SN21_SCORING](./SN21_SCORING.md) · [SN21_REWARDS](./SN21_REWARDS.md)
+> · [SN21_TRANSITION_PLAN](./SN21_TRANSITION_PLAN.md) · [SN21_STAKING](./SN21_STAKING.md).
+
+
 ### Predict Google Ads outcomes. Earn from accuracy alone.
 
 Every prediction is sealed on chain before the outcome is knowable.

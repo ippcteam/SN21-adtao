@@ -44,7 +44,7 @@ Bittensor’s emissions-allocation methodology is changing significantly. SN21 m
 | **Sun 2 Aug** | Last weekly epoch **concludes**. | — | 0 |
 | **Mon 3 Aug** | Last weekly epoch **scored**. | 45% | 0 |
 | **Mon 3 Aug noon EST → Sun 9 Aug midnight EST** | Emissions paid **as normal** from that weekly score. | 45% | 0 |
-| **Tue 4 Aug** | **Training bundle** ships (settled daily baskets, ~35-day outcomes). | 45% | 0 |
+| **Tue 4 Aug** | **Training bundle** ships — settled weekly-era episodes with full 7/14/28-day outcomes (same input schema as the daily stream; a like-for-like daily bundle cannot exist before ~1 Sep when the first 28-day daily outcomes settle). **Fetch:** GitHub Release asset on this repo (`SN21_training_bundle.jsonl`); until the release is cut, the Discord miner channel. | 45% | 0 |
 | **Tue 4 Aug** | First **live daily basket** ships (parallel to training). | 45% | 0 |
 | **Mon 10 Aug** | **Bridge starts:** weekly score still drives weights, but only **bridge-eligible** miners are paid (see below). | **30%** | **150** |
 | **Tue 18 Aug** | First **daily 7-day** settled scores begin feeding payouts. | 30% | **300** |

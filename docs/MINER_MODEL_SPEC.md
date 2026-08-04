@@ -7,7 +7,16 @@
 A container image (OCI/Docker). You commit its **digest** on-chain (replaces prediction commitments — same extrinsic, new meaning). Updating your model = new digest = re-enters the backtest gate.
 
 ## 2. Execution contract
-- Entrypoint reads **one episode payload JSON per line on stdin** (schema: episode payload v2.0 — id, metadata, account_state, pre-window series, action bundle with magnitudes) and writes **one prediction JSON per line on stdout**: `{"episode_id": ..., "horizons": {"7": {...}, "14": {...}, "28": {...}}}` — per horizon: p10/p50/p90 for cost_delta_pct, conversions_delta_pct, efficiency_delta_pct (monotone), plus goal_miss_probability and instability_risk in [0,1].
+- Entrypoint reads **one episode payload JSON per line on stdin** (schema: episode payload v2.0 — id, metadata, account_state, pre-window series, action bundle with magnitudes) and writes **one prediction JSON per line on stdout**: `{"episode_id": ..., "horizons": {"7": {...}, "14": {...}, "28": {...}}}` — per horizon: p10/p50/p90 for cost_delta_pct, conversions_delta_pct, efficiency_delta_pct (monotone), plus goal_miss_probability and instability_risk in [0,1] (**accepted for forward compatibility, NOT scored** — no ground truth exists; spend capacity on the delta metrics).
+
+> **Schema versions, one story.** Public historical exports under `data/episodes/`
+> are the **v1.9-era weekly export** (episode fields at top level); the **training
+> bundle** wraps the same fields as `{"episode_id", "input": {...}, "labels": {...}}`;
+> the **live daily contract is this v2.0 payload**. Field names and meanings are
+> identical where they overlap — training code should read fields from `input`
+> when present, else top-level. The reference model's flattened field list is a
+> convenience view of the same schema, not a third format.
+
 - **No network.** The sandbox runs `--network=none`. Everything you need ships in the image.
 - **Budget: 1 GB RAM, 15 CPU-minutes per daily basket** (~250 episodes). Exceeding either aborts the day's run: no scores that day (the episode-weighted average makes missed days self-penalising; no additional punishment).
 - Deterministic output for identical input is strongly recommended (audits replay your container).

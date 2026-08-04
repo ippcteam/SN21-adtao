@@ -1,5 +1,8 @@
 # SN21 — Moving to a Daily Prediction Stream
 
+> **Superseded by [SN21_WHY_DAILY.md](./SN21_WHY_DAILY.md)** (the published why-daily statement). This page remains as the original direction note.
+
+
 | | |
 | :---- | :---- |
 | **Version** | 0.2 |

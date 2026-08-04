@@ -48,6 +48,15 @@ Horizons in the daily stream: **7, 14, and 28 days**.
 
 Each finalised (episode, horizon) receives a score in **[0, 1]** from four components:
 
+> **Production formula (what the settle scorer actually runs).** The published
+> component weights are below; in production, calibration's interval-coverage
+> half is the computable part, so the live blend is **quantile 0.50 · coverage
+> 0.10 · direction 0.15 · goal-p50 0.15, renormalised over 0.90**
+> (`hope/scoring/settle_day_flow.py:score_entry_v2`). Direction and goal are
+> scored on the **account's goal metric** (basis frozen at reveal). The
+> `goal_miss_probability` and `instability_risk` fields are **not scored** —
+> no ground truth exists for them.
+
 | Component | Weight |
 | :---- | :---- |
 | Quantile accuracy (pinball on P10/P50/P90) | **50%** |

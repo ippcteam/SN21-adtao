@@ -1,5 +1,8 @@
 # Validator Operational Runbook
 
+> **Pre-daily / operator historical.** Sections describing weekly scoring cadence predate the daily stream; the daily path runs `daily_loop` on the settle clock. See [SN21_TRANSITION_PLAN](./SN21_TRANSITION_PLAN.md).
+
+
 Operational guide for SN21 validators — what to expect during normal
 running, what failures look like, and how to act on them.
 

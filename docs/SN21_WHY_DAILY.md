@@ -1,9 +1,9 @@
-# SN21 — Why the daily stream (DRAFT for review)
+# SN21 — Why the daily stream
 
 | | |
 | :---- | :---- |
-| **Version** | 0.3 draft |
-| **Status** | **Draft for review — not yet the published miner notice** |
+| **Version** | 1.0 |
+| **Status** | Published — the canonical why-daily statement; announcements derive from this |
 | **Audience** | Miners, partners, and the wider Bittensor / ads audience (Discord / site copy derived from this) |
 | **Owner** | AdTAO / SN21 operator |
 | **Companions** | [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md) · [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_STAKING.md](./SN21_STAKING.md) · [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md) |

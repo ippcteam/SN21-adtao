@@ -1,3 +1,5 @@
+> **Pre-daily / operator historical.** The weekly Monday scoring timer described here predates the daily stream (settle-clock `daily_loop`). See docs/SN21_TRANSITION_PLAN.md.
+
 # SN21 Scoring Runner — Deployment
 
 `hope-validator` (from `hope.validator.runner:main`) is the **one-shot per-epoch scoring process** for SN21. It reads each miner's on-chain commits, fetches the AES-encrypted predictions from the three-tier archive, runs the 8-check scoreability rule, scores the predictions, and submits the four Layer 9.C chain commits (`9.C.1` pre-scoring state, `9.C.3` weights, `9.C.2` post-scoring artifacts, `9.C.6` retry log if any miners were excluded for `plaintext_unavailable`).

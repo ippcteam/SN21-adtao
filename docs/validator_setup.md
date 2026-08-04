@@ -1,5 +1,8 @@
 # Validator Setup Guide
 
+> **Pre-daily / operator historical.** Sections describing weekly mining windows / hope-miner examples predate the daily stream; the daily path runs `daily_loop` on the settle clock. See [SN21_TRANSITION_PLAN](./SN21_TRANSITION_PLAN.md).
+
+
 **For:** Running the SN21 validator
 **Prerequisite:** Python 3.10+, Bittensor wallet (for testnet/mainnet)
 

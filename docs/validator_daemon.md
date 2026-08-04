@@ -1,5 +1,8 @@
 # `hope-validator-daemon` — the consolidated validator
 
+> **Pre-daily / operator historical.** Sections describing weekly scoring timer predate the daily stream; the daily path runs `daily_loop` on the settle clock. See [SN21_TRANSITION_PLAN](./SN21_TRANSITION_PLAN.md).
+
+
 One long-running process that replaces the **scoring cron + heartbeat cron +
 the manual registration-index step** with a single supervisor loop. Each tick
 it runs three *self-idempotent* tools as isolated subprocesses:

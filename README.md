@@ -4,6 +4,18 @@
 
 ### Predict ad campaign outcomes. Earn from accuracy alone.
 
+> **Daily stream (from 4 Aug 2026).** SN21 has moved from weekly epochs to a
+> **daily** stream: you ship a **container image**, the subnet runs it against a
+> fresh basket of real account changes every day, and settled outcomes feed a
+> rolling standing that drives emissions. Weekly `hope-miner` prediction
+> bundles are obsolete. Why we moved: [docs/SN21_WHY_DAILY.md](docs/SN21_WHY_DAILY.md).
+>
+> **Reading order:** [Why daily](docs/SN21_WHY_DAILY.md) →
+> [Transition plan](docs/SN21_TRANSITION_PLAN.md) →
+> [Quickstart](docs/miner_quickstart.md) →
+> [Scoring](docs/SN21_SCORING.md) → [Rewards](docs/SN21_REWARDS.md) →
+> [Staking](docs/SN21_STAKING.md) → [Model spec](docs/MINER_MODEL_SPEC.md)
+
 Every prediction is sealed on chain before the outcome is knowable.
 Every score is reproducible by anyone with a chain reader.
 No one — including the operator — can rewrite the record after the fact.
@@ -15,7 +27,7 @@ No one — including the operator — can rewrite the record after the fact.
 
 Bittensor Subnet 21 · Mainnet `finney` · Testnet `test` (netuid 466)
 
-[Whitepaper](docs/whitepaper.md) · [Reward mechanism](docs/SN21_REWARD_MECHANISM.md) · [Miner quickstart](docs/miner_quickstart.md)
+[Quickstart](docs/miner_quickstart.md) · [Scoring](docs/SN21_SCORING.md) · [Rewards](docs/SN21_REWARDS.md) · [Transition](docs/SN21_TRANSITION_PLAN.md)
 </div>
 
 ---
@@ -108,43 +120,34 @@ Defined in [`hope/constants.py:LAUNCH_ACTION_TYPES`](hope/constants.py):
 
 ## How scoring works
 
-Four components combine into one micro-units score per miner per epoch:
+Each admitted model is run against the daily basket; every (episode, horizon)
+prediction is scored **[0, 1]** once its outcome settles (day 15 / 22 / 36).
+Scores enter a **12-day half-life moving average** (your *standing*), weighted
+by horizon: 7-day 20%, 14-day 35%, 28-day 45% at high measurement resolution.
 
-| Component | Weight | What it measures |
-|---|---|---|
-| Quantile accuracy | 50% | Pinball loss / CRPS on P10/P50/P90 vs actual |
-| Calibration | 20% | Interval coverage with convex width penalty |
-| Directional | 15% | Sign match on the primary goal metric |
-| Goal accuracy | 15% | Brier score on goal-miss probability |
+The production settle formula blends four components — quantile accuracy
+(P10/P50/P90 pinball, 50%), interval coverage (10% — the computable half of the
+published 20% calibration weight), direction on the goal metric (15%) and goal
+p50 accuracy (15%) — renormalised over 0.90. Full detail, including the
+account-goal basis (CPA vs ROAS frozen at reveal) and attrition censoring:
+[docs/SN21_SCORING.md](docs/SN21_SCORING.md).
 
-On top:
-
-- **Null penalty** — up to 60% reduction for near-zero predictions.
-- **Skill score** — must beat the conditional-prior baseline. Below baseline → zero emission.
-
-The scoring library is pure Python with no Bittensor dependency:
-
-```python
-from hope.scoring import EpochScorer
-scorer = EpochScorer()
-scores = scorer.score_epoch(predictions, episodes, outcomes)
-```
-
----
+> Predictions also carry `goal_miss_probability` and `instability_risk` fields.
+> They are accepted for forward compatibility but **not scored** — no ground
+> truth exists for them. Do not spend model capacity there.
 
 ## How emissions work
 
-**At launch.** The default `hope-validator` CLI runs simple
-score-normalization with a 95% burn to UID 0. Tier mechanics
-(participation gate, EMA tier placement, Elite floor, pool shares)
-are implemented in [`hope/validator/tiered_weights.py`](hope/validator/tiered_weights.py)
-and unit-tested, but **not** the runner default at launch — they're
-opt-in via `WeightSetter(tiered_allocator=TieredAllocator())`. Tiers
-become the runner default after Review 1.
+Standing feeds a **rank curve**: 1st place 50% of the pot, 2nd 25%, 3rd 10%,
+then a geometric tail (each next rank half the previous), hard cap 20 earners,
+zero below the score threshold. Placement requires **250 weighted predictions**
+of evidence; full standing at 1,000.
 
-Full spec: [SN21_REWARD_MECHANISM.md](docs/SN21_REWARD_MECHANISM.md).
-
----
+Burn and the alpha-hold ladder follow the published, dated schedule (burn is
+indicative and may change to protect alpha value):
+[docs/SN21_REWARDS.md](docs/SN21_REWARDS.md) ·
+[docs/SN21_STAKING.md](docs/SN21_STAKING.md) ·
+[docs/SN21_TRANSITION_PLAN.md](docs/SN21_TRANSITION_PLAN.md).
 
 ## Repository structure
 
@@ -154,9 +157,9 @@ SN21-adtao/
 │   ├── whitepaper.md             Protocol design + trust model + adversarial matrix
 │   ├── miner_quickstart.md       Miner onboarding tutorial
 │   ├── validator_setup.md        Validator deployment guide
-│   ├── SN21_REWARD_MECHANISM.md  Full reward spec (gates, tiers, EMA, governance)
-│   ├── SN21_EPOCH_STRUCTURE.md   Phases, horizons, consolidation
-│   └── MINER_ECONOMICS.md        Short reference for emissions
+│   ├── SN21_SCORING.md           Daily-stream scoring (authoritative)
+│   ├── SN21_REWARDS.md           Rank curve + emissions (authoritative)
+│   └── archive: REWARD_MECHANISM / EPOCH_STRUCTURE / MINER_ECONOMICS (weekly era, banners inside)
 │
 ├── hope/                         Core Python package (`pip install -e .`)
 │   ├── protocol/                 Episode / Prediction / Outcome models
@@ -224,52 +227,19 @@ Validators run scoring orchestration + an HTTP API for miners + a Tier-1 archive
 
 ## Running a miner
 
-The example below targets **testnet 466** — current open environment.
-For mainnet, swap `test` → `finney` and `466` → `21`.
+The daily-stream miner path is: **register (one-time) → build a container that
+reads episodes as NDJSON on stdin and writes predictions as NDJSON on stdout →
+push it digest-pinned to a public registry → commit
+`sn21-model:v1:<repo>@sha256:<digest>` on chain → the subnet pulls, gates and
+runs it against every daily basket.** You do not POST predictions; your
+container is executed by the operator.
 
-```bash
-# Clone + install
-git clone https://github.com/ippcteam/SN21-adtao.git
-cd SN21-adtao
-pip install -e ".[miner]"
+Follow the step-by-step guide: [docs/miner_quickstart.md](docs/miner_quickstart.md)
+(registration, ed25519 binding, container contract, digest commitment,
+verifying your submission, training data, troubleshooting).
 
-# Create + register a Bittensor wallet (one-time)
-btcli wallet new_coldkey --wallet.name my_miner
-btcli wallet new_hotkey --wallet.name my_miner --wallet.hotkey default
-btcli subnet register --netuid 466 \
-    --wallet.name my_miner --wallet.hotkey default \
-    --subtensor.network test
-# Need testnet TAO? Bittensor Discord faucet: https://discord.gg/bittensor
-
-# Generate an ed25519 key for inner_sig (one-time, separate from the wallet hotkey)
-python scripts/sn21_keys.py generate --role miner --output ~/sn21-miner.pem
-
-# Register the hotkey ↔ ed25519 binding on chain (one-time)
-python scripts/sn21_keys.py register --role miner \
-    --network test --netuid 466 \
-    --wallet-name my_miner --wallet-hotkey default \
-    --key ~/sn21-miner.pem
-
-# Train on bundled sample data (optional — 10 episodes, known outcomes)
-python scripts/train_example_model.py --data-file data/training/training_episodes.json
-
-# Run miner against the live validator
-hope-miner --validator-url https://validator.adtao.io \
-    --wallet-name my_miner --wallet-hotkey default \
-    --epoch WR-2026-W18-PUB-E1 \
-    --bt-network test --netuid 466 \
-    --archive-tier-2 https://adtao-deploy.onrender.com \
-    --archive-tier-3 https://adtao-deploy.onrender.com \
-    --ed25519-key-file ~/sn21-miner.pem
-
-# Score yourself offline against the bundled sample dataset (no API key needed)
-python scripts/score_predictions.py \
-    --training-data data/training/training_episodes.json --run-baseline
-```
-
-Full guide with troubleshooting: [miner quickstart](docs/miner_quickstart.md).
-
----
+> **Obsolete:** `hope-miner --epoch WR-...` weekly submission commands. They
+> remain in git history only; the last weekly epoch scored on 3 Aug 2026.
 
 ## Running a validator
 
@@ -294,7 +264,7 @@ python scripts/sn21_keys.py register --role validator \
 | Process | Binary | Cadence | What it does |
 |---|---|---|---|
 | **HTTP API** | `hope-validator-api` | long-lived daemon | Serves episodes to miners; takes `--port` |
-| **Scoring** | `hope-validator` | weekly cron (after mining-deadline) | Reads miner submissions, scores, commits weights on chain |
+| **Scoring** | `hope-validator` | weekly cron — **historical**; the daily stream scores via `daily_loop` on the settle clock at cutover | Reads miner submissions, scores, commits weights on chain |
 | **Heartbeat** | `hope-validator-heartbeat` | cron every 3-4 hours | Re-asserts the last weights commit so Bittensor's `ActivityCutoff` (~16h on mainnet) does not prune your validator from consensus between weekly scoring runs |
 
 Skipping the heartbeat means your validator drops out of emission a day or two after each scoring run — even if your scoring is otherwise flawless.

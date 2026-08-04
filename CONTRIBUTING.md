@@ -115,7 +115,7 @@ CI runs the same on every push to `main`.
 Anything that changes on-chain commit structure, scoring formulas, or miner-visible behaviour:
 
 1. Open an issue first describing the change and rationale.
-2. Update the relevant spec doc (`docs/whitepaper.md`, `docs/SN21_REWARD_MECHANISM.md`, `docs/SN21_EPOCH_STRUCTURE.md`).
+2. Update the relevant daily-stream doc (`docs/SN21_SCORING.md`, `docs/SN21_REWARDS.md`, `docs/SN21_TRANSITION_PLAN.md`, `docs/SN21_STAKING.md`). The weekly-era specs (REWARD_MECHANISM / EPOCH_STRUCTURE / MINER_ECONOMICS) are archived — do not extend them.
 3. Land code + tests + docs in the same PR.
 4. Tag the PR with `[PROTOCOL]`.
 
