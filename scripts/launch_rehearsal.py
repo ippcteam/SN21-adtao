@@ -241,7 +241,8 @@ def main():
         print(f"REHEARSAL FAILED — {len(FAILS)} check(s): {FAILS}")
         return 1
     print("REHEARSAL CLEAN — the launch flag set works together, the rollback\n"
-          "path works, and the single-model eviction hazard is reproduced.")
+          "path works, Rob's dated alpha schedule governs, and his floor\n"
+          "holds: the last model survives eviction and the withhold is recorded.")
     return 0
 
 
