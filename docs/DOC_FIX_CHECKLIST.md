@@ -76,7 +76,7 @@ Miner must have a written path for each. If tooling is missing, say so explicitl
 - [ ] How to confirm intake pulled the matching `RepoDigests`.
 - [ ] How to confirm **gate admission** (pass/fail URL, Discord post, or file — whatever is real).
 - [ ] How to confirm the subnet **ran your image** for a given `BD-YYYY-MM-DD` (coverage / predictions_out).
-- [ ] How to confirm bridge “submitted” (≥50% coverage) for a day.
+- [ ] How to confirm bridge “submitted” (≥75% coverage — ruled 3 Aug, was drafted as 50%) for a day.
 
 ### Score and rank
 
@@ -176,3 +176,5 @@ A new miner can answer from docs alone:
 | 2026-08-04 | Checklist created | From miner-eye review; no doc rewrites in that pass beyond prior suite |
 | 2026-08-04 | Website note added | Leaderboard/changelog at https://adtao.io/sn21/ — site updating this week for daily stream |
 | 2026-08-04 | Daily wall clock | Miner submissions: **midnight EST** daily — quickstart, model spec, scoring, transition, direction |
+| 2026-08-04 | Stake ladder corrected | Docs had superseded values (475/650/825, terminal 22 Sep). Aligned to the ruled 3 Aug sheet: 0/150/300/450/700/1,000, terminal **15 Sep**. Code (`collateral_floor.py`) implements the same sheet and shifts with the launch date. |
+| 2026-08-04 | Bridge bar corrected | “Submitted” = **75%** coverage (ruled 3 Aug), not the drafted 50%. Transition plan §1 updated; scoring-library 50% in MINER_ECONOMICS is a different rule and unchanged. |

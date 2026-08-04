@@ -29,10 +29,9 @@ Amounts are **SN21 alpha** (subnet token), not TAO, unless a later notice says o
 | Through Sunday **9 August 2026** | **0** |
 | Monday **10 August 2026** | **150** (start of ramp) |
 | Tuesday **18 August 2026** | **300** |
-| Tuesday **25 August 2026** | **475** |
-| Tuesday **8 September 2026** | **650** |
-| Tuesday **15 September 2026** | **825** |
-| Tuesday **22 September 2026** onward | **1,000** (terminal floor) |
+| Tuesday **25 August 2026** | **450** |
+| Tuesday **8 September 2026** | **700** |
+| Tuesday **15 September 2026** onward | **1,000** (terminal floor) |
 
 Cutover behaviour (who is paid if you miss the hold) is in [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md).
 

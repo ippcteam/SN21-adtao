@@ -48,10 +48,9 @@ Bittensor’s emissions-allocation methodology is changing significantly. SN21 m
 | **Tue 4 Aug** | First **live daily basket** ships (parallel to training). | 45% | 0 |
 | **Mon 10 Aug** | **Bridge starts:** weekly score still drives weights, but only **bridge-eligible** miners are paid (see below). | **30%** | **150** |
 | **Tue 18 Aug** | First **daily 7-day** settled scores begin feeding payouts. | 30% | **300** |
-| **Tue 25 Aug** | First **daily 14-day** settled scores begin feeding payouts. | **15%** | **475** |
-| **Tue 8 Sep** | First **daily 28-day** (35-day settled) scores begin feeding payouts. | 15% | **650** |
-| **Tue 15 Sep** | Burn steps to target; alpha hold steps up. | **0%** | **825** |
-| **Tue 22 Sep** | **Terminal alpha hold** in force. Steady-state daily stream. | **0%** | **1,000** |
+| **Tue 25 Aug** | First **daily 14-day** settled scores begin feeding payouts. | **15%** | **450** |
+| **Tue 8 Sep** | First **daily 28-day** (35-day settled) scores begin feeding payouts. | 15% | **700** |
+| **Tue 15 Sep** | **Terminal alpha hold** in force; burn steps to target. Steady-state daily stream. | **0%** | **1,000** |
 
 ### Same timeline — stake ramp only
 
@@ -60,10 +59,9 @@ Bittensor’s emissions-allocation methodology is changing significantly. SN21 m
 | Through 9 Aug | 0 |
 | 10 Aug | 150 |
 | 18 Aug | 300 |
-| 25 Aug | 475 |
-| 8 Sep | 650 |
-| 15 Sep | 825 |
-| 22 Sep onward | **1,000** |
+| 25 Aug | 450 |
+| 8 Sep | 700 |
+| 15 Sep onward | **1,000** |
 
 ### Same timeline — burn only (indicative)
 
@@ -105,8 +103,8 @@ From **Monday 10 August**, carried-over weekly weights are paid **only** to mine
 
 Days follow the **midnight EST** wall clock. A miner **submitted** on a day if, when the subnet ran a live daily basket that day:
 
-- they delivered valid predictions for at least **50%** of the episodes in that day’s basket  
-  (`predictions_out / episodes_in ≥ 0.50`), **and**
+- they delivered valid predictions for at least **75%** of the episodes in that day’s basket  
+  (`predictions_out / episodes_in ≥ 0.75`), **and**
 - delivery means **usable prediction payloads**, not merely “the container exited 0”.
 
 **Not counted against you:**
