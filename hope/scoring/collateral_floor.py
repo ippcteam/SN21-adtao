@@ -267,6 +267,43 @@ class DayFold:
     paid_alpha: float        # took home today
 
 
+
+BURN_ENV = "SN21_BURN_FRACTION"
+
+
+def resolve_burn_fraction(environ, day: date) -> tuple[float, str]:
+    """(burn fraction in [0,1], source) for `day`.
+
+    PRECEDENCE — the env var wins over the schedule, deliberately. Rob's
+    published rule is that burn "may be adjusted at any time — up or down —
+    to protect and grow alpha value"; SN21_BURN_FRACTION is that lever. The
+    dated BURN_SCHEDULE governs only when no explicit override is set.
+
+    ROLLOUT SAFETY falls out of the same precedence: the validator host
+    carries SN21_BURN_FRACTION=0.45 today, so deploying this changes nothing.
+    Removing the env var is the deliberate activation step that hands control
+    to the schedule — which returns the same 0.45 before 10 Aug, so the
+    handover is a no-op on the day it happens and starts stepping on Rob's
+    dates afterwards.
+
+    Malformed or out-of-range env falls through to the SCHEDULE, not to a
+    hardcoded number — the schedule is the published truth, and a deploy typo
+    must not quietly pin burn at a stale constant.
+    """
+    raw = (environ.get(BURN_ENV) or "").strip()
+    if raw:
+        try:
+            v = float(raw)
+            if 0.0 <= v <= 1.0:
+                return v, "env"
+            print(f"[burn] {BURN_ENV}={raw!r} outside [0,1] — using the "
+                  f"published schedule", flush=True)
+        except ValueError:
+            print(f"[burn] {BURN_ENV}={raw!r} is not a number — using the "
+                  f"published schedule", flush=True)
+    return burn_for_day(day, launch_date_from(environ)), "schedule"
+
+
 def fold_day(state: CaptureState, earned_alpha: float, floor_alpha: float) -> DayFold:
     """Fold one day's incentive through the capture path.
 

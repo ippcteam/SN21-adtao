@@ -252,3 +252,52 @@ def test_first_settlement_argument_is_accepted_but_ignored():
     day = date(2026, 9, 8)
     assert active_floor(day, {}, None) == active_floor(day, {}, date(2026, 8, 20))
 
+
+
+# ---- burn resolution: schedule governs, env is Rob's override lever ---------
+
+def test_burn_env_override_beats_the_schedule():
+    """SN21_BURN_FRACTION is the published "burn may be adjusted at any time"
+    lever, so an explicit value must win on any date — including after the
+    schedule reaches zero."""
+    from hope.scoring.collateral_floor import resolve_burn_fraction
+    assert resolve_burn_fraction({"SN21_BURN_FRACTION": "0.45"},
+                                 date(2026, 9, 15)) == (0.45, "env")
+    assert resolve_burn_fraction({"SN21_BURN_FRACTION": "0"},
+                                 date(2026, 8, 3)) == (0.0, "env")
+
+
+def test_burn_schedule_governs_when_env_unset():
+    from hope.scoring.collateral_floor import resolve_burn_fraction
+    assert resolve_burn_fraction({}, date(2026, 8, 9)) == (0.45, "schedule")
+    assert resolve_burn_fraction({}, date(2026, 8, 10)) == (0.30, "schedule")
+    assert resolve_burn_fraction({}, date(2026, 8, 25)) == (0.15, "schedule")
+    assert resolve_burn_fraction({}, date(2026, 9, 15)) == (0.0, "schedule")
+
+
+def test_malformed_burn_env_falls_to_the_schedule_not_a_constant():
+    """A deploy typo must not pin burn at a stale hardcoded number — the
+    schedule is the published truth."""
+    from hope.scoring.collateral_floor import resolve_burn_fraction
+    assert resolve_burn_fraction({"SN21_BURN_FRACTION": "garbage"},
+                                 date(2026, 8, 25)) == (0.15, "schedule")
+    assert resolve_burn_fraction({"SN21_BURN_FRACTION": "1.5"},
+                                 date(2026, 8, 25)) == (0.15, "schedule")
+
+
+def test_burn_schedule_shifts_with_the_launch_date():
+    """Launch slips a week -> every burn step slips with it, same as alpha."""
+    from hope.scoring.collateral_floor import resolve_burn_fraction
+    env = {"SN21_IM_LAUNCH_DATE": "2026-08-10"}
+    assert resolve_burn_fraction(env, date(2026, 8, 10)) == (0.45, "schedule")
+    assert resolve_burn_fraction(env, date(2026, 8, 17)) == (0.30, "schedule")
+
+
+def test_activation_day_is_a_noop():
+    """THE ROLLOUT GUARANTEE. Removing the env before 10 Aug hands control to
+    the schedule at the exact same value, so the handover itself changes
+    nothing on the day it happens."""
+    from hope.scoring.collateral_floor import resolve_burn_fraction
+    with_env = resolve_burn_fraction({"SN21_BURN_FRACTION": "0.45"}, date(2026, 8, 6))
+    without = resolve_burn_fraction({}, date(2026, 8, 6))
+    assert with_env[0] == without[0] == 0.45

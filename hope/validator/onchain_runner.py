@@ -601,36 +601,41 @@ def run_epoch_scoring(
             _override_uid = int(_override_uid_str)
             if _override_uid < 0 or _override_uid > 65535:
                 raise ValueError(f"out of u16 range: {_override_uid}")
-            # Optional partial burn. When SN21_BURN_FRACTION is set to a value
-            # strictly between 0 and 1, the override UID receives that fraction
-            # of the weight and the remaining (1 - fraction) is distributed
-            # across the computed per-miner vector in proportion to scores.
-            # Unset (or a value <=0 or >=1, or no scoreable miners) keeps the
-            # full 100% single-UID override.
-            _burn_str = _os.environ.get("SN21_BURN_FRACTION", "").strip()
-            _burn = None
-            if _burn_str:
-                try:
-                    _bf = float(_burn_str)
-                    if 0.0 < _bf < 1.0:
-                        _burn = _bf
-                    else:
-                        print(
-                            f"[weight-override] SN21_BURN_FRACTION={_burn_str!r} "
-                            f"outside (0,1); using full single-UID override",
-                            flush=True,
-                        )
-                except ValueError as _e:
-                    print(
-                        f"[weight-override] SN21_BURN_FRACTION={_burn_str!r} "
-                        f"invalid ({_e}); using full single-UID override",
-                        flush=True,
-                    )
+            # Burn now follows Rob's dated schedule (45% -> 30% on 10 Aug ->
+            # 15% on 25 Aug -> 0% on 15 Sep) via resolve_burn_fraction, with
+            # SN21_BURN_FRACTION as the explicit operator override — his
+            # published "burn may be adjusted at any time" lever. The host's
+            # current env=0.45 therefore keeps winning until it is removed;
+            # removal hands control to the schedule, which returns the same
+            # 0.45 before 10 Aug, so activation is a no-op on the day it
+            # happens. Semantics by value:
+            #   1.0        -> full single-UID override (legacy launch mode —
+            #                 what "env unset" used to mean; now explicit)
+            #   (0, 1)     -> partial: that share to the override UID
+            #   0.0        -> NO burn: miners keep the whole vector. A
+            #                 scheduled zero (15 Sep) must not collapse into
+            #                 "full override" — that would be the opposite.
+            from datetime import date as _date
+            from hope.scoring.collateral_floor import resolve_burn_fraction
+            _bf, _bsrc = resolve_burn_fraction(_os.environ, _date.today())
+            print(f"[weight-override] burn {_bf:.0%} ({_bsrc})", flush=True)
+            if _bf >= 1.0:
+                _burn = None          # legacy full single-UID override path
+            elif _bf <= 0.0:
+                _burn = 0.0           # no burn: skip override entirely below
+            else:
+                _burn = _bf
             _miner_pairs = [
                 (u, w) for u, w in zip(uids, weights) if u != _override_uid
             ]
             _miner_total = sum(w for _, w in _miner_pairs)
-            if _burn is not None and _miner_pairs and _miner_total > 0:
+            if _burn == 0.0 and _miner_pairs and _miner_total > 0:
+                # Scheduled/explicit ZERO burn: the override UID gets nothing
+                # and the miner vector stands untouched. Reached on 15 Sep by
+                # schedule, or by an operator setting the env to 0.
+                print("[weight-override] zero burn — miner vector unchanged, "
+                      "no override share", flush=True)
+            elif _burn is not None and _burn > 0.0 and _miner_pairs and _miner_total > 0:
                 # e.g. SN21_BURN_FRACTION=0.75 -> 75% to override UID,
                 # 25% across miners in proportion to their scores.
                 _scaled = [

@@ -669,6 +669,29 @@ def _has_frozen_basis_column(session) -> bool:
         return False
 
 
+def _has_censoring_column(session) -> bool:
+    """Whether OBI migration 20260804_censoring is applied. Same probe
+    discipline as _has_frozen_basis_column (SAVEPOINT, current_schema) and the
+    same reason: the validator host and OBI deploy independently, and a reader
+    that crashes on `column o.censored_reason does not exist` takes the whole
+    settle run with it. Without the column, no rows are censored yet and the
+    filter is a no-op by definition — say so and read everything."""
+    from sqlalchemy import text as T
+    try:
+        with session.begin_nested():
+            n = session.execute(T("""
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'bittensor_episode_outcomes'
+                  AND column_name = 'censored_reason'
+            """)).scalar() or 0
+        return n == 1
+    except Exception as err:  # noqa: BLE001
+        print(f"[settle-day] censoring column probe failed ({err}) — "
+              f"reading all outcome rows", flush=True)
+        return False
+
+
 def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
     """All measured rows settle-dated on or before `day`, post-cutover.
 
@@ -736,6 +759,24 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
                        if _has_frozen_basis_column(s)
                        else "NULL::text AS frozen_basis, "
                             "NULL::boolean AS frozen_guarded")
+        # Attrition censoring (Rob 2026-08-04): censored horizons are DROPPED
+        # from scoring — never a zero. Counted first and printed, because a
+        # silently shrinking scoreable set is exactly the failure shape this
+        # codebase keeps paying for.
+        has_censoring = _has_censoring_column(s)
+        censor_filter = ("AND o.censored_reason IS NULL" if has_censoring else "")
+        if has_censoring:
+            censored_counts = s.execute(T("""
+                SELECT censored_reason, count(*) FROM bittensor_episode_outcomes
+                WHERE censored_reason IS NOT NULL GROUP BY 1
+            """)).fetchall()
+            if censored_counts:
+                print("[settle-day] censored horizons excluded from scoring: "
+                      + ", ".join(f"{r[0]}={r[1]}" for r in censored_counts),
+                      flush=True)
+        else:
+            print("[settle-day] censoring migration not applied on this DB — "
+                  "no censor filter (no rows can be censored yet)", flush=True)
         rows = s.execute(T(f"""
             WITH ep AS (
                 SELECT o.episode_candidate_id      AS episode_id,
@@ -753,6 +794,7 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
                 JOIN bittensor_episode_candidates c ON c.id = o.episode_candidate_id
                 LEFT JOIN bittensor_account_registry r ON r.id = c.bittensor_account_id
                 WHERE o.measured_at >= :cutover
+                  {censor_filter}
                   AND (c.action_window_end::date
                        + make_interval(days => 1 + o.horizon_days + :settle)) <= :day
             )
