@@ -138,7 +138,7 @@ Fail the hold → **not paid**, even if you submitted.
 | :---- | :---- |
 | **From 4 Aug** | Use the **training bundle**; run against **live daily baskets**. |
 | **Before 10 Aug** | Be ready to submit every live day; hold **≥150 alpha**. |
-| **Through 22 Sep** | Follow the stake ramp; expect 7d → 14d → 28d settlements on the dates in the master table. |
+| **Through 15 Sep** | Follow the stake ramp; expect 7d → 14d → 28d settlements on the dates in the master table. |
 
 Scoring & rewards: [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./SN21_REWARDS.md).
 
