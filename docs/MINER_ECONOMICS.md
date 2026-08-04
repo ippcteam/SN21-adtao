@@ -1,6 +1,10 @@
 # Miner economics at a glance (SN21)
 
-Short reference for how emissions relate to your behaviour. **Authoritative detail:** [SN21_REWARD_MECHANISM.md](./SN21_REWARD_MECHANISM.md) · [SN21_EPOCH_STRUCTURE.md](./SN21_EPOCH_STRUCTURE.md).
+> **Obsolete (weekly epoch).** For the daily stream use:
+> [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_STAKING.md](./SN21_STAKING.md) · [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md).
+> Kept only as historical reference for the pre-cutover weekly mechanism.
+
+Short reference for how emissions relate to your behaviour. **Authoritative detail (historical):** [SN21_REWARD_MECHANISM.md](./SN21_REWARD_MECHANISM.md) · [SN21_EPOCH_STRUCTURE.md](./SN21_EPOCH_STRUCTURE.md).
 
 ## Cadence
 

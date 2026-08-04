@@ -1,10 +1,13 @@
 # Bittensor Subnet (SN21) — Reward Mechanism
 
+> **Obsolete (weekly epoch).** Daily-stream rules:
+> [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_STAKING.md](./SN21_STAKING.md) · [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md).
+
 | | |
 | :---- | :---- |
 | **Version** | 1.2.1 |
 | **Last updated** | 2026-04-27 |
-| **Authoritative for launch** | Yes — gates, tier shape, EMA, governance. |
+| **Authoritative for launch** | No — superseded by daily-stream docs (historical only). |
 | **Companion** | [SN21_EPOCH_STRUCTURE.md](./SN21_EPOCH_STRUCTURE.md) |
 
 **Implementation note:** This document is the authoritative spec for the launch reward mechanism *as designed*. The default `hope-validator` CLI at launch ships a simpler path — score-normalization + 95% burn — while the chain-side scoring pipeline is exercised end-to-end during the first operational cycle. The full tiered allocator is implemented in `hope/validator/tiered_weights.py:TieredAllocator` and unit-tested. The chain validator runner now wires it behind the `SN21_TIERED_WEIGHTS` opt-in — when enabled, the per-miner weight vector is built via the participation gate + Elite/Competitive/Participating pools (single proportional pool under 15 qualifying miners) instead of flat score-normalization (the legacy `WeightSetter(tiered_allocator=TieredAllocator())` path remains for the HTTP runner). The gate's baseline is the predict-zero score against the epoch truth. It defaults off pending Review 1, after which it becomes the default.

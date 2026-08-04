@@ -2,12 +2,12 @@
 
 | | |
 | :---- | :---- |
-| **Version** | 0.1 (draft direction) |
-| **Status** | Proposed — published for miner review ahead of a formal governance amendment |
+| **Version** | 0.2 |
+| **Status** | Direction overview — cutover in progress (see transition plan) |
 | **Owner** | AdTAO / SN21 operator |
-| **Companion (current rules)** | [SN21_REWARD_MECHANISM.md](./SN21_REWARD_MECHANISM.md) · [SN21_EPOCH_STRUCTURE.md](./SN21_EPOCH_STRUCTURE.md) · [MINER_ECONOMICS.md](./MINER_ECONOMICS.md) |
+| **Authoritative miner docs** | [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_STAKING.md](./SN21_STAKING.md) · [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md) |
 
-**Read this first:** Nothing changes on-chain today. The weekly epoch, current scoring, and current payouts continue exactly as they are until a formal amendment is published with advance notice. This document explains the *direction* we're proposing so you can plan and give feedback early.
+**Read this first:** This page is the short “why / shape” overview. For rules miners should follow during cutover and in steady state, use the four docs linked above. Weekly-epoch specs (`SN21_REWARD_MECHANISM.md`, `SN21_EPOCH_STRUCTURE.md`, `MINER_ECONOMICS.md`) are **obsolete** except as historical reference.
 
 ---
 
@@ -78,13 +78,13 @@ We'll publish a **daily prediction-accuracy feed** — our scored predictions ag
 
 ## What this means for you right now
 
-- **Nothing to do today.** Keep mining as you are.
-- **If you build models:** the daily loop, the published curve, and the promotion rule are the shape to design toward.
-- **Feedback is open now** — this is a draft, and miner input shapes the final parameters.
+- Follow the **[transition plan](./SN21_TRANSITION_PLAN.md)** for dates, bridge eligibility, and when 7 / 14 / 28-day daily payouts start. Burn rates there are **planned and indicative only** and may change at any time to protect alpha.
+- Read **[scoring](./SN21_SCORING.md)** and **[rewards](./SN21_REWARDS.md)** for the steady-state mechanism.
+- Meet the **[staking / alpha hold](./SN21_STAKING.md)** ramp as it steps up.
 
 ## Timeline
 
-This is a **proposed direction under active development.** The formal governance amendment — with exact parameters, the eligibility list, and a cutover date — will be published with advance notice before anything changes on-chain. Until then, the current weekly rules remain authoritative.
+Cutover dates and alpha holds are published in [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md). Burn rates in that plan are **indicative only** and may be adjusted at any time to protect and grow alpha for holders. The transition plan is otherwise authoritative for the weekly → daily switch.
 
 ---
 
