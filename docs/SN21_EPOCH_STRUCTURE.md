@@ -1,10 +1,13 @@
 # Bittensor Subnet (SN21) — Epoch Structure
 
+> **Obsolete (weekly epoch).** Daily stream + cutover:
+> [DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md) · [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md).
+
 | | |
 | :---- | :---- |
 | **Version** | 1.2 |
 | **Last updated** | 2026-04-17 |
-| **Authoritative for launch** | Yes — phase progression and weekly cadence. |
+| **Authoritative for launch** | No — superseded by daily-stream docs (historical only). |
 | **Companion** | [SN21_REWARD_MECHANISM.md](./SN21_REWARD_MECHANISM.md) |
 
 ## Purpose
