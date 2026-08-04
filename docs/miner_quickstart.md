@@ -2,7 +2,7 @@
 
 > **Reading order:** [Why daily](./SN21_WHY_DAILY.md) →
 > [Transition plan](./SN21_TRANSITION_PLAN.md) → this quickstart →
-> [Scoring](./SN21_SCORING.md) → [Rewards](./SN21_REWARDS.md) →
+> [Training](./SN21_TRAINING.md) → [Scoring](./SN21_SCORING.md) → [Rewards](./SN21_REWARDS.md) →
 > [Staking](./SN21_STAKING.md) → [Model spec](./MINER_MODEL_SPEC.md)
 
 **For:** Miners joining SN21 on Bittensor  
@@ -341,14 +341,22 @@ gate verdicts to the site automatically.)*
 Per-day, per-miner coverage (`episodes_in` / `predictions_out`) is recorded by
 the validator's shadow ledger. A day counts as **submitted** when
 `predictions_out / episodes_in ≥ 0.75` — delivered predictions, not "the
-container exited 0". The leaderboard at
-[adtao.io/sn21](https://adtao.io/sn21/) shows standing / rank as the daily
-cutover lands there this week; until then coverage questions go to the Discord
+container exited 0". **Champion vs earner.** Earning is the rank curve; the *champion* (the model
+that runs live) is a separate, stricter rule — the two seats are explained in
+[SN21_REWARDS §champion-vs-earner](./SN21_REWARDS.md). Champion status is
+published alongside standing on the leaderboard.
+
+The leaderboard at
+[adtao.io/sn21](https://adtao.io/sn21/) shows standing / rank / champion as the
+daily cutover lands there this week; until then coverage questions go to the Discord
 miner channel and are answered from the ledger.
 
 ---
 
 ## 6. Train before you ship
+
+> **Full end-to-end training path:** [SN21_TRAINING.md](./SN21_TRAINING.md)
+> — data → join → train → containerise → smoke test → self-score.
 
 Use settled historical baskets (training bundle from the transition, public
 exports under `data/episodes/` / `data/outcomes/` when available, plus the

@@ -13,7 +13,7 @@
 > **Reading order:** [Why daily](docs/SN21_WHY_DAILY.md) →
 > [Transition plan](docs/SN21_TRANSITION_PLAN.md) →
 > [Quickstart](docs/miner_quickstart.md) →
-> [Scoring](docs/SN21_SCORING.md) → [Rewards](docs/SN21_REWARDS.md) →
+> [Training](docs/SN21_TRAINING.md) → [Scoring](docs/SN21_SCORING.md) → [Rewards](docs/SN21_REWARDS.md) →
 > [Staking](docs/SN21_STAKING.md) → [Model spec](docs/MINER_MODEL_SPEC.md)
 
 Every prediction is sealed on chain before the outcome is knowable.

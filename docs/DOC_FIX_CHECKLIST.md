@@ -82,7 +82,7 @@ Miner must have a written path for each. If tooling is missing, say so explicitl
 
 - [x] Where to read **standing** (moving-average score) for your hotkey.
 - [x] Where to read **rank / weight share** under the curve.
-- [ ] Where to read **champion** vs earner (if published).
+- [x] Where to read **champion** vs earner (if published).
 - [x] Point miners at **[https://adtao.io/sn21/](https://adtao.io/sn21/)** for **Leaderboard** and **Changelog** (and note the site is being updated for daily stream this week — mirrored docs there may briefly show weekly-era pages).
 - [ ] When the site daily cutover lands: update quickstart / README links so score/rank instructions match the new leaderboard UX (not weekly epoch scores only).
 - [x] Interim: if a metric is not yet on the site, document the accuracy feed / Discord fallback and ETA — do not leave “see scoring doc” as the only answer.
@@ -91,7 +91,7 @@ Miner must have a written path for each. If tooling is missing, say so explicitl
 
 ## P1 — Training data cookbook
 
-- [ ] Quickstart (or new `docs/SN21_TRAINING.md`) with a single path:
+- [x] Quickstart (or new `docs/SN21_TRAINING.md`) with a single path:
   1. Load `data/episodes/` + `data/outcomes/` (link existing READMEs).
   2. Join to `(input, outcome)` pairs.
   3. Train / export weights.
@@ -177,5 +177,7 @@ A new miner can answer from docs alone:
 | 2026-08-04 | Website note added | Leaderboard/changelog at https://adtao.io/sn21/ — site updating this week for daily stream |
 | 2026-08-04 | Daily wall clock | Miner submissions: **midnight EST** daily — quickstart, model spec, scoring, transition, direction |
 | 2026-08-04 | Stake ladder corrected | Docs had superseded values (475/650/825, terminal 22 Sep). Aligned to the ruled 3 Aug sheet: 0/150/300/450/700/1,000, terminal **15 Sep**. Code (`collateral_floor.py`) implements the same sheet and shifts with the launch date. |
+| 2026-08-04 | Training cookbook | `docs/SN21_TRAINING.md` — six steps, every command runnable; the join snippet was executed against the published corpus (654 pairs) rather than written as pseudocode. Linked from README, quickstart §6 and both reading orders. |
+| 2026-08-04 | Champion read-surface | Champion-vs-earner explained in SN21_REWARDS; quickstart §5b now says where to read it. |
 | 2026-08-04 | Docs pass completed | README rewritten for daily; verify section (§5b) + troubleshooting added to quickstart; production scoring formula stated; schema story + unscored fields in model spec; bundle fetch path in transition plan; why-daily finalized; weekly specs, whitepaper and operator docs bannered; CONTRIBUTING retargeted. Open: site-cutover items + Discord announcement (derives from SN21_WHY_DAILY). |
 | 2026-08-04 | Bridge bar corrected | “Submitted” = **75%** coverage (ruled 3 Aug), not the drafted 50%. Transition plan §1 updated; scoring-library 50% in MINER_ECONOMICS is a different rule and unchanged. |
