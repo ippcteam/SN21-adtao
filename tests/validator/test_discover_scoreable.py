@@ -56,8 +56,8 @@ def test_blocks_release_that_has_not_closed():
     opened = next(o for o in (now + timedelta(days=d) for d in range(0, 8))
                   if _deadline_for(o) > now)
     c = _client([
-        {"release_key": "W_NEW", "created_at": opened.isoformat()},
-        {"release_key": "W_PRIOR",
+        {"release_key": "WR-2026-W98-PUB-E1", "created_at": opened.isoformat()},
+        {"release_key": "WR-2026-W97-PUB-E1",
          "created_at": (opened - timedelta(days=7)).isoformat()},
     ])
     assert _deadline_for(opened) > now, "test setup failed to find an open epoch"
@@ -74,11 +74,11 @@ def test_the_monday_branch_allows_scoring_once_the_close_hour_has_passed():
     opened = monday.replace(hour=MINING_CLOSE_HOUR_UTC, minute=0, second=0,
                             microsecond=0) - timedelta(days=7)
     c = _client([
-        {"release_key": "W_NEW", "created_at": opened.isoformat()},
-        {"release_key": "W_PRIOR",
+        {"release_key": "WR-2026-W98-PUB-E1", "created_at": opened.isoformat()},
+        {"release_key": "WR-2026-W97-PUB-E1",
          "created_at": (opened - timedelta(days=7)).isoformat()},
     ])
-    assert asyncio.run(c.discover_scoreable_release()) == "W_PRIOR"
+    assert asyncio.run(c.discover_scoreable_release()) == "WR-2026-W97-PUB-E1"
 
 
 def test_returns_release_once_closed():
@@ -86,7 +86,7 @@ def test_returns_release_once_closed():
     # newest created 14 days ago → its Monday-close is long past → prior epoch
     # is closed → scoreable.
     c = _client([
-        {"release_key": "W_NEW", "created_at": (now - timedelta(days=14)).isoformat()},
-        {"release_key": "W_PRIOR", "created_at": (now - timedelta(days=21)).isoformat()},
+        {"release_key": "WR-2026-W98-PUB-E1", "created_at": (now - timedelta(days=14)).isoformat()},
+        {"release_key": "WR-2026-W97-PUB-E1", "created_at": (now - timedelta(days=21)).isoformat()},
     ])
-    assert asyncio.run(c.discover_scoreable_release()) == "W_PRIOR"
+    assert asyncio.run(c.discover_scoreable_release()) == "WR-2026-W97-PUB-E1"
