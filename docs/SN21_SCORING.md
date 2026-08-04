@@ -2,7 +2,7 @@
 
 | | |
 | :---- | :---- |
-| **Version** | 1.2 |
+| **Version** | 1.3 |
 | **Audience** | Miners |
 | **Status** | Authoritative for daily-stream scoring |
 | **Last updated** | 2026-08-04 |
@@ -56,6 +56,29 @@ Each finalised (episode, horizon) receives a score in **[0, 1]** from four compo
 | Goal-metric accuracy | **15%** |
 
 Missing a prediction for a settled episode does **not** insert a zero score. It simply adds no evidence that day — your standing is diluted only by having fewer scored entries.
+
+## Account attrition (stop spending / leave the network)
+
+Some accounts stop spending or disconnect after a change is already in a basket. Scoring keeps whatever has **already settled**, and **explicitly drops** every horizon that has not yet settled — with a recorded reason. This is the same for every miner: no reward and no penalty on the dropped horizons.
+
+| Rule | Effect |
+| :---- | :---- |
+| Horizon whose settle day is **already past** when the account leaves / goes unmeasurable | **Still scored** once, as usual. Never re-opened. |
+| Horizon that has **not yet settled** | **Dropped** from scoring for all miners. Recorded as censored with a reason (e.g. `left_system`, `spend_inactive`). Not a zero. |
+| Longer horizons after a censor | Also dropped. Censoring a horizon implies censoring all later unsettled horizons on that episode. |
+| Horizon blend weights | Already-scored horizons keep their published blend weight. Dropped horizons contribute no standing entry and are **not** renormalised onto the survivors. |
+
+**Example.** Action-window ends day 0. Horizons first score around day 15 / 22 / 36. The account leaves the network on **day 18**:
+
+| Horizon | Settle (approx.) | What happens |
+| :---- | :---- | :---- |
+| 7-day | ~day 15 | Already settled → **scored and kept** |
+| 14-day | ~day 22 | Not yet settled → **dropped** (`left_system`) |
+| 28-day | ~day 36 | Not yet settled → **dropped** (`left_system`) |
+
+Your standing keeps the 7-day entry only. That is absent evidence for 14- and 28-day — the same shape as a missing prediction, except the reason is account attrition, not a miner miss.
+
+Accounts that have already left or gone quiet are also filtered out of **future** baskets (they no longer contribute new qualifying changes). Attrition above is only about episodes that were already revealed.
 
 ## How horizons blend into your standing
 
@@ -133,6 +156,18 @@ A thin day with fewer entries would simply add fewer rows — there is no per-da
 ### Example D — missing a prediction
 
 If you never submitted the 14-day prediction for this episode, the Day-22 row never appears. Your standing uses only the 7-day and 28-day entries. That is **not** a zero score for 14-day; it is absent evidence (and less total weight toward the placement floors).
+
+### Example E — account leaves after 7-day has settled
+
+Same high-resolution episode as Example B. The account disconnects on **day 18**.
+
+| Horizon | Settle day | Result |
+| :---- | :---- | :---- |
+| 7-day | Day 15 | **Scored** (0.78 × blend 0.20) — already settled before disconnect |
+| 14-day | Day 22 | **Dropped** — reason `left_system`; no standing entry for anyone |
+| 28-day | Day 36 | **Dropped** — reason `left_system`; no standing entry for anyone |
+
+Standing uses only the 7-day row. Blend weight stays **0.20** for that entry; the 0.35 / 0.45 from the dropped horizons are not redistributed.
 
 ## What scoring does **not** decide
 
