@@ -229,3 +229,38 @@ def test_unset_ledger_root_says_so_instead_of_500(tmp_path):
     finally:
         if old is not None:
             os.environ["SN21_LEDGER_ROOT"] = old
+
+
+# ---- W4: the docs must not promise endpoints or fields that do not exist ----
+
+def test_every_endpoint_the_verify_doc_advertises_actually_exists(served):
+    """A trust document that prints a 404 destroys the trust it is selling.
+    Extracts the /v1/daily paths from SN21_VERIFYING.md and hits each one."""
+    import re
+    url, _ = served
+    doc = open(os.path.join(os.path.dirname(__file__), "..", "..",
+                            "docs", "SN21_VERIFYING.md")).read()
+    paths = set(re.findall(r"/v1/daily/[\w\-{}<>/.]+", doc))
+    assert paths, "doc advertises no endpoints — did the format change?"
+    for p in paths:
+        concrete = (p.replace("2026-08-18", str(DAY))
+                     .replace("<your-hotkey>", "alice"))
+        status, _body = _get(url, concrete)
+        assert status == 200, f"{p} -> {concrete} returned {status}"
+
+
+def test_the_diffs_field_the_doc_tells_miners_to_post_is_real(served):
+    """The doc says: on a score mismatch, post the `diffs` array naming the
+    episode, horizon, miner, published and recomputed score. Pin that shape —
+    if it changes, the doc's failure instructions become wrong."""
+    url, root = served
+    p = receipt_path(root, str(DAY))
+    env = json.load(open(p))
+    env["document"]["metrics"]["entries"][0]["score"] = 0.5
+    json.dump(env, open(p, "w"))
+    v = verify_day(url=url, day=str(DAY))
+    assert v["diffs"], "no diffs produced for a mismatched score"
+    d = v["diffs"][0]
+    for field in ("episode_id", "horizon_days", "miner", "published",
+                  "recomputed"):
+        assert field in d, f"diffs entry missing {field} (the doc names it)"

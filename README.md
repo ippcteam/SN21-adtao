@@ -13,7 +13,8 @@
 > **Reading order:** [Why daily](docs/SN21_WHY_DAILY.md) →
 > [Transition plan](docs/SN21_TRANSITION_PLAN.md) →
 > [Quickstart](docs/miner_quickstart.md) →
-> [Training](docs/SN21_TRAINING.md) → [Scoring](docs/SN21_SCORING.md) → [Rewards](docs/SN21_REWARDS.md) →
+> [Training](docs/SN21_TRAINING.md) → [Scoring](docs/SN21_SCORING.md) →
+> [Verifying your score](docs/SN21_VERIFYING.md) → [Rewards](docs/SN21_REWARDS.md) →
 > [Staking](docs/SN21_STAKING.md) → [Model spec](docs/MINER_MODEL_SPEC.md)
 
 Every prediction is sealed on chain before the outcome is knowable.
@@ -133,6 +134,11 @@ published 20% calibration weight), direction on the goal metric (15%) and goal
 p50 accuracy (15%) — renormalised over 0.90. Full detail, including the
 account-goal basis (CPA vs ROAS frozen at reveal) and attrition censoring:
 [docs/SN21_SCORING.md](docs/SN21_SCORING.md).
+
+> **You can check our arithmetic.** Every day's scoring is published as a
+> signed receipt — the outcomes used, every prediction verbatim, each score's
+> components — and anchored on chain. Recompute your own scores with
+> `scripts/verify_day.py`; see [SN21_VERIFYING](docs/SN21_VERIFYING.md).
 
 > Predictions also carry `goal_miss_probability` and `instability_risk` fields.
 > They are accepted for forward compatibility but **not scored** — no ground

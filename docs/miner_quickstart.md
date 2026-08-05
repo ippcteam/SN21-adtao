@@ -2,7 +2,7 @@
 
 > **Reading order:** [Why daily](./SN21_WHY_DAILY.md) →
 > [Transition plan](./SN21_TRANSITION_PLAN.md) → this quickstart →
-> [Training](./SN21_TRAINING.md) → [Scoring](./SN21_SCORING.md) → [Rewards](./SN21_REWARDS.md) →
+> [Training](./SN21_TRAINING.md) → [Scoring](./SN21_SCORING.md) → [Verifying](./SN21_VERIFYING.md) → [Rewards](./SN21_REWARDS.md) →
 > [Staking](./SN21_STAKING.md) → [Model spec](./MINER_MODEL_SPEC.md)
 
 **For:** Miners joining SN21 on Bittensor  
@@ -350,6 +350,24 @@ The leaderboard at
 [adtao.io/sn21](https://adtao.io/sn21/) shows standing / rank / champion as the
 daily cutover lands there this week; until then coverage questions go to the Discord
 miner channel and are answered from the ledger.
+
+---
+
+## 5c. Verify your score (once scores exist)
+
+From 18 August, when the first daily scores settle, you can recompute your own
+scores and check they match ours:
+
+```bash
+python scripts/verify_day.py --url https://validator.adtao.io --day 2026-08-18
+```
+
+`"ok": true` means every one of your scores reproduces from the published
+outcomes and your own published predictions. A failure names the exact entry
+that disagrees.
+
+Full walkthrough, including reading the on-chain root yourself and what to do
+when a check fails: **[SN21_VERIFYING.md](./SN21_VERIFYING.md)**.
 
 ---
 
