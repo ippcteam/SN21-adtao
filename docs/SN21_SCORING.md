@@ -186,5 +186,5 @@ Standing uses only the 7-day row. Blend weight stays **0.20** for that entry; th
 
 ## Related
 
-- Direction overview: [DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md)
+- Why daily: [SN21_WHY_DAILY.md](./SN21_WHY_DAILY.md)
 - Model / container contract: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md)

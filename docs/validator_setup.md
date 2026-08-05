@@ -341,8 +341,8 @@ Weights must sum to 1.0 and stay within published ranges.
 
 The miner submission deadline is **156 hours** (~6.5 days), pinned in
 `hope/constants.py:PREDICTION_DEADLINE_HOURS` to match the weekly
-mining window in `docs/SN21_EPOCH_STRUCTURE.md`. It is not configured
-via env var.
+mining window in `docs/archive/weekly/SN21_EPOCH_STRUCTURE.md`
+(weekly-era, historical). It is not configured via env var.
 
 The episode-API HTTP port is set via `--port` (default `8080`) on
 `hope-validator-api`, not via an env var. `hope-validator` (the scorer)

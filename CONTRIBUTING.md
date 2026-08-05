@@ -65,8 +65,8 @@ The detector thresholds and outcome deltas now use the same units,
 so predictions in the documented fractional form no longer trip the
 near-zero penalty unexpectedly. Documentation updated.
 
-Refs: docs/SN21_REWARD_MECHANISM.md §4.3
-Effective epoch: WR-2026-W18-PUB-E1
+Refs: docs/SN21_SCORING.md
+Effective: BD-2026-08-04 (daily stream)
 ```
 
 ```
@@ -115,7 +115,7 @@ CI runs the same on every push to `main`.
 Anything that changes on-chain commit structure, scoring formulas, or miner-visible behaviour:
 
 1. Open an issue first describing the change and rationale.
-2. Update the relevant daily-stream doc (`docs/SN21_SCORING.md`, `docs/SN21_REWARDS.md`, `docs/SN21_TRANSITION_PLAN.md`, `docs/SN21_STAKING.md`). The weekly-era specs (REWARD_MECHANISM / EPOCH_STRUCTURE / MINER_ECONOMICS) are archived — do not extend them.
+2. Update the relevant daily-stream doc (`docs/SN21_SCORING.md`, `docs/SN21_REWARDS.md`, `docs/SN21_TRANSITION_PLAN.md`, `docs/SN21_STAKING.md`). The weekly-era specs live under `docs/archive/weekly/` — do not extend them.
 3. Land code + tests + docs in the same PR.
 4. Tag the PR with `[PROTOCOL]`.
 

@@ -24,12 +24,12 @@ Bittensor Subnet 21 · MIT-licensed · Public verifier ships at launch
 | Mainnet netuid | **21** (Bittensor `finney`) | Subnet registration |
 | Testnet netuid | **466** (Bittensor `test`) | testnet validation |
 | Current phase | Pre-mainnet — testnet validation complete | Appendix B |
-| Validator registration | **Open by Bittensor protocol.** AdTAO operator runs the canonical primary + shadow validators and coordinates convergence to canonical scoring with other registered operators. Formal third-party validator programme tracked at Review 4 | `docs/SN21_REWARD_MECHANISM.md` |
+| Validator registration | **Open by Bittensor protocol.** AdTAO operator runs the canonical primary + shadow validators and coordinates convergence to canonical scoring with other registered operators. Formal third-party validator programme tracked at Review 4 | `docs/SN21_REWARDS.md` (daily); weekly: `docs/archive/weekly/SN21_REWARD_MECHANISM.md` |
 | Miner registration | Open on testnet 466 today; mainnet 21 opens when launch announces | `docs/miner_quickstart.md` |
 | Public verifier | **Live at launch in two modes.** Default mode runs chain reads, `inner_sig` checks, IMT root recomputation, weights-binding cross-check, and per-miner scoreability re-derivation. Full score recomputation requires `--truth-file` derived from the 9.A.2 reveal blob; without it, scoring returns zero and `final_score_match` fails by design (a startup warning makes this explicit). Past-epoch reads need an archive node RPC. Recorded-epoch fixture under `tests/fixtures/recorded_epoch/` proves `ok=true` round-trip | `tests/scripts/test_verify_epoch_live_scorer.py` + README §"Verifying any epoch" |
 | Weights ↔ scoring binding | **Operational at launch + verifier-side cross-check live.** Verifier compares chain weights at `weights_commit_block_hash` against weights re-derived from the score table; mismatched UIDs are surfaced. The chain-side anchor (32-byte field in `WeightsTlockPayload`) is being pursued as an upstream Bittensor change | §14.1 + adversarial test |
 | Per-episode artifacts | **Available via configuration.** `submit_miner_epoch(per_episode_entries=...)` builds the bundle, binds `episodes_root` + `episodes_bundle_sha256` in the aggregated plaintext, and uploads to the archives. The default `hope-miner` CLI submits aggregate-per-horizon at launch; per-episode is opt-in for miners that wire it. Default behaviour will move to per-episode after operational-cycle-1 | §14.2 |
-| Reward mechanism | **`TieredAllocator` wired into the chain runner behind an opt-in; defaults to simple normalization + burn until Review 1.** `hope/validator/tiered_weights.py:TieredAllocator` enforces the full participation gate / EMA tier placement / Elite floor / pool shares spec. The chain `hope-validator` runner enables it via `SN21_TIERED_WEIGHTS` (gate baseline = predict-zero score against the epoch truth); unset, it uses flat score-normalization + burn. The legacy HTTP path can also wire `WeightSetter(tiered_allocator=TieredAllocator())`. Tier mechanics are scheduled to become the default after Review 1 | `docs/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
+| Reward mechanism | **Daily stream:** standing → published weight curve ([`docs/SN21_REWARDS.md`](./SN21_REWARDS.md)). **Weekly-era (historical):** `TieredAllocator` behind `SN21_TIERED_WEIGHTS`; see archived reward mechanism | `docs/SN21_REWARDS.md`; archive: `docs/archive/weekly/SN21_REWARD_MECHANISM.md`, `hope/validator/tiered_weights.py` |
 | Conditional-prior baseline | **Live at launch.** The release artifact's `scoring_metadata.conditional_prior` per episode plumbs through `ScoringMetadata` and `SkillScoreCalculator.compute_baseline_prediction(...)`. Episodes with no published prior fall through to predict-zero — no crash, no silent gate-zeroing | §12 |
 
 When in doubt about a claim in the rest of this paper, this table is the
@@ -1013,7 +1013,7 @@ will hit `SpaceLimitExceeded`.
 and operators wait for the rate-limit window to clear before retrying.
 
 **Architectural mitigation:** SN21's launch epoch cadence is **weekly**
-(see `docs/SN21_EPOCH_STRUCTURE.md` and `docs/MINER_ECONOMICS.md`).
+(see `docs/archive/weekly/SN21_EPOCH_STRUCTURE.md` and `docs/archive/weekly/MINER_ECONOMICS.md` — weekly-era, historical).
 That is the protocol-level cycle for scoring + payout. The "4.5
 hour" number is something different: it is the chain's **MaxSpace
 rate-limit floor** below which a single hotkey can't reliably commit
@@ -1337,11 +1337,11 @@ The architecture's claims are backed by testnet measurement.
 
 ### C.4 Companion documents in this repo
 
-- `docs/SN21_REWARD_MECHANISM.md` — full reward spec.
-- `docs/SN21_EPOCH_STRUCTURE.md` — epoch progression.
+- `docs/SN21_SCORING.md` / `docs/SN21_REWARDS.md` — daily-stream scoring and emissions.
+- `docs/SN21_WHY_DAILY.md` / `docs/SN21_TRANSITION_PLAN.md` — why daily + cutover.
 - `docs/miner_quickstart.md` — miner onboarding tutorial.
-- `docs/MINER_ECONOMICS.md` — short reference for emissions.
-- `docs/validator_setup.md` — validator deployment guide.
+- `docs/archive/weekly/` — archived weekly reward / epoch / economics specs.
+- `docs/validator_setup.md` — validator deployment guide (pre-daily sections historical).
 
 ### C.5 Code
 

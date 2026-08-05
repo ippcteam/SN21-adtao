@@ -18,7 +18,7 @@ This checklist comes from a miner-eye review of the repo as an instruction set.
 - [docs/SN21_REWARDS.md](./SN21_REWARDS.md)
 - [docs/SN21_STAKING.md](./SN21_STAKING.md)
 - [docs/SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md)
-- [docs/DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md)
+- [docs/SN21_WHY_DAILY.md](./SN21_WHY_DAILY.md) (DAILY_STREAM_DIRECTION is a stub)
 
 **Decided:** daily miner-submission wall clock is **midnight EST** each day (published in quickstart §3, MINER_MODEL_SPEC §4, SN21_SCORING, transition plan, DAILY_STREAM_DIRECTION).
 
@@ -50,9 +50,8 @@ Leaderboard, changelog, and mirrored docs live there. The site is being updated 
 ## P0 — Archive obsolete weekly miner specs
 
 - [x] Move or clearly quarantine weekly specs so miners do not treat them as current, e.g. `docs/archive/weekly/` **or** keep in place with a hard banner + README purge:
-  - [x] [SN21_REWARD_MECHANISM.md](./SN21_REWARD_MECHANISM.md)
-  - [x] [SN21_EPOCH_STRUCTURE.md](./SN21_EPOCH_STRUCTURE.md)
-  - [x] [MINER_ECONOMICS.md](./MINER_ECONOMICS.md)
+  - [x] Moved to [archive/weekly/](./archive/weekly/) with stubs at old paths: REWARD_MECHANISM · EPOCH_STRUCTURE · MINER_ECONOMICS
+  - [x] [DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md) stub → WHY_DAILY; original archived
 - [x] Grep docs + README + CONTRIBUTING for links to the three files above; retarget to SN21_SCORING / SN21_REWARDS / SN21_TRANSITION_PLAN / SN21_STAKING.
 - [x] [whitepaper.md](./whitepaper.md) — mark weekly reward/tempo sections historical **or** update; do not leave them sounding authoritative for launch.
 
@@ -181,3 +180,4 @@ A new miner can answer from docs alone:
 | 2026-08-04 | Champion read-surface | Champion-vs-earner explained in SN21_REWARDS; quickstart §5b now says where to read it. |
 | 2026-08-04 | Docs pass completed | README rewritten for daily; verify section (§5b) + troubleshooting added to quickstart; production scoring formula stated; schema story + unscored fields in model spec; bundle fetch path in transition plan; why-daily finalized; weekly specs, whitepaper and operator docs bannered; CONTRIBUTING retargeted. Open: site-cutover items + Discord announcement (derives from SN21_WHY_DAILY). |
 | 2026-08-04 | Bridge bar corrected | “Submitted” = **75%** coverage (ruled 3 Aug), not the drafted 50%. Transition plan §1 updated; scoring-library 50% in MINER_ECONOMICS is a different rule and unchanged. |
+| 2026-08-05 | Archive + README body | Weekly specs → `docs/archive/weekly/`; DAILY_STREAM_DIRECTION stubbed; README Overview/How-it-works/Architecture daily; WHY_DAILY 15 Sep; operator_runbook + deploy/CONTRIBUTING retargeted. |
