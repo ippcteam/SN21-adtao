@@ -10,9 +10,9 @@ import pytest
 
 from hope.scoring.participation import (
     DECAY_ENV,
+    DEFAULT_MIN_COVERAGE,
     MIN_COVERAGE_ENV,
     MISSED,
-    DEFAULT_MIN_COVERAGE,
     SUBMITTED,
     SUBNET_DOWN,
     ZERO_AT_ENV,

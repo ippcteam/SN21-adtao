@@ -59,7 +59,8 @@ def load_blocklist():
                 "  Without it this gate would print CLEAN while checking nothing."
             )
             sys.exit(2)
-        raw = open(BLOCKLIST_FILE).read()
+        with open(BLOCKLIST_FILE) as f:
+            raw = f.read()
     names, patterns = [], []
     for line in raw.replace(",", "\n").splitlines():
         line = line.strip()
@@ -84,7 +85,7 @@ def live_docs():
     """Tracked markdown outside the archive. TRACKED is the point: local-only
     drafts sit in docs/ too, and auditing those reports failures for text that
     was never going to be published."""
-    tracked = set(subprocess.run(["git", "ls-files"],
+    tracked = set(subprocess.run(["git", "ls-files"], check=False,
                                  capture_output=True, text=True).stdout.split())
     out = []
     for root, dirs, files in os.walk(DOCS):
@@ -107,7 +108,8 @@ CODE_SUFFIXES = (".py", ".sql", ".sh", ".yml", ".yaml", ".toml")
 
 
 def tracked_code():
-    out = subprocess.run(["git", "ls-files"], capture_output=True, text=True)
+    out = subprocess.run(["git", "ls-files"], check=False,
+                         capture_output=True, text=True)
     return sorted(
         p for p in out.stdout.split()
         if p.endswith(CODE_SUFFIXES) and os.path.exists(p)
