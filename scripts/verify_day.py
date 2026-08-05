@@ -38,9 +38,12 @@ Usage (operator, reading the ledger directly):
 deliberate: an operator-only verifier proves an operator-only property, and
 the whole point is that a miner reaches the same verdict we do.
 
---expect-anchor is the value the miner read from chain themselves (the
-accuracy document's anchored sha256). Supplying it closes the loop to the
-chain; omitting it still verifies everything below the anchor.
+--expect-anchor is the value the miner read from chain themselves: the
+validator's committed FEED ROOT (not any single day's hash — one commitment
+slot per hotkey means we anchor a rolling root over every published day, so
+the newest commitment still covers old days). Supplying it closes the loop to
+the chain; omitting it verifies everything below the anchor, including that
+this day is a leaf of the root this server serves.
 """
 
 from __future__ import annotations
@@ -100,6 +103,14 @@ class _Source:
             p = os.path.join(self.root, "accuracy", f"{day}.json")
             return _load(p) if os.path.exists(p) else None
         got = self._get_json(f"{self.url}/v1/daily/{day}/accuracy")
+        return None if "_absent" in got else got
+
+    def proof(self, day):
+        """The day's inclusion proof in the rolling feed root."""
+        if self.root:
+            from hope.publication.feed_root import day_proof
+            return day_proof(self.root, day)
+        got = self._get_json(f"{self.url}/v1/daily/{day}/proof")
         return None if "_absent" in got else got
 
     def prior_receipt_sha(self, day):
@@ -182,11 +193,46 @@ def verify_day(root: str | None = None, day: str = "", miner: str | None = None,
                "accuracy_doc_names_this_receipt": linked,
                "accuracy_sha256_matches": a_sha_ok,
                "anchored_sha256": aenv["sha256"]}
-        if expect_anchor:
-            res["chain_anchor_matches"] = (expect_anchor.lower() == aenv["sha256"].lower())
-            if not res["chain_anchor_matches"]:
-                res["verdict"] = FAIL
         checks["anchor_linkage"] = res
+
+    # ---- 3b. feed root: is this day inside what the chain anchors? ------------
+    # The top link. Commitments::CommitmentOf holds ONE entry per hotkey and
+    # every commit overwrites the last, so the validator anchors a ROLLING ROOT
+    # over every published day rather than each day's own hash. Without this
+    # check a miner can prove the receipt is internally consistent and still
+    # not know it is the history the chain committed to.
+    proof_doc = src.proof(day)
+    if proof_doc is None:
+        checks["feed_root"] = {
+            "verdict": FAIL,
+            "note": "no inclusion proof available for this day — it is not a "
+                    "leaf in the published feed",
+        }
+    else:
+        from hope.publication.merkle import verify_proof
+        acc_sha = (aenv or {}).get("sha256")
+        claimed = proof_doc.get("document_sha256")
+        in_root = verify_proof(claimed, proof_doc.get("proof") or [],
+                               proof_doc.get("feed_root"))
+        # the proof must be ABOUT this day's accuracy document, not merely a
+        # valid proof of some other leaf
+        same_doc = (acc_sha is not None and claimed == acc_sha)
+        res = {"verdict": PASS if (in_root and same_doc) else FAIL,
+               "leaf_in_root": in_root,
+               "proof_is_for_this_day": same_doc,
+               "feed_root": proof_doc.get("feed_root"),
+               "leaf_index": proof_doc.get("leaf_index"),
+               "leaf_count": proof_doc.get("leaf_count")}
+        if expect_anchor:
+            # expect_anchor is now the ROOT read from chain, not the day's hash
+            res["chain_root_matches"] = (
+                expect_anchor.lower() == str(proof_doc.get("feed_root")).lower())
+            if not res["chain_root_matches"]:
+                res["verdict"] = FAIL
+                res["note"] = ("the root you read from chain is not the root "
+                               "this server served — it is serving a different "
+                               "history than it anchored")
+        checks["feed_root"] = res
 
     # ---- 4. the rerun: recompute every score from the receipt itself ----------
     actual_by_key = {(o["episode_id"], o["horizon_days"]): {
@@ -248,7 +294,8 @@ def main():
     ap.add_argument("--day", required=True)
     ap.add_argument("--miner", default=None)
     ap.add_argument("--expect-anchor", default=None,
-                    help="the anchored sha256 you read from chain yourself")
+                    help="the FEED ROOT you read from chain yourself "
+                         "(validator hotkey's committed sha256)")
     a = ap.parse_args()
     out = verify_day(a.root, a.day, a.miner, a.expect_anchor, url=a.url)
     print(json.dumps(out, indent=1, default=str))

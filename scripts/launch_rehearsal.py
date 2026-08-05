@@ -181,8 +181,11 @@ def main():
               str(rec))
         sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
         from verify_day import verify_day as _vd
+        # expect_anchor is the FEED ROOT — what actually goes on chain. One
+        # commitment slot per hotkey means anchoring per-day hashes would erase
+        # yesterday's; the rolling root keeps every day verifiable from head.
         v = _vd(root, str(SETTLE_DAY),
-                expect_anchor=(summary.get("publish") or {}).get("anchor_sha256"))
+                expect_anchor=(summary.get("publish") or {}).get("feed_root"))
         check("verify_day: attestation valid",
               v["checks"]["attestation"]["verdict"] == "PASS")
         check("verify_day: anchor names the receipt",
@@ -191,6 +194,16 @@ def main():
         check("verify_day: EVERY score reproduced from the receipt",
               v["checks"]["score_reproduction"]["verdict"] == "PASS",
               str(v["checks"]["score_reproduction"]))
+        # The top link: this day must be a leaf of the rolling root the
+        # validator anchors, and the root the loop computed must be the one
+        # the verifier reconstructs. One commitment slot per hotkey means the
+        # root is what goes on chain, not the day's own hash.
+        check("verify_day: day is inside the anchored feed root",
+              v["checks"]["feed_root"]["verdict"] == "PASS",
+              str(v["checks"]["feed_root"]))
+        check("the loop computed a feed root to anchor",
+              bool((summary.get("publish") or {}).get("feed_root")),
+              str((summary.get("publish") or {}).get("feed_root")))
         # Rob's dated schedule (2026-08-03) replaced the weekly ramp, so the
         # floor is whatever his sheet says for the settle day — not a week
         # index. Derived from the schedule rather than hardcoded, so the

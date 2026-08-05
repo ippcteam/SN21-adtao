@@ -116,11 +116,15 @@ def test_swapped_receipt_breaks_the_anchor_linkage(tmp_path):
 
 
 def test_expect_anchor_closes_the_loop_to_chain(tmp_path):
+    """--expect-anchor is the FEED ROOT now, not the day's own hash: one
+    commitment slot per hotkey means we anchor a rolling root over every
+    published day, so the newest commitment still covers old days."""
+    from hope.publication.feed_root import feed_root
     root, _ = _publish(tmp_path)
-    acc = json.load(open(os.path.join(root, "accuracy", f"{DAY}.json")))
-    assert verify_day(root, str(DAY), expect_anchor=acc["sha256"])["ok"]
+    assert verify_day(root, str(DAY), expect_anchor=feed_root(root))["ok"]
     v = verify_day(root, str(DAY), expect_anchor="ab" * 32)
-    assert v["checks"]["anchor_linkage"]["verdict"] == "FAIL"
+    assert v["checks"]["feed_root"]["verdict"] == "FAIL"
+    assert v["checks"]["feed_root"]["chain_root_matches"] is False
 
 
 def test_no_results_no_receipt(tmp_path):

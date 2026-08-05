@@ -215,6 +215,69 @@ async def get_day_scores(day: str, request: Request):
             "receipt_sha256": env.get("sha256")}
 
 
+@router.get("/{day}/proof")
+async def get_day_proof(day: str, request: Request):
+    """Inclusion proof that this day is inside the anchored feed root.
+
+    The top link of the chain of custody. Commitments::CommitmentOf holds one
+    entry per hotkey and every commit overwrites the last, so we anchor a
+    ROLLING ROOT over every published day rather than each day's own hash —
+    which means the newest on-chain commitment still covers this day, however
+    old it is, and a miner needs no archive node to check it.
+
+    Verify: recompute leaf_hash(document_sha256), walk `proof`, compare the
+    result to the root you read from chain yourself. scripts/verify_day.py
+    does this for you.
+    """
+    root, safe = _ledger_root(request), _safe_day(day)
+    from hope.publication.feed_root import day_proof, published_days
+    got = day_proof(root, safe)
+    if got is None:
+        published = [d for d, _ in published_days(root)]
+        raise HTTPException(
+            status_code=404,
+            detail={"day": safe, "feed": "proof",
+                    "reason": ("feed_empty" if not published
+                               else "day_not_in_feed"),
+                    "detail": ("nothing has published yet — there is no root"
+                               if not published else
+                               "this day has no accuracy document, so it is "
+                               "not a leaf in the tree"),
+                    "feed_covers": (f"{published[0]} to {published[-1]}"
+                                    if published else None)},
+        )
+    got["how_to_verify"] = (
+        "leaf = sha256(0x00 || document_sha256); walk `proof` hashing "
+        "sha256(0x01 || left || right) per step; the result must equal "
+        "`feed_root`, which must equal the sha256 committed on chain by the "
+        "validator hotkey"
+    )
+    return got
+
+
+@router.get("/root")
+async def get_feed_root(request: Request):
+    """The current rolling root — what the validator commits on chain.
+
+    A miner compares this against the commitment they read from chain
+    themselves. If they differ, this server is serving a different history
+    than it anchored, and every proof below it is worthless.
+    """
+    root = _ledger_root(request)
+    from hope.publication.feed_root import feed_root, published_days
+    days = published_days(root)
+    return {
+        "feed_root": feed_root(root),
+        "leaf_count": len(days),
+        "covers": ({"first_day": days[0][0], "last_day": days[-1][0]}
+                   if days else None),
+        "note": ("null root means nothing has published yet — no anchor "
+                 "should exist on chain either" if not days else
+                 "compare against the sha256 committed on chain by the "
+                 "validator hotkey"),
+    }
+
+
 @router.get("/index")
 async def get_index(request: Request):
     """The hash chain, oldest first: [{day, sha256, prev_sha256, receipt_sha256}].

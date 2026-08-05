@@ -122,11 +122,47 @@ def test_tampered_score_is_caught_over_http_too(served):
 
 
 def test_expect_anchor_over_http(served):
-    url, root = served
-    acc = json.load(open(os.path.join(root, "accuracy", f"{DAY}.json")))
-    assert verify_day(url=url, day=str(DAY), expect_anchor=acc["sha256"])["ok"]
+    """The full loop a miner runs: read the root from chain, pass it in."""
+    url, _root = served
+    _status, rootdoc = _get(url, "/v1/daily/root")
+    assert verify_day(url=url, day=str(DAY),
+                      expect_anchor=rootdoc["feed_root"])["ok"]
     bad = verify_day(url=url, day=str(DAY), expect_anchor="ab" * 32)
-    assert bad["checks"]["anchor_linkage"]["verdict"] == "FAIL"
+    assert bad["checks"]["feed_root"]["verdict"] == "FAIL"
+    assert "different history than it anchored" in bad["checks"]["feed_root"]["note"]
+
+
+def test_proof_and_root_endpoints_agree(served):
+    url, _ = served
+    _s1, proof = _get(url, f"/v1/daily/{DAY}/proof")
+    _s2, rootdoc = _get(url, "/v1/daily/root")
+    assert proof["feed_root"] == rootdoc["feed_root"]
+    assert proof["leaf_count"] == rootdoc["leaf_count"] == 1
+
+
+def test_a_day_not_in_the_feed_has_no_proof(served):
+    url, _ = served
+    status, body = _get(url, "/v1/daily/2026-12-25/proof")
+    assert status == 404
+    assert body["detail"]["reason"] in ("day_not_in_feed", "feed_empty")
+
+
+def test_old_days_stay_provable_as_the_feed_grows(tmp_path):
+    """THE PROPERTY OPTION B EXISTS FOR. Publish several days, then confirm
+    the FIRST day still verifies against the CURRENT root — no archive node,
+    no block-pinned read. Option A failed exactly here."""
+    from datetime import timedelta
+    from hope.publication.feed_root import day_proof, feed_root
+    from hope.publication.merkle import verify_proof
+    root = str(tmp_path)
+    days = [DAY + timedelta(days=i) for i in range(5)]
+    for d in days:
+        _seed(root, day=d)
+    current = feed_root(root)
+    for d in days:
+        p = day_proof(root, str(d))
+        assert verify_proof(p["document_sha256"], p["proof"], current), \
+            f"{d} stopped proving after later days landed"
 
 
 # ---- the endpoints themselves ------------------------------------------------

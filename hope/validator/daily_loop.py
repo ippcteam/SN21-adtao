@@ -399,14 +399,29 @@ def run_daily_loop(
                          "skipped_reason": published.skipped_reason,
                          "anchor_sha256": published.anchor_sha256}
             if published.published and published.anchor_sha256:
+                # ANCHOR THE ROLLING ROOT, NOT THIS DAY'S HASH (decided
+                # 2026-08-05). Commitments::CommitmentOf holds ONE entry per
+                # (netuid, hotkey) and every commit overwrites the previous, so
+                # committing per-day hashes would erase yesterday's anchor and
+                # leave only the newest day verifiable at chain head. The root
+                # covers every published day, so one commit keeps the whole
+                # history checkable from head with a small inclusion proof.
+                from hope.publication.feed_root import feed_root
+                root_hex = feed_root(ledger_root)
+                pub["feed_root"] = root_hex
                 anchor_on = environ.get(ANCHOR_FLAG_ENV, "").strip().lower() in (
                     "1", "true", "yes", "on")
                 if not anchor_on:
                     pub["anchor"] = "off (SN21_ANCHOR_COMMITS unset)"
                 elif chain_committer is None:
                     pub["anchor"] = "skipped_no_committer"
+                elif not root_hex:
+                    # Cannot happen alongside published=True, but committing a
+                    # zero/absent root would read on chain as a real anchor over
+                    # an empty history — refuse loudly instead.
+                    pub["anchor"] = "skipped_no_feed_root"
                 else:
-                    res = chain_committer(bytes.fromhex(published.anchor_sha256))
+                    res = chain_committer(bytes.fromhex(root_hex))
                     pub["anchor"] = f"committed: {res}"
             summary["publish"] = pub
     except FileExistsError:
