@@ -278,6 +278,29 @@ async def get_feed_root(request: Request):
     }
 
 
+@router.get("/accuracy-series")
+async def get_accuracy_series(request: Request):
+    """Week-over-week accuracy of the winning model, one series per horizon.
+
+    Every point is the mean of scores that are already published per entry in
+    the receipts, so anyone can recompute one from the same documents
+    `verify_day` reads and get this number. There is no separate accuracy
+    store, and nothing here is computed in a way the receipts cannot show.
+
+    A week with no settled entries for a horizon produces NO POINT rather
+    than a zero, so a line gaps honestly instead of implying a model scored
+    nothing. Points carry `complete: false` while their week is still open.
+
+    `winner` is the hotkey that led at each week's close. It is returned
+    because a roll-up that hides its subject cannot be checked; a public
+    surface that must not name miners is expected to drop the field on the
+    way out rather than have this endpoint know less than it should.
+    """
+    root = _ledger_root(request)
+    from hope.publication.series_feed import build_series_document
+    return build_series_document(root)
+
+
 @router.get("/index")
 async def get_index(request: Request):
     """The hash chain, oldest first: [{day, sha256, prev_sha256, receipt_sha256}].
