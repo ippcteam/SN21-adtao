@@ -279,7 +279,7 @@ def test_payload_aggregate_fields_carry_no_per_miner_data():
     forbidden = ("uid", "hotkey", "miner_id", "ss58", "per_miner")
     allow_keys = {"total_registered_uids"}
     # miner_results is the explicit per-UID surface (v3) — its content
-    # is allowed to carry uid/hotkey/score per Rob's spec.
+    # is allowed to carry uid/hotkey/score per the operator's spec.
     skip_subtrees = {"miner_results"}
 
     def walk(obj, path=""):
@@ -475,7 +475,7 @@ class TestMinerResults:
         payload = aggregate(artifact)
         assert payload.pool_size_below_distribution_floor is True
         assert payload.tier_split_active is False
-        # miner_results still present (per Rob's spec — optional, but
+        # miner_results still present (per the operator's spec — optional, but
         # we always emit when we have data). All entries have tier=None.
         assert payload.miner_results is not None
         assert len(payload.miner_results) == 10

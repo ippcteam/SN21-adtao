@@ -409,7 +409,7 @@ def main(argv: Optional[list] = None) -> int:
         run_tick(cfg)
         return 0
 
-    # Graceful shutdown on SIGTERM (Render stops workers with SIGTERM).
+    # Graceful shutdown on SIGTERM (the platform stops workers with SIGTERM).
     stopping = {"flag": False}
 
     def _stop(signum, _frame):

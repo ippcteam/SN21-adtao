@@ -29,8 +29,8 @@ from hope.scoring.collateral_floor import (
 LAUNCH = date(2026, 8, 10)
 
 
-def test_ladder_is_robs_dated_schedule():
-    """Rob's timetable sheet, 2026-08-03. SUPERSEDES the 2026-08-01 weekly ramp
+def test_ladder_is_the_published_dated_schedule():
+    """the operator's timetable sheet, 2026-08-03. SUPERSEDES the 2026-08-01 weekly ramp
     (300 -> 475 -> 650 -> 825 -> 1000) in three ways: it starts at ZERO, it has
     SIX rungs, and it is keyed to calendar dates rather than weeks.
 
@@ -49,7 +49,7 @@ def test_ladder_is_robs_dated_schedule():
     assert TERMINAL_FLOOR_ALPHA == 1000.0
 
 
-def test_burn_is_robs_dated_schedule():
+def test_burn_is_the_published_dated_schedule():
     """45% -> 30% (10 Aug) -> 15% (25 Aug) -> 0% (15 Sep). The validator host
     carries a STATIC 0.45, which is right only until 10 August."""
     assert BURN_SCHEDULE == (
@@ -74,7 +74,7 @@ def test_burn_is_robs_dated_schedule():
     ("2026-09-15", 1000.0, 0.00),   # terminal
     ("2026-12-25", 1000.0, 0.00),   # holds
 ])
-def test_every_row_of_robs_sheet(day, alpha, burn):
+def test_every_row_of_the_published_timetable(day, alpha, burn):
     d = date.fromisoformat(day)
     assert floor_for_day(d) == alpha
     assert burn_for_day(d) == burn
@@ -202,7 +202,7 @@ def test_chain_reader_supersedes_bookkeeping_when_it_answers():
 # ---- the launch date is CONFIGURATION, not a code change --------------------
 
 def test_no_launch_date_configured_uses_the_sheets_literal_dates():
-    """Rob's sheet carries real calendar dates, so an unset launch date is not
+    """the published timetable carries real calendar dates, so an unset launch date is not
     "hold at rung zero forever" any more — it means run the published schedule
     exactly as miners were shown it."""
     assert active_floor(date(2026, 8, 3), {}) == 0.0
@@ -232,7 +232,7 @@ def test_a_configured_launch_date_shifts_the_whole_schedule():
 
 
 def test_the_anchor_env_is_dead_and_says_so():
-    """SN21_LADDER_ANCHOR asked launch-vs-first-settlement. Rob's sheet answers
+    """SN21_LADDER_ANCHOR asked launch-vs-first-settlement. the published timetable answers
     NEITHER — the rungs sit on payout dates. The variable is ignored rather
     than quietly honoured, because a stale setting silently changing what
     miners owe is exactly the failure the pending markers existed to prevent.
@@ -254,7 +254,7 @@ def test_first_settlement_argument_is_accepted_but_ignored():
 
 
 
-# ---- burn resolution: schedule governs, env is Rob's override lever ---------
+# ---- burn resolution: schedule governs, env is the operator's override lever ---------
 
 def test_burn_env_override_beats_the_schedule():
     """SN21_BURN_FRACTION is the published "burn may be adjusted at any time"

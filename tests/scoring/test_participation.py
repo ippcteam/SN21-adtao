@@ -12,7 +12,7 @@ from hope.scoring.participation import (
     DECAY_ENV,
     MIN_COVERAGE_ENV,
     MISSED,
-    PENDING_ROB_MIN_COVERAGE,
+    DEFAULT_MIN_COVERAGE,
     SUBMITTED,
     SUBNET_DOWN,
     ZERO_AT_ENV,
@@ -35,8 +35,8 @@ def test_a_running_model_that_delivers_nothing_has_NOT_submitted():
     assert day_verdict(700, 0, subnet_ran=True, params=P) == MISSED
 
 
-def test_coverage_at_robs_75_percent_bar():
-    """Rob ruled 0.75 on 2026-08-03: "I would set a 75% floor not 50%".
+def test_coverage_at_the_75_percent_bar():
+    """The ruling of 2026-08-03 set the bar at 0.75, not the 0.50 proposed.
     Half the bundle NO LONGER counts as showing up — that is the whole point
     of the change, so it is pinned explicitly."""
     assert day_verdict(700, 700, True, P) == SUBMITTED
@@ -60,7 +60,7 @@ def test_a_day_the_subnet_did_not_run_is_excluded_not_missed():
 
 def test_an_empty_bundle_is_excluded_not_missed():
     """A thin day with no episodes leaves nothing to predict, so failing to
-    predict it is not a failure. Rob's own weekend rule already says thin days
+    predict it is not a failure. the published weekend rule already says thin days
     must not punish anybody."""
     assert day_verdict(0, 0, subnet_ran=True, params=P) == SUBNET_DOWN
 
@@ -92,24 +92,24 @@ def test_recovery_restores_full_weight_immediately():
     assert bridge_multiplier([MISSED, MISSED, SUBMITTED], P) == 1.0
 
 
-# ---- Rob's numbers are configuration ----------------------------------------
+# ---- The policy numbers are configuration ----------------------------------------
 
-def test_defaults_are_robs_ratified_numbers():
+def test_defaults_are_the_ratified_numbers():
     """The default must BE the ruling. Leaving 0.50 in the code and relying on
-    an env var to carry Rob's 0.75 means any host that misses the variable
+    an env var to carry the operator's 0.75 means any host that misses the variable
     quietly pays miners who only turned up half the time."""
     p = params_from_env({})
-    assert p.min_coverage == PENDING_ROB_MIN_COVERAGE == 0.75
+    assert p.min_coverage == DEFAULT_MIN_COVERAGE == 0.75
     assert (p.decay_per_miss, p.misses_to_zero) == (0.5, 3)
 
 
-def test_ratifying_robs_numbers_is_an_env_change_not_a_code_change():
+def test_ratifying_the_numbers_is_an_env_change_not_a_code_change():
     p = params_from_env({MIN_COVERAGE_ENV: "0.8", DECAY_ENV: "0.25",
                          ZERO_AT_ENV: "2"})
     assert (p.min_coverage, p.decay_per_miss, p.misses_to_zero) == (0.8, 0.25, 2)
     # and the override GOVERNS the arithmetic, not just the dataclass
     assert day_verdict(100, 70, True, p) == MISSED      # 70% < 80% bar
-    assert day_verdict(100, 76, True, P) == SUBMITTED   # clears Rob's 75%
+    assert day_verdict(100, 76, True, P) == SUBMITTED   # clears the operator's 75%
     assert day_verdict(100, 70, True, P) == MISSED      # 70% now FAILS
 
 
@@ -119,4 +119,4 @@ def test_a_malformed_or_out_of_range_coverage_keeps_the_proposal(bad):
     is KEPT AT THE PROPOSAL rather than clamped to 1.0 — clamping would hide
     the typo behind plausible behaviour."""
     assert params_from_env({MIN_COVERAGE_ENV: bad}).min_coverage == \
-        PENDING_ROB_MIN_COVERAGE
+        DEFAULT_MIN_COVERAGE

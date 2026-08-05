@@ -10,7 +10,7 @@ the current working tree. The validator host must therefore have:
   - `git` available on PATH, and
   - the repository checked out at the path Python imports `hope` from.
 
-Both are true under the canonical Render / systemd deploys defined in
+Both are true under the reference container / systemd deploys defined in
 `deploy/`. Containerised deploys that strip the `.git` directory must
 bake the SHA into a build-time env var and have callers read it instead;
 see `current_commit_sha(fallback_env=...)`.

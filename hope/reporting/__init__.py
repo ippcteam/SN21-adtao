@@ -14,6 +14,6 @@ operator's CMS endpoint. Every module here is:
     enforced by the type system, not by a manual filter.
 
 See `docs/SN21_REWARD_MECHANISM.md` for the scoring spec and the data
-contract Rob's team consumes (`01-jayesh-data-contract.md`) for the
+contract the operator's team consumes (`01-the operator-data-contract.md`) for the
 payload shape.
 """

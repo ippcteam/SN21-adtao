@@ -100,13 +100,13 @@ def test_capture_states_persist_across_days(tmp_path):
     run_daily_loop(root, root, DAY, outcomes_provider=lambda d: [],
                    earnings_provider=lambda d: {"m1": 200.0}, environ={})
     states = load_capture_states(root)
-    # Capped at the floor IN FORCE ON DAY (2026-08-11). Under Rob's dated
+    # Capped at the floor IN FORCE ON DAY (2026-08-11). Under the operator's dated
     # schedule that is 150 a — the 10 Aug rung. It was 300 under the
     # superseded weekly ramp, which opened at 300 on day one.
     assert states["m1"].locked_alpha == 150.0
     # 400 earned across two runs, 150 escrowed to the floor, so 250 paid out
     # (was 100 when the floor was 300). The lower opening rung means miners
-    # start being PAID sooner, which is the point of Rob starting at zero.
+    # start being PAID sooner, which is the point of the operator starting at zero.
     assert states["m1"].total_paid_alpha == 250.0
 
 
@@ -243,7 +243,7 @@ def test_liveness_does_not_refold_old_days_on_the_next_run(tmp_path):
 
     root = str(tmp_path)
     start = date(2026, 8, 1)
-    # A healthy BYSTANDER throughout. Rob ruled 2026-08-03 that the field
+    # A healthy BYSTANDER throughout. governance ruled 2026-08-03 that the field
     # must never be emptied, so a LONE model can never be evicted — the
     # eviction is withheld and recorded instead. An eviction test therefore
     # needs somebody left standing.
@@ -302,7 +302,7 @@ def test_liveness_ignores_a_shadow_day_after_the_loop_day(tmp_path):
 
 
 def test_liveness_policy_numbers_come_from_the_environment(tmp_path):
-    """[finding 5] N/M/K are overridable at deploy time, so ratifying Rob's
+    """[finding 5] N/M/K are overridable at deploy time, so ratifying the operator's
     numbers is a setting and not a code edit. Two failed days evict only
     because SN21_CHRONIC_STRIKES=2."""
     from hope.backtest.container_runner import ERR_EXIT_PREFIX
@@ -312,7 +312,7 @@ def test_liveness_policy_numbers_come_from_the_environment(tmp_path):
     for i in (2, 1):
         _shadow_run(root, DAY - timedelta(days=i), "alpha", ok=False,
                     error=f"{ERR_EXIT_PREFIX}1: b''")
-        # see above: without a survivor Rob's floor withholds the eviction
+        # see above: without a survivor the non-empty-field floor withholds the eviction
         _shadow_run(root, DAY - timedelta(days=i), "bystander", ok=True)
 
     default_run = run_daily_loop(root, root, DAY,
@@ -323,7 +323,7 @@ def test_liveness_policy_numbers_come_from_the_environment(tmp_path):
     for i in (2, 1):
         _shadow_run(root2, DAY - timedelta(days=i), "alpha", ok=False,
                     error=f"{ERR_EXIT_PREFIX}1: b''")
-        # see above: without a survivor Rob's floor withholds the eviction
+        # see above: without a survivor the non-empty-field floor withholds the eviction
         _shadow_run(root2, DAY - timedelta(days=i), "bystander", ok=True)
     over = run_daily_loop(root2, root2, DAY, outcomes_provider=lambda d: [],
                           environ={"SN21_CHRONIC_STRIKES": "2"})
@@ -404,7 +404,7 @@ def test_liveness_failure_never_silences_the_other_steps(tmp_path, monkeypatch):
 
 
 def test_vertical_series_step_tags_and_stores(tmp_path, monkeypatch):
-    """J3 wiring: settled entries get Jayesh's vertical tag + real components."""
+    """J3 wiring: settled entries get the operator's vertical tag + real components."""
     from datetime import date as _date
     from hope.validator.daily_loop import run_daily_loop
     from hope.scoring.vertical_error_series import load_entries

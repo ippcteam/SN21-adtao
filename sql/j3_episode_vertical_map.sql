@@ -1,6 +1,6 @@
 /* =============================================================================
    J3 — Episode → vertical map for the SN21 basket-split trigger (design v0.2 §8, Condition 2).
-   Owner: Jayesh.  Consumer: the validator daily loop (runs this AS-IS over OBI Postgres).
+   Owner: the operator.  Consumer: the validator daily loop (runs this AS-IS over the operator's Postgres).
 
    OUTPUT: exactly one row per candidate in bittensor_episode_candidates —
        episode_candidate_id (text) | vertical (ecommerce|lead_gen|untagged) | tagged_at (utc)

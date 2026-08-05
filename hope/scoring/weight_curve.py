@@ -25,12 +25,12 @@ from dataclasses import dataclass
 class CurveParams:
     """Published curve parameters (restated at four-weekly reviews).
 
-    Rob 2026-07-28 ("I want people to stay in the game"): fixed shares
+    governance ruling 2026-07-28 ("I want people to stay in the game"): fixed shares
     50/25/10 for the top three ranks, then a decreasing geometric tail;
     hard cap 20. Replaces the working default 55/20/geometric-from-2nd.
     """
     score_threshold: float = 0.0   # zero weight below this standing ([D7]); review-set
-    top_share: float = 0.50        # champion (Rob 2026-07-28)
+    top_share: float = 0.50        # champion (governance ruling 2026-07-28)
     second_share: float = 0.25     # second place
     third_share: float = 0.10      # third place — fixed, tail starts AFTER it
     tail_decay: float = 0.5        # each further rank gets this × previous share

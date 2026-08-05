@@ -58,7 +58,7 @@ tables carry no truth for them. Re-excavation found that half true:
   * goal = P50 accuracy on the goal metric. Fully computable. The
     legacy scorer already implements it (onchain_adapter._p50_goal_score)
     and the resolver that reads each account's configured goal already
-    runs in production (OBI episode_payload_builder_service:282-307).
+    runs in production (the operator's episode payload builder:282-307).
 
 So v2 = 0.50 quantile + 0.10 coverage + 0.15 directional + 0.15 goal,
 renormalised by 0.90 (the dropped probability half is removed from the
@@ -76,10 +76,10 @@ differentiate. The spec names the component, not the constant.
 
 The goal metric is `efficiency_delta_pct` in prediction space; which
 COLUMN feeds its truth (cpa_delta_pct vs conversion_value_delta_pct)
-is the account-goal question, resolved in obi_outcomes_provider.
+is the account-goal question, resolved in operator_outcomes_provider.
 
 Default OFF. The composition and the efficiency-truth basis are both
-miner-facing and ship with Rob's governance amendment; the flag is the
+miner-facing and ship with the governance amendment; the flag is the
 single switch for both, so one announcement covers one behaviour change.
 """
 
@@ -101,20 +101,20 @@ from hope.scoring import standing_ledger
 # treats as a real magnitude.
 MIN_ENTRY_SCALE = 0.01
 
-# Settle clock (mirrors OBI constants.py: OUTCOME_SETTLING_WINDOW_DAYS=7;
+# Settle clock (mirrors the operator platform's constants: OUTCOME_SETTLING_WINDOW_DAYS=7;
 # settle date = window_end + 1 + horizon + settle).
 SETTLING_WINDOW_DAYS = 7
 
 # ---- v2 restoration constants ------------------------------------------------
 # Ported from hope/scoring/onchain_adapter.py, converted from that module's
 # DECI-PERCENT integers to this module's DELTA FRACTIONS. The conversion is
-# ÷1000: deci-percent = percent×10, fraction = percent÷100. OBI writes these
+# ÷1000: deci-percent = percent×10, fraction = percent÷100. The operator platform writes these
 # as ratios — outcome_measurement_service:191 `(o_cpa - b_cpa) / max(b_cpa, 1)`
 # — so 0.40 here is the +40% that is 400 dpct there.
 #
 # The account's primary goal metric, in prediction space. Miners always
 # predict a metric named efficiency_delta_pct; the account's goal decides
-# which measured column supplies its truth (see obi_outcomes_provider).
+# which measured column supplies its truth (see operator_outcomes_provider).
 GOAL_METRIC = "efficiency_delta_pct"
 
 # _p50_goal_score: 1.0 at exact, decaying linearly to 0. Legacy 400 dpct.
@@ -206,7 +206,7 @@ def entry_components(pred: dict, actual: dict[str, float]) -> tuple[float, float
 
     Exposed for the J3 vertical-error series, which stores RAW components
     so the weekly aggregate survives a formula recomposition (the goal-
-    metric term is in front of Rob). Kept as a separate walk of the same
+    metric term is under governance review). Kept as a separate walk of the same
     logic rather than a refactor of score_entry so the scoring hot path
     and its tests stay byte-identical.
     """
@@ -324,13 +324,14 @@ def score_entry_v2(pred: dict, actual: dict[str, float]) -> float:
     return round(max(0.0, min(1.0, blended)), 6)
 
 
-# ---- goal-basis resolution (Rob, 2026-07-31) ---------------------------------
-# "yes, ecomm ROAS, lead gen CPA. Yes, go with account configured (or implied)
-# goal, not campaign bid strategy."
+# ---- goal-basis resolution (governance ruling, 2026-07-31) ------------------
+# Ecommerce accounts are scored on ROAS and lead-generation accounts on CPA,
+# taken from the account's configured (or implied) goal rather than from the
+# campaign's bid strategy.
 #
 # Configured = accountgoals.metric_type. IMPLIED = the account's taxonomy root,
 # which is the account-level ecommerce signal the system already carries; the
-# campaign's bid strategy is deliberately NOT consulted, per Rob.
+# campaign's bid strategy is deliberately NOT consulted, per the ruling.
 #
 # Then the GUARD, which is not optional. outcome_measurement_service.py:195
 # computes conversion-value delta as
@@ -342,7 +343,7 @@ def score_entry_v2(pred: dict, actual: dict[str, float]) -> float:
 # composed score, free and deterministic. So a value basis requires that the
 # account actually recorded conversion value in the baseline window.
 #
-# Measured 2026-08-01 (jayesh, exact per-episode signal): of 874 measured
+# Measured 2026-08-01 (exact per-episode signal): of 874 measured
 # ecommerce-tagged episodes 554 (63%) survive the guard and 320 (37%) fall back
 # to CPA — value-based truth is ~7% of all episodes, NOT the ~10% an
 # account-level proxy suggested. The gap is the point: an account can record
@@ -364,7 +365,7 @@ def resolve_goal_basis(goal_metric_type: Optional[str],
     metric = (goal_metric_type or "").strip()
     if metric:
         # A CONFIGURED goal wins outright — taxonomy must never override it.
-        # Same precedence jayesh's J3 map states: "goal type is present and
+        # Same precedence the operator's J3 map states: "goal type is present and
         # says not-ecommerce, so taxonomy does NOT override." Without this
         # branch a configured CPA goal on a retail account was silently
         # flipped to conversion_value.
@@ -388,7 +389,7 @@ def basis_for_row(frozen_basis: Optional[str],
                   baseline_conv_value_micros) -> tuple[str, bool, bool]:
     """(basis, guard_applied, was_frozen) for one measured row.
 
-    THE FROZEN VALUE WINS. OBI resolves the basis at REVEAL and persists it on
+    THE FROZEN VALUE WINS. The operator platform resolves the basis at REVEAL and persists it on
     ``bittensor_episode_candidates.goal_basis`` (see
     app/services/bittensor/goal_basis_service.py). When it is present, this
     reader uses it verbatim and does not consult accountgoals, the taxonomy or
@@ -412,7 +413,7 @@ def settle_scoring_v2_enabled(environ=os.environ) -> bool:
     """Single source of truth for which settle formula is active.
 
     Default OFF: the composition and the efficiency-truth basis are
-    miner-facing and ship with Rob's governance amendment.
+    miner-facing and ship with the governance amendment.
     """
     return environ.get("SN21_SETTLE_SCORING_V2", "").strip().lower() in (
         "1", "true", "yes", "on",
@@ -472,7 +473,7 @@ def score_settled_with_components(
     """score_settled plus a components map for the J3 vertical series:
     {(episode_id, horizon_days, miner): (quantile, direction, coverage, goal)}
     — raw parts of each entry's score, stored so the series survives a
-    formula recomposition (Rob's pending decision).
+    formula recomposition (a pending governance decision).
 
     Positions 0 and 1 keep their original meaning for existing consumers.
     Position 1 is the ACTIVE formula's direction term: the three-metric
@@ -583,7 +584,7 @@ def run_settle_day(
     """Enter every settled-but-not-yet-entered result as of `day`.
 
     ``outcomes_provider(day)`` returns ALL measured rows whose settle date
-    is <= day (see obi_outcomes_provider); the entered-markers reduce that
+    is <= day (see operator_outcomes_provider); the entered-markers reduce that
     to exactly the new ones, so re-runs are cheap no-ops and late-measured
     rows enter on the next run, dated to their true settle date. Entries
     are flowed through day_flow PER settle date, preserving D13's
@@ -644,9 +645,9 @@ def run_settle_day(
 # ---- production outcomes reader (reference implementation) -------------------
 
 def _has_frozen_basis_column(session) -> bool:
-    """Whether the OBI database has migration 20260801_btc_goal_basis applied.
+    """Whether the operator database has migration 20260801_btc_goal_basis applied.
 
-    The validator host and OBI deploy independently, so this reader can run
+    The validator host and the operator platform deploy independently, so this reader can run
     against a database that predates the freeze columns. A probe beats a
     validator that crashes on `column c.goal_basis does not exist`; without the
     columns everything simply recomputes, which is the documented pre-freeze
@@ -658,7 +659,7 @@ def _has_frozen_basis_column(session) -> bool:
       PostgreSQL, so a bare try/except here would leave the session unusable
       and the very next query — the real one — would fail with
       "current transaction is aborted". begin_nested() rolls back just the
-      probe. This is the same defect the OBI side was repaired for; it lived
+      probe. This is the same defect the operator side was repaired for; it lived
       on in this twin.
     * BOTH columns. The query this gates selects goal_basis AND
       goal_basis_guarded. Probing only the first means a half-applied
@@ -693,14 +694,14 @@ _LAST_CENSORED_COUNTS: dict = {}
 
 
 def last_censored_counts() -> dict:
-    """{reason: n} from the last obi_outcomes_provider call, or {}."""
+    """{reason: n} from the last operator_outcomes_provider call, or {}."""
     return dict(_LAST_CENSORED_COUNTS)
 
 
 def _has_censoring_column(session) -> bool:
-    """Whether OBI migration 20260804_censoring is applied. Same probe
+    """Whether operator-platform migration 20260804_censoring is applied. Same probe
     discipline as _has_frozen_basis_column (SAVEPOINT, current_schema) and the
-    same reason: the validator host and OBI deploy independently, and a reader
+    same reason: the validator host and the operator platform deploy independently, and a reader
     that crashes on `column o.censored_reason does not exist` takes the whole
     settle run with it. Without the column, no rows are censored yet and the
     filter is a no-op by definition — say so and read everything."""
@@ -720,11 +721,11 @@ def _has_censoring_column(session) -> bool:
         return False
 
 
-def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
+def operator_outcomes_provider(day: date) -> list[SettledHorizon]:
     """All measured rows settle-dated on or before `day`, post-cutover.
 
     Reference implementation for the validator/ops host — requires the
-    OBI repo importable (same pattern as scripts/run_shadow_day_bd.py);
+    the operator platform package importable (same pattern as scripts/run_shadow_day_bd.py);
     the module itself stays importable without it. Values arrive as delta
     fractions, possibly saturated at ±9999.999999 (the outcome writer's
     numeric(10,6) clamp) — passed through unchanged; the per-entry scale
@@ -737,7 +738,7 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
 
     EFFICIENCY TRUTH. Under v1 this is always cpa_delta_pct. Under v2 it is
     the account's own goal metric per resolve_goal_basis — cpa_delta_pct or
-    conversion_value_delta_pct — which is Rob's 2026-07-31 ruling. The flag
+    conversion_value_delta_pct — which is the operator's 2026-07-31 ruling. The flag
     gates the truth basis and the formula together on purpose: both are
     miner-facing and ship with one amendment, so there is one announcement
     rather than two silent changes.
@@ -749,10 +750,10 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
     column, so those episodes are scored on a basis no miner ever saw; (2) this
     flag is read in the validator process, while the one that turns the payload
     disclosure on (goal_basis_service.publish_goal_basis_enabled) is read in
-    the OBI web process on another host — setting it here does not set it
+    the operator platform's web process on another host — setting it here does not set it
     there. The pairing is a deployment convention, not an interlock.
 
-    FREEZE AT REVEAL — shipped, with a residual. OBI now resolves the basis at
+    FREEZE AT REVEAL — shipped, with a residual. The operator platform now resolves the basis at
     REVEAL (the reservation UPDATE in daily_basket_service / release_service)
     and persists it on bittensor_episode_candidates.goal_basis /
     .goal_basis_guarded; app/services/bittensor/goal_basis_service.py is the
@@ -770,13 +771,22 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
     residual shrinks visibly as the pre-freeze population settles out.
 
     The frozen columns are read defensively (see _has_frozen_basis_column): a
-    validator host whose OBI database has not yet had migration
+    validator host whose operator database has not yet had migration
     20260801_btc_goal_basis applied recomputes everything and says so, instead
     of crashing on an undefined column.
     """
     import sys
-    sys.path.insert(0, "/Users/macbookm1/Documents/Projects/obi")
-    from app.models import get_session
+    _platform_path = os.environ.get("SN21_PLATFORM_PATH")
+    if _platform_path:
+        sys.path.insert(0, _platform_path)
+    try:
+        from app.models import get_session
+    except ImportError as exc:                      # pragma: no cover - config
+        raise RuntimeError(
+            "the operator data platform package is not importable — set "
+            "SN21_PLATFORM_PATH to its location. This provider reads the "
+            "operator's own database and is not usable without it."
+        ) from exc
     from sqlalchemy import text as T
 
     goal_aware = settle_scoring_v2_enabled()
@@ -787,7 +797,7 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
                        if _has_frozen_basis_column(s)
                        else "NULL::text AS frozen_basis, "
                             "NULL::boolean AS frozen_guarded")
-        # Attrition censoring (Rob 2026-08-04): censored horizons are DROPPED
+        # Attrition censoring (governance ruling 2026-08-04): censored horizons are DROPPED
         # from scoring — never a zero. Counted first and printed, because a
         # silently shrinking scoreable set is exactly the failure shape this
         # codebase keeps paying for.
@@ -834,16 +844,16 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
                        + make_interval(days => 1 + o.horizon_days + :settle)) <= :day
             )
             SELECT ep.*,
-                -- CONFIGURED goal (Rob: "account configured ... goal")
+                -- CONFIGURED goal: the account's own configured metric
                 (SELECT g.metric_type FROM accountgoals g
                   WHERE g.googleadsaccountid = ep.gads_id
                     AND g.is_active = true AND g.goal_kind = 'main'
                   ORDER BY g.priority DESC LIMIT 1) AS goal_metric_type,
                 -- IMPLIED goal: account taxonomy root. lineage->>0 is the same
-                -- accessor jayesh's verified J3 map uses, so this code and the
+                -- accessor the operator's verified J3 map uses, so this code and the
                 -- measured ~7% coverage describe the same population. Ordering
                 -- is explicit: an unordered LIMIT 1 under multiple assignments
-                -- was an audit finding on the OBI side.
+                -- was an audit finding on the operator side.
                 (SELECT aha.lineage->>0 FROM account_hierarchy_assignment aha
                   WHERE aha.customer_id = ep.customer_id
                   ORDER BY aha.updated_at DESC NULLS LAST, aha.id DESC

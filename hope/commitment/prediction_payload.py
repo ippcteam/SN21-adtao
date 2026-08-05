@@ -90,7 +90,7 @@ class EncryptedPrediction:
 
     aes_key: bytes        # 32-byte K to be timelock-encrypted on chain
     aes_ct: bytes         # nonce(12) || ciphertext || tag(16)
-    plaintext_cbor: bytes # canonical CBOR plaintext (kept for self-tests; do not publish)
+    plaintext_cbor: bytes # canonical CBOR plaintext (self-tests only; never leaves the process)
 
 
 def _scale_quantile(value: float) -> int:

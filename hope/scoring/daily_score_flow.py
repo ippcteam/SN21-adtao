@@ -39,7 +39,7 @@ DAILY_STREAM_HORIZONS = [7, 14, 28]
 # §horizon-weights, "when the 28-day horizon is added"): longer horizons weigh
 # MORE, and lower measurement resolution shifts weight further toward longer
 # horizons. The interim 30/40/30 table inverted that published principle at
-# high resolution (deep-study 2026-07-30, Rob's answers-in-the-system pass).
+# high resolution (deep-study 2026-07-30, the answers-in-the-system pass).
 DAILY_STREAM_HORIZON_WEIGHTS = {
     "high":   {"7": 0.20, "14": 0.35, "28": 0.45},
     "medium": {"7": 0.15, "14": 0.30, "28": 0.55},

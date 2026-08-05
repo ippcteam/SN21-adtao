@@ -60,7 +60,7 @@ def compute_histogram(
             into the top bin, etc.). The aggregator filters to the
             qualifying pool before calling this — non-qualifying
             miners do not contribute.
-        n_bins: number of buckets (default 15 per Q2 / Rob's reply).
+        n_bins: number of buckets (default 15 per Q2 / the operator's reply).
         range_: `(lo, hi)` inclusive bounds for the binning domain.
             Defaults to `(0.0, 1.0)` per Q3 (`MinerScore.final_score`
             lives in `[0, 1]`).

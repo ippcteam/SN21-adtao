@@ -267,7 +267,7 @@ def test_written_file_is_valid_json(tmp_path):
 # Baseline threading — the leaderboard MUST gate/tier against the real
 # predict-zero baseline the chain used, not the 0.0 placeholder. Otherwise a
 # below-baseline miner shows a tier while earning 0 on chain ("Competitive but
-# earns nothing" — the contradiction Rob flagged). Regression for that.
+# earns nothing" — the contradiction the operator flagged). Regression for that.
 # ---------------------------------------------------------------------------
 
 

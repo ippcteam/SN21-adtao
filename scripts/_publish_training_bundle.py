@@ -106,7 +106,9 @@ def safety_checks():
 
     # held-out set — the check that matters most
     try:
-        sys.path.insert(0, "/Users/macbookm1/Documents/Projects/obi")
+        _platform_path = os.environ.get("SN21_PLATFORM_PATH")
+        if _platform_path:
+            sys.path.insert(0, _platform_path)
         from sqlalchemy import text as T
 
         from app.models import get_session

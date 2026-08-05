@@ -290,7 +290,7 @@ def _fetch_chain_view_with_rpc_rotation(
 
     The Bittensor testnet RPC pool is DNS-load-balanced. A given Subtensor
     connection may land on a backend that hasn't yet replicated recent
-    RevealedCommitments state — and on the operator's compute (Render),
+    RevealedCommitments state — and on the operator's compute,
     DNS may stick to a backend that consistently lags. To avoid burning
     Commitments-pallet byte budget on a stale read, we:
 

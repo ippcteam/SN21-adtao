@@ -1,6 +1,6 @@
 """D11 publication rail — generic, attested metrics publication (in-house).
 
-Rob's GAP-3 decision (2026-07-25): "ignore tensora — we're 100% in-house."
+the operator's GAP-3 decision (2026-07-25): "ignore tensora — we're 100% in-house."
 The rail is therefore ours: a generic path that takes ANY metrics document,
 canonicalises it, hash-chains it to the previous document of the same feed,
 signs it (ed25519, same primitive as the commitment layer), and yields the

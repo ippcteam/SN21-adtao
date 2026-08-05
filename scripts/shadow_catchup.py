@@ -16,7 +16,7 @@ Two things make automation actually reliable, and shadow_daily.sh has neither:
 
   2. A HEARTBEAT. The ledger is local files, so nothing outside this machine can
      tell the clock stopped — including when the machine is simply off, which is
-     the failure we actually had. Reporting to Postgres lets OBI run a dead-man
+     the failure we actually had. Reporting to Postgres lets the operator platform run a dead-man
      alarm (bittensor.shadow_clock_check).
 
 The ledger stays the source of truth: attested, hash-chained, and never derived
@@ -36,7 +36,12 @@ import traceback
 from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
-sys.path.insert(0, "/Users/macbookm1/Documents/Projects/obi")
+# The outcomes/basket readers below need the operator's data platform package
+# on the path. It is not part of this repository (it reads the operator's
+# private database), so its location is configuration.
+_PLATFORM_PATH = os.environ.get("SN21_PLATFORM_PATH")
+if _PLATFORM_PATH:
+    sys.path.insert(0, _PLATFORM_PATH)
 
 from hope.backtest.container_runner import run_basket_docker  # noqa: E402
 from hope.backtest.shadow import ShadowModel, run_shadow_day  # noqa: E402

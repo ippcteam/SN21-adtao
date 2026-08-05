@@ -1,6 +1,6 @@
 """Daily scoring RECEIPT — the document that makes a miner's score reproducible.
 
-Rob, 2026-08-05: miners must be able to verify (1) what they submitted is what
+Governance ruling, 2026-08-05: miners must be able to verify (1) what they submitted is what
 was scored, (2) the settled-outcome set was fixed before scoring and the same
 for everyone, (3) they were scored on real data, (4) they can rerun and
 reproduce the score.
@@ -143,7 +143,7 @@ def build_receipt_metrics(
         # Censored horizons are EXCLUDED from `outcomes` by the provider, so
         # without this they would vanish silently and a miner counting
         # episodes would find fewer than the basket held with no explanation.
-        # Rob's attrition ruling says dropped horizons are recorded, never a
+        # the operator's attrition ruling says dropped horizons are recorded, never a
         # zero — recording them only in our database and not in the document
         # miners actually read would honour the letter and miss the point.
         # {} = nothing censored; None = this validator could not read the

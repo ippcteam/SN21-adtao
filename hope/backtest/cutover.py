@@ -3,7 +3,7 @@
 The entire M4 launch event reduces to flipping this selector from 'legacy'
 to 'shadow' once cutover_ready holds (>=7 distinct shadow-scored days).
 Pure + env-gated; wiring into weight_setter is the one-line change on
-Rob's date.
+the operator's date.
 """
 
 from __future__ import annotations

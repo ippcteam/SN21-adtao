@@ -1,6 +1,6 @@
 """Run one shadow day against a BD- daily basket (M3 glue validation).
 
-Loads the basket's reserved episodes from the OBI registry, runs the
+Loads the basket's reserved episodes from the the operator's release registry, runs the
 reference model container against them under the published isolation
 flags, and records the day in the shadow ledger. This is the end-to-end
 orchestration glue: basket -> model -> predictions -> attested ledger.
@@ -9,7 +9,7 @@ Scoring of these predictions follows on the settle clock (day 15/22/36).
 Usage:
     python3 scripts/run_shadow_day_bd.py BD-2026-07-27 [--ledger-root DIR]
 
-Requires: docker image sn21-reference-model:v1 (M2), OBI repo alongside
+Requires: docker image sn21-reference-model:v1 (M2), the operator platform package alongside
 for DB access.
 """
 
@@ -19,7 +19,12 @@ import sys
 from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
-sys.path.insert(0, "/Users/macbookm1/Documents/Projects/obi")
+# The outcomes/basket readers below need the operator's data platform package
+# on the path. It is not part of this repository (it reads the operator's
+# private database), so its location is configuration.
+_PLATFORM_PATH = os.environ.get("SN21_PLATFORM_PATH")
+if _PLATFORM_PATH:
+    sys.path.insert(0, _PLATFORM_PATH)
 
 from hope.backtest.container_runner import run_basket_docker  # noqa: E402
 from hope.backtest.shadow import ShadowModel, run_shadow_day  # noqa: E402

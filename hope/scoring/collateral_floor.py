@@ -19,7 +19,7 @@ validators score against them SOFTLY — this module is that soft phase:
 
 Floor amounts are FLAT alpha, restated at four-weekly reviews (per-miner
 earnings vary too much under the §7 curve for a rewards-denominated
-floor). Rob restated the schedule on 2026-08-01, replacing the original
+floor). The schedule was restated on 2026-08-01, replacing the original
 single step (300 a -> 600 a at +4 weeks) with a WEEKLY ramp:
 
     week 0   300 a   (IM launch)
@@ -46,7 +46,7 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Callable, Optional
 
-# ROB'S DATED SCHEDULE (timetable sheet, 2026-08-03). This SUPERSEDES the
+# THE PUBLISHED DATED SCHEDULE (timetable, 2026-08-03). This SUPERSEDES the
 # 2026-08-01 weekly ramp (300 -> 475 -> 650 -> 825 -> 1000), which was five even
 # steps measured in weeks from an anchor. The sheet is different in three ways
 # and every one of them matters:
@@ -101,7 +101,7 @@ ALPHA_LADDER = tuple(a for _, a in ALPHA_SCHEDULE)
 # First and terminal rungs, named for callers that need one or the other
 # without knowing the shape. daily_loop imports LAUNCH_FLOOR_ALPHA as a default.
 #
-# LAUNCH_FLOOR_ALPHA IS NOW 0.0, NOT 300.0. Rob's schedule starts miners
+# LAUNCH_FLOOR_ALPHA IS NOW 0.0, NOT 300.0. The published schedule starts miners
 # holding nothing until 10 August; the superseded weekly ramp opened at 300 a
 # on day one. Anything that treated "the launch floor" as a non-zero obligation
 # is now wrong by 300 alpha.
@@ -114,16 +114,16 @@ SUGGESTED_LOCK_SHARE_P = (0.75, 0.90)
 SUGGESTED_DRAIN_RATIO_K = 0.5
 
 
-# Rob's IM launch date arrives as CONFIGURATION, never as a code edit. The
+# The IM launch date arrives as CONFIGURATION, never as a code edit. The
 # ladder is the only thing in either repo that needs to know the date (verified
-# by grep across hope-sn21 and OBI), so this one env value is what stands
-# between "Rob names a date" and "the ladder starts stepping" — no deploy, no
+# by grep across both repositories), so this one env value is what stands
+# between "a date is named" and "the ladder starts stepping" — no deploy, no
 # release, no code review on launch day.
 IM_LAUNCH_DATE_ENV = "SN21_IM_LAUNCH_DATE"
 
 
 def launch_date_from(environ) -> Optional[date]:
-    """Rob's IM launch date from config, or None if unset.
+    """The IM launch date from config, or None if unset.
 
     Unset and MALFORMED both return None, and None means "hold at week 0".
     That direction is deliberate: a typo in a deploy variable must never
@@ -141,7 +141,7 @@ def launch_date_from(environ) -> Optional[date]:
         return None
 
 
-# WHAT THE LADDER'S CLOCK COUNTS FROM — [PENDING ROB]. He gave the rungs
+# WHAT THE LADDER'S CLOCK COUNTS FROM — [PENDING RATIFICATION]. The ruling gave the rungs
 # ("one step per week over four weeks") but never said what week 1 counts
 # from, and the two candidates are not equivalent:
 #
@@ -152,9 +152,9 @@ def launch_date_from(environ) -> Optional[date]:
 # It matters because of cold start: nobody is placement-eligible until
 # predictions settle (~day 15), and the capture path escrows from EARNINGS —
 # so under `launch` the 475 and 650 rungs arrive before any miner has earned
-# anything to escrow. Whether that is acceptable is Rob's call.
+# anything to escrow. Whether that is acceptable is a governance call.
 #
-# Both are CONFIG. This exists so his one-word answer stays a flag flip
+# Both are CONFIG. This exists so the answer stays a flag flip
 # instead of becoming a code change and a deploy on launch day, which is the
 # single thing the launch-date work set out to eliminate.
 LADDER_ANCHOR_ENV = "SN21_LADDER_ANCHOR"
@@ -178,7 +178,7 @@ def active_floor(day: date, environ,
                  first_settlement: Optional[date] = None) -> float:
     """The floor in force on `day` per configuration.
 
-    Rob's dated schedule (2026-08-03) replaced the week-counting model, so the
+    The published dated schedule (2026-08-03) replaced the week-counting model, so the
     anchor question this used to resolve — `launch` vs `first_settlement` — no
     longer applies: the rungs are pinned to PAYOUT MILESTONES on the settlement
     calendar, which is neither. `first_settlement` is still accepted so the
@@ -194,7 +194,7 @@ def active_floor(day: date, environ,
     """
     if (environ.get(LADDER_ANCHOR_ENV) or "").strip():
         print(f"[collateral] {LADDER_ANCHOR_ENV} is set but no longer used — "
-              f"Rob's 2026-08-03 timetable pins the ladder to payout dates, "
+              f"the published 2026-08-03 timetable pins the ladder to payout dates, "
               f"not to weeks from an anchor. Ignoring.", flush=True)
     return floor_for_day(day, launch_date_from(environ))
 
@@ -203,7 +203,7 @@ def _step_value(day: date, schedule, shift_days: int = 0) -> float:
     """Value of the latest step whose date has arrived. Shared by both
     schedules so they cannot diverge in how a boundary day is treated.
 
-    A step takes effect ON its date, not the day after — Rob's sheet reads
+    A step takes effect ON its date, not the day after — the published timetable reads
     "Monday 10 August ... 150", so the 10th is already 150.
 
     Before the first step, returns the FIRST value. Back-dated folds happen
@@ -220,7 +220,7 @@ def _step_value(day: date, schedule, shift_days: int = 0) -> float:
 
 
 def floor_for_day(day: date, launch_day: Optional[date] = None) -> float:
-    """The flat alpha floor in force on `day`, per Rob's dated ALPHA_SCHEDULE.
+    """The flat alpha floor in force on `day`, per the dated ALPHA_SCHEDULE.
 
     `launch_day` is the FIRST LIVE DAILY BUNDLE date. Passing one shifts the
     whole schedule by the difference from 2026-08-03, so if the launch moves
@@ -229,7 +229,7 @@ def floor_for_day(day: date, launch_day: Optional[date] = None) -> float:
     longer mean anything. Omit it and the sheet's literal dates are used.
 
     Note the shape change: this used to compute a week index from a launch
-    date. Rob's sheet is not weekly — the gaps are 8, 7, 14 and 7 days,
+    date. The published timetable is not weekly — the gaps are 8, 7, 14 and 7 days,
     because each rung lands on a payout milestone. A week-based reading
     cannot express it.
     """
@@ -238,7 +238,7 @@ def floor_for_day(day: date, launch_day: Optional[date] = None) -> float:
 
 
 def burn_for_day(day: date, launch_day: Optional[date] = None) -> float:
-    """Planned burn fraction in force on `day`, per Rob's BURN_SCHEDULE.
+    """Planned burn fraction in force on `day`, per the published BURN_SCHEDULE.
 
     45% -> 30% (10 Aug) -> 15% (25 Aug) -> 0% (15 Sep). The validator host
     currently carries a STATIC SN21_BURN_FRACTION=0.45, which is correct only
@@ -274,7 +274,7 @@ BURN_ENV = "SN21_BURN_FRACTION"
 def resolve_burn_fraction(environ, day: date) -> tuple[float, str]:
     """(burn fraction in [0,1], source) for `day`.
 
-    PRECEDENCE — the env var wins over the schedule, deliberately. Rob's
+    PRECEDENCE — the env var wins over the schedule, deliberately. The operator's
     published rule is that burn "may be adjusted at any time — up or down —
     to protect and grow alpha value"; SN21_BURN_FRACTION is that lever. The
     dated BURN_SCHEDULE governs only when no explicit override is set.
@@ -283,7 +283,7 @@ def resolve_burn_fraction(environ, day: date) -> tuple[float, str]:
     carries SN21_BURN_FRACTION=0.45 today, so deploying this changes nothing.
     Removing the env var is the deliberate activation step that hands control
     to the schedule — which returns the same 0.45 before 10 Aug, so the
-    handover is a no-op on the day it happens and starts stepping on Rob's
+    handover is a no-op on the day it happens and starts stepping on the published
     dates afterwards.
 
     Malformed or out-of-range env falls through to the SCHEDULE, not to a

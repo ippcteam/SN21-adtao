@@ -95,7 +95,7 @@ async def get_verification(epoch_id: str, request: Request):
     # event loop continues serving other requests while the chain read is
     # in flight. Without this, a flood of /verification polls froze the
     # whole daemon for up to _VERIFICATION_SUBPROCESS_TIMEOUT_SECS per
-    # call — every other request (including /health) timed out at Render's
+    # call — every other request (including /health) timed out at the platform's
     # load-balancer ceiling.
     try:
         result = await asyncio.to_thread(

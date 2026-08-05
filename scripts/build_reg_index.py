@@ -24,7 +24,7 @@ PERSISTENCE (resume cheaply):
     PATH + ".state.json"  sidecar checkpoint {last_scanned_block, ...}. The next
                         run resumes from last_scanned_block+1 — so a daily tick
                         only scans ~one day of blocks, not the whole chain.
-    Keep both on a PERSISTENT disk (on Render: a web/worker service — cron
+    Keep both on a PERSISTENT disk (on a managed platform: a service type with a disk — scheduled jobs
     services have no disk; co-locating with the archive node service is ideal).
 
 USAGE

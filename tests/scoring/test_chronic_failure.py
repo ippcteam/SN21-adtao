@@ -1,16 +1,15 @@
 """Chronic failure — strikes, eviction, re-entry.
 
-The machinery ships with ZERO real-world failure samples: only one model has
-ever run in shadow (reference-v1, ours) and it recorded ok:true on all four
-days present in sn21_ledger. Tests are therefore the only evidence, so they
+The machinery ships with ZERO real-world failure samples: at the time of writing only the
+reference model had run in shadow, and it recorded ok:true on every day. Tests are therefore the only evidence, so they
 pin the SAFETY properties first (a day we did not run can never strike
 anybody; a subnet-side failure can never strike anybody) before the policy
 arithmetic.
 
-Numbers under test are Rob's RULING of 2026-08-03: 5 strikes in a rolling 14
-days, re-entry wait 7 (he moved it from 14: "I would suggest 7 is better").
-He also ruled that the field must never be emptied — "we have to not evict all
-miners - we need at least 1 house model" — which is why every eviction
+Numbers under test are the operator's RULING of 2026-08-03: 5 strikes in a rolling 14
+days, re-entry wait 7 (moved from the 14 originally proposed).
+The same ruling requires that the field is never emptied and that at least
+one house model survives — which is why every eviction
 scenario carries a healthy BYSTANDER: with one model in the population nothing
 can be evicted at all, and that is correct.
 """
@@ -54,9 +53,9 @@ from hope.scoring.chronic_failure import (
     KIND_EXCLUDED,
     KIND_REINSTATED,
     KIND_STRIKE,
-    PENDING_ROB_REPEAT_REVIEW_DAYS,
-    PENDING_ROB_STRIKES_TO_EVICT,
-    PENDING_ROB_WINDOW_DAYS,
+    DEFAULT_REPEAT_REVIEW_DAYS,
+    DEFAULT_STRIKES_TO_EVICT,
+    DEFAULT_WINDOW_DAYS,
     REASON_CRASH,
     REASON_MEMORY,
     REASON_TIMEOUT,
@@ -75,7 +74,7 @@ from hope.scoring.chronic_failure import (
 )
 
 DAY = date(2026, 8, 11)
-P = ChronicFailureParams()          # Rob's proposed defaults
+P = ChronicFailureParams()          # the operator's proposed defaults
 HK = "minerA"
 
 
@@ -84,8 +83,8 @@ def _d(n):
     return DAY - timedelta(days=n)
 
 
-# A HEALTHY SECOND MODEL in every eviction scenario. Rob ruled 2026-08-03 that
-# the field must never be emptied ("we have to not evict all miners"), so with
+# A HEALTHY SECOND MODEL in every eviction scenario. governance ruled 2026-08-03 that
+# the field must never be emptied, so with
 # only one model in the population NOTHING can ever be evicted — the guard
 # withholds it. That is correct behaviour, and it means an eviction test needs
 # somebody left standing. Adding a bystander is not a workaround; it is the
@@ -118,23 +117,23 @@ def _run_days(states, events, days_and_runs, params=P):
     return states, log, last
 
 
-# ---- defaults ARE Rob's ruling, and are the only numbers in the code -------
+# ---- defaults ARE the governance ruling, and are the only numbers in the code -------
 
-def test_defaults_are_robs_ruled_numbers():
-    """Rob 2026-08-03: "are you saying that if a miner fails submit (ie bad
-    code) 5x in 14 days then 14 days before return? I would suggest 7 is
-    better." So N=5 and M=14 stand; the RE-ENTRY WAIT drops 14 -> 7.
+def test_defaults_are_the_ruled_numbers():
+    """Governance ruling of 2026-08-03: five failed submissions within a
+    rolling fourteen days evicts, and the wait before re-entry is seven days
+    rather than the fourteen originally proposed.
 
     The default must BE the ruling, not an env override on top of a superseded
     proposal — a host that misses the variable would otherwise lock a miner
-    out for twice as long as Rob decided."""
-    assert (PENDING_ROB_STRIKES_TO_EVICT, PENDING_ROB_WINDOW_DAYS,
-            PENDING_ROB_REPEAT_REVIEW_DAYS) == (5, 14, 7)
+    out for twice as long as the operator decided."""
+    assert (DEFAULT_STRIKES_TO_EVICT, DEFAULT_WINDOW_DAYS,
+            DEFAULT_REPEAT_REVIEW_DAYS) == (5, 14, 7)
     assert P.strikes_to_evict == 5
     assert P.window_days == 14
     assert P.repeat_review_days == 7
     # "repeat" lookback deliberately unset: any prior eviction is a repeat
-    # until Rob rules on what the review period means.
+    # until the operator rules on what the review period means.
     assert P.repeat_lookback_days is None
 
 
@@ -448,7 +447,7 @@ def test_a_retracted_eviction_does_not_make_the_next_one_a_repeat():
     nxt = DAY + timedelta(days=1)
     after = observe_day(back.states, log, nxt, _fail(), P)
     st = after.states[HK]
-    assert st.evictions_total == 1                       # this is his FIRST
+    assert st.evictions_total == 1                       # this is their FIRST
     assert st.reinstate_not_before == nxt                # no cooldown served
     ev = [e for e in after.events if e.kind == KIND_EVICTED][0]
     assert ev.detail["repeat"] is False
@@ -593,7 +592,7 @@ def test_an_evicted_miner_does_not_return_on_a_subnet_fault_day():
 
 def test_strikes_before_an_eviction_do_not_re_evict_on_return():
     """Without the `since` cut, a re-admitted miner would carry five old
-    strikes and be evicted again by his very next bad day."""
+    strikes and be evicted again by their very next bad day."""
     states, log, ev_day = _evict_once()
     back = observe_day(states, log, ev_day + timedelta(days=1), _ok(), P)
     log = list(log) + list(back.events)
@@ -1012,7 +1011,7 @@ def test_a_second_same_day_recovery_does_not_resurrect_the_first_eviction():
     evictions_total from the raw KIND_EVICTED lines therefore counted evictions
     that had already been undone — so a miner who recovered same-day twice came
     back branded a repeat offender, with last_eviction_on pointing at the
-    cancelled eviction. That date hard-excludes his genuine strike history via
+    cancelled eviction. That date hard-excludes their genuine strike history via
     strikes_in_window(since=...), which is the precise damage retract_eviction
     exists to prevent."""
     hk = "alpha"
@@ -1050,9 +1049,9 @@ def test_a_genuine_prior_eviction_still_counts_after_a_retraction():
     assert new.last_eviction_on == date(2026, 8, 5)
 
 
-# ---- ROB'S FLOOR: the field must never be emptied (ruled 2026-08-03) --------
+# ---- THE NON-EMPTY-FIELD FLOOR: the field must never be emptied (ruled 2026-08-03) --------
 #
-# "We have to not evict all miners - we need at least 1 house model (Rabbia)."
+# The field must never be emptied, and one house model must always survive.
 #
 # With the policy on, evicting the last placement-eligible model empties the
 # weight vector and the subnet pays NOBODY. Not a distant edge case: the
@@ -1060,7 +1059,7 @@ def test_a_genuine_prior_eviction_still_counts_after_a_retraction():
 # IS the only model — and five validators mirror our vector within the hour.
 
 def test_the_only_model_is_never_evicted():
-    """THE ONE ROB RULED ON. Five failed days, eviction fully earned, and it
+    """THE CASE THE RULING NAMES. Five failed days, eviction fully earned, and it
     must still not happen because there is nobody else."""
     states, log, last = _run_days({}, [], [
         (_d(n), _fail(with_bystander=False)) for n in (4, 3, 2, 1, 0)
@@ -1122,7 +1121,7 @@ def test_the_last_survivor_of_a_larger_field_is_also_protected():
 
 
 def test_the_house_model_is_never_evicted_even_with_others_present():
-    """Rob's second requirement: a designated house model. Distinct from the
+    """the operator's second requirement: a designated house model. Distinct from the
     survivor floor — this one holds even when the field is healthy."""
     P3 = replace(P, house_hotkey=HK)
     states, _, last = _run_days({}, [], [
@@ -1136,14 +1135,14 @@ def test_the_house_model_is_never_evicted_even_with_others_present():
 
 def test_house_hotkey_and_min_survivors_come_from_env():
     assert house_hotkey_from({}) is None
-    assert house_hotkey_from({HOUSE_HOTKEY_ENV: "  rabbia  "}) == "rabbia"
+    assert house_hotkey_from({HOUSE_HOTKEY_ENV: "  5HouseHotkey  "}) == "5HouseHotkey"
     assert min_survivors_from({}) == 1
     assert min_survivors_from({MIN_SURVIVORS_ENV: "3"}) == 3
 
 
 def test_min_survivors_cannot_be_set_to_zero():
-    """Zero would reinstate exactly the failure Rob ruled against, so a deploy
-    typo must not be able to switch his floor off."""
+    """Zero would reinstate exactly the failure the ruling forbids, so a deploy
+    typo must not be able to switch their floor off."""
     assert min_survivors_from({MIN_SURVIVORS_ENV: "0"}) == 1
     assert min_survivors_from({MIN_SURVIVORS_ENV: "-5"}) == 1
     assert min_survivors_from({MIN_SURVIVORS_ENV: "none"}) == 1

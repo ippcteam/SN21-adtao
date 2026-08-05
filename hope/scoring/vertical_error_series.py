@@ -3,11 +3,11 @@
 Condition 2 of the published split trigger (Design v0.5 §10): the leading
 model's prediction error on ecommerce episodes versus lead-gen episodes,
 tracked weekly. Condition 1 (ecommerce share of daily episodes) is
-instrumented OBI-side; this module is the validator-side consumer of
-Jayesh's episode→vertical map, aggregating settled scores into the
+instrumented operator-side; this module is the validator-side consumer of
+the operator's episode→vertical map, aggregating settled scores into the
 weekly series the first four-weekly review reads.
 
-Formula caveat (deliberate): the score composition is in front of Rob
+Formula caveat (deliberate): the score composition is under governance review
 (a goal-metric term may be added to the 0.7 pinball + 0.3 direction
 settle formula). The series therefore stores RAW per-entry components
 alongside the blended error, so the weekly aggregate can be recomputed

@@ -187,12 +187,12 @@ def run_daily_loop(
     except Exception as e:
         summary["settle"] = {"error": str(e)}
 
-    # 1b. [D4 condition 2] vertical-error series — Jayesh's episode->vertical
+    # 1b. [D4 condition 2] vertical-error series — the operator's episode->vertical
     # map tags each newly settled entry at entry time (J3, 2026-07-29).
     # vertical_map_provider: Callable[[list[str]], dict[episode_id -> vertical]]
     # (the reference implementation runs sql/j3_episode_vertical_map.sql over
-    # the same OBI connection the outcomes provider uses). Raw score
-    # components are stored so Rob's pending formula decision recomputes the
+    # the same operator-platform connection the outcomes provider uses). Raw score
+    # components are stored so the operator's pending formula decision recomputes the
     # series instead of rebuilding it. Skipped silently when no provider.
     if vertical_map_provider is not None and horizon_results:
         try:
@@ -299,7 +299,7 @@ def run_daily_loop(
                 "evicted": evicted,
                 "reinstated": reinstated,
                 "retracted": retracted,
-                # Rob's floor firing. MUST be surfaced: a withheld eviction
+                # the non-empty-field floor firing. MUST be surfaced: a withheld eviction
                 # means a model that earned removal is still earning, and the
                 # only reason it is still here is that removing it would have
                 # emptied the subnet. Silent is exactly wrong — the operator
@@ -315,7 +315,7 @@ def run_daily_loop(
     # THE FLOOR IN FORCE TODAY. An explicit floor_alpha still wins (tests, and
     # the review-restatement override the policy reserves), but the default is
     # now resolved from configuration: SN21_IM_LAUNCH_DATE drives the ladder,
-    # and until Rob names a date it holds at week 0. This is what makes his
+    # and until a date is named it holds at week 0. This is what makes the
     # launch date a value we set rather than a code change and a deploy — the
     # ladder was previously pinned to LAUNCH_FLOOR_ALPHA here and could never
     # step, no matter what collateral_floor computed.
@@ -375,7 +375,7 @@ def run_daily_loop(
 
             # RECEIPT FIRST, deliberately: the accuracy document embeds the
             # receipt's sha256 and the chain anchors the accuracy document,
-            # so one anchor covers both (Rob 2026-08-05: miners must be able
+            # so one anchor covers both (governance ruling 2026-08-05: miners must be able
             # to rerun and reproduce their score — the receipt carries their
             # predictions verbatim, the settled actuals, the components and
             # the formula weights; scripts/verify_day.py is the rerun).

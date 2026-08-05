@@ -10,7 +10,7 @@ built and tested pure:
     champion_promotion (D8)   — separate promotion state machine + log
     standing_ledger           — persistence for entries + promotion state
 
-Flag: SN21_DAILY_STREAM_WEIGHTS (off by default — Rob's switch, M4).
+Flag: SN21_DAILY_STREAM_WEIGHTS (off by default — the operator's switch, M4).
 Flag: SN21_CHRONIC_FAILURE_POLICY (off by default — the liveness/eviction
 amendment). Off, evicted miners still earn; the state machine observes and
 records regardless (chronic_failure module docstring).
@@ -22,7 +22,7 @@ weight moves at all. That is a governance question, not something the code
 should quietly floor around, so allocation_from_ledger logs a
 refusal-level warning and sets DailyAllocation.
 enforcement_emptied_earning_set instead of inventing a survivor.
-[D3] gate: SN21_D3_MIN_DAILY_EPISODES (0 = gate disabled until Rob sets
+[D3] gate: SN21_D3_MIN_DAILY_EPISODES (0 = gate disabled until the operator sets
 the published threshold against the verified ~330/weekday figure). On a
 gated day the standings still update (scores are facts); only the WEIGHT
 UPDATE is withheld — callers keep the previous vector, which is the
@@ -62,7 +62,7 @@ logger = logging.getLogger(__name__)
 FLAG_ENV = "SN21_DAILY_STREAM_WEIGHTS"
 D3_MIN_ENV = "SN21_D3_MIN_DAILY_EPISODES"
 
-# [D3] ratified 2026-07-28 (Rob: "agree 150"): the published minimum daily
+# [D3] ratified 2026-07-28 (The ruling: "agree 150"): the published minimum daily
 # episode volume. The ENV VAR governs at runtime — unset keeps the gate off
 # until the M4 cutover sets SN21_D3_MIN_DAILY_EPISODES=150 (cutover
 # checklist step 1) — but the ratified number lives here so code, checklist

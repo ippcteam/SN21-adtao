@@ -313,7 +313,7 @@ async def _metagraph_refresh_loop(state: dict) -> None:
     on subnets with large metagraphs (e.g. ~30-60s on mainnet netuid 21 with
     256 hotkeys). Running it inline in this async coroutine froze the entire
     FastAPI event loop during each refresh, making every /health, /debug/*,
-    and /v1/* request time out at Render's load-balancer ceiling. Wrapping
+    and /v1/* request time out at the platform's load-balancer ceiling. Wrapping
     in `asyncio.to_thread` runs the sync call in a thread pool so the event
     loop keeps serving HTTP requests while the chain read is in flight.
     """
@@ -363,7 +363,7 @@ def main():
     parser.add_argument("--port", type=int,
                         default=int(os.environ.get("PORT", "8080")),
                         help="Port to bind the HTTP server")
-    parser.add_argument("--host", default="0.0.0.0",  # noqa: S104 — bound by Render's TLS reverse proxy
+    parser.add_argument("--host", default="0.0.0.0",  # noqa: S104 — bound by the deployment's TLS reverse proxy
                         help="Bind host (default 0.0.0.0)")
     from hope.validator._subtensor import network_arg
     parser.add_argument("--network", default="finney", type=network_arg,

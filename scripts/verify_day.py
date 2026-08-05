@@ -1,6 +1,6 @@
 """Rerun and reproduce a day's scores from the published receipt.
 
-Rob's four properties (2026-08-05), and which check answers each:
+the operator's four properties (2026-08-05), and which check answers each:
 
   1. "What was submitted is what was scored"
          The receipt carries every prediction VERBATIM. A miner diffs the

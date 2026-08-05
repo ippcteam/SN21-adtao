@@ -2,7 +2,7 @@
 # SN21 scoring-runner wrapper — reference implementation.
 #
 # Generic env-driven script that any operator running the canonical scoring
-# code can use as the entrypoint for a scheduled job (Render Cron Job,
+# code can use as the entrypoint for a scheduled job (a managed cron service,
 # systemd timer, Kubernetes CronJob, GitHub Actions cron, etc.).
 #
 # It does two things:
@@ -30,7 +30,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Optional env (with sane defaults)
 # ---------------------------------------------------------------------------
-HOPE_API_URL="${HOPE_API_URL:-https://hope-ads-backend.example.com}"
+HOPE_API_URL="${HOPE_API_URL:-https://api.example.com}"
 ARCHIVE_TIER_1="${ARCHIVE_TIER_1:-}"
 ARCHIVE_TIER_2="${ARCHIVE_TIER_2:-}"
 BLOCKS_UNTIL_PRE_REVEAL="${BLOCKS_UNTIL_PRE_REVEAL:-300}"

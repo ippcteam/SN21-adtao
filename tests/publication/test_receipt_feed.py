@@ -1,4 +1,4 @@
-"""The daily receipt and its verifier — Rob's rerun property, adversarially.
+"""The daily receipt and its verifier — the operator's rerun property, adversarially.
 
 A verifier that passes on honest data proves nothing; these tests tamper with
 each link and assert the right CHECK fails, so a failure is attributable.
@@ -168,7 +168,7 @@ def test_formula_version_comes_from_the_injected_environ(tmp_path):
 def test_receipt_states_censored_counts(tmp_path):
     """Censored horizons are excluded from `outcomes` by the provider. Without
     this field a miner counting episodes finds fewer than the basket held and
-    has no way to learn why. Rob's attrition ruling says dropped horizons are
+    has no way to learn why. the operator's attrition ruling says dropped horizons are
     recorded — recording them only in our database misses the point."""
     outcomes, index, results, comps = _world()
     m = build_receipt_metrics(outcomes, index, results, comps, environ=V2,

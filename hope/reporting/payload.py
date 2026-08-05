@@ -11,7 +11,7 @@ construction:
      return UIDs.
 
   2. **`epoch_id` is a string** (the canonical SN21 release key, e.g.
-     `WR-2026-W18-PUB-E1`) — not an integer. Per Rob's reply (Q9),
+     `WR-2026-W18-PUB-E1`) — not an integer. Per the operator's reply (Q9),
      the website schema, idempotency key, and URL adopt this.
 
 `aggregator_version` is the integer wire-shape version of the
@@ -66,7 +66,7 @@ COMPETITIVE_EMISSION_SHARE = 0.30
 PARTICIPATING_EMISSION_SHARE = 0.10
 
 # Pool-size threshold below which the tier split collapses to a single
-# pool and the histogram is omitted (per Rob's contract §3.2 +
+# pool and the histogram is omitted (per the operator's contract §3.2 +
 # `hope/validator/tiered_weights.py:MIN_MINERS_FOR_TIER_SPLIT`).
 POOL_SIZE_DISTRIBUTION_FLOOR = 15
 

@@ -12,7 +12,7 @@ It also deliberately proves the DANGEROUS case rather than only the happy one:
 with the chronic-failure policy enabled, evicting the only placement-eligible
 model empties the entire weight vector. reference-v1 is currently the only
 model that has ever run in shadow, so on today's subnet that policy can zero
-everything. That is a governance decision for Rob, not a defect — and a
+everything. That is a governance decision for the operator, not a defect — and a
 rehearsal that only demonstrated the happy path would let it stay invisible.
 
 Self-contained: temp directories, injected providers, no database, no chain,
@@ -46,7 +46,7 @@ LAUNCH_FLAGS = {
     "SN21_DAILY_STREAM_WEIGHTS": "on",    # daily stream drives weights
     "SN21_TIERED_WEIGHTS": "on",          # tiered allocation
     "SN21_CHRONIC_FAILURE_POLICY": "on",  # liveness enforcement
-    "SN21_IM_LAUNCH_DATE": "2026-08-10",  # Rob's date, once he names it
+    "SN21_IM_LAUNCH_DATE": "2026-08-10",  # the operator's date, once he names it
 }
 
 EPISODE_COUNT = 300              # > PLACEMENT_FLOOR_PREDICTIONS (250)
@@ -156,12 +156,12 @@ def main():
               f"earning_set_size={wsum.get('earning_set_size')}")
         check("intended-weights file holds a real vector", bool(w),
               f"{len(w)} miners, sum={round(sum(w.values()), 6) if w else 0}")
-        # Rob's [D7] curve is 50/25/10; normalised over three miners that is
+        # the operator's [D7] curve is 50/25/10; normalised over three miners that is
         # 0.588 / 0.294 / 0.118. Assert the SHAPE, not just that a vector
         # exists — a uniform split would also be non-empty and would mean the
         # curve never applied.
         ranked = sorted(w.values(), reverse=True)
-        check("weights follow Rob's 50/25/10 curve, normalised",
+        check("weights follow the operator's 50/25/10 curve, normalised",
               len(ranked) == 3
               and abs(ranked[0] - 0.5882) < 0.001
               and abs(ranked[1] - 0.2941) < 0.001
@@ -171,7 +171,7 @@ def main():
               not (summary.get("liveness") or {}).get("struck"),
               str((summary.get("liveness") or {}).get("struck")))
 
-        # ---- Rob's four verifiability properties (2026-08-05), end to end:
+        # ---- the operator's four verifiability properties (2026-08-05), end to end:
         # the receipt published, the accuracy doc anchored it, and verify_day
         # REPRODUCES every score from the receipt alone. This is a miner's
         # rerun executed inside the launch gate — if reproduction breaks,
@@ -204,7 +204,7 @@ def main():
         check("the loop computed a feed root to anchor",
               bool((summary.get("publish") or {}).get("feed_root")),
               str((summary.get("publish") or {}).get("feed_root")))
-        # Rob's dated schedule (2026-08-03) replaced the weekly ramp, so the
+        # the published dated schedule (2026-08-03) replaced the weekly ramp, so the
         # floor is whatever his sheet says for the settle day — not a week
         # index. Derived from the schedule rather than hardcoded, so the
         # rehearsal cannot drift from the published numbers.
@@ -218,14 +218,14 @@ def main():
         _launch = LAUNCH_FLAGS.get("SN21_IM_LAUNCH_DATE")
         expected = floor_for_day(_date.fromisoformat(summary["day"]),
                                  _date.fromisoformat(_launch) if _launch else None)
-        check("alpha floor matches Rob's dated schedule for the settle day",
+        check("alpha floor matches the published dated schedule for the settle day",
               floor == expected,
               f"{summary['day']} (launch {_launch}) -> {expected}, got {floor}")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
     # ---- 3. THE DANGER CASE, proven not asserted
-    print("\n3. single-model subnet + eviction  (Rob's open governance gate)")
+    print("\n3. single-model subnet + eviction  (the operator's open governance gate)")
     flags = dict(LAUNCH_FLAGS)
     flags["SN21_CHRONIC_STRIKES"] = "1"      # evict on the first failed day
     summary2, root2 = rehearse(["solo"], failing=("solo",), flags=flags)
@@ -235,13 +235,13 @@ def main():
         check("the sole model was struck for a failed execution day",
               bool(live.get("struck")), str(live.get("struck")))
         # WAS: "EVICTING THE ONLY MODEL EMPTIES THE WEIGHT VECTOR" — asserted
-        # the hazard, because at the time it was real and Rob had not ruled.
-        # He ruled on 2026-08-03: "We have to not evict all miners - we need at
-        # least 1 house model". The floor is now built, so the assertion
+        # the hazard, because at the time it was real and the operator had not ruled.
+        # The 2026-08-03 ruling requires that the field is never emptied and
+        # that a house model survives. The floor is now built, so the assertion
         # INVERTS: the sole model must survive its own eviction and keep the
-        # vector alive. If this ever goes back to {} the subnet pays nobody and
-        # five copying validators propagate it within the hour.
-        check("ROB'S FLOOR HOLDS: the only model is not evicted",
+        # vector alive. If this ever goes back to {} the subnet pays nobody,
+        # and copying validators propagate that within the hour.
+        check("THE NON-EMPTY-FIELD FLOOR HOLDS: the only model is not evicted",
               w2 != {} and "solo" in w2,
               f"weights={w2} — the sole model must survive")
         check("the withheld eviction is recorded, not silently skipped",
@@ -257,7 +257,7 @@ def main():
         check("settle still ran with all flags off",
               "error" not in (summary3.get("settle") or {}),
               str(summary3.get("settle"))[:90])
-        # No launch date configured no longer means "hold at rung zero" — Rob's
+        # No launch date configured no longer means "hold at rung zero" — the operator's
         # sheet carries real calendar dates, so the published schedule runs as
         # miners were shown it.
         from hope.scoring.collateral_floor import floor_for_day as _ffd
@@ -275,7 +275,7 @@ def main():
         print(f"REHEARSAL FAILED — {len(FAILS)} check(s): {FAILS}")
         return 1
     print("REHEARSAL CLEAN — the launch flag set works together, the rollback\n"
-          "path works, Rob's dated alpha schedule governs, and his floor\n"
+          "path works, the operator's dated alpha schedule governs, and his floor\n"
           "holds: the last model survives eviction and the withhold is recorded.")
     return 0
 

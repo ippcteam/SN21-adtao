@@ -4,8 +4,8 @@ Run before publishing. Checks, in order of how badly each would land if it
 reached a miner:
 
   1. NAMES — no personal names anywhere in public docs.
-  2. INTERNAL NOTES — no "ask X", "TODO(name)", ticket refs, or private
-     working language that only makes sense inside the team.
+  2. INTERNAL NOTES — no unfinished-work markers, ticket references, or
+     private working language that only makes sense inside the team.
   3. DATE CONSISTENCY — every doc that names the first live basket agrees,
      and agrees with the code constant.
   4. DEAD LINKS — every relative markdown link resolves to a real file.
@@ -16,6 +16,7 @@ Exits non-zero if anything fails, so it can gate a publish.
 """
 import os
 import re
+import subprocess
 import sys
 
 DOCS = "docs"
@@ -80,17 +81,37 @@ failures = []
 
 
 def live_docs():
+    """Tracked markdown outside the archive. TRACKED is the point: local-only
+    drafts sit in docs/ too, and auditing those reports failures for text that
+    was never going to be published."""
+    tracked = set(subprocess.run(["git", "ls-files"],
+                                 capture_output=True, text=True).stdout.split())
     out = []
     for root, dirs, files in os.walk(DOCS):
         if os.path.abspath(root).startswith(os.path.abspath(ARCHIVE)):
             continue
         for f in files:
-            if f.endswith(".md"):
-                out.append(os.path.join(root, f))
+            p = os.path.join(root, f)
+            if f.endswith(".md") and p in tracked:
+                out.append(p)
     for f in ("README.md", "CONTRIBUTING.md"):
-        if os.path.exists(f):
+        if f in tracked:
             out.append(f)
     return sorted(out)
+
+
+# Source is a public surface too — the miner docs send readers straight into
+# hope/scoring/. Comments there reach exactly the same audience as the docs,
+# so they are held to the same rule.
+CODE_SUFFIXES = (".py", ".sql", ".sh", ".yml", ".yaml", ".toml")
+
+
+def tracked_code():
+    out = subprocess.run(["git", "ls-files"], capture_output=True, text=True)
+    return sorted(
+        p for p in out.stdout.split()
+        if p.endswith(CODE_SUFFIXES) and os.path.exists(p)
+    )
 
 
 def check_names(path, text):
@@ -149,8 +170,10 @@ def main():
     NAMES.extend(names)
     INTERNAL.extend(extra)
     files = live_docs()
-    print(f"auditing {len(files)} live docs against {len(NAMES)} names + "
-          f"{len(INTERNAL)} phrase patterns (archive excluded)\n")
+    code = tracked_code()
+    print(f"auditing {len(files)} live docs + {len(code)} tracked source files "
+          f"against {len(NAMES)} names + {len(INTERNAL)} phrase patterns "
+          f"(archive excluded)\n")
     for path in files:
         with open(path) as f:
             text = f.read()
@@ -160,9 +183,20 @@ def main():
         check_dates(path, text)
         check_era(path, text)
 
+    # Source files get the names + internal-phrasing checks only: dates,
+    # links and era markers are documentation concerns.
+    for path in code:
+        try:
+            with open(path) as f:
+                text = f.read()
+        except (UnicodeDecodeError, IsADirectoryError):
+            continue
+        check_names(path, text)
+        check_internal(path, text)
+
     if not failures:
-        print("CLEAN — no names, no internal notes, links resolve, "
-              "dates consistent, weekly-era material marked")
+        print("CLEAN — no names or internal notes in docs OR source, links "
+              "resolve, dates consistent, weekly-era material marked")
         return 0
     print(f"{len(failures)} issue(s):\n")
     for f in failures:

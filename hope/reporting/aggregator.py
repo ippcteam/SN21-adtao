@@ -297,7 +297,7 @@ def _build_miner_results(
     For each scored miner: status='scored', tier resolved against the
     artifact's tier_result. Miners that the upstream runner excluded
     appear in artifact.tier_result['excluded'] (when populated) and
-    are mapped onto Rob's `disqualified_*` status enum.
+    are mapped onto the operator's `disqualified_*` status enum.
 
     `epoch_membership_uids`, when given, scopes the *scored* set to an
     eligible cohort: a miner that scored but whose uid is NOT in the set is
@@ -343,7 +343,7 @@ def _build_miner_results(
         raw_status = entry.get("status")
         if isinstance(raw_status, str) and raw_status:
             status = _map_exclusion_to_status(raw_status)
-            # DQ rows always have tier=null per Rob's v4 spec.
+            # DQ rows always have tier=null per the operator's v4 spec.
             tier = None
         elif hotkey in excluded_map:
             # Scored a number but the allocator excluded it (below_baseline,
@@ -448,7 +448,7 @@ _EXCLUSION_STATUS_MAP = {
 
 
 def _map_exclusion_to_status(reason: str) -> str:
-    """Map an upstream exclusion code onto Rob's v4 status enum.
+    """Map an upstream exclusion code onto the operator's v4 status enum.
 
     Returns ``disqualified_other`` for unmapped reasons so unknown codes
     surface in the dashboard rather than getting silently dropped.

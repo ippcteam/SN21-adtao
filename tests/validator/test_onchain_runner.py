@@ -505,7 +505,7 @@ class TestIgnoreAlreadyScored:
         """When SN21_OVERRIDE_WEIGHT_UID=135 and burn is EXPLICITLY 1.0,
         9.C.3 publishes {135: 1.0} instead of the computed per-miner vector.
 
-        The explicit 1.0 became required when burn was wired to Rob's dated
+        The explicit 1.0 became required when burn was wired to the operator's dated
         schedule (2026-08-04): env-unset no longer means "full single-UID
         override" — it means the scheduled fraction, and a zero-scored epoch
         under any fractional burn SKIPS the commit (the 2026-08-03 safety

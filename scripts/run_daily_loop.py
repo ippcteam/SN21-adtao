@@ -6,9 +6,9 @@ Usage:
         [--shadow-root DIR] [--ledger-root DIR]
 
 Defaults: day = today (UTC), roots = ./sn21_ledger. Wire-ins:
-- outcomes: settle_day_flow.obi_outcomes_provider (needs the OBI repo)
+- outcomes: settle_day_flow.operator_outcomes_provider (needs the operator platform package)
 - ed25519 key: SN21_ED25519_KEY_FILE (publication skipped without it)
-- day volume: episode_count of the day's BD- basket (OBI registry)
+- day volume: episode_count of the day's BD- basket (the operator's release registry)
 - earnings: zero pre-M4 (the M4 cutover injects the real provider)
 - anchor: off unless SN21_ANCHOR_COMMITS=true AND the host wires a
   committer (deliberately not constructed here — chain spend is explicit)
@@ -21,7 +21,7 @@ from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.scoring.settle_day_flow import obi_outcomes_provider  # noqa: E402
+from hope.scoring.settle_day_flow import operator_outcomes_provider  # noqa: E402
 from hope.validator.daily_loop import run_daily_loop  # noqa: E402
 
 
@@ -35,8 +35,16 @@ def _key_loader():
 
 
 def _basket_volume(day: date) -> int:
-    sys.path.insert(0, "/Users/macbookm1/Documents/Projects/obi")
-    from app.models import get_session
+    _platform_path = os.environ.get("SN21_PLATFORM_PATH")
+    if _platform_path:
+        sys.path.insert(0, _platform_path)
+    try:
+        from app.models import get_session
+    except ImportError as exc:
+        raise RuntimeError(
+            "the operator data platform package is not importable — set "
+            "SN21_PLATFORM_PATH to its location."
+        ) from exc
     from sqlalchemy import text as T
     with get_session() as s:
         n = s.execute(T(
@@ -62,7 +70,7 @@ def main():
         shadow_root=shadow_root,
         ledger_root=ledger_root,
         day=day,
-        outcomes_provider=obi_outcomes_provider,
+        outcomes_provider=operator_outcomes_provider,
         key_loader=(lambda: key) if key is not None else None,
         day_volume_provider=_basket_volume,
     )

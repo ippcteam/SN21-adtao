@@ -1,4 +1,4 @@
-"""Daily verifiability endpoints — the distribution half of Rob's four properties.
+"""Daily verifiability endpoints — the distribution half of the operator's four properties.
 
 The receipt, the accuracy document and the hash-chain index have existed since
 2026-08-05 but lived only in the validator's ledger root: `verify_day --root`

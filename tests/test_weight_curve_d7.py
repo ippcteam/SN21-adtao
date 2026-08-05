@@ -7,7 +7,7 @@ from hope.scoring.weight_curve import CurveParams, curve_weights, earning_set
 
 def test_two_miners_split_top_and_second_ratio():
     w = curve_weights({"a": 0.9, "b": 0.8})
-    # ratios of the published curve preserved (Rob 2026-07-28): 0.50 : 0.25
+    # ratios of the published curve preserved (governance ruling 2026-07-28): 0.50 : 0.25
     assert w["a"] / w["b"] == pytest.approx(0.50 / 0.25)
     assert sum(w.values()) == pytest.approx(1.0)
 

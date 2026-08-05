@@ -601,7 +601,7 @@ def run_epoch_scoring(
             _override_uid = int(_override_uid_str)
             if _override_uid < 0 or _override_uid > 65535:
                 raise ValueError(f"out of u16 range: {_override_uid}")
-            # Burn now follows Rob's dated schedule (45% -> 30% on 10 Aug ->
+            # Burn now follows the published dated schedule (45% -> 30% on 10 Aug ->
             # 15% on 25 Aug -> 0% on 15 Sep) via resolve_burn_fraction, with
             # SN21_BURN_FRACTION as the explicit operator override — his
             # published "burn may be adjusted at any time" lever. The host's

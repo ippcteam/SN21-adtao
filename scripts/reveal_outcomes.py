@@ -15,7 +15,7 @@ validator):
   * --signer-wallet/-hotkey   : the bittensor (sr25519) wallet that submits the
                                 9.A.2 extrinsic.
 
-Measurement JSON schema (export this from OBI for the target epoch):
+Measurement JSON schema (export this from the operator platform for the target epoch):
 
   {
     "epoch_id": "WR-2026-W21-PUB-E1",

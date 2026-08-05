@@ -210,7 +210,7 @@ def run_shadow_day(day: str, episodes: list[dict], models: Iterable[ShadowModel]
 def cutover_ready(shadow_entries: dict[str, list[ScoredEpisode]],
                   as_of, min_scored_days: int = 7) -> dict:
     """The M3->M4 gate: which models have >= N distinct scored days in shadow.
-    (Khurram's decision: >=7 scored days before weights switch.)"""
+    (Operator decision: >=7 scored days before the weights switch.)"""
     verdicts = {}
     for hotkey, eps in shadow_entries.items():
         days = {e.scored_on for e in eps}

@@ -1,12 +1,9 @@
 """Chronic failure — strikes, eviction and re-entry for models that don't run.
 
-The published policy today is one sentence (docs/MINER_MODEL_SPEC.md §5):
-"Crash/timeout/budget-breach = no scores that day. Chronic failure policy
-(strikes/eviction) published with the amendment." This module is that
-policy, built parameterised and flag-gated so the numbers can be ratified
-without a code change and so nothing reaches miners before it is announced
-(§2 of the same spec currently promises a budget breach carries "no
-additional punishment" — eviction retracts that promise, so it ships OFF).
+The miner-facing statement of this policy is docs/MINER_MODEL_SPEC.md §5.
+This module implements it, parameterised and flag-gated, so the numbers can
+be ratified without a code change and so nothing reaches miners before it is
+announced.
 
 WHAT A STRIKE IS
     One calendar day on which a miner's container was EXECUTED and failed
@@ -20,13 +17,11 @@ WHAT A STRIKE IS NOT — all three are load-bearing:
     prediction yields no ledger entry at all rather than a zero
     (settle_day_flow module docstring). Being wrong is paid for in the
     standing; liveness is a separate axis and must stay one.
-  * A day the SUBNET did not run is never a strike. The shadow day is
-    driven by a manual script (scripts/run_shadow_day_bd.py) with no
-    automated caller, which is exactly why 2026-07-30 is missing from the
-    live ledger while 07-27/28/29/31 are present. A consumer that read
-    absence as failure would strike every miner for OUR non-run. Strikes
-    are only ever read from a POSITIVE ok:false record; a missing day
-    yields no strike AND no observation.
+  * A day the SUBNET did not run is never a strike. A day can be absent
+    from the ledger for reasons that have nothing to do with any miner, and
+    a consumer that read absence as failure would strike every miner for an
+    operator non-run. Strikes are only ever read from a POSITIVE ok:false
+    record; a missing day yields no strike AND no observation.
   * A SUBNET-side failure (no docker daemon) is never a strike, and is not
     a clean day either — it is excluded from both sides of the ledger.
 
@@ -62,21 +57,20 @@ from hope.backtest.image_intake import (
     ERR_PULL_TIMEOUT_PREFIX,
 )
 
-# ---- Rob's numbers — RULED 2026-08-03 ---------------------------------------
+# ---- The policy numbers — ruled 2026-08-03 ----------------------------------
 # The DEFAULT lives here so code, cutover checklist and governance amendment
 # cannot drift apart, and the ENV VARS below still govern at runtime so a later
 # restatement stays a setting rather than a code change.
 #
-# What he was asked and what he answered: "are you saying that if a miner fails
-# submit (ie bad code) 5x in 14 days then 14 days before return? I would
-# suggest 7 is better. Let's see if its a problem."
-#
-# So N=5 and M=14 stand as proposed; the RE-ENTRY WAIT drops 14 -> 7. He also
-# added the constraint that is NOT yet implemented: "We have to not evict all
-# miners - we need at least 1 house model (Rabbia)". See LAST_MODEL_GUARD below.
-PENDING_ROB_STRIKES_TO_EVICT = 5      # N failed days …
-PENDING_ROB_WINDOW_DAYS = 14          # … within M rolling calendar days
-PENDING_ROB_REPEAT_REVIEW_DAYS = 7    # K: repeat offender's cooldown (was 14)
+# Ruled: five failed days within a rolling fourteen evicts, and the wait before
+# re-entry is SEVEN days rather than the fourteen originally proposed — long
+# enough to mean something, short enough that a fixed container is not parked
+# for a fortnight. The same ruling added a constraint the numbers alone do not
+# express: the field must never be emptied, and at least one house model must
+# survive. See the non-empty-field floor below.
+DEFAULT_STRIKES_TO_EVICT = 5      # N failed days …
+DEFAULT_WINDOW_DAYS = 14          # … within M rolling calendar days
+DEFAULT_REPEAT_REVIEW_DAYS = 7    # K: repeat offender's cooldown (was 14)
 
 # Runtime overrides — exactly the SN21_D3_MIN_DAILY_EPISODES pattern
 # (daily_stream_weights.d3_min_daily_episodes): unset keeps the proposal,
@@ -86,17 +80,17 @@ WINDOW_ENV = "SN21_CHRONIC_WINDOW_DAYS"
 REVIEW_ENV = "SN21_CHRONIC_REVIEW_DAYS"
 REPEAT_LOOKBACK_ENV = "SN21_CHRONIC_REPEAT_LOOKBACK_DAYS"
 
-# ---- ROB'S FLOOR: the field must never be emptied (ruled 2026-08-03) --------
-# "We have to not evict all miners - we need at least 1 house model (Rabbia)."
+# ---- THE NON-EMPTY-FIELD FLOOR — ruled 2026-08-03 ---------------------------
+# The field must never be emptied, and at least one house model must survive.
 #
 # WHY THIS IS NOT OPTIONAL. With the policy on, evicting the last
 # placement-eligible model empties the weight vector entirely and the subnet
-# pays NOBODY. That is not a distant edge case: the reference model is the only
-# model that has ever run, so today the last model IS the only model. Five other
-# validators mirror our vector within the hour, so an empty vector propagates
-# subnet-wide before anyone looks.
+# pays NOBODY. Early in a subnet's life that is not a distant edge case — the
+# last model can also be the only model. Other validators mirror the vector
+# within the hour, so an empty vector propagates subnet-wide before anyone
+# looks at it.
 #
-# Two protections, because Rob's sentence contains two requirements:
+# Two protections, because the requirement has two parts:
 #
 #   MIN_SURVIVORS      never let the non-evicted field fall below this. Answers
 #                      "not evict all miners" for ANY population, including one
@@ -124,7 +118,7 @@ def house_hotkey_from(environ) -> Optional[str]:
 
 def min_survivors_from(environ) -> int:
     """How many models must always remain. Below 1 is rejected: zero would
-    reinstate exactly the failure Rob ruled against."""
+    reinstate exactly the failure the ruling forbids."""
     raw = (environ.get(MIN_SURVIVORS_ENV) or "").strip()
     if not raw:
         return MIN_SURVIVORS
@@ -142,7 +136,7 @@ def min_survivors_from(environ) -> int:
 
 
 # Flag gate. Default OFF: strikes are still RECORDED and would-be evictions
-# still decided (observation is free and builds the evidence base Rob needs
+# still decided (observation is free and builds the evidence base governance needs
 # to fix N/M/K), but nothing touches weights until the amendment ships.
 # Verbatim shape of settle_day_flow.settle_scoring_v2_enabled.
 FLAG_ENV = "SN21_CHRONIC_FAILURE_POLICY"
@@ -170,7 +164,7 @@ KIND_EXCLUDED = "excluded"        # ran, failed, not the miner's fault
 KIND_EVICTED = "evicted"          # lifecycle
 KIND_REINSTATED = "reinstated"    # lifecycle
 KIND_EVICTION_RETRACTED = "eviction_retracted"   # lifecycle (see observe_day)
-KIND_EVICTION_WITHHELD = "eviction_withheld"     # lifecycle — Rob's floor
+KIND_EVICTION_WITHHELD = "eviction_withheld"     # lifecycle — the non-empty-field floor
 
 # Only these three are day OBSERVATIONS; lifecycle events never participate
 # in strike counting.
@@ -183,20 +177,20 @@ _EXIT_CODE_RE = re.compile(re.escape(ERR_EXIT_PREFIX) + r"(-?\d+)")
 
 @dataclass(frozen=True)
 class ChronicFailureParams:
-    """The policy numbers. Defaults are Rob's PROPOSALS, not ratified."""
-    strikes_to_evict: int = PENDING_ROB_STRIKES_TO_EVICT
-    # Rob's floor. Defaults protect the field even if a caller
+    """The policy numbers. Defaults are proposals until ratified."""
+    strikes_to_evict: int = DEFAULT_STRIKES_TO_EVICT
+    # The non-empty-field floor. Defaults protect the field even if a caller
     # never reads the env — an unset variable must not be able to
     # empty the subnet.
     min_survivors: int = MIN_SURVIVORS
     house_hotkey: Optional[str] = None
-    window_days: int = PENDING_ROB_WINDOW_DAYS
-    repeat_review_days: int = PENDING_ROB_REPEAT_REVIEW_DAYS
+    window_days: int = DEFAULT_WINDOW_DAYS
+    repeat_review_days: int = DEFAULT_REPEAT_REVIEW_DAYS
     # Whether an ANCIENT prior eviction still makes the next one a "repeat".
-    # None = forever (any prior eviction is a repeat). Rob's clause (b) says
+    # None = forever (any prior eviction is a repeat). Clause (b) of the ruling
     # "a repeat inside the review period"; whether that period is a raw day
     # count or the four-weekly review cadence (SN21_REWARD_MECHANISM.md §
-    # review cadence) is unruled — PENDING ROB.
+    # review cadence) is unruled — PENDING RATIFICATION.
     repeat_lookback_days: Optional[int] = None
 
 
@@ -237,7 +231,7 @@ class EvictionDecision:
     reinstated: tuple = ()      # hotkeys re-admitted today
     excluded: tuple = ()        # hotkeys whose failure was not their fault
     retracted: tuple = ()       # hotkeys whose SAME-DAY eviction was undone
-    withheld: tuple = ()        # earned eviction, blocked by Rob's floor
+    withheld: tuple = ()        # earned eviction, blocked by the non-empty-field floor
 
 
 def chronic_failure_policy_enabled(environ=os.environ) -> bool:
@@ -269,15 +263,15 @@ def params_from_env(environ=os.environ) -> ChronicFailureParams:
     This is what makes the module docstring's "parameterised so the numbers
     can be ratified without a code change" true: N/M/K each have an env
     override (SN21_CHRONIC_STRIKES / _WINDOW_DAYS / _REVIEW_DAYS, plus
-    _REPEAT_LOOKBACK_DAYS), defaulting to Rob's proposals. Same shape and
+    _REPEAT_LOOKBACK_DAYS), defaulting to the proposals above. Same shape and
     same fail-safe-on-garbage behaviour as d3_min_daily_episodes.
     """
     return ChronicFailureParams(
         strikes_to_evict=_int_env(environ, STRIKES_ENV,
-                                  PENDING_ROB_STRIKES_TO_EVICT),
-        window_days=_int_env(environ, WINDOW_ENV, PENDING_ROB_WINDOW_DAYS),
+                                  DEFAULT_STRIKES_TO_EVICT),
+        window_days=_int_env(environ, WINDOW_ENV, DEFAULT_WINDOW_DAYS),
         repeat_review_days=_int_env(environ, REVIEW_ENV,
-                                    PENDING_ROB_REPEAT_REVIEW_DAYS,
+                                    DEFAULT_REPEAT_REVIEW_DAYS,
                                     minimum=0),
         repeat_lookback_days=_int_env(environ, REPEAT_LOOKBACK_ENV, None),
     )
@@ -328,7 +322,7 @@ def classify_failure(ok: bool, error: Optional[str]) -> str:
         # (crash/timeout/budget-breach). NOTE exit=125 is docker itself
         # failing to start the container; it is currently counted as miner
         # fault (bad image config is the common cause) and is flagged for
-        # Rob's ruling in the amendment.
+        # the ruling in the governance amendment.
         return FAULT_MINER
     return FAULT_UNKNOWN
 
@@ -374,7 +368,7 @@ def _observations(events: Sequence[StrikeEvent], hotkey: str) -> dict:
     that triggered an eviction, observe_day also calls `retract_eviction` to
     roll `evictions_total` / `last_eviction_on` back. Clearing `evicted_on`
     alone would leave the miner permanently marked a repeat offender with
-    his real strike history cut away — see retract_eviction.
+    their real strike history cut away — see retract_eviction.
     """
     per_day: dict = {}
     for ev in events:
@@ -388,7 +382,7 @@ def strike_days_in_window(
     events: Sequence[StrikeEvent],
     hotkey: str,
     as_of: date,
-    window_days: int = PENDING_ROB_WINDOW_DAYS,
+    window_days: int = DEFAULT_WINDOW_DAYS,
     since: Optional[date] = None,
 ) -> tuple:
     """The distinct STRIKE days inside the rolling window, ascending.
@@ -423,7 +417,7 @@ def strikes_in_window(
     events: Sequence[StrikeEvent],
     hotkey: str,
     as_of: date,
-    window_days: int = PENDING_ROB_WINDOW_DAYS,
+    window_days: int = DEFAULT_WINDOW_DAYS,
     since: Optional[date] = None,
 ) -> int:
     return len(strike_days_in_window(events, hotkey, as_of, window_days, since))
@@ -484,7 +478,7 @@ def retract_eviction(state: EvictionState, events: Sequence[StrikeEvent],
     that never should have. The two retained fields have teeth —
     `strikes_in_window(since=last_eviction_on)` hard-excludes every day at or
     before the retracted eviction (wiping the miner's genuine strike history
-    and handing him a fresh N chances), and `_is_repeat` makes his NEXT
+    and handing them a fresh N chances), and `_is_repeat` makes their NEXT
     eviction serve the repeat-offender cooldown. So a retraction must roll
     the counters back too, not merely clear `evicted_on`.
 
@@ -561,7 +555,7 @@ def _eviction_blocked(hotkey: str, states: Mapping[str, EvictionState],
                       params: "ChronicFailureParams") -> Optional[str]:
     """Why this eviction must not proceed, or None if it may.
 
-    Two independent reasons, both from Rob's 2026-08-03 ruling:
+    Two independent reasons, both from the 2026-08-03 governance ruling:
       * the hotkey is the designated house model
       * evicting it would drop the surviving field below min_survivors
 
@@ -668,7 +662,7 @@ def observe_day(
                 n = strikes_in_window(log, hotkey, day, params.window_days,
                                       since=st.last_eviction_on)
                 if n >= max(1, int(params.strikes_to_evict)):
-                    # ROB'S FLOOR, checked BEFORE the eviction lands. Evicting
+                    # THE NON-EMPTY-FIELD FLOOR, checked BEFORE the eviction lands. Evicting
                     # the last placement-eligible model empties the weight
                     # vector and the subnet pays nobody — and five validators
                     # mirror us within the hour.

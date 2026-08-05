@@ -2,7 +2,7 @@
 
 v1's tests (test_settle_day_flow.py) are the frozen contract for the shipped
 formula and must keep passing untouched with the flag off. These cover what
-Rob ratified on 2026-07-31: score each account against its own goal, restore
+the operator ratified on 2026-07-31: score each account against its own goal, restore
 the components our data can actually measure.
 
 The test that matters most here is test_zero_baseline_is_a_free_score_without
@@ -28,7 +28,7 @@ from hope.scoring.settle_day_flow import (
     entry_components,
     basis_for_row,
     entry_components_v2,
-    obi_outcomes_provider,
+    operator_outcomes_provider,
     resolve_goal_basis,
     score_entry,
     score_entry_active,
@@ -47,7 +47,7 @@ def _actual(v):
     return {m: v for m in METRIC_NAMES}
 
 
-# ---- the goal cascade (Rob 2026-07-31) ---------------------------------------
+# ---- the goal cascade (governance ruling 2026-07-31) ---------------------------------------
 
 @pytest.mark.parametrize("metric_type", ["TARGET_ROAS", "roas", "Conversion_Value",
                                          "REVENUE", "target_roas_value"])
@@ -230,7 +230,7 @@ def test_flag_defaults_closed(raw):
 
 # ---- freeze at reveal --------------------------------------------------------
 #
-# OBI now decides the basis at REVEAL and persists it on
+# The operator platform now decides the basis at REVEAL and persists it on
 # bittensor_episode_candidates (migration 20260801_btc_goal_basis,
 # app/services/bittensor/goal_basis_service.py). This reader must PREFER that
 # value: the tables resolve_goal_basis reads keep moving after reveal, so
@@ -285,7 +285,7 @@ def test_fallback_is_exactly_resolve_goal_basis():
 
 
 def test_pre_migration_database_recomputes_instead_of_crashing():
-    """A validator host whose OBI database predates 20260801_btc_goal_basis
+    """A validator host whose operator database predates 20260801_btc_goal_basis
     must degrade to recomputation, not `column c.goal_basis does not exist`."""
     class _Boom:
         def execute(self, *_a, **_k):
@@ -296,7 +296,7 @@ def test_pre_migration_database_recomputes_instead_of_crashing():
 
 # ---- the provider, RUN (not grepped) ----------------------------------------
 #
-# obi_outcomes_provider reaches into the OBI repo for its session. The fake
+# operator_outcomes_provider reaches into the operator platform package for its session. The fake
 # below is injected as `app.models` before the provider's own import runs, and
 # it behaves like the database it stands in for: when the freeze migration is
 # absent, selecting c.goal_basis raises UndefinedColumn exactly as Postgres
@@ -381,7 +381,7 @@ def test_provider_scores_a_frozen_row_on_its_frozen_basis(monkeypatch, capsys):
     _install_fake_obi(monkeypatch, session)
 
     from datetime import date as _date
-    out = obi_outcomes_provider(_date(2026, 8, 1))
+    out = operator_outcomes_provider(_date(2026, 8, 1))
 
     by_id = {h.episode_id: h for h in out}
     assert by_id["frozen-1"].goal_basis == "conversion_value"
@@ -404,7 +404,7 @@ def test_provider_never_recomputes_over_a_frozen_value(monkeypatch):
     ])
     _install_fake_obi(monkeypatch, session)
     from datetime import date as _date
-    (settled,) = obi_outcomes_provider(_date(2026, 8, 1))
+    (settled,) = operator_outcomes_provider(_date(2026, 8, 1))
     assert settled.goal_basis == "cpa"
     assert settled.efficiency_delta_pct == -10.0
 
@@ -419,7 +419,7 @@ def test_provider_survives_a_database_without_the_freeze_columns(monkeypatch, ca
                            columns_present=False)
     _install_fake_obi(monkeypatch, session)
     from datetime import date as _date
-    (settled,) = obi_outcomes_provider(_date(2026, 8, 1))
+    (settled,) = operator_outcomes_provider(_date(2026, 8, 1))
     assert settled.goal_basis == "conversion_value"   # recomputed live
     assert "1/1 recomputed at settle" in capsys.readouterr().out
 
@@ -431,7 +431,7 @@ def test_provider_reports_an_unrecognised_frozen_basis_instead_of_crashing(monke
     session = _FakeSession([_outcome_row("weird-1", frozen_basis="roas_v3")])
     _install_fake_obi(monkeypatch, session)
     from datetime import date as _date
-    (settled,) = obi_outcomes_provider(_date(2026, 8, 1))
+    (settled,) = operator_outcomes_provider(_date(2026, 8, 1))
     assert settled.goal_basis == "roas_v3"
     assert settled.efficiency_delta_pct == -10.0      # falls back to cpa_delta
 
@@ -442,6 +442,6 @@ def test_provider_is_inert_while_the_v2_flag_is_off(monkeypatch):
                                          frozen_basis="conversion_value")])
     _install_fake_obi(monkeypatch, session)
     from datetime import date as _date
-    (settled,) = obi_outcomes_provider(_date(2026, 8, 1))
+    (settled,) = operator_outcomes_provider(_date(2026, 8, 1))
     assert settled.goal_basis == "cpa"
     assert settled.efficiency_delta_pct == -10.0
