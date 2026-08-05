@@ -1,13 +1,18 @@
 # Validator Setup Guide
 
-> **The subnet runs a daily stream (from 4 August 2026).** §2 below is the
-> current setup. Sections describing weekly epochs, mining deadlines and
-> `hope-miner` submissions describe the **weekly era**, which concluded on
-> 3 August 2026 — they are retained because validators still verify weekly
-> history, and are marked where they appear.
+> **Current system = daily stream (from 4 August 2026).**
+> **§2 is the live setup.** Anything about weekly epochs (`WR-…`),
+> `hope-miner` submissions, mining deadlines, or `hope-validator --release`
+> is **weekly-era history** (concluded 3 August 2026). Those sections stay
+> for verifying old epochs; they are not how you run a validator today.
+>
+> Miner docs: [miner_quickstart.md](./miner_quickstart.md).
+> Scoring / rewards: [SN21_SCORING.md](./SN21_SCORING.md),
+> [SN21_REWARDS.md](./SN21_REWARDS.md).
+> Verifying a day: [SN21_VERIFYING.md](./SN21_VERIFYING.md).
 
 
-**For:** Running the SN21 validator
+**For:** Running the SN21 validator on the **daily** stream
 **Prerequisite:** Python 3.10+, Bittensor wallet (for testnet/mainnet)
 
 > **Note on registration.** Validator registration on SN21 itself is open
@@ -19,34 +24,27 @@
 > credentials at launch should contact the operator team; a formal
 > third-party validator programme is tracked at Review 4.
 
-> **Architecture note (read this first).** SN21's validator code ships as
-> **three separate binaries** that run independently. **You need to run
-> all three for a healthy validator** — running only one or two will
-> either fail to score or get pruned from Yuma consensus.
+> **Architecture note (read this first).** For the **daily stream** you run
+> **three processes**. Missing any one either fails to score/publish or gets
+> you pruned from Yuma consensus.
 >
-> - **`hope-validator-api`** — long-lived **HTTP daemon** that serves
->   episodes to miners and accepts their public-facing health checks.
->   This is the binary that takes `--port` and `--host`.
-> - **`hope-validator`** — one-shot **scoring pass** invoked once per
->   epoch (weekly) after the miner deadline (typically from cron). It
->   reads on-chain miner submissions, evaluates scoreability, commits
->   weights, and exits. **No `--port` flag** — it is not an HTTP server.
-> - **`hope-validator-heartbeat`** — short-lived **activity-floor cron**
->   invoked every 3-4 hours. It re-asserts the latest weights commit so
->   Bittensor's `ActivityCutoff` (~16h on mainnet) does not drop your
->   validator from consensus between weekly scoring runs. Without this,
->   your validator gets pruned from emission every Tuesday-ish. See
->   §10.4 for full details.
+> | Process | Command | Cadence | Role |
+> |---|---|---|---|
+> | **A — HTTP API** | `hope-validator-api` | long-lived | Serves episodes and public `/v1/daily/*` receipts. Takes `--host` / `--port`. |
+> | **B — Daily loop** | `python3 scripts/run_daily_loop.py` | once per day | Settles matured (episode × horizon) rows, updates standings, publishes receipt + accuracy, writes weight intent. Not an HTTP server. |
+> | **C — Heartbeat** | `hope-validator-heartbeat` | every 3–4 hours | Re-asserts the latest weights so `ActivityCutoff` (~16h on mainnet) does not drop you between daily runs. See §10. |
 >
-> If you see a reference to `hope-validator --port`, treat it as a
-> documentation drift and use `hope-validator-api --port` for HTTP and
-> plain `hope-validator` for scoring.
+> **Do not confuse with weekly-era tools:**
 >
-> **Simpler option (recommended):** the **scoring + heartbeat + registration-
-> index** work can now run as a single long-running process,
-> **`hope-validator-daemon`**, instead of two separate crons + a manual
-> reg-index step. The episode API (`hope-validator-api`) still runs separately.
-> See **[validator_daemon.md](validator_daemon.md)**.
+> - `hope-validator --release WR-…` — one-shot **weekly** epoch scorer. Last
+>   useful live run was 3 August 2026. Keep it for historical verification only.
+> - `hope-validator-daemon` — supervisor whose **scoring** step still calls
+>   weekly `hope-validator`. Heartbeat / reg-index ticks remain useful; do
+>   **not** treat the daemon as a substitute for `run_daily_loop.py`. See
+>   [validator_daemon.md](validator_daemon.md).
+>
+> If you see `hope-validator --port`, that is a docs mistake: use
+> `hope-validator-api --port` for HTTP.
 
 ---
 
@@ -161,9 +159,14 @@ For testnet, swap `--network test --netuid 466`; for mainnet use
 
 ---
 
-## 3. Running with Miners
+## 3. Weekly-era: running with miners (historical)
 
-### Start the episode API daemon
+> **Weekly era only** (concluded 3 August 2026). Daily-stream miners ship a
+> container; they do **not** call `hope-miner` or POST predictions to your
+> API. For live operation see **§2**. Miner onboarding:
+> [miner_quickstart.md](./miner_quickstart.md).
+
+### Start the episode API daemon (weekly release key)
 
 ```bash
 hope-validator-api \
@@ -177,24 +180,20 @@ This starts the FastAPI server and waits for miners to connect. The daemon:
 - Fetches episodes from the data API at startup
 - Serves episodes at `<validator-url>/v1/epochs/{epoch_id}/episodes`
 - Authenticates miner requests against the on-chain metagraph
-- Does **not** accept HTTP-posted predictions — production miners submit
-  via on-chain commits (see [Layer 9.B](whitepaper.md)). The
+- Does **not** accept HTTP-posted predictions — production weekly miners
+  submitted via on-chain commits (see [Layer 9.B](whitepaper.md)). The
   `POST /v1/epochs/{id}/predictions` endpoint still exists for dev/local
   workflows but is not part of the canonical scoring path.
 
-### Tell miners your endpoint
-
-Miners connect with:
+### Tell miners your endpoint (weekly — obsolete for live miners)
 
 ```bash
 hope-miner --validator-url <validator-url> --epoch WR-2026-W19-PUB-E1 ...
 ```
 
-See `docs/miner_quickstart.md` for the full miner-side command.
+### Score after deadline (weekly `hope-validator`)
 
-### Score after deadline
-
-Run the one-shot scorer once per epoch, after the miner deadline AND
+Run the one-shot scorer once per weekly epoch, after the miner deadline AND
 after drand auto-reveal has fired (~60 minutes past the deadline at
 default reveal-block settings):
 
@@ -214,8 +213,8 @@ from the archive, decrypts with the chain-revealed key, runs the
 idempotent against chain state: a re-run for an already-scored
 (validator, epoch) pair exits cleanly without re-committing.
 
-Typical operator deployment runs `hope-validator` from a weekly cron;
-see `deploy/validator_scoring/README.md` for a reference configuration.
+Historical operator cron for this path:
+`deploy/validator_scoring/README.md`.
 
 ---
 
@@ -223,21 +222,7 @@ see `deploy/validator_scoring/README.md` for a reference configuration.
 
 Once `hope-validator-api` is running, the daemon exposes:
 
-| Method | Path | Auth | Purpose |
-|--------|------|------|---------|
-| `GET` | `/health` | None | Daemon status / current epoch |
-| `GET` | `/` | None | Service banner |
-| `GET` | `/v1/epochs/{id}/episodes` | Hotkey | List episode metadata |
-| `GET` | `/v1/epochs/{id}/episodes/{ep_id}` | Hotkey | Single episode payload |
-| `GET` | `/v1/epochs/{id}/episodes_batch` | Hotkey | All episodes in one request |
-| `GET` | `/v1/epochs/{id}/episode-commitment` | None | Per-episode commitment hash |
-| `GET` | `/v1/epochs/{id}/commitment` | None | Epoch commitment proof |
-| `POST` | `/v1/epochs/{id}/predictions` | Hotkey | Submit predictions (dev/local; production miners submit on chain via Layer 9.B) |
-| `GET` | `/v1/epochs/{id}/verification` | None | Weekly-era: revealed outcomes (post-scoring) |
-| `GET` | `/v1/training/episodes` | None | Historical training episodes |
-| `GET` | `/v1/training/summary` | None | Training-set composition stats |
-
-**Daily stream** — all public, all reproducible:
+### Daily stream (current) — all public, all reproducible
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -248,15 +233,30 @@ Once `hope-validator-api` is running, the daemon exposes:
 | `GET` | `/v1/daily/{day}/proof` | Proof that the day sits inside the anchored root |
 | `GET` | `/v1/daily/root` | The current rolling root — what is committed on chain |
 | `GET` | `/v1/daily/index` | The feed walk: every day, its hash, and its predecessor |
+| `GET` | `/health` | Daemon status |
+| `GET` | `/` | Service banner |
+| `GET` | `/v1/training/episodes` | Historical training episodes |
+| `GET` | `/v1/training/summary` | Training-set composition stats |
 
 Anyone can recompute a day's scores from these; see
 [SN21_VERIFYING](./SN21_VERIFYING.md). These endpoints read from
 `SN21_LEDGER_ROOT`, so the API process must point at the same directory the
 daily loop writes to.
 
-> `/v1/epochs/{id}/scores` and `/v1/epochs/{id}/my-predictions` are weekly-era
-> endpoints and no longer serve data. They return a pointer to the daily
-> equivalents above.
+### Weekly-era endpoints (historical)
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/v1/epochs/{id}/episodes` | Hotkey | List episode metadata |
+| `GET` | `/v1/epochs/{id}/episodes/{ep_id}` | Hotkey | Single episode payload |
+| `GET` | `/v1/epochs/{id}/episodes_batch` | Hotkey | All episodes in one request |
+| `GET` | `/v1/epochs/{id}/episode-commitment` | None | Per-episode commitment hash |
+| `GET` | `/v1/epochs/{id}/commitment` | None | Epoch commitment proof |
+| `POST` | `/v1/epochs/{id}/predictions` | Hotkey | Dev/local only (weekly production used on-chain Layer 9.B) |
+| `GET` | `/v1/epochs/{id}/verification` | None | Revealed outcomes (post-scoring) |
+
+> `/v1/epochs/{id}/scores` and `/v1/epochs/{id}/my-predictions` no longer
+> serve data. They return a pointer to the daily equivalents above.
 
 ### Authentication
 
@@ -275,11 +275,32 @@ FastAPI auto-generates interactive API docs at:
 
 ---
 
-## 5. Epoch Lifecycle
+## 5. Daily lifecycle (current)
 
-The protocol's epoch lifecycle is **chain-anchored** rather than driven
-by an in-process state machine. The validator side splits naturally
-across two phases that map to the two binaries:
+| Stage | Driven by | What happens |
+|-------|-----------|--------------|
+| **Basket delivered** | Operator | Morning basket `BD-*` of the previous day's qualifying account changes |
+| **Container runs** | Operator sandbox | Admitted miner images run against the basket; predictions recorded |
+| **Settle / publish** | `scripts/run_daily_loop.py` (daily cron) | Matured (episode × horizon) rows fold into standings; receipt + accuracy published; weight intent written |
+| **Optional chain anchor** | Daily loop + `SN21_ANCHOR_COMMITS` | Rolling Merkle root of the receipt feed committed on chain |
+| **Activity floor** | `hope-validator-heartbeat` | Re-asserts last weights so `ActivityCutoff` does not prune the validator |
+| **Consensus** | Yuma | Weights influence emissions at the next subnet tempo step |
+
+Horizon settle lag (from basket date): 7-day → +15 days, 14-day → +22 days,
+28-day → +36 days. The daily loop is idempotent — safe to re-run when nothing
+has matured.
+
+Authoritative scoring detail: [SN21_SCORING.md](./SN21_SCORING.md).
+Public verification: [SN21_VERIFYING.md](./SN21_VERIFYING.md) /
+[`scripts/verify_day.py`](../scripts/verify_day.py).
+
+### 5.1 Weekly-era epoch lifecycle (historical)
+
+> Concluded 3 August 2026. Retained for verifying weekly history with
+> [`scripts/verify_epoch.py`](../scripts/verify_epoch.py).
+
+The weekly protocol's epoch lifecycle was **chain-anchored** rather than driven
+by an in-process state machine:
 
 ```
 Phase 1 (open):  EPISODE_API_LIVE → MINER_DEADLINE
@@ -288,23 +309,29 @@ Phase 2 (close): DRAND_REVEAL    → SCORING_RUN → ON_CHAIN_ARTIFACTS
 
 | Stage | Driven by | What happens |
 |-------|-----------|--------------|
-| **Episode API live** | `hope-validator-api` | Daemon serves the current epoch's episodes to authenticated miners. Lifetime = ~6.5 days per epoch (`PREDICTION_DEADLINE_HOURS = 156` in `hope/constants.py`). |
-| **Miner deadline** | drand schedule | Miners stop accepting their bundles into chain TLE commits at the configured cutoff. |
-| **Drand reveal** | drand quicknet | ~60 minutes after each miner's submission, the chain auto-decrypts the TLE'd K. Bundles become parseable in `Commitments::RevealedCommitments`. |
-| **Scoring run** | `hope-validator` (one-shot, cron) | Reads chain, fetches archive, runs scoreability, computes scores. Commits `9.C.1` pre-scoring state, `9.C.3` weights, `9.C.2` post-scoring artifacts, and `9.C.6` retry log (when miners are excluded). Idempotent per (validator, epoch). |
-| **Consensus** | Yuma | At the next subnet tempo step, the validator's weights influence the network's consensus output and emissions. |
-
-The older in-process state machine
-(`IDLE → PREPARING → COMMITTED → ...`) is no longer load-bearing —
-state lives on chain, not in validator memory.
+| **Episode API live** | `hope-validator-api` | Served the current weekly epoch's episodes (~6.5 days; `PREDICTION_DEADLINE_HOURS = 156`). |
+| **Miner deadline** | drand schedule | Miners stopped submitting TLE commits at the cutoff. |
+| **Drand reveal** | drand quicknet | ~60 minutes after each submission, chain auto-decrypted TLE'd K. |
+| **Scoring run** | `hope-validator` (one-shot, cron) | Scoreability + `9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` commits. Idempotent per (validator, epoch). |
+| **Consensus** | Yuma | Weights at the next tempo step. |
 
 ---
 
 ## 6. Commitment Verification
 
-In the chain-anchored model, commitment verification is performed
-**against on-chain artifacts**, not against the validator's
-`/verification` HTTP endpoint. The canonical reproducible verifier is
+### Daily stream (current)
+
+Each scored day is published as a signed receipt (hash-chained, covered by a
+rolling Merkle root). Anyone recomputes scores with
+[`scripts/verify_day.py`](../scripts/verify_day.py). When
+`SN21_ANCHOR_COMMITS` is on, `--expect-anchor` checks the root against chain.
+Full walkthrough: [SN21_VERIFYING.md](./SN21_VERIFYING.md).
+
+### Weekly era (historical)
+
+Weekly commitment verification is performed **against on-chain artifacts**,
+not against the validator's `/verification` HTTP endpoint. The canonical
+reproducible verifier is
 [`scripts/verify_epoch.py`](../scripts/verify_epoch.py); it reads the
 validator's `9.C.1`, `9.C.3`, and `9.C.2` commits at chain head (or
 at a pinned block hash, against an archive node), re-fetches each
@@ -312,9 +339,8 @@ miner's AES_ct from the archive, re-runs the scoring code, and either
 confirms or contradicts the validator's claim.
 
 The HTTP `/v1/epochs/{id}/verification` endpoint remains available for
-operator-published outcome + salt material and is unchanged from
-earlier revisions; it is now a convenience layer over what's already
-provable from chain state alone.
+operator-published outcome + salt material; it is a convenience layer over
+what's already provable from chain state alone.
 
 See the [Whitepaper](whitepaper.md) §"Trust model" for the full
 threat model and what each commit binds.
@@ -323,7 +349,9 @@ threat model and what each commit binds.
 
 ## 7. Data API
 
-The validator fetches releases from the operator's data API:
+The validator fetches releases / packages from the operator's data API.
+Daily baskets use the same credentials; the weekly `WR-…` example below is
+historical packaging shape.
 
 | Endpoint | Purpose |
 |----------|---------|
@@ -355,7 +383,12 @@ print(f"Package hash: {data.package_hash}")
 
 ## 8. Scoring Pipeline
 
-The validator uses the scoring library to evaluate predictions:
+**Daily stream (current):** settle logic, standings, and the weight curve are
+documented in [SN21_SCORING.md](./SN21_SCORING.md) and
+[SN21_REWARDS.md](./SN21_REWARDS.md). The live process is
+`scripts/run_daily_loop.py` (§2), not the weekly `EpochScorer` path below.
+
+### Weekly-era library example (historical)
 
 ```python
 from hope.scoring import EpochScorer
@@ -380,7 +413,7 @@ for miner_id, score in scores.items():
 `coverage_fraction`, `episodes_scored`, `episodes_total`, and
 `episode_scores` fields that the older example omitted.
 
-### Scoring weights (launch defaults)
+### Scoring component weights (shared formula)
 
 | Component | Weight | Range |
 |-----------|--------|-------|
@@ -395,38 +428,45 @@ Weights must sum to 1.0 and stay within published ranges.
 
 ## 9. Configuration
 
-### Environment variables
+### Environment variables — daily stream (current)
 
 | Variable | Default | Used by | Description |
 |----------|---------|---------|-------------|
-| `HOPE_API_KEY` | *(required)* | both | Data API key — provided on validator registration |
-| `HOPE_API_URL` | *(required)* | both | Data API base URL — provided on validator registration |
-| `RELEASE_KEY` | `--release` | both | Epoch ID to serve/score (CLI flag wins if both set) |
+| `HOPE_API_KEY` | *(required)* | API / data client | Data API key — provided on validator registration |
+| `HOPE_API_URL` | *(required)* | API / data client | Data API base URL — provided on validator registration |
+| `SN21_LEDGER_ROOT` | *(required for receipts)* | API + daily loop | Directory for published daily feeds — **same path on Process A and B** |
+| `SN21_ED25519_KEY_FILE` | *(required to publish)* | daily loop | Signs each day's receipt and accuracy document |
+| `SN21_ANCHOR_COMMITS` | off | daily loop | When set, commit the feed's rolling Merkle root on chain |
+| `SN21_WALLET_NAME` | — | daily loop (anchor) | Wallet for chain anchor commits |
+| `SN21_WALLET_HOTKEY` | `default` | daily loop (anchor) | Hotkey name |
+| `SN21_BT_NETWORK` | — | daily loop (anchor) | `finney` or `test` |
+| `SN21_NETUID` | — | daily loop (anchor) | `21` mainnet / `466` testnet |
 | `REQUIRE_SIGNATURES` | `true` | `-api` | Require signed miner requests (set to `false` only for dev) |
-| `SN21_SUBTENSOR_URL` | *(unset)* | all | Pin every validator-side chain connection to a wss:// URL (e.g. an archive node you operate). When set, takes precedence over `--network` and applies uniformly across `hope-validator`, `hope-validator-api`, `hope-validator-heartbeat`, the registration-index module, and the diag dump scripts. |
-| `SN21_LEADERBOARD_REPORTER` | `0` | scorer | When `1`, POSTs the post-scoring artifact to the CMS after a successful run |
-| `SN21_LEADERBOARD_API_KEY` | *(unset)* | scorer | API key for the leaderboard reporter (only used when reporter is enabled) |
-| `SN21_EPOCH_ARTIFACT_DIR` | `~/.sn21/epoch_artifacts` | scorer | Where the per-epoch artifact JSON is written before the optional POST |
-
-The miner submission deadline is **156 hours** (~6.5 days), pinned in
-`hope/constants.py:PREDICTION_DEADLINE_HOURS` to match the weekly
-mining window in `docs/archive/weekly/SN21_EPOCH_STRUCTURE.md`
-(weekly-era, historical). It is not configured via env var.
+| `SN21_SUBTENSOR_URL` | *(unset)* | all | Pin chain RPC to a wss:// URL (e.g. archive node). Overrides `--network` for validator binaries and related scripts. |
+| `SN21_HEARTBEAT_THRESHOLD_BLOCKS` | `1500` | heartbeat | Skip re-assert if last update is fresher than this |
 
 The episode-API HTTP port is set via `--port` (default `8080`) on
-`hope-validator-api`, not via an env var. `hope-validator` (the scorer)
-has no HTTP surface.
+`hope-validator-api`, not via an env var. The daily loop is not an HTTP
+server.
+
+### Environment variables — weekly-era scorer (historical)
+
+| Variable | Default | Used by | Description |
+|----------|---------|---------|-------------|
+| `RELEASE_KEY` | `--release` | weekly API/scorer | Epoch ID to serve/score (CLI flag wins if both set) |
+| `SN21_LEADERBOARD_REPORTER` | `0` | weekly scorer | When `1`, POSTs the post-scoring artifact to the CMS |
+| `SN21_LEADERBOARD_API_KEY` | *(unset)* | weekly scorer | API key for the leaderboard reporter |
+| `SN21_EPOCH_ARTIFACT_DIR` | `~/.sn21/epoch_artifacts` | weekly scorer | Where the per-epoch artifact JSON is written |
+
+The weekly miner submission deadline was **156 hours** (~6.5 days), pinned in
+`hope/constants.py:PREDICTION_DEADLINE_HOURS` (see
+`docs/archive/weekly/SN21_EPOCH_STRUCTURE.md`). Not used by the daily loop.
+`hope-validator` (weekly scorer) has no HTTP surface.
 
 ### CLI arguments
 
 ```
-hope-validator-api  (long-running episode HTTP daemon)
-  --release KEY              Release key to serve (e.g., WR-2026-W19-PUB-E1).
-                             Pass 'auto' (or set RELEASE_KEY=auto in env) to
-                             discover the latest published release from the
-                             operator data backend at startup — useful for
-                             third-party validators who want set-and-forget
-                             weekly rotation without manual env-var edits.
+hope-validator-api  (long-running HTTP daemon — daily + weekly surfaces)
   --port PORT                HTTP port (default: 8080)
   --host HOST                Bind host (default: 0.0.0.0)
   --network NETWORK          Bittensor network: 'test', 'finney', 'local',
@@ -435,8 +475,16 @@ hope-validator-api  (long-running episode HTTP daemon)
   --wallet-name NAME
   --wallet-hotkey HOTKEY
   --no-chain                 Skip metagraph load (no auth — dev/local only)
+  --release KEY              Weekly-era: release key to serve (WR-…). Optional
+                             for daily receipt serving; pass 'auto' to discover
+                             the latest published weekly release from the data API.
 
-hope-validator  (one-shot post-deadline scoring pass)
+scripts/run_daily_loop.py  (daily stream scorer — current)
+  --shadow-root PATH         Shadow / settle state root
+  --ledger-root PATH         Where receipt + accuracy feeds are written
+                             (must match SN21_LEDGER_ROOT on the API)
+
+hope-validator  (weekly-era one-shot scorer — historical only)
   --release KEY              Epoch ID to score
   --api-key KEY              Data API key (or HOPE_API_KEY env var)
   --network NETWORK          (same as above — named or wss:// URL)
@@ -461,40 +509,38 @@ hope-validator  (one-shot post-deadline scoring pass)
 ### Requirements
 
 - Python 3.10-3.12
-- 2GB RAM minimum (episodes are ~15KB each, 300 episodes = ~4.5MB)
+- 2GB RAM minimum (episodes are ~15KB each; daily baskets are smaller than weekly packs)
 - Stable internet for data API access
-- Open port for miner HTTP connections
+- Open port if you expose `hope-validator-api` publicly
+- Persistent disk for `SN21_LEDGER_ROOT` (receipt feeds)
 
-### Recommended setup
-
-Run the episode daemon as a long-lived service, and the scorer as a
-post-deadline cron job:
+### Recommended setup (daily stream — current)
 
 ```bash
 pip install -e .
 
-# Long-lived episode daemon
+export SN21_LEDGER_ROOT=/var/lib/sn21_ledger
+export SN21_ED25519_KEY_FILE=~/.sn21/keys/validator.pem
+
+# Process A — long-lived HTTP (episodes + /v1/daily/*)
 nohup hope-validator-api \
-    --release WR-2026-W19-PUB-E1 \
     --host 0.0.0.0 --port 8080 \
-    --network test --netuid 466 \
+    --network finney --netuid 21 \
     --wallet-name my_validator --wallet-hotkey default \
     > validator-api.log 2>&1 &
 
-# One-shot scorer (run from cron Monday morning, after deadline + reveal)
-hope-validator \
-    --release WR-2026-W19-PUB-E1 \
-    --network test --netuid 466 \
-    --wallet-name my_validator --wallet-hotkey default \
-    --archive-tier-2 https://adtao-deploy.onrender.com \
-    --ed25519-key-file ~/.sn21/keys/validator-ed25519.pem
+# Process B — daily loop (cron once per day after basket delivery)
+python3 scripts/run_daily_loop.py \
+    --shadow-root /var/lib/sn21_ledger \
+    --ledger-root /var/lib/sn21_ledger
 
-tail -f validator-api.log
+# Process C — heartbeat (cron every 3–4 hours)
+hope-validator-heartbeat \
+    --network finney --netuid 21 \
+    --wallet-name my_validator --wallet-hotkey default
 ```
 
-A reference deployment of that cron lives at `deploy/validator_scoring/`.
-It pulls the latest source from this repository on every trigger, so a
-deployment stays in lockstep with `main`.
+See §2 for ledger/anchor env details and settle timing.
 
 ### Daily cycle
 
@@ -510,20 +556,29 @@ Every day:
    `SN21_ANCHOR_COMMITS` is set, so any published day stays verifiable
 6. Standings update; the weight vector follows at the next consensus step
 
-### Weekly epoch cycle (historical — concluded 3 August 2026)
+### Weekly-era production cron (historical — concluded 3 August 2026)
 
-Each Monday a release was published, miners had ~6.5 days to submit, drand
-auto-reveal fired ~60 minutes after each submission, and a one-shot scoring
-pass produced the `9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` artifacts on chain.
-Retained for verifying weekly history.
+```bash
+# Long-lived episode daemon (weekly release key)
+hope-validator-api --release WR-2026-W19-PUB-E1 ...
+
+# One-shot scorer (Monday morning after deadline + reveal)
+hope-validator --release WR-2026-W19-PUB-E1 ...
+```
+
+Reference deployment for that historical cron:
+`deploy/validator_scoring/`. Each Monday a release was published, miners had
+~6.5 days to submit, drand auto-reveal fired ~60 minutes after each
+submission, and a one-shot scoring pass produced the
+`9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` artifacts on chain.
 
 ### Activity-floor heartbeat (`hope-validator-heartbeat`)
 
 Bittensor's per-subnet `ActivityCutoff` hyperparameter caps how long a
 validator can go without submitting `set_weights` before its weights
-drop out of consensus computation. SN21's authoritative scoring runs
-weekly — well over the cutoff — so a third short-lived binary fills
-the gap by **re-asserting whatever weights the latest scoring run
+drop out of consensus computation. Even with a **daily** settle loop, gaps
+between weight updates can exceed the cutoff — so a third short-lived binary
+fills the gap by **re-asserting whatever weights the latest scoring run
 already committed**:
 
 ```bash
@@ -538,31 +593,41 @@ Run it from a cron at ~3-4h cadence. The binary self-throttles:
 - If `current_block - LastUpdate < --threshold-blocks` (default 1500),
   exits with action `skipped_recent_activity` — no submission.
 - Otherwise reads `SubtensorModule.Weights[netuid][validator_uid]` and
-  re-submits the same `(uids, weights)` tuple via the same
-  `set_weights(commit_reveal_version=4)` extrinsic the scoring cron uses.
+  re-submits the same `(uids, weights)` tuple via
+  `set_weights(commit_reveal_version=4)`.
 
 The heartbeat **cannot** score, cannot fabricate weights, and does not
-produce 9.C.* audit records. It can only re-emit what the chain itself
-reports for the validator's last revealed weights commit. Auditors
-checking that every published epoch has matching 9.C.* records continue
-to see exactly one set per week, tied to the Monday scoring run.
+produce daily receipts or weekly 9.C.* audit records. It can only re-emit
+what the chain itself reports for the validator's last revealed weights
+commit.
 
 `--dry-run` logs what would be submitted without calling `set_weights`
-— recommended for the first week of cron operation. Threshold is also
+— recommended for the first days of cron operation. Threshold is also
 configurable via `SN21_HEARTBEAT_THRESHOLD_BLOCKS` env var.
 
 ---
 
 ## 11. Troubleshooting
 
+### Daily stream (current)
+
 | Issue | Solution |
 |-------|----------|
-| `--port` rejected by `hope-validator` | You want `hope-validator-api` instead. See §2 — `--port` lives on the HTTP daemon, not the scorer. |
+| `/v1/daily/*` empty or 404 | Set `SN21_LEDGER_ROOT` on **both** the API and the daily loop to the same directory; confirm the loop has published at least one day. |
+| Daily loop skips publication | Set `SN21_ED25519_KEY_FILE`; without it, signing (and publication) is skipped. |
+| Anchor commit refused | Enable `SN21_ANCHOR_COMMITS` and set `SN21_WALLET_*`, `SN21_BT_NETWORK`, `SN21_NETUID` together — a missing one refuses rather than anchoring from the wrong identity. |
+| `--port` rejected by `hope-validator` | You want `hope-validator-api`. The daily scorer is `scripts/run_daily_loop.py`, not `hope-validator`. |
+| Validator pruned from consensus | Run `hope-validator-heartbeat` every 3–4 hours (§10). |
+| Network errors fetching from the data API | Check `HOPE_API_KEY` and `HOPE_API_URL`; verify connectivity from the validator host. |
+| Low miner scores | Expected for the baseline model — miners should train their own. |
+
+### Weekly-era scorer (historical)
+
+| Issue | Solution |
+|-------|----------|
 | `no_miner_reveals_visible` (scorer aborts) | Drand auto-reveal hasn't fired yet. Wait ~60 min past each miner's submission and rerun. |
 | `already_scored` (scorer aborts) | This (validator, epoch) pair already has a 9.C.1 commit on chain. Use a fresh validator hotkey to retry. |
 | `insufficient_budget` (scorer aborts) | The validator hotkey hit the Commitments-pallet byte budget for the current pallet-epoch. Wait for the pallet-epoch to roll (~72 min) or rotate to a fresh hotkey. |
 | Miners are excluded as `inner_sig.hotkey_mismatch` | Miner published their ed25519 binding outside the validator's `--reg-index-lookback-blocks` window. Increase the lookback, or supply `--reg-index-prebuilt` from an offline backfill against an archive RPC. |
-| `block_hash` lookups failing with "block out of reach" / "State discarded" / pruned-state errors | Your subtensor node is not an archive node (default finney peers retain only the most recent ~256 blocks of state). The registration-index 600-block default lookback will hit this on a non-archive node. Two fixes, pick one: (a) run the diag probe against an archive RPC out of band and pass the resulting JSON via `--reg-index-prebuilt`, while setting `--reg-index-lookback-blocks 0` in the scorer to skip the in-process scan; (b) point the validator at your own archive node by setting `SN21_SUBTENSOR_URL=wss://<your-archive-host>:443` — this now applies to every validator binary uniformly. |
-| Miners are excluded as `plaintext_unavailable` | The archive served 404 for their bundle. Either they didn't submit for this epoch, or their self-archive URL is unreachable from the scorer's vantage. |
-| Network errors fetching from the data API | Check `HOPE_API_KEY` and `HOPE_API_URL`; verify connectivity from the validator host. |
-| Low miner scores | Expected for the baseline model — miners should train their own. |
+| `block_hash` lookups failing with "block out of reach" / "State discarded" / pruned-state errors | Your subtensor node is not an archive node. Fix: (a) `--reg-index-prebuilt` + `--reg-index-lookback-blocks 0`, or (b) `SN21_SUBTENSOR_URL=wss://<archive>:443`. |
+| Miners are excluded as `plaintext_unavailable` | The archive served 404 for their bundle — missing submission or unreachable self-archive URL. |

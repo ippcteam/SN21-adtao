@@ -1,8 +1,12 @@
-> **Pre-daily / operator historical.** The weekly Monday scoring timer described here predates the daily stream (settle-clock `daily_loop`). See docs/SN21_TRANSITION_PLAN.md.
+> **Weekly-era / historical only.** The Monday scoring timer here predates the
+> daily stream. Live validators use `scripts/run_daily_loop.py` — see
+> [docs/validator_setup.md §2](../../docs/validator_setup.md#2-quick-start-local-testing)
+> and [docs/SN21_TRANSITION_PLAN.md](../../docs/SN21_TRANSITION_PLAN.md).
+> Do not schedule this weekly runner for daily-stream operation.
 
-# SN21 Scoring Runner — Deployment
+# SN21 Scoring Runner — Deployment (weekly era)
 
-`hope-validator` (from `hope.validator.runner:main`) is the **one-shot per-epoch scoring process** for SN21. It reads each miner's on-chain commits, fetches the AES-encrypted predictions from the three-tier archive, runs the 8-check scoreability rule, scores the predictions, and submits the four Layer 9.C chain commits (`9.C.1` pre-scoring state, `9.C.3` weights, `9.C.2` post-scoring artifacts, `9.C.6` retry log if any miners were excluded for `plaintext_unavailable`).
+`hope-validator` (from `hope.validator.runner:main`) is the **one-shot per-epoch scoring process** for the weekly-era protocol. It reads each miner's on-chain commits, fetches the AES-encrypted predictions from the three-tier archive, runs the 8-check scoreability rule, scores the predictions, and submits the four Layer 9.C chain commits (`9.C.1` pre-scoring state, `9.C.3` weights, `9.C.2` post-scoring artifacts, `9.C.6` retry log if any miners were excluded for `plaintext_unavailable`).
 
 This directory holds **reference deployment artifacts** any operator running canonical scoring can use. All operator-specific values come from environment variables — no hostnames, wallet names, or API keys are hardcoded.
 
