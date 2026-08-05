@@ -170,6 +170,27 @@ def main():
         check("no miner was struck on a clean day",
               not (summary.get("liveness") or {}).get("struck"),
               str((summary.get("liveness") or {}).get("struck")))
+
+        # ---- Rob's four verifiability properties (2026-08-05), end to end:
+        # the receipt published, the accuracy doc anchored it, and verify_day
+        # REPRODUCES every score from the receipt alone. This is a miner's
+        # rerun executed inside the launch gate — if reproduction breaks,
+        # launch fails here rather than in a miner's Discord complaint.
+        rec = summary.get("receipt") or {}
+        check("scoring receipt published", bool(rec.get("published")),
+              str(rec))
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+        from verify_day import verify_day as _vd
+        v = _vd(root, str(SETTLE_DAY),
+                expect_anchor=(summary.get("publish") or {}).get("anchor_sha256"))
+        check("verify_day: attestation valid",
+              v["checks"]["attestation"]["verdict"] == "PASS")
+        check("verify_day: anchor names the receipt",
+              v["checks"]["anchor_linkage"]["verdict"] == "PASS",
+              str(v["checks"]["anchor_linkage"]))
+        check("verify_day: EVERY score reproduced from the receipt",
+              v["checks"]["score_reproduction"]["verdict"] == "PASS",
+              str(v["checks"]["score_reproduction"]))
         # Rob's dated schedule (2026-08-03) replaced the weekly ramp, so the
         # floor is whatever his sheet says for the settle day — not a week
         # index. Derived from the schedule rather than hardcoded, so the

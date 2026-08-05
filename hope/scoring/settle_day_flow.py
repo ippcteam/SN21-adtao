@@ -431,6 +431,7 @@ def score_entry_active(pred: dict, actual: dict[str, float],
 def score_settled(
     prediction_index: dict[str, dict[str, dict]],
     outcomes: Iterable[SettledHorizon],
+    environ=None,
 ) -> list[HorizonResult]:
     """Every (settled outcome × miner prediction), dated to each outcome's
     OWN settle date.
@@ -456,7 +457,8 @@ def score_settled(
                 episode_id=o.episode_id,
                 horizon_days=o.horizon_days,
                 miner=miner,
-                score=score_entry_active(pred, actual),
+                score=score_entry_active(pred, actual,
+                                         environ=(environ if environ is not None else os.environ)),
                 finalized_on=o.finalized_on,
             ))
     return results
@@ -465,6 +467,7 @@ def score_settled(
 def score_settled_with_components(
     prediction_index: dict,
     outcomes: Iterable[SettledHorizon],
+    environ=None,
 ) -> tuple[list[HorizonResult], dict]:
     """score_settled plus a components map for the J3 vertical series:
     {(episode_id, horizon_days, miner): (quantile, direction, coverage, goal)}
@@ -478,7 +481,7 @@ def score_settled_with_components(
     score but still recorded, which is the whole point of the series.
     """
     outcomes = list(outcomes)  # consumed twice; a generator would starve pass 2
-    results = score_settled(prediction_index, outcomes)
+    results = score_settled(prediction_index, outcomes, environ=environ)
     comps: dict = {}
     for o in outcomes:
         actual = {
@@ -492,7 +495,9 @@ def score_settled_with_components(
                 continue
             v1_quantile, v1_direction = entry_components(pred, actual)
             c2 = entry_components_v2(pred, actual)
-            direction = (c2["direction"] if settle_scoring_v2_enabled()
+            direction = (c2["direction"]
+                         if settle_scoring_v2_enabled(
+                             environ if environ is not None else os.environ)
                          else v1_direction)
             comps[(o.episode_id, o.horizon_days, miner)] = (
                 v1_quantile, direction, c2["coverage"], c2["goal"],
@@ -573,6 +578,7 @@ def run_settle_day(
     day: date,
     outcomes_provider: Callable[[date], list[SettledHorizon]],
     return_results: bool = False,
+    environ=None,
 ) -> dict:
     """Enter every settled-but-not-yet-entered result as of `day`.
 
@@ -589,7 +595,13 @@ def run_settle_day(
         if (str(o.episode_id), int(o.horizon_days)) not in already
     ]
     index = load_prediction_index(shadow_root)
-    results, components = score_settled_with_components(index, outcomes)
+    # environ THREADED, not defaulted. score_entry_active's os.environ
+    # default meant an injected flag set scored with whatever the process env
+    # said — the rehearsal ran v1 while every flag said v2, and only the
+    # receipt reproduction (2026-08-05) exposed it. On the real host process
+    # env and injected env agree, which is exactly why nothing else caught it.
+    results, components = score_settled_with_components(index, outcomes,
+                                                        environ=environ)
 
     written = 0
     by_settle_date: dict[date, list[HorizonResult]] = {}
@@ -617,10 +629,14 @@ def run_settle_day(
     }
     if return_results:
         # in-process consumers only (daily_loop feeds these to the D11
-        # aggregation and the J3 vertical series) — not part of the
-        # JSON-able summary contract
+        # aggregation, the J3 vertical series and the daily RECEIPT) — not
+        # part of the JSON-able summary contract
         out["horizon_results"] = results
         out["components"] = components
+        # the receipt needs the raw materials, not our summary of them:
+        # the settled actuals and each miner's prediction VERBATIM
+        out["settled_outcomes"] = outcomes
+        out["prediction_index"] = index
     return out
 
 

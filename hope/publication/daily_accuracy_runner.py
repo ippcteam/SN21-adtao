@@ -77,6 +77,7 @@ def publish_day(
     results: Iterable[HorizonResult],
     private_key: Ed25519PrivateKey,
     generated_at: str,
+    receipt_sha256: "Optional[str]" = None,
 ) -> PublishedDay:
     """Publish one day of the accuracy feed. Idempotence: a day already on
     disk raises (the feed is append-only; a rewrite would fork the hash
@@ -103,6 +104,11 @@ def publish_day(
 
     zero_day = not results
     metrics = build_accuracy_metrics(results)
+    # One anchor covers both documents: the chain anchors THIS document's
+    # sha256, and this field chains it to the day's full scoring receipt
+    # (hope/publication/receipt_feed). None = no receipt (zero-day), stated
+    # in the anchored record itself rather than left ambiguous.
+    metrics["receipt_sha256"] = receipt_sha256
     if zero_day:
         metrics["zero_day"] = True
 

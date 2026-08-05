@@ -171,11 +171,16 @@ def run_daily_loop(
     # 1. settle-day scoring -> standing ledger
     horizon_results = []
     settle_components: dict = {}
+    settled_outcomes: list = []
+    prediction_index: dict = {}
     try:
         settle = run_settle_day(shadow_root, ledger_root, day,
-                                outcomes_provider, return_results=True)
+                                outcomes_provider, return_results=True,
+                                environ=environ)
         horizon_results = settle.pop("horizon_results", [])
         settle_components = settle.pop("components", {})
+        settled_outcomes = settle.pop("settled_outcomes", [])
+        prediction_index = settle.pop("prediction_index", {})
         summary["settle"] = settle
     except Exception as e:
         summary["settle"] = {"error": str(e)}
@@ -364,9 +369,27 @@ def run_daily_loop(
                                   "SN21_ED25519_KEY_FILE and pass a loader)"}
         else:
             from hope.publication.daily_accuracy_runner import publish_day
+            from hope.publication.receipt_feed import run_daily_receipt
+
+            # RECEIPT FIRST, deliberately: the accuracy document embeds the
+            # receipt's sha256 and the chain anchors the accuracy document,
+            # so one anchor covers both (Rob 2026-08-05: miners must be able
+            # to rerun and reproduce their score — the receipt carries their
+            # predictions verbatim, the settled actuals, the components and
+            # the formula weights; scripts/verify_day.py is the rerun).
+            receipt = run_daily_receipt(
+                ledger_root, day, settled_outcomes, prediction_index,
+                horizon_results, settle_components, key_loader(),
+                generated_at=f"{day}T00:00:00Z", environ=environ,
+            )
+            summary["receipt"] = {"published": receipt.published,
+                                  "sha256": receipt.sha256,
+                                  "skipped_reason": receipt.skipped_reason}
+
             published = publish_day(
                 ledger_root, day, horizon_results, key_loader(),
                 generated_at=f"{day}T00:00:00Z",
+                receipt_sha256=receipt.sha256,
             )
             pub: dict = {"published": published.published,
                          "zero_day": published.zero_day,
