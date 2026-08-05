@@ -87,13 +87,13 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Callable, Iterable, Optional
 
 from hope.backtest.gate import METRICS, QUANTILES, pinball
-from hope.scoring.daily_score_flow import HorizonResult, day_flow
 from hope.scoring import standing_ledger
+from hope.scoring.daily_score_flow import HorizonResult, day_flow
 
 # Floor for the per-entry pinball normalisation scale — same spirit as
 # gate_score's 1e-9 guard, but per entry a tiny |actual| would otherwise
@@ -242,7 +242,7 @@ def entry_components(pred: dict, actual: dict[str, float]) -> tuple[float, float
 # gains. This matches the existing direction term, which already counts an
 # omitted metric as a miss.
 
-def _coverage_score(trio: Optional[dict], actual: float) -> float:
+def _coverage_score(trio: dict | None, actual: float) -> float:
     """Does [P10,P90] contain the actual, less a convex width penalty.
 
     Note what the legacy formula does and does not do (measured, not
@@ -263,14 +263,14 @@ def _coverage_score(trio: Optional[dict], actual: float) -> float:
     return max(0.0, covered - 0.5 * width_penalty)
 
 
-def _goal_p50_score(trio: Optional[dict], actual: float) -> float:
+def _goal_p50_score(trio: dict | None, actual: float) -> float:
     """P50 accuracy on the goal metric: 1.0 exact, decaying linearly to 0."""
     if not trio:
         return 0.0
     return max(0.0, 1.0 - abs(float(trio["p50"]) - actual) / P50_GOAL_SCALE)
 
 
-def _goal_direction_score(trio: Optional[dict], actual: float) -> float:
+def _goal_direction_score(trio: dict | None, actual: float) -> float:
     """Direction of the goal metric only (spec:137), legacy semantics.
 
     Both-flat earns HALF, not full: predicting flat is the trivial call and
@@ -353,8 +353,8 @@ VALUE_GOAL_MARKERS = ("ROAS", "VALUE", "REVENUE")
 TAXONOMY_VALUE_ROOT = "retail"
 
 
-def resolve_goal_basis(goal_metric_type: Optional[str],
-                       taxonomy_root: Optional[str],
+def resolve_goal_basis(goal_metric_type: str | None,
+                       taxonomy_root: str | None,
                        baseline_conv_value_micros) -> tuple[str, bool]:
     """(basis, guard_applied) for one episode. Pure.
 
@@ -382,10 +382,10 @@ def resolve_goal_basis(goal_metric_type: Optional[str],
     return intended, False
 
 
-def basis_for_row(frozen_basis: Optional[str],
+def basis_for_row(frozen_basis: str | None,
                   frozen_guarded,
-                  goal_metric_type: Optional[str],
-                  taxonomy_root: Optional[str],
+                  goal_metric_type: str | None,
+                  taxonomy_root: str | None,
                   baseline_conv_value_micros) -> tuple[str, bool, bool]:
     """(basis, guard_applied, was_frozen) for one measured row.
 
@@ -566,9 +566,8 @@ def _mark_entered(ledger_root: str, pairs: Iterable[tuple[str, int]],
                   run_day: date) -> None:
     os.makedirs(standing_ledger.standing_dir(ledger_root), exist_ok=True)
     with open(_entered_path(ledger_root), "a") as f:
-        for ep, h in pairs:
-            f.write(json.dumps({"episode_id": ep, "horizon_days": h,
-                                "entered_on_run": str(run_day)}) + "\n")
+        f.writelines(json.dumps({"episode_id": ep, "horizon_days": h,
+                                "entered_on_run": str(run_day)}) + "\n" for ep, h in pairs)
 
 
 # ---- the daily entrypoint ----------------------------------------------------
@@ -681,7 +680,7 @@ def _has_frozen_basis_column(session) -> bool:
             print(f"[settle-day] PARTIAL freeze migration: {n}/2 goal_basis "
                   f"columns present — recomputing every basis", flush=True)
         return n == 2
-    except Exception as err:  # noqa: BLE001
+    except Exception as err:
         print(f"[settle-day] frozen-basis column probe failed ({err}) — "
               f"recomputing every basis", flush=True)
         return False
@@ -715,7 +714,7 @@ def _has_censoring_column(session) -> bool:
                   AND column_name = 'censored_reason'
             """)).scalar() or 0
         return n == 1
-    except Exception as err:  # noqa: BLE001
+    except Exception as err:
         print(f"[settle-day] censoring column probe failed ({err}) — "
               f"reading all outcome rows", flush=True)
         return False

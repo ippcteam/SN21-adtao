@@ -7,7 +7,6 @@ single mechanic so a regression in one area doesn't mask others.
 
 from __future__ import annotations
 
-
 from hope.validator.tiered_weights import (
     MinerEpochInputs,
     TieredAllocator,
@@ -111,7 +110,7 @@ def test_small_winner_week_tops_up_pool_through_tier_bands():
     part_max = max(res.weights[hk] for hk in res.participating)
     assert all(res.weights[w.hotkey] > part_max for w in winners)
     # Proportional within bands — not flat.
-    assert len(set(round(v, 10) for v in res.weights.values())) > 1
+    assert len({round(v, 10) for v in res.weights.values()}) > 1
     # Unfunded below-baseline field stays excluded with its reason.
     assert sum(1 for r in res.excluded.values() if r == "below_baseline") == 51
 
@@ -213,7 +212,7 @@ def test_flat_week_fallback_funds_top_fraction():
     assert abs(sum(res.weights.values()) - 1.0) < 1e-9
     assert len(res.elite) == 10 and len(res.competitive) == 20 and len(res.participating) == 20
     # proportional, NOT equal — highest score gets the largest share.
-    assert len(set(round(w, 8) for w in res.weights.values())) > 1
+    assert len({round(w, 8) for w in res.weights.values()}) > 1
     top = max(miners, key=lambda m: m.raw_score).hotkey
     assert res.weights[top] == max(res.weights.values())
 

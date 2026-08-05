@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import Iterable
+from collections.abc import Iterable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 

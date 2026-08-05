@@ -42,9 +42,8 @@ def _pii_scan(obj, path=""):
     elif isinstance(obj, list):
         for i, v in enumerate(obj):
             hits += _pii_scan(v, f"{path}[{i}]")
-    elif isinstance(obj, str):
-        if _EMAIL.search(obj) or _URL.search(obj):
-            hits.append((path, obj[:80]))
+    elif isinstance(obj, str) and (_EMAIL.search(obj) or _URL.search(obj)):
+        hits.append((path, obj[:80]))
     return hits
 
 

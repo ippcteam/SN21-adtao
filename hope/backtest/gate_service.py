@@ -10,8 +10,6 @@ are contestable with evidence.
 
 from __future__ import annotations
 
-from typing import Iterable, Optional
-
 from hope.backtest.container_runner import run_basket_docker
 from hope.backtest.gate import (
     OutcomeRow,
@@ -45,7 +43,7 @@ def gate_submission(image_digest: str,
                     outcomes: list[OutcomeRow],
                     generated_at: str,
                     hotkey: str = "",
-                    prev_verdict_sha: Optional[str] = None,
+                    prev_verdict_sha: str | None = None,
                     private_key=None,
                     timeout_s: int = 15 * 60) -> dict:
     """Run the full admission: sandbox -> gate -> attested verdict document."""

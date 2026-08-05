@@ -39,8 +39,8 @@ import logging
 import os
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import Optional
 
+from hope.scoring import chronic_failure, standing_ledger
 from hope.scoring.champion_promotion import (
     PromotionDecision,
     PromotionParams,
@@ -48,14 +48,12 @@ from hope.scoring.champion_promotion import (
     observe_day,
     vacate_seat,
 )
-from hope.scoring import chronic_failure
 from hope.scoring.chronic_failure import (
     chronic_failure_policy_enabled,
     evicted_hotkeys,
 )
 from hope.scoring.episode_average import ScoredEpisode, standing
 from hope.scoring.weight_curve import CurveParams, curve_weights
-from hope.scoring import standing_ledger
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +89,7 @@ class DailyAllocation:
     standings: dict = field(default_factory=dict)        # hotkey → D13 average
     weights: dict = field(default_factory=dict)          # hotkey → curve weight
     earning_set_size: int = 0
-    promotion: Optional[PromotionDecision] = None        # [D8], never gated
+    promotion: PromotionDecision | None = None        # [D8], never gated
     evicted: tuple = ()                                  # liveness exclusions
     # True when eviction ENFORCEMENT is what emptied the earning set: the
     # same day would have paid somebody with the flag off. Not a patched
@@ -158,7 +156,7 @@ def allocation_from_ledger(
     root: str,
     day: date,
     day_episode_volume: int,
-    min_daily_episodes: Optional[int] = None,
+    min_daily_episodes: int | None = None,
     curve_params: CurveParams = CurveParams(),
     promotion_params: PromotionParams = PromotionParams(),
     environ=os.environ,
@@ -244,7 +242,7 @@ def allocation_from_ledger(
 def pairs_for_uids(
     weights: dict,
     uid_by_hotkey: dict,
-    allowed_uids: Optional[set] = None,
+    allowed_uids: set | None = None,
 ) -> list:
     """(uid, weight) pairs for the runner — allowlist-aware and pure.
 

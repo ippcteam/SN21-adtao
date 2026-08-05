@@ -101,7 +101,7 @@ def test_zero_k_block_not_treated_as_real():
     """`chain_block_at_k_commit == 0` is the dataclass-default sentinel for
     "not set" in some MinerOnChainInputs constructions. Treat it as absent."""
     miners = [_miner(0, 0), _miner(1, 1_000_500)]
-    start, end = compute_block_range(miners, _commit_ok(999_000), _weights_ok(1_001_000))
+    start, _end = compute_block_range(miners, _commit_ok(999_000), _weights_ok(1_001_000))
     assert start == 1_000_500
 
 

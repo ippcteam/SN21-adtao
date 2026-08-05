@@ -18,8 +18,8 @@ from hope.archive_server.store import (
 __all__ = [
     "ARCHIVE_AUTH_DOMAIN",
     "DEFAULT_MAX_BODY_BYTES",
-    "build_app",
     "ArchiveStore",
     "FilesystemStore",
     "InMemoryStore",
+    "build_app",
 ]

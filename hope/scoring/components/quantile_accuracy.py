@@ -13,8 +13,8 @@ Formula:
 
 from __future__ import annotations
 
-from hope.protocol.prediction import HorizonPrediction, QuantilePrediction
 from hope.protocol.outcomes import HorizonOutcome
+from hope.protocol.prediction import HorizonPrediction, QuantilePrediction
 from hope.scoring.components.base import EpisodeContext, ScoringComponent
 
 

@@ -1,8 +1,11 @@
 """M2 runner — contract flags, output parsing, callable mode, failure paths."""
 import json
+from typing import ClassVar
 
 from hope.backtest.container_runner import (
-    RunResult, _parse_output, docker_command, run_basket_callable,
+    _parse_output,
+    docker_command,
+    run_basket_callable,
 )
 
 
@@ -38,7 +41,7 @@ class TestOutputParsing:
 
 
 class TestCallableMode:
-    EPS = [{"episode_id": "e1"}, {"episode_id": "e2"}, {"episode_id": "e3"}]
+    EPS: ClassVar = [{"episode_id": "e1"}, {"episode_id": "e2"}, {"episode_id": "e3"}]
 
     def test_predictions_collected(self):
         r = run_basket_callable(lambda e: {"7": {"x": 1}}, self.EPS)

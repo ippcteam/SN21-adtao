@@ -48,8 +48,8 @@ Caveats
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional
 
 from hope.commitment.chain_reader import (
     RawCommitField,
@@ -66,7 +66,7 @@ from hope.commitment.registration import (
 logger = logging.getLogger(__name__)
 
 
-def _ss58_to_raw_pubkey(ss58: str) -> Optional[bytes]:
+def _ss58_to_raw_pubkey(ss58: str) -> bytes | None:
     """Decode an SS58 address to its 32-byte public key, or None on failure."""
     try:
         from bittensor_wallet.bittensor_wallet import Keypair  # type: ignore
@@ -113,7 +113,7 @@ class RegistrationIndex:
         netuid: int,
         *,
         expected_role: RegistrationRole = RegistrationRole.MINER,
-        reconnect_network: Optional[str] = None,
+        reconnect_network: str | None = None,
         reconnect_after_failures: int = 5,
     ) -> None:
         self._subtensor = subtensor
@@ -127,7 +127,7 @@ class RegistrationIndex:
         self._reconnect_after_failures = max(1, int(reconnect_after_failures))
         # Keyed by raw 32-byte hotkey pubkey; latest valid registration wins.
         self._entries: dict[bytes, RegistrationEntry] = {}
-        self._last_scanned_block: Optional[int] = None
+        self._last_scanned_block: int | None = None
         self._stats = {
             "blocks_scanned": 0,
             "events_seen": 0,
@@ -147,7 +147,7 @@ class RegistrationIndex:
         return dict(self._stats)
 
     @property
-    def last_scanned_block(self) -> Optional[int]:
+    def last_scanned_block(self) -> int | None:
         """Highest block scanned so far, or None before any scan.
 
         A rolling builder persists this alongside the index (in a sidecar
@@ -165,7 +165,7 @@ class RegistrationIndex:
         """
         self._last_scanned_block = int(block)
 
-    def lookup(self, hotkey_pk: bytes) -> Optional[bytes]:
+    def lookup(self, hotkey_pk: bytes) -> bytes | None:
         """Return the registered ed25519 pubkey for this hotkey, or None.
 
         The returned value is suitable to pass as `miner_hotkey_from_chain`
@@ -198,9 +198,9 @@ class RegistrationIndex:
         start_block: int,
         end_block: int,
         *,
-        progress_callback: Optional[Callable[[int, int, int, dict[str, int], int], None]] = None,
+        progress_callback: Callable[[int, int, int, dict[str, int], int], None] | None = None,
         progress_every: int = 200,
-        checkpoint_callback: Optional[Callable[[int, list[dict]], None]] = None,
+        checkpoint_callback: Callable[[int, list[dict]], None] | None = None,
         checkpoint_every: int = 500,
     ) -> int:
         """Scan blocks [start_block, end_block] inclusive for registrations.
@@ -406,7 +406,7 @@ class RegistrationIndex:
         hotkey_ss58: str,
         block_hash: str,
         block_number: int,
-    ) -> Optional[RegistrationEntry]:
+    ) -> RegistrationEntry | None:
         """Query CommitmentOf at block_hash for this hotkey, return new entry if valid."""
         try:
             fields = read_commitment_of(
@@ -462,7 +462,7 @@ class RegistrationIndex:
 
 def _select_registration_field(
     fields: list[RawCommitField],
-) -> Optional[RawCommitField]:
+) -> RawCommitField | None:
     """Return the first field whose payload starts with REG_V1_PREFIX, else None."""
     for f in fields:
         if f.bytes_.startswith(REG_V1_PREFIX):

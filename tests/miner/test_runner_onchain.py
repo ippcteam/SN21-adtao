@@ -10,8 +10,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from hope.commitment.archives import ArchiveEndpoint, UploadResult
 from hope.commitment.on_chain import CommitResult
-from hope.miner.runner import MinerRunner, _avg
 from hope.miner.prediction_engine import PredictionEngine
+from hope.miner.runner import MinerRunner, _avg
 from hope.protocol.episode import AccountState, Episode, EpisodeMetadata
 from hope.protocol.prediction import (
     HorizonPrediction,

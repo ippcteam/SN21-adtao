@@ -29,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -41,8 +41,8 @@ from hope.commitment.archives import (
 from hope.commitment.episode_artifacts import (
     PerEpisodeEntry,
     build_per_episode_bundle,
-    compute_episodes_imt_root,
     build_per_episode_entry,
+    compute_episodes_imt_root,
 )
 from hope.commitment.on_chain import (
     CommitResult,
@@ -73,16 +73,16 @@ class MinerSubmissionResult:
     """
 
     ok: bool
-    encrypted: Optional[EncryptedPrediction]
+    encrypted: EncryptedPrediction | None
     archive_uploads: list[UploadResult] = field(default_factory=list)
-    chain_bundle_commit: Optional[CommitResult] = None
+    chain_bundle_commit: CommitResult | None = None
     bundle_uploads: list[UploadResult] = field(default_factory=list)
-    episodes_root: Optional[bytes] = None
-    failure_reason: Optional[str] = None
+    episodes_root: bytes | None = None
+    failure_reason: str | None = None
     # Deprecated — retained for backward-compat log readers.
-    chain_k_commit: Optional[CommitResult] = None
-    chain_sha_commit: Optional[CommitResult] = None
-    chain_url_commit: Optional[CommitResult] = None
+    chain_k_commit: CommitResult | None = None
+    chain_sha_commit: CommitResult | None = None
+    chain_url_commit: CommitResult | None = None
 
 
 def submit_miner_epoch(
@@ -98,11 +98,11 @@ def submit_miner_epoch(
     self_archive_url: str,
     archive_endpoints: list[ArchiveEndpoint],
     blocks_until_reveal: int,
-    archive_client: Optional[ArchiveClient] = None,
+    archive_client: ArchiveClient | None = None,
     require_tier_2: bool = True,
-    upload_auth_headers: Optional[dict[str, str]] = None,
-    miner_identity_for_archive: Optional[str] = None,
-    per_episode_entries: Optional[list[PerEpisodeEntry]] = None,
+    upload_auth_headers: dict[str, str] | None = None,
+    miner_identity_for_archive: str | None = None,
+    per_episode_entries: list[PerEpisodeEntry] | None = None,
 ) -> MinerSubmissionResult:
     """Run the full Layer 9.B pipeline for one miner / one epoch.
 
@@ -135,9 +135,9 @@ def submit_miner_epoch(
     # bytes' SHA-256 inside the aggregated plaintext. The bundle is uploaded
     # alongside the AES_ct on the same content-addressed archive path so
     # verifiers can fetch by SHA after K reveals.
-    episodes_root: Optional[bytes] = None
-    bundle_bytes: Optional[bytes] = None
-    bundle_sha256: Optional[bytes] = None
+    episodes_root: bytes | None = None
+    bundle_bytes: bytes | None = None
+    bundle_sha256: bytes | None = None
     if per_episode_entries:
         encoded_entries = [build_per_episode_entry(e) for e in per_episode_entries]
         episodes_root = compute_episodes_imt_root(encoded_entries)

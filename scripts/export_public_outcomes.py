@@ -43,8 +43,8 @@ def main(argv=None) -> int:
                    help="SS58 of the outcome-signer (required with --verify-onchain)")
     args = p.parse_args(argv)
 
-    from hope.validator.data_client import HopeDataClient
     from hope.commitment.outcome_commitment import outcomes_digest
+    from hope.validator.data_client import HopeDataClient
 
     client = HopeDataClient()
     pkg = asyncio.run(client.fetch_package(args.release, include_outcomes=True))
@@ -81,7 +81,8 @@ def main(argv=None) -> int:
             print("ERROR: --verify-onchain requires --outcome-signer", file=sys.stderr)
             return 1
         from hope.commitment.outcome_commitment import (
-            parse_outcome_commitment, read_outcome_commitment,
+            parse_outcome_commitment,
+            read_outcome_commitment,
         )
         from hope.validator._subtensor import make_subtensor
         st = make_subtensor(args.network)

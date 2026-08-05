@@ -24,13 +24,13 @@ from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from hope.validator.api.commitments import router as commitments_router
+from hope.validator.api.daily import router as daily_router
 from hope.validator.api.episodes import router as episodes_router
 from hope.validator.api.predictions import router as predictions_router
-from hope.validator.api.daily import router as daily_router
-from hope.validator.api.commitments import router as commitments_router
-from hope.validator.api.verification import router as verification_router
-from hope.validator.api.training import router as training_router
 from hope.validator.api.registration import router as registration_router
+from hope.validator.api.training import router as training_router
+from hope.validator.api.verification import router as verification_router
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +219,8 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
         # the work of generating predictions. Wall-clock deadline (ISO
         # UTC string) — the same value the /predictions endpoint
         # checks against.
-        from datetime import datetime as _dt, timezone as _tz
+        from datetime import datetime as _dt
+        from datetime import timezone as _tz
         deadline_str = state.get("deadline")
         submission_open_flag = bool(state.get("submission_open", False))
         seconds_until_deadline: int | None = None

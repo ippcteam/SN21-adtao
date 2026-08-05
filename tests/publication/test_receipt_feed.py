@@ -7,10 +7,11 @@ each link and assert the right CHECK fails, so a failure is attributable.
 import json
 import os
 import sys
+from datetime import date
+from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from datetime import date
 
 from hope.publication.daily_accuracy_runner import publish_day
 from hope.publication.receipt_feed import (
@@ -22,7 +23,7 @@ from hope.scoring.daily_score_flow import HorizonResult
 from hope.scoring.settle_day_flow import SettledHorizon, score_entry_v2
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
-from verify_day import verify_day  # noqa: E402
+from verify_day import verify_day
 
 KEY = Ed25519PrivateKey.generate()
 DAY = date(2026, 8, 18)
@@ -74,9 +75,9 @@ def test_tampered_score_fails_reproduction_and_names_the_entry(tmp_path):
     be caught by the rerun, with the exact entry named."""
     root, _ = _publish(tmp_path)
     p = receipt_path(root, str(DAY))
-    env = json.load(open(p))
+    env = json.loads(Path(p).read_text())
     env["document"]["metrics"]["entries"][0]["score"] = 0.999999
-    json.dump(env, open(p, "w"))
+    Path(p).write_text(json.dumps(env))
     v = verify_day(root, str(DAY))
     assert not v["ok"]
     # attestation breaks too (the doc changed under its sha) — but the
@@ -92,9 +93,9 @@ def test_tampered_outcome_fails_reproduction(tmp_path):
     published actual and the scores on that episode stop reproducing."""
     root, _ = _publish(tmp_path)
     p = receipt_path(root, str(DAY))
-    env = json.load(open(p))
+    env = json.loads(Path(p).read_text())
     env["document"]["metrics"]["outcomes"][0]["cost_delta_pct"] = 5.0
-    json.dump(env, open(p, "w"))
+    Path(p).write_text(json.dumps(env))
     v = verify_day(root, str(DAY))
     assert v["checks"]["score_reproduction"]["verdict"] == "FAIL"
 

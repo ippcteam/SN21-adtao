@@ -26,7 +26,6 @@ proceed (and surface the same error post-hoc).
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import httpx
 
@@ -152,8 +151,8 @@ def check_submission_window(validator_url: str) -> None:
     except ValueError:
         return
 
-    deadline: Optional[str] = body.get("deadline_utc")
-    seconds_until: Optional[int] = body.get("seconds_until_deadline")
+    deadline: str | None = body.get("deadline_utc")
+    seconds_until: int | None = body.get("seconds_until_deadline")
     submission_open = body.get("submission_open")
 
     # Older validator without the new fields: nothing to check.

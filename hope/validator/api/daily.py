@@ -299,7 +299,7 @@ async def get_index(request: Request):
         day = fn[:-5]
         try:
             acc = _read_envelope(os.path.join(acc_dir, fn))
-        except (OSError, json.JSONDecodeError) as e:  # noqa: PERF203
+        except (OSError, json.JSONDecodeError) as e:
             # A corrupt file is reported in-band, not skipped: a silently
             # shorter index reads as a shorter chain, which is the same shape
             # as tampering.

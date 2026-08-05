@@ -35,7 +35,6 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 import httpx
 
@@ -75,8 +74,8 @@ class UploadResult:
 
     endpoint: ArchiveEndpoint
     ok: bool
-    status_code: Optional[int]
-    error: Optional[str] = None
+    status_code: int | None
+    error: str | None = None
     elapsed_ms: int = 0
 
 
@@ -86,10 +85,10 @@ class FetchResult:
 
     endpoint: ArchiveEndpoint
     ok: bool
-    aes_ct: Optional[bytes]
-    sha256_match: Optional[bool]
-    status_code: Optional[int]
-    error: Optional[str] = None
+    aes_ct: bytes | None
+    sha256_match: bool | None
+    status_code: int | None
+    error: str | None = None
     elapsed_ms: int = 0
 
 
@@ -102,8 +101,8 @@ class FetchAggregate:
     every tier in the order they were tried, for the retry log.
     """
 
-    aes_ct: Optional[bytes]
-    winner: Optional[FetchResult]
+    aes_ct: bytes | None
+    winner: FetchResult | None
     attempts: list[FetchResult] = field(default_factory=list)
 
     @property
@@ -147,7 +146,7 @@ class ArchiveClient:
         epoch_id: str,
         miner_identity: str,
         aes_ct: bytes,
-        auth_headers: Optional[dict[str, str]] = None,
+        auth_headers: dict[str, str] | None = None,
     ) -> UploadResult:
         """POST AES_ct to one archive endpoint.
 
@@ -205,7 +204,7 @@ class ArchiveClient:
         epoch_id: str,
         miner_identity: str,
         aes_ct: bytes,
-        auth_headers: Optional[dict[str, str]] = None,
+        auth_headers: dict[str, str] | None = None,
     ) -> list[UploadResult]:
         """Best-effort upload to every endpoint; returns per-tier results.
 

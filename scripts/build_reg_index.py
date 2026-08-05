@@ -51,11 +51,10 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
-from typing import Optional
 
+from hope.commitment.registration import RegistrationRole
 from hope.validator._subtensor import make_subtensor
 from hope.validator.registration_index import RegistrationIndex
-from hope.commitment.registration import RegistrationRole
 
 logger = logging.getLogger("build_reg_index")
 
@@ -135,7 +134,7 @@ def _save(index_path: str, role: str, netuid: int,
     })
 
 
-def _load(index_path: str, index: RegistrationIndex) -> Optional[int]:
+def _load(index_path: str, index: RegistrationIndex) -> int | None:
     """Load a prior index list + sidecar checkpoint into `index`.
 
     Returns the restored last_scanned_block, or None if no checkpoint.
@@ -165,8 +164,8 @@ def _load(index_path: str, index: RegistrationIndex) -> Optional[int]:
 
 
 def build_once(index: RegistrationIndex, index_path: str, role: str, netuid: int,
-               *, backfill_start: Optional[int], cold_start_lookback: int,
-               checkpoint_every: int, end_block: Optional[int] = None,
+               *, backfill_start: int | None, cold_start_lookback: int,
+               checkpoint_every: int, end_block: int | None = None,
                max_blocks_per_pass: int = 0) -> int:
     """One pass: scan from the checkpoint (or cold-start window) to the target, persist.
 
@@ -213,7 +212,7 @@ def build_once(index: RegistrationIndex, index_path: str, role: str, netuid: int
     return found
 
 
-def main(argv: Optional[list] = None) -> int:
+def main(argv: list | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--network", default="finney",
@@ -284,8 +283,8 @@ def main(argv: Optional[list] = None) -> int:
         except KeyboardInterrupt:
             logger.info("interrupted; exiting loop")
             return 0
-        except Exception as exc:
-            logger.exception("pass failed (will retry next interval): %s", exc)
+        except Exception:
+            logger.exception("pass failed (will retry next interval)")
         time.sleep(max(60.0, args.interval_hours * 3600.0))
 
 

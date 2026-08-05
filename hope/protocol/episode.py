@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -49,11 +49,11 @@ class AccountState(BaseModel):
     account_type: str = "lead"
     spend_bucket: str = "mid"
     tracking_reliability: str = "high"
-    goal: Optional[Goal] = None
-    health: Optional[HealthStatus] = None
-    archetypes: Optional[list[Archetype]] = None
-    guardrails: Optional[list[Guardrail]] = None
-    portfolio_context: Optional[PortfolioContext] = None
+    goal: Goal | None = None
+    health: HealthStatus | None = None
+    archetypes: list[Archetype] | None = None
+    guardrails: list[Guardrail] | None = None
+    portfolio_context: PortfolioContext | None = None
 
 
 class EnvironmentalContext(BaseModel):
@@ -71,8 +71,8 @@ class EpisodeMetadata(BaseModel):
     epoch: int = 1
     coverage_status: Literal["trust_enriched", "baseline"] = "baseline"
     measurement_resolution: Literal["high", "medium", "low"] = "high"
-    action_window_start: Optional[str] = None
-    action_window_end: Optional[str] = None
+    action_window_start: str | None = None
+    action_window_end: str | None = None
     outcome_horizons_days: list[int] = [7, 14]
     environmental_context: EnvironmentalContext = EnvironmentalContext()
 
@@ -97,9 +97,9 @@ class Action(BaseModel):
     impact_class: str = "unknown"
     risk_tier: str = "medium"
     reversibility: str = "unknown"
-    magnitude: Optional[dict] = None
+    magnitude: dict | None = None
     source: str = "system"
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
 
 
 class BundleSummary(BaseModel):
@@ -117,8 +117,8 @@ class BundleSummary(BaseModel):
 
 
 class ActionBundle(BaseModel):
-    window_start: Optional[str] = None
-    window_end: Optional[str] = None
+    window_start: str | None = None
+    window_end: str | None = None
     actions: list[Action] = []
     bundle_summary: BundleSummary = BundleSummary()
 

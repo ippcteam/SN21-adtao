@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from hope.commitment.on_chain import CommitResult
+from hope.commitment.scoreability import OnChainCommitTriple
 from hope.reporting.epoch_artifact import (
     DEFAULT_ARTIFACT_DIR_ENV,
     artifact_path_for,
@@ -16,7 +17,6 @@ from hope.reporting.epoch_artifact import (
     resolve_artifact_dir,
     write_artifact,
 )
-from hope.commitment.scoreability import OnChainCommitTriple
 from hope.validator.onchain_reader import MinerReadResult
 from hope.validator.onchain_runner import EpochScoringOutcome
 from hope.validator.weights_commit import WeightsCommitResult
@@ -271,8 +271,11 @@ def test_written_file_is_valid_json(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_real_baseline_threads_into_tiers_and_met_flags(tmp_path):
+def test_real_baseline_threads_into_tiers_and_met_flags(tmp_path, monkeypatch):
     # _outcome(3) → raw scores 0.50, 0.55, 0.60. Gate is strict raw > baseline.
+    # The flat-week top-up would fund below-baseline miners too; this test is
+    # about the gate and the met_baseline flags, so switch the top-up off.
+    monkeypatch.setenv("SN21_FLATWEEK_FUND_FRACTION", "0")
     artifact = build_artifact(
         outcome=_outcome(3),
         epoch_id="WR-TEST-W24-PUB-E1",

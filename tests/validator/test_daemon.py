@@ -5,14 +5,17 @@ no chain/subprocess is touched, and assert the daemon builds the right commands
 (order, args, per-command env, per-tool timeout) and isolates tool failures.
 """
 from hope.validator.daemon import (
-    DaemonConfig, build_commands, run_tick, TIMEOUT_RC,
+    TIMEOUT_RC,
+    DaemonConfig,
+    build_commands,
+    run_tick,
 )
 
 
 def _cfg(**kw):
-    base = dict(reg_index="/data/sn21-reg-index.json",
-                reg_index_archive_url="wss://archive.example:443",
-                wallet_name="val", wallet_hotkey="hk", netuid=21, network="finney")
+    base = {"reg_index": "/data/sn21-reg-index.json",
+                "reg_index_archive_url": "wss://archive.example:443",
+                "wallet_name": "val", "wallet_hotkey": "hk", "netuid": 21, "network": "finney"}
     base.update(kw)
     return DaemonConfig(**base)
 
@@ -223,8 +226,9 @@ def test_run_tick_isolates_failures_so_heartbeat_still_runs_last():
 def test_default_runner_returns_timeout_rc_on_expiry():
     # A tool that exceeds its ceiling is killed and reported as TIMEOUT_RC so the
     # tick continues — sleep far longer than the tiny timeout we pass.
-    from hope.validator.daemon import _default_runner
     import sys
+
+    from hope.validator.daemon import _default_runner
     rc = _default_runner("slow",
                          [sys.executable, "-c", "import time; time.sleep(30)"],
                          {}, timeout=0.5)

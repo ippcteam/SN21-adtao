@@ -100,8 +100,9 @@ def test_chain_ok_rejects_foreign_feed_document(tmp_path):
 
 
 def test_canonical_bytes_rejects_unknown_types():
-    from hope.publication.rail import canonical_bytes
     from datetime import date as _d
+
+    from hope.publication.rail import canonical_bytes
     canonical_bytes({"ok": [_d(2026, 9, 1), "s", 1, 1.5, True, None]})
     class Weird: pass
     with pytest.raises(TypeError):

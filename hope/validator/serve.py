@@ -33,9 +33,9 @@ from datetime import datetime, timezone
 
 import uvicorn
 
-from hope.validator.epoch_manager import next_mining_close
 from hope.validator.api.server import create_app
 from hope.validator.data_client import HopeDataClient
+from hope.validator.epoch_manager import next_mining_close
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +131,7 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
         try:
             result = _subprocess.run(
                 cmd, capture_output=True, text=True, timeout=60,
+                check=False,
             )
             if result.returncode == 0:
                 payload = json.loads(result.stdout)
@@ -240,6 +241,7 @@ def _refresh_metagraph(state: dict) -> None:
     try:
         result = _subprocess.run(
             cmd, capture_output=True, text=True, timeout=60,
+            check=False,
         )
     except _subprocess.TimeoutExpired:
         logger.warning("metagraph refresh subprocess timed out after 60s")
@@ -308,7 +310,7 @@ def _maybe_refresh_reg_index(state: dict) -> None:
 async def _metagraph_refresh_loop(state: dict) -> None:
     """Background task: refresh metagraph every METAGRAPH_REFRESH_INTERVAL_SECONDS.
 
-    `_refresh_metagraph` calls `subprocess.run(...)` which is synchronous and
+    `_refresh_metagraph` calls `subprocess.run(..., check=False)` which is synchronous and
     blocks the calling thread for the subprocess's whole lifetime — up to 60s
     on subnets with large metagraphs (e.g. ~30-60s on mainnet netuid 21 with
     256 hotkeys). Running it inline in this async coroutine froze the entire
@@ -363,7 +365,7 @@ def main():
     parser.add_argument("--port", type=int,
                         default=int(os.environ.get("PORT", "8080")),
                         help="Port to bind the HTTP server")
-    parser.add_argument("--host", default="0.0.0.0",  # noqa: S104 — bound by the deployment's TLS reverse proxy
+    parser.add_argument("--host", default="0.0.0.0",
                         help="Bind host (default 0.0.0.0)")
     from hope.validator._subtensor import network_arg
     parser.add_argument("--network", default="finney", type=network_arg,

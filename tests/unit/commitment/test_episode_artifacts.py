@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 

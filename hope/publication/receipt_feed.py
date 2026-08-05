@@ -35,21 +35,21 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
-from typing import Iterable, Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from hope.publication.rail import attest, build_document, document_sha256
+from hope.publication.rail import attest, build_document
 from hope.scoring.daily_score_flow import HorizonResult
 from hope.scoring.settle_day_flow import (
-    SettledHorizon,
     W_COVERAGE,
     W_DIRECTION,
     W_GOAL,
     W_QUANTILE,
     W_TOTAL,
+    SettledHorizon,
     settle_scoring_v2_enabled,
 )
 
@@ -156,12 +156,12 @@ def build_receipt_metrics(
 class ReceiptPublish:
     published: bool
     day: str
-    sha256: Optional[str] = None
-    path: Optional[str] = None
-    skipped_reason: Optional[str] = None
+    sha256: str | None = None
+    path: str | None = None
+    skipped_reason: str | None = None
 
 
-def _load_head(root: str) -> Optional[dict]:
+def _load_head(root: str) -> dict | None:
     p = _head_path(root)
     if not os.path.exists(p):
         return None

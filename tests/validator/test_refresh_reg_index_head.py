@@ -6,16 +6,16 @@ no longer carries a current reg-v1, and the same signature/role gate the chain
 uses rejects wrong-role and bad-signature commitments — all without a live chain.
 """
 import json
+from pathlib import Path
 
-import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+import scripts.refresh_reg_index_head as mod
 from hope.commitment.chain_reader import RawCommitField
 from hope.commitment.registration import (
     RegistrationRole,
     build_registration_payload,
 )
-import scripts.refresh_reg_index_head as mod
 
 
 def _keypair(uri: str):
@@ -68,7 +68,7 @@ def test_adds_valid_current_commitment(tmp_path, monkeypatch):
     before, after = mod.refresh(path, "finney", 21, RegistrationRole.MINER)
 
     assert (before, after) == (0, 1)
-    data = json.load(open(path))
+    data = json.loads(Path(path).read_text())
     assert len(data) == 1
     assert data[0]["hotkey_ss58"] == kp.ss58_address
     assert data[0]["block_number"] == 8_400_000
@@ -97,7 +97,7 @@ def test_preserves_existing_never_drops(tmp_path, monkeypatch):
     before, after = mod.refresh(path, "finney", 21, RegistrationRole.MINER)
 
     assert (before, after) == (1, 2)
-    keys = {e["hotkey_ss58"] for e in json.load(open(path))}
+    keys = {e["hotkey_ss58"] for e in json.loads(Path(path).read_text())}
     assert "5Established" in keys and fresh.ss58_address in keys
 
 

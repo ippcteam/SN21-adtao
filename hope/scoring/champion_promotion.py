@@ -18,9 +18,8 @@ PromotionState between days (promotion log = the emitted events).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -32,25 +31,25 @@ class PromotionParams:
 
 @dataclass(frozen=True)
 class PromotionState:
-    champion: Optional[str] = None
+    champion: str | None = None
     # current challenger streak: who and since when (inclusive)
-    challenger: Optional[str] = None
-    lead_started: Optional[date] = None
-    last_observed: Optional[date] = None
+    challenger: str | None = None
+    lead_started: date | None = None
+    last_observed: date | None = None
     # Set by vacate_seat and cleared by the reseat it causes. Its only job is
     # to keep the audit trail honest: without it an EMERGENCY replacement of
     # an evicted champion is logged as `initial_seat` and is indistinguishable
     # from a cold start for every downstream reader (onchain_runner prints
     # promoted_today=True for both).
-    vacated_on: Optional[date] = None
-    vacate_reason: Optional[str] = None
+    vacated_on: date | None = None
+    vacate_reason: str | None = None
 
 
 @dataclass(frozen=True)
 class PromotionDecision:
     state: PromotionState
     promoted: bool
-    event: Optional[dict] = None  # promotion-log entry when something happened
+    event: dict | None = None  # promotion-log entry when something happened
 
 
 def _rank_key(item: tuple[str, float]) -> tuple[float, str]:

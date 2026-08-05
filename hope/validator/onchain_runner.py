@@ -22,8 +22,9 @@ client, or the legacy WeightSetter.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Optional
+from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -98,10 +99,10 @@ class MinerOnChainInputs:
     # lookup(miner_hotkey)). ss58_encode(this, fmt=42) round-trips back to
     # the miner's chain hotkey SS58 — which is what the leaderboard publishes.
     miner_hotkey: bytes
-    revealed_k: Optional[bytes]
-    sha256_ct_commit: Optional[bytes]
-    self_archive_url: Optional[str]
-    chain_block_at_k_commit: Optional[int]
+    revealed_k: bytes | None
+    sha256_ct_commit: bytes | None
+    self_archive_url: str | None
+    chain_block_at_k_commit: int | None
     k_reveal_round: int  # drand round embedded in the chain TLE K commit
 
 
@@ -109,20 +110,20 @@ class MinerOnChainInputs:
 class EpochScoringOutcome:
     """Outcome of `run_epoch_scoring(...)` — every chain commit + per-miner read."""
 
-    pre_scoring_commit: Optional[CommitResult] = None
-    weights_commit: Optional[WeightsCommitResult] = None
-    post_scoring_commit: Optional[CommitResult] = None
-    retry_log_commit: Optional[CommitResult] = None
-    retry_log_blob: Optional[bytes] = None
+    pre_scoring_commit: CommitResult | None = None
+    weights_commit: WeightsCommitResult | None = None
+    post_scoring_commit: CommitResult | None = None
+    retry_log_commit: CommitResult | None = None
+    retry_log_blob: bytes | None = None
     miner_reads: list[MinerReadResult] = field(default_factory=list)
     score_map: dict[bytes, int] = field(default_factory=dict)
-    aborted_reason: Optional[str] = None
+    aborted_reason: str | None = None
     # On-chain footprint of this epoch — used by the leaderboard reporter
     # and external verifiers to scope their chain queries. Derived from
     # the earliest miner K-commit (or this validator's 9.C.1 when no
     # miners are visible) through the validator's 9.C.3 weights commit.
-    block_range_start: Optional[int] = None
-    block_range_end: Optional[int] = None
+    block_range_start: int | None = None
+    block_range_end: int | None = None
     # report-only run: scoring was computed but NO chain commits were made (the
     # on-chain 9.C/weights already exist from the real run). Lets us rebuild the
     # leaderboard artifact for a report correction without touching chain — so
@@ -144,10 +145,10 @@ class EpochScoringOutcome:
 
 
 def compute_block_range(
-    miner_inputs: list["MinerOnChainInputs"],
-    pre_scoring_commit: Optional[CommitResult],
-    weights_commit: Optional[WeightsCommitResult],
-) -> tuple[Optional[int], Optional[int]]:
+    miner_inputs: list[MinerOnChainInputs],
+    pre_scoring_commit: CommitResult | None,
+    weights_commit: WeightsCommitResult | None,
+) -> tuple[int | None, int | None]:
     """Compute (block_range_start, block_range_end) for an epoch.
 
     Convention per the leaderboard data contract:
@@ -166,7 +167,7 @@ def compute_block_range(
     block range fields in the payload" and surfaces the abort reason
     out of band.
     """
-    end: Optional[int] = None
+    end: int | None = None
     if weights_commit is not None and weights_commit.success:
         end = weights_commit.block_number
 
@@ -176,7 +177,7 @@ def compute_block_range(
         if inp.chain_block_at_k_commit is not None and inp.chain_block_at_k_commit > 0
     ]
     if miner_blocks:
-        start: Optional[int] = min(miner_blocks)
+        start: int | None = min(miner_blocks)
     elif pre_scoring_commit is not None and pre_scoring_commit.success:
         start = pre_scoring_commit.block_number
     else:
@@ -196,7 +197,7 @@ def run_epoch_scoring(
     validator_signing_key: Ed25519PrivateKey,
     miner_inputs: list[MinerOnChainInputs],
     archive_endpoints: list[ArchiveEndpoint],
-    archive_client: Optional[ArchiveClient],
+    archive_client: ArchiveClient | None,
     timing: TimingBounds,
     outcomes_release_round: int,
     outcomes_fetched_at_round: int,
@@ -205,7 +206,7 @@ def run_epoch_scoring(
     blocks_until_pre_scoring_reveal: int,
     blocks_until_post_scoring_reveal: int,
     blocks_until_weights_reveal: int,
-    registration_index: Optional["RegistrationIndex"] = None,
+    registration_index: RegistrationIndex | None = None,
     report_only: bool = False,
     ignore_already_scored: bool = False,
     baseline_score: float = 0.0,
@@ -250,9 +251,9 @@ def run_epoch_scoring(
     # and a real subtensor; the tests mock at a lower layer.
     try:
         from hope.commitment.chain_reader import (
+            MIN_VALIDATOR_BUDGET_BYTES,
             commitments_budget_sufficient,
             validator_already_scored_epoch,
-            MIN_VALIDATOR_BUDGET_BYTES,
         )
         validator_ss58 = validator_wallet.hotkey.ss58_address
         if validator_already_scored_epoch(subtensor, netuid, validator_ss58, epoch_id):
@@ -390,7 +391,7 @@ def run_epoch_scoring(
 
     # ---- 2. build + commit 9.C.1 pre-scoring state ----
     # (skipped in report-only mode — no chain write, so the score below still runs)
-    pre_commit: Optional[CommitResult] = None
+    pre_commit: CommitResult | None = None
     if not report_only:
         pre_blob = build_pre_scoring_state(
             validator_hotkey=validator_hotkey,
@@ -526,6 +527,7 @@ def run_epoch_scoring(
     if _daily in ("1", "true", "yes", "on"):
         try:
             from datetime import date as _date
+
             from hope.validator.daily_stream_weights import allocation_from_ledger
 
             _root = _os_allow.environ.get(
@@ -616,6 +618,7 @@ def run_epoch_scoring(
             #                 scheduled zero (15 Sep) must not collapse into
             #                 "full override" — that would be the opposite.
             from datetime import date as _date
+
             from hope.scoring.collateral_floor import resolve_burn_fraction
             _bf, _bsrc = resolve_burn_fraction(_os.environ, _date.today())
             print(f"[weight-override] burn {_bf:.0%} ({_bsrc})", flush=True)
@@ -752,8 +755,8 @@ def run_epoch_scoring(
         )
 
     # ---- 6. optional 9.C.6 retry log ----
-    retry_blob: Optional[bytes] = None
-    retry_commit: Optional[CommitResult] = None
+    retry_blob: bytes | None = None
+    retry_commit: CommitResult | None = None
     if retry_entries:
         retry_blob = build_retry_log_blob(
             validator_hotkey=validator_hotkey,

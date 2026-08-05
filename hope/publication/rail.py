@@ -18,7 +18,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -54,7 +54,7 @@ def document_sha256(doc: dict) -> str:
 
 
 def build_document(feed: str, as_of: str, metrics: dict,
-                   generated_at: str, prev_sha256: Optional[str]) -> dict:
+                   generated_at: str, prev_sha256: str | None) -> dict:
     """Assemble the publishable envelope. All time values injected as ISO
     strings by the caller (rail stays clock-free and replay-safe)."""
     return {

@@ -41,8 +41,6 @@ import json
 import logging
 import sys
 from dataclasses import dataclass, field
-from typing import Optional
-
 
 from hope.commitment.archives import ArchiveClient, ArchiveEndpoint
 from hope.commitment.canonical import canonical_cbor_loads
@@ -59,7 +57,6 @@ from hope.validator.onchain_reader import (
     assemble_chain_commits,
     read_miner_for_epoch,
 )
-
 
 logger = logging.getLogger("verify_epoch")
 
@@ -134,7 +131,7 @@ class ChainView:
 
     pre_scoring_state_cbor: bytes
     post_scoring_artifacts_cbor: bytes
-    miner_states: dict[bytes, "ChainMinerState"]
+    miner_states: dict[bytes, ChainMinerState]
     timing: TimingBounds
     # Phase #2: weights at the block_hash referenced by 9.C.2 +
     # the metagraph mapping needed to translate score → UID.
@@ -146,10 +143,10 @@ class ChainView:
 @dataclass(frozen=True)
 class ChainMinerState:
     miner_uid: int
-    timelock_k_revealed: Optional[bytes]
-    sha256_ct_commit: Optional[bytes]
-    self_archive_url: Optional[str]
-    chain_block_at_k_commit: Optional[int]
+    timelock_k_revealed: bytes | None
+    sha256_ct_commit: bytes | None
+    self_archive_url: str | None
+    chain_block_at_k_commit: int | None
     k_reveal_round: int = 0  # drand round encoded in K commit; 0 if not known
 
 
@@ -159,7 +156,7 @@ def verify_epoch(
     epoch_id: str,
     validator_hotkey: bytes,
     archive_endpoints: list[ArchiveEndpoint],
-    archive_client: Optional[ArchiveClient] = None,
+    archive_client: ArchiveClient | None = None,
     scorer,
 ) -> VerifierVerdict:
     """Run the public verification end-to-end.
@@ -339,7 +336,7 @@ def fetch_chain_view(
     validator_hotkey_ss58: str,
     miner_hotkey_ss58_list: list[str],
     timing: TimingBounds,
-    block_hash: Optional[str] = None,
+    block_hash: str | None = None,
     require_validator_reveals: bool = True,
 ) -> ChainView:
     """Read pre/post scoring CBOR + per-miner triples from a live chain.
@@ -389,8 +386,8 @@ def fetch_chain_view(
         subtensor, netuid, validator_hotkey_ss58, block_hash=block_hash,
     )
 
-    pre_blob: Optional[bytes] = None
-    post_blob: Optional[bytes] = None
+    pre_blob: bytes | None = None
+    post_blob: bytes | None = None
     plaintexts: list[bytes] = []
     for entry in revealed_val:
         try:
@@ -437,10 +434,10 @@ def fetch_chain_view(
         revealed = read_revealed_commitments(
             subtensor, netuid, miner_ss58, block_hash=block_hash,
         )
-        revealed_k: Optional[bytes] = None
-        sha256_ct: Optional[bytes] = None
-        url: Optional[str] = None
-        chain_block: Optional[int] = None
+        revealed_k: bytes | None = None
+        sha256_ct: bytes | None = None
+        url: str | None = None
+        chain_block: int | None = None
         # Walk reveals newest-last: take the most recent valid bundle.
         for entry in revealed:
             try:
@@ -532,13 +529,13 @@ def _ss58_to_raw_ed25519(ss58_address: str) -> bytes:
     if pk is None:
         raise RuntimeError("Keypair has no public_key attribute")
     if isinstance(pk, str):
-        pk = bytes.fromhex(pk[2:] if pk.startswith("0x") else pk)
+        pk = bytes.fromhex(pk.removeprefix("0x"))
     if not isinstance(pk, (bytes, bytearray)) or len(pk) != 32:
         raise RuntimeError(f"unexpected public_key shape: {type(pk).__name__}")
     return bytes(pk)
 
 
-def make_live_scorer(truth_by_horizon: dict[str, "HorizonTruth"]):
+def make_live_scorer(truth_by_horizon: dict[str, HorizonTruth]):
     """Wire the production ``score_one_miner`` adapter into the verifier.
 
     Returns a ``ScorerFn`` closure compatible with ``verify_epoch(scorer=...)``
@@ -560,7 +557,7 @@ def make_live_scorer(truth_by_horizon: dict[str, "HorizonTruth"]):
     return scorer
 
 
-def _load_truth_file(path: str) -> dict[str, "HorizonTruth"]:
+def _load_truth_file(path: str) -> dict[str, HorizonTruth]:
     """Decode a JSON truth file produced from the 9.A.2 reveal blob.
 
     Schema (single object, sample at tests/fixtures/recorded_epoch/recorded_epoch.json):
@@ -654,7 +651,7 @@ def _build_argparser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = _build_argparser()
     # Detect when the user is implicitly using mainnet defaults so we can warn

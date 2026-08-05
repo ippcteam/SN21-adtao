@@ -29,7 +29,6 @@ fault landed on the right party.
     python3 scripts/hostile_model_probe.py
 """
 
-import json
 import os
 import shutil
 import subprocess
@@ -38,11 +37,15 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from hope.backtest.container_runner import (  # noqa: E402
-    ERR_EXIT_PREFIX, ERR_TIMEOUT_PREFIX, run_basket_docker,
+from hope.backtest.container_runner import (
+    ERR_EXIT_PREFIX,
+    ERR_TIMEOUT_PREFIX,
+    run_basket_docker,
 )
-from hope.scoring.chronic_failure import (  # noqa: E402
-    FAULT_MINER, FAULT_NONE, classify_failure,
+from hope.scoring.chronic_failure import (
+    FAULT_MINER,
+    FAULT_NONE,
+    classify_failure,
 )
 
 TAG = "sn21-hostile"
@@ -100,7 +103,8 @@ def build(name, src):
                     "COPY model.py /model.py\n"
                     'ENTRYPOINT ["python3","-u","/model.py"]\n')
         r = subprocess.run(["docker", "build", "-q", "-t", f"{TAG}-{name}", d],
-                           capture_output=True, timeout=600)
+                           capture_output=True, timeout=600,
+                           check=False)
         if r.returncode != 0:
             print(f"  build failed for {name}: {r.stderr.decode()[:300]}")
             return False
@@ -110,7 +114,7 @@ def build(name, src):
 
 
 def main():
-    if subprocess.run(["docker", "info"], capture_output=True).returncode != 0:
+    if subprocess.run(["docker", "info"], capture_output=True, check=False).returncode != 0:
         print("docker is not available — cannot run the real path", file=sys.stderr)
         return 2
 
@@ -148,7 +152,7 @@ def main():
           res.predictions_out == 0, f"{res.predictions_out} predictions")
 
     for name in MODELS:
-        subprocess.run(["docker", "rmi", "-f", f"{TAG}-{name}"], capture_output=True)
+        subprocess.run(["docker", "rmi", "-f", f"{TAG}-{name}"], capture_output=True, check=False)
 
     print("\n" + "=" * 64)
     if FAILS:

@@ -111,7 +111,7 @@ def _ss58_to_raw_pubkey(ss58_address: str) -> bytes:
     if pk is None:
         raise SystemExit("Keypair has no public_key attribute")
     if isinstance(pk, str):
-        pk = bytes.fromhex(pk[2:] if pk.startswith("0x") else pk)
+        pk = bytes.fromhex(pk.removeprefix("0x"))
     if not isinstance(pk, (bytes, bytearray)) or len(pk) != 32:
         raise SystemExit(f"unexpected public_key shape: {type(pk).__name__}")
     return bytes(pk)

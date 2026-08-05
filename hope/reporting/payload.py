@@ -52,10 +52,9 @@ The contract §4 example reads:
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # Tier emission shares are the policy constants per
 # SN21_REWARD_MECHANISM.md §"Component 2 — Tiered emission bands".
@@ -160,7 +159,7 @@ class MinerResult(BaseModel):
         "disqualified_not_in_epoch",        # submitted, but not part of this epoch's eligible cohort (e.g. a re-run scoped to the original participants)
         "disqualified_other",
     ]
-    tier: Optional[Literal["elite", "competitive", "participating"]] = None
+    tier: Literal["elite", "competitive", "participating"] | None = None
     # Did this miner clear the epoch's predict-zero baseline? Drives the
     # leaderboard's "met baseline ✓/✗" column + gap display, and guarantees
     # the table reconciles with the on-chain funded set: a row WITH a tier
@@ -197,14 +196,9 @@ class EmergencyIntervention(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     triggered: bool
-    type: Optional[Literal["collusion", "dataset_misalignment"]] = None
-    outcome: Optional[Literal[
-        "rescored",
-        "episodes_dropped",
-        "epoch_cancelled",
-        "no_action_after_review",
-    ]] = None
-    summary_text: Optional[str] = Field(default=None, max_length=280)
+    type: Literal["collusion", "dataset_misalignment"] | None = None
+    outcome: Literal["rescored", "episodes_dropped", "epoch_cancelled", "no_action_after_review"] | None = None
+    summary_text: str | None = Field(default=None, max_length=280)
 
 
 class EpochReportPayload(BaseModel):
@@ -220,7 +214,7 @@ class EpochReportPayload(BaseModel):
     # Identity & classification
     epoch_id: str
     epoch_type: str
-    epoch_subtype: Optional[str]
+    epoch_subtype: str | None
 
     # Chain footprint
     block_range_start: int = Field(ge=0)
@@ -243,7 +237,7 @@ class EpochReportPayload(BaseModel):
     baseline_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
     # Distribution (None when pool is below the floor)
-    score_distribution: Optional[ScoreDistribution]
+    score_distribution: ScoreDistribution | None
 
     # Tiers
     tier_distribution: TierDistribution
@@ -257,7 +251,7 @@ class EpochReportPayload(BaseModel):
     chain_fetch_timestamp: str
 
     # Optional human commentary; null in routine epochs.
-    commentary_markdown: Optional[str] = None
+    commentary_markdown: str | None = None
 
     # Top-N anonymized scores in descending order. Lets miners with chain-
     # side knowledge of their own score self-locate against ranked peers
@@ -265,7 +259,7 @@ class EpochReportPayload(BaseModel):
     # design — the dashboard's rank-stack widget shows the top of the
     # qualifying pool, not the full leaderboard. None when pool is below
     # the distribution floor (matches score_distribution's gating).
-    top_n_scores: Optional[list[float]] = Field(default=None, max_length=20)
+    top_n_scores: list[float] | None = Field(default=None, max_length=20)
 
     # Optional pointer to a published epoch this row corrects. Per the
     # CMS contract (IA D-13): published rows are frozen; mutations land
@@ -274,13 +268,13 @@ class EpochReportPayload(BaseModel):
     # the most recent correction as the canonical view of an epoch slot;
     # the original stays at its permanent URL with a "corrected by"
     # banner.
-    supersedes: Optional[str] = None
+    supersedes: str | None = None
 
     # Per-miner result rows (Cacheon-style leaderboard). New in v3 — the
     # dashboard now renders a sortable per-UID table when this field is
     # present. Optional + forward-compatible: when None, the dashboard
     # falls back to the aggregate-only view from v1/v2.
-    miner_results: Optional[list[MinerResult]] = None
+    miner_results: list[MinerResult] | None = None
 
     # Aggregator wire-shape version. Bump when output changes for the
     # same input. The CMS pins each published row to this number.

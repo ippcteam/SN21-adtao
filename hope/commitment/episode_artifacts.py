@@ -77,7 +77,6 @@ from hope.commitment.prediction_payload import (
     _validate_quantile_triple,
 )
 
-
 EPISODE_BUNDLE_VERSION = 1
 
 
@@ -120,7 +119,7 @@ def _entry_imt_key(episode_id: str, horizon: str) -> bytes:
     sort collisions between distinct (ep, h) pairs.
     """
     return hashlib.blake2b(
-        f"{episode_id}:{horizon}".encode("utf-8"), digest_size=32
+        f"{episode_id}:{horizon}".encode(), digest_size=32
     ).digest()
 
 

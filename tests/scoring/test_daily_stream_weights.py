@@ -10,7 +10,7 @@ from datetime import date, timedelta
 import pytest
 
 from hope.scoring import standing_ledger as sl
-from hope.scoring.champion_promotion import PromotionParams, PromotionState
+from hope.scoring.champion_promotion import PromotionState
 from hope.scoring.daily_score_flow import (
     HorizonResult,
     WeightedEntry,

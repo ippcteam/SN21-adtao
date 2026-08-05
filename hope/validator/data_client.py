@@ -13,12 +13,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from dataclasses import dataclass
-from typing import Optional
 
 import httpx
-
-import os
 
 from hope.constants import HOPE_API_VERSION
 from hope.hope_public_key import HOPE_PUBLIC_KEY_HEX
@@ -53,7 +51,7 @@ class EpochData:
     package_hash: str
     trust_enriched_count: int = 0
     baseline_count: int = 0
-    raw_package: Optional[dict] = None
+    raw_package: dict | None = None
 
 
 class HopeDataClient:
@@ -202,6 +200,7 @@ class HopeDataClient:
         # deadline = next_mining_close(releases[0].created_at) — the Monday close
         # that coincides with the new epoch's open.
         from datetime import datetime, timezone
+
         from hope.validator.epoch_manager import (
             MINING_CLOSE_HOUR_UTC,
             next_mining_close,
@@ -501,7 +500,7 @@ class HopeDataClient:
         if voo and voo.get("outcomes"):
             raw_outcomes = voo["outcomes"]
 
-            if "t7" in raw_outcomes and raw_outcomes["t7"]:
+            if raw_outcomes.get("t7"):
                 t7_data = raw_outcomes["t7"]
                 t7 = HorizonOutcome(
                     cost_delta_pct=t7_data.get("cost_delta_pct", 0.0) or 0.0,
@@ -510,7 +509,7 @@ class HopeDataClient:
                     goal_miss=int(t7_data.get("goal_miss", 0) or 0),
                 )
 
-            if "t14" in raw_outcomes and raw_outcomes["t14"]:
+            if raw_outcomes.get("t14"):
                 t14_data = raw_outcomes["t14"]
                 t14 = HorizonOutcome(
                     cost_delta_pct=t14_data.get("cost_delta_pct", 0.0) or 0.0,

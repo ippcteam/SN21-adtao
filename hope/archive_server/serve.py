@@ -33,7 +33,7 @@ def main():
     parser.add_argument("--port", type=int,
                         default=int(os.environ.get("PORT", "8081")),
                         help="Port to bind (default 8081, or $PORT)")
-    parser.add_argument("--host", default="0.0.0.0",  # noqa: S104 — front with TLS reverse proxy
+    parser.add_argument("--host", default="0.0.0.0",
                         help="Bind host (default 0.0.0.0)")
     parser.add_argument("--store", choices=["filesystem", "memory"], default="filesystem",
                         help="Storage backend (default filesystem; memory for tests)")

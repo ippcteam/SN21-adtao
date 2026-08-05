@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Optional
 from unittest.mock import patch
 
 import pytest
@@ -19,7 +18,6 @@ from hope.commitment.archives import ArchiveEndpoint, UploadResult
 from hope.commitment.on_chain import CommitResult
 from hope.commitment.prediction_payload import build_horizon_entry
 from hope.miner.onchain_submitter import submit_miner_epoch
-
 
 # -- fake collaborators ------------------------------------------------------
 
@@ -32,7 +30,7 @@ class FakeWallet:
     hotkey = _HK()
 
 
-def _ok_commit(block: int, reveal_round: Optional[int] = None) -> CommitResult:
+def _ok_commit(block: int, reveal_round: int | None = None) -> CommitResult:
     return CommitResult(
         success=True,
         message="OK",

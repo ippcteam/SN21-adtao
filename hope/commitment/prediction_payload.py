@@ -50,8 +50,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from hope.commitment.canonical import (
     aes_gcm_aad,
@@ -59,7 +59,6 @@ from hope.commitment.canonical import (
     canonical_cbor_loads,
 )
 from hope.commitment.inner_sig import add_inner_sig, verify_inner_sig
-
 
 # Protocol version embedded in every payload.
 PREDICTION_PAYLOAD_VERSION = 1
@@ -98,7 +97,7 @@ def _scale_quantile(value: float) -> int:
 
     -3.7% → -37; +12.5% → 125. Rounded half-to-even (Python default).
     """
-    return int(round(value * QUANTILE_SCALE))
+    return round(value * QUANTILE_SCALE)
 
 
 def _scale_probability(value: float) -> int:
@@ -108,7 +107,7 @@ def _scale_probability(value: float) -> int:
     """
     if not (0.0 <= value <= 1.0):
         raise ValueError(f"probability out of range [0, 1]: {value}")
-    return int(round(value * PROBABILITY_SCALE))
+    return round(value * PROBABILITY_SCALE)
 
 
 def _validate_quantile_triple(q: tuple[float, float, float], name: str) -> list[int]:

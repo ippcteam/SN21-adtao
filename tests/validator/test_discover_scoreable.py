@@ -53,7 +53,7 @@ def test_blocks_release_that_has_not_closed():
     """
     now = datetime.now(timezone.utc)
     # Walk back to a created_at whose computed deadline is still ahead of now.
-    opened = next(o for o in (now + timedelta(days=d) for d in range(0, 8))
+    opened = next(o for o in (now + timedelta(days=d) for d in range(8))
                   if _deadline_for(o) > now)
     c = _client([
         {"release_key": "WR-2026-W98-PUB-E1", "created_at": opened.isoformat()},

@@ -174,8 +174,9 @@ def main():
         # server serves), which has no bundles yet and yields an empty run.
         # (Exactly the failure when an off-cadence rerun was the newest release.)
         # See HopeDataClient.discover_scoreable_release for the assumption.
-        from hope.validator.data_client import HopeDataClient
         import asyncio as _asyncio
+
+        from hope.validator.data_client import HopeDataClient
         try:
             client = HopeDataClient()
         except ValueError as exc:
@@ -310,6 +311,7 @@ def _fetch_chain_view_with_rpc_rotation(
     `no_miner_reveals_visible` abort will fire downstream.
     """
     import time as _time
+
     from scripts import verify_epoch as ve  # type: ignore
 
     def _read(sub):
@@ -514,9 +516,9 @@ def _run_validator_onchain_cli(args, runner):
     # hotkey without a verified registration, in which case the scorer
     # falls back to the raw chain hotkey bytes (works for ed25519 hotkeys;
     # rejects sr25519 hotkeys on inner_sig.hotkey_mismatch).
-    from typing import Optional as _Optional
+
     from hope.validator.registration_index import RegistrationIndex
-    registration_index: _Optional[RegistrationIndex] = None
+    registration_index: RegistrationIndex | None = None
 
     # Build the index if either path is active: a non-zero in-cron lookback,
     # OR a prebuilt JSON to merge. Without this, --reg-index-lookback-blocks=0
@@ -608,7 +610,8 @@ def _run_validator_onchain_cli(args, runner):
     # Stamp chain_fetch_timestamp BEFORE the run starts — closest moment
     # to when the validator observed chain state. Used by the reporter
     # if SN21_LEADERBOARD_REPORTER is enabled.
-    from datetime import datetime as _dt, timezone as _tz
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
     chain_fetch_timestamp = _dt.now(_tz.utc).isoformat()
 
     result = run_epoch_scoring(

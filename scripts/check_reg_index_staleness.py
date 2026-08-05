@@ -29,7 +29,6 @@ import json
 import logging
 import os
 import sys
-from typing import Optional
 
 logger = logging.getLogger("check_reg_index_staleness")
 
@@ -43,7 +42,7 @@ EXIT_UNKNOWN = 0  # cannot determine → don't disrupt the tick
 EXIT_STALE = 3    # confirmed stale → loud + scrapeable by external monitors
 
 
-def read_last_scanned_block(state_path: str) -> Optional[int]:
+def read_last_scanned_block(state_path: str) -> int | None:
     """Return `last_scanned_block` from the builder's `<index>.state.json`
     sidecar, or None if the sidecar is missing/unreadable/lacks the field."""
     try:
@@ -58,8 +57,8 @@ def read_last_scanned_block(state_path: str) -> Optional[int]:
         return None
 
 
-def evaluate(last_scanned_block: Optional[int], head: Optional[int],
-             threshold_blocks: int) -> tuple[Optional[int], bool]:
+def evaluate(last_scanned_block: int | None, head: int | None,
+             threshold_blocks: int) -> tuple[int | None, bool]:
     """Pure core: return (gap, is_stale).
 
     gap is `head - last_scanned_block` (None if either input is unknown).
@@ -90,7 +89,7 @@ def _warn_stale(gap: int, last_scanned_block: int, head: int,
     )
 
 
-def main(argv: Optional[list] = None) -> int:
+def main(argv: list | None = None) -> int:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--network", default=os.environ.get("BT_NETWORK", "finney"),

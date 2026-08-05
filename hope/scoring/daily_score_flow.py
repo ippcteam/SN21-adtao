@@ -23,9 +23,9 @@ the v2 scorer per miner) wires in with the Payload-v2 submission shapes.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
-from typing import Iterable
 
 # Daily-stream horizons (v0.5 §2). The launch HORIZONS=[7,14] constant is
 # unchanged; the stream adds 28d at cutover.

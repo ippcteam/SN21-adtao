@@ -12,7 +12,6 @@ Both are now caught at HTTP submission time with actionable errors.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -66,7 +65,7 @@ def _closed_window_state() -> dict:
     }
 
 
-def _post_predictions(client: TestClient, hotkey: str) -> "TestClient":
+def _post_predictions(client: TestClient, hotkey: str) -> TestClient:
     return client.post(
         f"/v1/epochs/{EPOCH_ID}/predictions",
         headers={"X-Miner-Hotkey": hotkey},

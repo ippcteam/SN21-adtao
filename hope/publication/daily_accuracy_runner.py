@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
-from typing import Iterable, Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -37,7 +37,7 @@ from hope.publication.accuracy_feed import (
     ACCURACY_FEED_NAME,
     build_accuracy_metrics,
 )
-from hope.publication.rail import attest, build_document, document_sha256
+from hope.publication.rail import attest, build_document
 from hope.scoring.daily_score_flow import HorizonResult
 
 
@@ -53,7 +53,7 @@ def _day_path(root: str, day: date) -> str:
     return os.path.join(feed_dir(root), f"{day}.json")
 
 
-def load_head(root: str) -> Optional[dict]:
+def load_head(root: str) -> dict | None:
     path = _head_path(root)
     if not os.path.exists(path):
         return None
@@ -65,9 +65,9 @@ def load_head(root: str) -> Optional[dict]:
 class PublishedDay:
     day: date
     published: bool
-    skipped_reason: Optional[str] = None
-    anchor_sha256: Optional[str] = None   # what the caller commits on-chain
-    path: Optional[str] = None
+    skipped_reason: str | None = None
+    anchor_sha256: str | None = None   # what the caller commits on-chain
+    path: str | None = None
     zero_day: bool = False
 
 
@@ -77,7 +77,7 @@ def publish_day(
     results: Iterable[HorizonResult],
     private_key: Ed25519PrivateKey,
     generated_at: str,
-    receipt_sha256: "Optional[str]" = None,
+    receipt_sha256: str | None = None,
 ) -> PublishedDay:
     """Publish one day of the accuracy feed. Idempotence: a day already on
     disk raises (the feed is append-only; a rewrite would fork the hash

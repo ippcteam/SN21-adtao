@@ -10,7 +10,6 @@ See hope/miner/models/baseline.py for a reference implementation.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from hope.protocol.episode import Episode
 from hope.protocol.prediction import Prediction
@@ -35,11 +34,9 @@ class PredictionEngine(ABC):
 
     def on_epoch_start(self, epoch_id: str, episode_count: int) -> None:
         """Optional hook: called when a new epoch starts."""
-        pass
 
-    def on_epoch_end(self, epoch_id: str, scores: Optional[dict] = None) -> None:
+    def on_epoch_end(self, epoch_id: str, scores: dict | None = None) -> None:
         """Optional hook: called when epoch scores are revealed."""
-        pass
 
     @property
     def name(self) -> str:

@@ -1,15 +1,18 @@
 """Unit tests for hope/scoring/onchain_adapter.py."""
 
+
 from __future__ import annotations
 
+import itertools
 import os
+from typing import ClassVar
 
 import pytest
 
 from hope.scoring.onchain_adapter import (
     HorizonTruth,
-    _median,
     _mean,
+    _median,
     aggregate_outcomes_to_truth,
     bundle_to_predictions,
     compute_scoring_inputs_hash,
@@ -219,7 +222,7 @@ class TestCRPSScorer:
             )
             results.append(score_one_miner(plain, truth))
         # Each successive score is no greater than the previous
-        for a, b in zip(results, results[1:]):
+        for a, b in itertools.pairwise(results):
             assert b <= a
 
     def test_wide_band_correct_p50_better_than_far_off(self, truth):
@@ -285,7 +288,9 @@ class TestWrapEpochScorer:
             parse_per_episode_bundle,
         )
         from hope.protocol.episode import (
-            AccountState, Episode, EpisodeMetadata,
+            AccountState,
+            Episode,
+            EpisodeMetadata,
         )
         from hope.protocol.outcomes import HorizonOutcome, Outcome
         from hope.scoring.scorer import EpochScorer
@@ -353,7 +358,9 @@ class TestWrapEpochScorer:
             parse_per_episode_bundle,
         )
         from hope.protocol.episode import (
-            AccountState, Episode, EpisodeMetadata,
+            AccountState,
+            Episode,
+            EpisodeMetadata,
         )
         from hope.protocol.outcomes import HorizonOutcome, Outcome
         from hope.scoring.scorer import EpochScorer
@@ -410,7 +417,7 @@ class TestScoringV2:
     """Spec-aligned 4-component scorer: must separate good from great where v1
     was flat (band-insensitive CRPS)."""
 
-    TRUTH = {"7": HorizonTruth("7", 0, 100, 50, 100000, 50000)}
+    TRUTH: ClassVar = {"7": HorizonTruth("7", 0, 100, 50, 100000, 50000)}
 
     @staticmethod
     def _pt(p50_err: int):

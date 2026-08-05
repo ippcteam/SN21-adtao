@@ -372,6 +372,7 @@ class TestTopNScores:
     def test_top_n_schema_caps_at_20(self):
         """Even if aggregate caller passes top_n>20, payload's max_length=20 rejects."""
         import pydantic
+
         from hope.reporting.payload import EpochReportPayload
         # The schema-level cap is the source of truth for wire shape.
         try:

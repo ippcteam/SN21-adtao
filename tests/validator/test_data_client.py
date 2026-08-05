@@ -54,9 +54,9 @@ def test_discover_handles_missing_created_at(env_client):
 
 def test_discover_raises_when_no_releases(env_client):
     """Empty release list should be a hard error, not a silent None."""
-    with patch.object(env_client, "list_releases", new=AsyncMock(return_value=[])):
-        with pytest.raises(RuntimeError, match="no releases"):
-            asyncio.run(env_client.discover_latest_release())
+    with patch.object(env_client, "list_releases", new=AsyncMock(return_value=[])), \
+         pytest.raises(RuntimeError, match="no releases"):
+        asyncio.run(env_client.discover_latest_release())
 
 
 def test_discover_raises_when_release_key_missing(env_client):
@@ -64,9 +64,9 @@ def test_discover_raises_when_release_key_missing(env_client):
     releases = [
         {"created_at": "2026-05-11T00:00:00Z"},  # missing release_key
     ]
-    with patch.object(env_client, "list_releases", new=AsyncMock(return_value=releases)):
-        with pytest.raises(RuntimeError, match="no `release_key` field"):
-            asyncio.run(env_client.discover_latest_release())
+    with patch.object(env_client, "list_releases", new=AsyncMock(return_value=releases)), \
+         pytest.raises(RuntimeError, match="no `release_key` field"):
+        asyncio.run(env_client.discover_latest_release())
 
 
 def test_constructor_requires_credentials():

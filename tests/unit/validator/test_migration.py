@@ -602,6 +602,11 @@ class TestEndToEndDualMode:
     def test_tiered_gate_excludes_all_below_baseline(self, four_miners, monkeypatch):
         """A baseline above every achievable score gates out all miners → no
         miner funded (proves the participation gate is actually applied)."""
+        # This test is about the participation GATE, not the flat-week
+        # fallback that tops the field up when nobody clears it. Disable
+        # the top-up so the gate is what is being observed.
+        monkeypatch.setenv("SN21_FLATWEEK_FUND_FRACTION", "0")
+
         from hope.validator.onchain_runner import run_epoch_scoring
 
         http_preds = {

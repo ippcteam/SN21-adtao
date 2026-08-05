@@ -22,16 +22,22 @@ import os
 import time
 
 import pytest
-from fastapi.testclient import TestClient
 from bittensor_wallet import Keypair
+from fastapi.testclient import TestClient
 
 from hope.miner.models.baseline import BaselineModel
 from hope.protocol.episode import (
-    Episode, EpisodeMetadata, AccountState, ActionBundle, Action,
-    PreWindow, CampaignTimeSeries, AccountAggregates, BundleSummary,
+    AccountAggregates,
+    AccountState,
+    Action,
+    ActionBundle,
+    BundleSummary,
+    CampaignTimeSeries,
+    Episode,
+    EpisodeMetadata,
+    PreWindow,
 )
 from hope.validator.api.server import create_app
-
 
 # Two real miners with real keypairs
 MINER_A = Keypair.create_from_mnemonic(Keypair.generate_mnemonic())
@@ -193,7 +199,7 @@ class TestMinerE2EFlow:
 
     def test_06_duplicate_overwrites_not_duplicates(self, app_and_client):
         """Step 6: Resubmitting for same episode overwrites — no duplication."""
-        app, client, _ = app_and_client
+        _app, client, _ = app_and_client
 
         # Submit once
         path = "/v1/epochs/test-epoch-e2e/predictions"

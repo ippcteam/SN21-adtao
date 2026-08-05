@@ -68,6 +68,7 @@ class TestNetworkArg:
 
     def test_invalid_value_raises(self):
         import argparse
+
         from hope.validator._subtensor import network_arg
         with pytest.raises(argparse.ArgumentTypeError, match="invalid network"):
             network_arg("https://example.com")

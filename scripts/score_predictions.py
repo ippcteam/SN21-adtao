@@ -25,8 +25,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hope.protocol.episode import Episode
-from hope.protocol.prediction import Prediction
 from hope.protocol.outcomes import Outcome
+from hope.protocol.prediction import Prediction
 from hope.scoring import EpochScorer, ScoringWeights
 
 
@@ -149,7 +149,7 @@ def main():
             print(
                 f"\n⚠️  No HOPE_API_KEY set — falling back to bundled training data "
                 f"at {bundled}.\n"
-                f"   This scores against the {len(json.load(open(bundled)))}-example "
+                f"   This scores against the {len(json.loads(Path(bundled).read_text()))}-example "
                 f"sample dataset, not the live release.\n"
                 f"   Pass --training-data <path> to override or set HOPE_API_KEY for "
                 f"live data.\n"

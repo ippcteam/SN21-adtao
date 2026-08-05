@@ -19,7 +19,6 @@ every validator derive the identical value from the same package.
 from __future__ import annotations
 
 import hashlib
-from typing import Optional
 
 from hope.commitment.canonical import canonical_cbor_dumps
 
@@ -53,7 +52,7 @@ def build_outcome_commitment(epoch_id: str, digest: bytes) -> bytes:
     return OUTCOME_COMMIT_PREFIX + digest + str(epoch_id).encode("utf-8")
 
 
-def parse_outcome_commitment(raw: bytes) -> Optional[tuple[str, bytes]]:
+def parse_outcome_commitment(raw: bytes) -> tuple[str, bytes] | None:
     """Parse a Raw commitment into (epoch_id, digest), or None if not ours."""
     if not isinstance(raw, (bytes, bytearray)) or not raw.startswith(OUTCOME_COMMIT_PREFIX):
         return None
@@ -81,7 +80,7 @@ def verify_package_against_commitment(epoch_id: str, package: dict, raw: bytes) 
 
 
 def read_outcome_commitment(subtensor, netuid: int, signer_ss58: str,
-                            *, block_hash: Optional[str] = None) -> Optional[bytes]:
+                            *, block_hash: str | None = None) -> bytes | None:
     """Read the `sn21-outcomes-v1` Raw commit published by `signer_ss58`, or None.
 
     Reads `Commitments.CommitmentOf[netuid][signer_ss58]` (single-slot,
@@ -100,7 +99,7 @@ def read_outcome_commitment(subtensor, netuid: int, signer_ss58: str,
 
 def verify_outcome_commitment(subtensor, netuid: int, signer_ss58: str,
                               epoch_id: str, package: dict,
-                              *, block_hash: Optional[str] = None) -> tuple[bool, str]:
+                              *, block_hash: str | None = None) -> tuple[bool, str]:
     """Read the on-chain outcome commitment for `signer_ss58` and verify the
     `package` matches it. Returns (ok, reason)."""
     raw = read_outcome_commitment(subtensor, netuid, signer_ss58, block_hash=block_hash)

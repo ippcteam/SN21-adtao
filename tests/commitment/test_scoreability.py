@@ -264,8 +264,7 @@ class TestEpochMatch:
         plain["epoch_id"] = "EPOCH-B"
         # Re-sign and re-encrypt with AAD = epoch_id_for_aad = "EPOCH-A"
         # Validator will then check plaintext.epoch_id == "EPOCH-A" → fail.
-        if "inner_sig" in plain:
-            del plain["inner_sig"]
+        plain.pop("inner_sig", None)
         from hope.commitment.inner_sig import add_inner_sig
         add_inner_sig(plain, setup["sk"], hotkey_field="miner_hotkey")
         enc = encrypt_prediction(plain, epoch_id="EPOCH-B")  # plaintext epoch_id matches arg

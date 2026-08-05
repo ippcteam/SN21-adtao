@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +51,9 @@ class WeightsCommitResult:
 
     success: bool
     message: str
-    block_number: Optional[int]
-    block_hash: Optional[bytes]   # 32-byte raw hash, suitable for 9.C.2 binding
-    extrinsic_hash: Optional[str]
+    block_number: int | None
+    block_hash: bytes | None   # 32-byte raw hash, suitable for 9.C.2 binding
+    extrinsic_hash: str | None
 
 
 def commit_weights_layer_9c3(
@@ -122,9 +121,9 @@ def commit_weights_layer_9c3(
     success = bool(getattr(response, "success", False))
     message = str(getattr(response, "message", ""))[:200]
 
-    block_number: Optional[int] = None
-    block_hash: Optional[bytes] = None
-    extrinsic_hash: Optional[str] = None
+    block_number: int | None = None
+    block_hash: bytes | None = None
+    extrinsic_hash: str | None = None
 
     receipt = getattr(response, "extrinsic_receipt", None)
     if receipt is not None:
@@ -198,7 +197,7 @@ def commit_weights_layer_9c3(
     )
 
 
-def _read_validator_last_update(subtensor, netuid: int, validator_wallet) -> Optional[int]:
+def _read_validator_last_update(subtensor, netuid: int, validator_wallet) -> int | None:
     """Best-effort read of ``LastUpdate[netuid][validator_uid]`` (the block at
     which this validator last successfully set weights).
 
@@ -228,7 +227,7 @@ def _read_validator_last_update(subtensor, netuid: int, validator_wallet) -> Opt
         return None
 
 
-def _resolve_block_hash(subtensor, block_number: int) -> Optional[bytes]:
+def _resolve_block_hash(subtensor, block_number: int) -> bytes | None:
     """Best-effort lookup of block_hash for a block number.
 
     The Bittensor SDK exposes the underlying substrate interface as
@@ -248,7 +247,7 @@ def _resolve_block_hash(subtensor, block_number: int) -> Optional[bytes]:
     if isinstance(h, (bytes, bytearray)):
         return bytes(h)
     if isinstance(h, str):
-        s = h[2:] if h.startswith("0x") else h
+        s = h.removeprefix("0x")
         try:
             return bytes.fromhex(s)
         except ValueError:

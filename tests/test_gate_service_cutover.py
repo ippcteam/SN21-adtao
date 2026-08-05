@@ -1,9 +1,9 @@
 """Gate service + M4 switch — verdict documents, key mapping, switch safety."""
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from typing import ClassVar
 
 from hope.backtest.cutover import LEGACY, SHADOW, select_standings, weight_source
 from hope.backtest.gate_service import runner_predictions_to_gate_keys
-from hope.publication.rail import AttestedDocument, verify
 
 
 class TestKeyMapping:
@@ -21,8 +21,8 @@ class TestKeyMapping:
 
 
 class TestCutoverSwitch:
-    LEGACY_S = {"m1": 0.6}
-    SHADOW_S = {"m2": 0.8}
+    LEGACY_S: ClassVar = {"m1": 0.6}
+    SHADOW_S: ClassVar = {"m2": 0.8}
 
     def test_default_is_legacy(self, monkeypatch):
         monkeypatch.delenv("SN21_WEIGHT_SOURCE", raising=False)

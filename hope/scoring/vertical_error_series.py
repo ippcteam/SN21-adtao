@@ -26,9 +26,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
-from typing import Iterable, Optional
 
 VERTICAL_ECOMMERCE = "ecommerce"
 VERTICAL_LEAD_GEN = "lead_gen"
@@ -96,7 +96,7 @@ def load_entries(root: str) -> list[dict]:
 
 def weekly_series(
     entries: Iterable[dict],
-    miner: Optional[str] = None,
+    miner: str | None = None,
 ) -> list[dict]:
     """Fold entries into (iso_week, vertical) → mean error + counts.
 

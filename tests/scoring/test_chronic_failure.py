@@ -38,24 +38,22 @@ from hope.backtest.shadow import (
 )
 from hope.scoring import standing_ledger as sl
 from hope.scoring.chronic_failure import (
-    min_survivors_from,
-    house_hotkey_from,
-    MIN_SURVIVORS_ENV,
-    HOUSE_HOTKEY_ENV,
-    KIND_EVICTION_WITHHELD,
+    DEFAULT_REPEAT_REVIEW_DAYS,
+    DEFAULT_STRIKES_TO_EVICT,
+    DEFAULT_WINDOW_DAYS,
     FAULT_MINER,
     FAULT_NONE,
     FAULT_SUBNET,
     FAULT_UNKNOWN,
+    HOUSE_HOTKEY_ENV,
     KIND_CLEAN,
     KIND_EVICTED,
     KIND_EVICTION_RETRACTED,
+    KIND_EVICTION_WITHHELD,
     KIND_EXCLUDED,
     KIND_REINSTATED,
     KIND_STRIKE,
-    DEFAULT_REPEAT_REVIEW_DAYS,
-    DEFAULT_STRIKES_TO_EVICT,
-    DEFAULT_WINDOW_DAYS,
+    MIN_SURVIVORS_ENV,
     REASON_CRASH,
     REASON_MEMORY,
     REASON_TIMEOUT,
@@ -66,6 +64,8 @@ from hope.scoring.chronic_failure import (
     classify_failure,
     evicted_hotkeys,
     failure_reason,
+    house_hotkey_from,
+    min_survivors_from,
     observe_day,
     params_from_env,
     reinstate,
@@ -336,7 +336,7 @@ def test_subnet_fault_days_are_excluded_from_the_denominator_too():
         days.append((_d(i), _fail()))
     days.append((_d(6), {HK: (False, ERR_DOCKER_UNAVAILABLE)}))  # our fault
     days.append((_d(5), _fail()))                                # the 5th strike
-    states, log, last = _run_days({}, [], days, P)
+    _states, log, last = _run_days({}, [], days, P)
     assert last.evicted == (HK,)
     assert strikes_in_window(log, HK, _d(5), P.window_days) == 5
 
@@ -435,7 +435,7 @@ def test_a_retracted_eviction_does_not_wipe_the_real_strike_history():
     # and the fifth bad day evicts him again, on the real count
     after = observe_day(back.states, log, DAY + timedelta(days=1), _fail(), P)
     assert after.evicted == (HK,)
-    ev = [e for e in after.events if e.kind == KIND_EVICTED][0]
+    ev = next(e for e in after.events if e.kind == KIND_EVICTED)
     assert ev.detail["strikes"] == 5
 
 
@@ -449,7 +449,7 @@ def test_a_retracted_eviction_does_not_make_the_next_one_a_repeat():
     st = after.states[HK]
     assert st.evictions_total == 1                       # this is their FIRST
     assert st.reinstate_not_before == nxt                # no cooldown served
-    ev = [e for e in after.events if e.kind == KIND_EVICTED][0]
+    ev = next(e for e in after.events if e.kind == KIND_EVICTED)
     assert ev.detail["repeat"] is False
 
 
@@ -501,7 +501,7 @@ def test_retraction_survives_a_round_trip_through_the_ledger(tmp_path):
     reconstruction retract_eviction does must work off persisted events."""
     root = str(tmp_path)
     days = [(_d(4 - i), _fail()) for i in range(5)]
-    states, log, last = _run_days({}, [], days, P)
+    states, log, _last = _run_days({}, [], days, P)
     sl.save_eviction_states(root, states)
     sl.append_strike_events(root, log)
 
@@ -662,7 +662,7 @@ def test_manual_reinstate_respects_the_cooldown():
 
 
 def test_eviction_event_carries_the_numbers_that_produced_it():
-    states, log, ev_day = _evict_once()
+    _states, log, ev_day = _evict_once()
     ev = [e for e in log if e.kind == KIND_EVICTED][-1]
     assert ev.detail["strikes"] == 5
     assert ev.detail["strikes_to_evict"] == P.strikes_to_evict
@@ -690,7 +690,7 @@ def test_eviction_state_and_strike_log_round_trip(tmp_path):
     assert sl.load_eviction_states(root) == {}
     assert sl.load_strike_events(root) == []
 
-    states, log, ev_day = _evict_once()
+    states, log, _ev_day = _evict_once()
     sl.save_eviction_states(root, states)
     assert sl.append_strike_events(root, log) == len(log)
 
@@ -1061,7 +1061,7 @@ def test_a_genuine_prior_eviction_still_counts_after_a_retraction():
 def test_the_only_model_is_never_evicted():
     """THE CASE THE RULING NAMES. Five failed days, eviction fully earned, and it
     must still not happen because there is nobody else."""
-    states, log, last = _run_days({}, [], [
+    states, _log, last = _run_days({}, [], [
         (_d(n), _fail(with_bystander=False)) for n in (4, 3, 2, 1, 0)
     ])
     assert last.evicted == ()
@@ -1073,7 +1073,7 @@ def test_the_only_model_is_never_evicted():
 def test_the_withheld_eviction_is_recorded_not_swallowed():
     """A blocked eviction must be visible. Silently skipping it would make the
     subnet look healthy while a model that earned eviction kept earning."""
-    _, log, last = _run_days({}, [], [
+    _, log, _last = _run_days({}, [], [
         (_d(n), _fail(with_bystander=False)) for n in (4, 3, 2, 1, 0)
     ])
     withheld = [e for e in log if e.kind == KIND_EVICTION_WITHHELD]
@@ -1124,13 +1124,13 @@ def test_the_house_model_is_never_evicted_even_with_others_present():
     """the operator's second requirement: a designated house model. Distinct from the
     survivor floor — this one holds even when the field is healthy."""
     P3 = replace(P, house_hotkey=HK)
-    states, _, last = _run_days({}, [], [
+    _states, _, last = _run_days({}, [], [
         (_d(n), _fail()) for n in (4, 3, 2, 1, 0)
     ], params=P3)
     assert last.evicted == ()
     assert last.withheld == (HK,)
-    assert "house model" in [e.reason for e in last.events
-                             if e.kind == KIND_EVICTION_WITHHELD][0]
+    assert "house model" in next(e.reason for e in last.events
+                             if e.kind == KIND_EVICTION_WITHHELD)
 
 
 def test_house_hotkey_and_min_survivors_come_from_env():

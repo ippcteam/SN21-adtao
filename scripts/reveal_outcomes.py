@@ -57,7 +57,6 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("reveal_outcomes")
 
@@ -104,7 +103,7 @@ def _load_measurement(path: Path):
     return meta, episodes
 
 
-def main(argv: Optional[list] = None) -> int:
+def main(argv: list | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--measurement", required=True, type=Path,
@@ -126,8 +125,11 @@ def main(argv: Optional[list] = None) -> int:
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
     from cryptography.hazmat.primitives import serialization
+
     from hope.hope_outcomes.reveal_blob import (
-        build_reveal_blob, verify_reveal_blob, compute_reveal_blob_sha256,
+        build_reveal_blob,
+        compute_reveal_blob_sha256,
+        verify_reveal_blob,
     )
 
     # --- load measurement ---
@@ -183,6 +185,7 @@ def main(argv: Optional[list] = None) -> int:
 
     # --- commit 9.A.2 on chain ---
     import bittensor as bt
+
     from hope.commitment.on_chain import submit_outcome_reveal_hash_layer_9a2
     subtensor = bt.Subtensor(network=args.network)
     wallet = bt.wallet(name=args.signer_wallet, hotkey=args.signer_hotkey)

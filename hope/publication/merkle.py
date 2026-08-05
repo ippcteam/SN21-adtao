@@ -36,7 +36,7 @@ would let a day be swapped for a duplicate without changing the anchor.
 from __future__ import annotations
 
 import hashlib
-from typing import Sequence
+from collections.abc import Sequence
 
 LEAF_PREFIX = b"\x00"
 NODE_PREFIX = b"\x01"

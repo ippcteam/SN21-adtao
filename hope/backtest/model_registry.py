@@ -15,7 +15,7 @@ Pure: chain access injected as a reader fn (hotkey -> [(block, raw_str)]).
 
 from __future__ import annotations
 
-from typing import Callable, Iterable, Optional
+from collections.abc import Callable, Iterable
 
 from hope.backtest.shadow import ShadowModel
 
@@ -28,7 +28,7 @@ MODEL_COMMIT_PREFIX = "sn21-model:v1:"
 _REPO_ALLOWED = set("abcdefghijklmnopqrstuvwxyz0123456789./-_:")
 
 
-def parse_model_commitment(raw: str) -> Optional[dict]:
+def parse_model_commitment(raw: str) -> dict | None:
     """Parse a model commitment; None if not ours or malformed.
 
     Format (deep-study 2026-07-30 — matches the system's own prediction-path

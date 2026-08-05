@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -21,7 +21,7 @@ class HorizonOutcome(BaseModel):
 
     cost_delta_pct: float
     conversions_delta_pct: float
-    efficiency_delta_pct: Optional[float] = None
+    efficiency_delta_pct: float | None = None
     goal_miss: Literal[0, 1]  # 1 = goal was missed during this horizon
 
 
@@ -54,13 +54,13 @@ class ScoringMetadata(BaseModel):
         "system_estimate", "predict_zero", "conditional_prior"
     ] = "conditional_prior"
     coverage_status: Literal["trust_enriched", "baseline"] = "baseline"
-    conditional_prior: Optional[ConditionalPriorBaseline] = None
+    conditional_prior: ConditionalPriorBaseline | None = None
 
 
 class Outcome(BaseModel):
     """Complete ground truth for one episode across all horizons."""
 
     episode_id: str
-    t7: Optional[HorizonOutcome] = None
-    t14: Optional[HorizonOutcome] = None
+    t7: HorizonOutcome | None = None
+    t14: HorizonOutcome | None = None
     scoring_metadata: ScoringMetadata = ScoringMetadata()

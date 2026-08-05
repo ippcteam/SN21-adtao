@@ -120,7 +120,7 @@ class TestRubberStampAttackDefense:
 
     def test_shadow_cannot_rubber_stamp_primary_plaintext(self):
         primary_sk, primary_pk = _make_keypair()
-        shadow_sk, shadow_pk = _make_keypair()
+        _shadow_sk, shadow_pk = _make_keypair()
 
         # Primary signs their pre-scoring state
         primary_plaintext = {
@@ -140,7 +140,7 @@ class TestRubberStampAttackDefense:
     def test_shadow_cannot_forge_primary_signature(self):
         # Shadow wants to publish content claiming primary's hotkey, but they don't
         # have primary's private key → can't sign.
-        primary_sk, primary_pk = _make_keypair()
+        _primary_sk, primary_pk = _make_keypair()
         shadow_sk, _ = _make_keypair()
 
         plaintext = {"validator_hotkey": primary_pk, "epoch_id": "X"}

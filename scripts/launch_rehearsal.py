@@ -26,16 +26,19 @@ import os
 import shutil
 import sys
 import tempfile
-from datetime import date, timedelta
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from hope.scoring.settle_day_flow import (  # noqa: E402
-    SettledHorizon, score_entry, score_entry_v2, settle_scoring_v2_enabled,
+from hope.scoring.settle_day_flow import (
+    SettledHorizon,
+    score_entry,
+    score_entry_v2,
+    settle_scoring_v2_enabled,
 )
-from hope.validator.daily_loop import run_daily_loop  # noqa: E402
+from hope.validator.daily_loop import run_daily_loop
 
 METRICS = ("cost_delta_pct", "conversions_delta_pct", "efficiency_delta_pct")
 
@@ -208,8 +211,9 @@ def main():
         # floor is whatever his sheet says for the settle day — not a week
         # index. Derived from the schedule rather than hardcoded, so the
         # rehearsal cannot drift from the published numbers.
-        from hope.scoring.collateral_floor import floor_for_day
         from datetime import date as _date
+
+        from hope.scoring.collateral_floor import floor_for_day
         floor = summary.get("collateral_floor_alpha")
         # LAUNCH_FLAGS configures SN21_IM_LAUNCH_DATE, which now means the
         # first-live-bundle date and SHIFTS the whole schedule. Compare against
@@ -260,8 +264,9 @@ def main():
         # No launch date configured no longer means "hold at rung zero" — the operator's
         # sheet carries real calendar dates, so the published schedule runs as
         # miners were shown it.
-        from hope.scoring.collateral_floor import floor_for_day as _ffd
         from datetime import date as _d2
+
+        from hope.scoring.collateral_floor import floor_for_day as _ffd
         expect3 = _ffd(_d2.fromisoformat(summary3["day"]))
         check("with no launch date set, the published sheet governs",
               summary3.get("collateral_floor_alpha") == expect3,

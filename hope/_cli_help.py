@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import re
 
-
 _PCT_NOT_FOLLOWED_BY_PAREN = re.compile(r"%(?!\()")
 
 

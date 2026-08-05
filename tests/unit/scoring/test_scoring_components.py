@@ -1,12 +1,12 @@
 """Tests for individual scoring components."""
 
-from hope.protocol.prediction import HorizonPrediction, QuantilePrediction
 from hope.protocol.outcomes import HorizonOutcome
+from hope.protocol.prediction import HorizonPrediction, QuantilePrediction
 from hope.scoring.components.base import EpisodeContext
-from hope.scoring.components.quantile_accuracy import QuantileAccuracy
 from hope.scoring.components.calibration import Calibration
 from hope.scoring.components.directional import DirectionalAccuracy
 from hope.scoring.components.goal_accuracy import GoalAccuracy
+from hope.scoring.components.quantile_accuracy import QuantileAccuracy
 
 
 def _make_prediction(cost=0.0, conv=0.0, eff=0.0, spread=5.0, goal_miss=0.0):

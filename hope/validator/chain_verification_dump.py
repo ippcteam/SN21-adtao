@@ -59,12 +59,12 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        from hope.validator._subtensor import make_subtensor
         from hope.commitment.canonical import canonical_cbor_loads
         from hope.commitment.chain_reader import (
             decode_revealed_tle_plaintext,
             read_revealed_commitments,
         )
+        from hope.validator._subtensor import make_subtensor
         with make_subtensor(args.network) as subtensor:
             revealed = read_revealed_commitments(
                 subtensor, args.netuid, args.validator_hotkey,

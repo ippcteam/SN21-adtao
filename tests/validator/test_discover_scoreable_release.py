@@ -111,7 +111,7 @@ def test_late_staged_newest_does_not_block_prior_scoring():
     """Regression: if the NEWEST epoch is published LATE on its Monday (after the
     05:00 close), the prior epoch must still resolve as scoreable — not get its
     deadline rolled a week forward (the W27-staged-~13:00 → W26-blocked bug)."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
     # Most recent past Monday at 13:00 UTC (a late stage, after the 05:00 close).
     monday = (now - timedelta(days=now.weekday())).replace(

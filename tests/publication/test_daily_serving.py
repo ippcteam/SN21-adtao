@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 from datetime import date
+from pathlib import Path
 
 import pytest
 import uvicorn
@@ -26,7 +27,7 @@ from hope.scoring.settle_day_flow import SettledHorizon, score_entry_v2
 from hope.validator.api.daily import router as daily_router
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
-from verify_day import verify_day  # noqa: E402
+from verify_day import verify_day
 
 KEY = Ed25519PrivateKey.generate()
 DAY = date(2026, 8, 18)
@@ -111,9 +112,9 @@ def test_tampered_score_is_caught_over_http_too(served):
     trusted."""
     url, root = served
     p = receipt_path(root, str(DAY))
-    env = json.load(open(p))
+    env = json.loads(Path(p).read_text())
     env["document"]["metrics"]["entries"][0]["score"] = 0.999999
-    json.dump(env, open(p, "w"))
+    Path(p).write_text(json.dumps(env))
     v = verify_day(url=url, day=str(DAY))
     assert not v["ok"]
     assert v["checks"]["attestation"]["verdict"] == "FAIL"
@@ -152,6 +153,7 @@ def test_old_days_stay_provable_as_the_feed_grows(tmp_path):
     the FIRST day still verifies against the CURRENT root — no archive node,
     no block-pinned read. Option A failed exactly here."""
     from datetime import timedelta
+
     from hope.publication.feed_root import day_proof, feed_root
     from hope.publication.merkle import verify_proof
     root = str(tmp_path)
@@ -238,8 +240,8 @@ def test_every_endpoint_the_verify_doc_advertises_actually_exists(served):
     Extracts the /v1/daily paths from SN21_VERIFYING.md and hits each one."""
     import re
     url, _ = served
-    doc = open(os.path.join(os.path.dirname(__file__), "..", "..",
-                            "docs", "SN21_VERIFYING.md")).read()
+    doc = Path(__file__).resolve().parents[2].joinpath(
+        "docs", "SN21_VERIFYING.md").read_text()
     paths = set(re.findall(r"/v1/daily/[\w\-{}<>/.]+", doc))
     assert paths, "doc advertises no endpoints — did the format change?"
     for p in paths:
@@ -255,9 +257,9 @@ def test_the_diffs_field_the_doc_tells_miners_to_post_is_real(served):
     if it changes, the doc's failure instructions become wrong."""
     url, root = served
     p = receipt_path(root, str(DAY))
-    env = json.load(open(p))
+    env = json.loads(Path(p).read_text())
     env["document"]["metrics"]["entries"][0]["score"] = 0.5
-    json.dump(env, open(p, "w"))
+    Path(p).write_text(json.dumps(env))
     v = verify_day(url=url, day=str(DAY))
     assert v["diffs"], "no diffs produced for a mismatched score"
     d = v["diffs"][0]

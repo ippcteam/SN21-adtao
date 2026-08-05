@@ -48,7 +48,6 @@ import argparse
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 from hope.validator.weights_commit import commit_weights_layer_9c3
 
@@ -81,15 +80,15 @@ class HeartbeatResult:
     current_block: int
     last_update_block: int
     weights_count: int = 0
-    submitted_block: Optional[int] = None
-    error_message: Optional[str] = None
+    submitted_block: int | None = None
+    error_message: str | None = None
 
 
 def _read_validator_state(
     subtensor,
     netuid: int,
     validator_hotkey_ss58: str,
-) -> tuple[int, Optional[int], Optional[int], Optional[list[tuple[int, int]]]]:
+) -> tuple[int, int | None, int | None, list[tuple[int, int]] | None]:
     """Read the chain state needed to decide whether to heartbeat.
 
     Returns:
@@ -292,6 +291,7 @@ def main() -> int:
         return 2
 
     import bittensor as bt
+
     # Bittensor's import installs loguru AND calls logging.disable(), which
     # globally suppresses stdlib logging regardless of basicConfig/setLevel —
     # so the heartbeat's action=submitted / action=skipped_* decision lines

@@ -1,8 +1,8 @@
 """Tests for the on-chain outcome commitment protocol (P4b)."""
 from hope.commitment.outcome_commitment import (
     OUTCOME_COMMIT_PREFIX,
-    outcomes_digest,
     build_outcome_commitment,
+    outcomes_digest,
     parse_outcome_commitment,
     verify_package_against_commitment,
 )

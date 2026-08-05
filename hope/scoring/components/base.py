@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from hope.protocol.prediction import HorizonPrediction
     from hope.protocol.outcomes import HorizonOutcome
+    from hope.protocol.prediction import HorizonPrediction
 
 
 @dataclass

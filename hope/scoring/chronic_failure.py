@@ -43,9 +43,9 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
-from typing import Mapping, Optional, Sequence
 
 from hope.backtest.container_runner import (
     ERR_DOCKER_UNAVAILABLE,
@@ -109,7 +109,7 @@ HOUSE_HOTKEY_ENV = "SN21_HOUSE_HOTKEY"
 MIN_SURVIVORS_ENV = "SN21_MIN_SURVIVORS"
 
 
-def house_hotkey_from(environ) -> Optional[str]:
+def house_hotkey_from(environ) -> str | None:
     """The protected house model, or None. Blank/unset means no protection —
     MIN_SURVIVORS still applies, so the field cannot empty either way."""
     raw = (environ.get(HOUSE_HOTKEY_ENV) or "").strip()
@@ -183,7 +183,7 @@ class ChronicFailureParams:
     # never reads the env — an unset variable must not be able to
     # empty the subnet.
     min_survivors: int = MIN_SURVIVORS
-    house_hotkey: Optional[str] = None
+    house_hotkey: str | None = None
     window_days: int = DEFAULT_WINDOW_DAYS
     repeat_review_days: int = DEFAULT_REPEAT_REVIEW_DAYS
     # Whether an ANCIENT prior eviction still makes the next one a "repeat".
@@ -191,7 +191,7 @@ class ChronicFailureParams:
     # "a repeat inside the review period"; whether that period is a raw day
     # count or the four-weekly review cadence (SN21_REWARD_MECHANISM.md §
     # review cadence) is unruled — PENDING RATIFICATION.
-    repeat_lookback_days: Optional[int] = None
+    repeat_lookback_days: int | None = None
 
 
 @dataclass(frozen=True)
@@ -201,9 +201,9 @@ class StrikeEvent:
     hotkey: str
     kind: str
     fault: str = FAULT_NONE
-    error: Optional[str] = None
+    error: str | None = None
     reason: str = REASON_NONE
-    detail: Optional[dict] = None   # lifecycle payload (strike count etc.)
+    detail: dict | None = None   # lifecycle payload (strike count etc.)
 
 
 @dataclass(frozen=True)
@@ -215,10 +215,10 @@ class EvictionState:
     the second eviction a repeat.
     """
     hotkey: str
-    evicted_on: Optional[date] = None
+    evicted_on: date | None = None
     evictions_total: int = 0
-    last_eviction_on: Optional[date] = None
-    reinstate_not_before: Optional[date] = None
+    last_eviction_on: date | None = None
+    reinstate_not_before: date | None = None
 
 
 @dataclass(frozen=True)
@@ -243,8 +243,8 @@ def chronic_failure_policy_enabled(environ=os.environ) -> bool:
     return environ.get(FLAG_ENV, "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _int_env(environ, name: str, default: Optional[int],
-             minimum: int = 1) -> Optional[int]:
+def _int_env(environ, name: str, default: int | None,
+             minimum: int = 1) -> int | None:
     """One override. Unset/blank/garbage keeps the default — a typo in a
     deploy env must never silently loosen or tighten an eviction policy."""
     raw = environ.get(name, "")
@@ -279,7 +279,7 @@ def params_from_env(environ=os.environ) -> ChronicFailureParams:
 
 # ---- fault classification ---------------------------------------------------
 
-def classify_failure(ok: bool, error: Optional[str]) -> str:
+def classify_failure(ok: bool, error: str | None) -> str:
     """Who owns this failed run — the miner, us, or nobody knowable.
 
     The ONLY place the error-string taxonomy lives. The markers are imported
@@ -306,8 +306,7 @@ def classify_failure(ok: bool, error: Optional[str]) -> str:
     if err.startswith(ERR_DOCKER_UNAVAILABLE):
         # Our host has no docker daemon. Never the miner's fault.
         return FAULT_SUBNET
-    if err.startswith(ERR_PULL_TIMEOUT_PREFIX) or \
-            err.startswith(ERR_PULL_EXIT_PREFIX):
+    if err.startswith((ERR_PULL_TIMEOUT_PREFIX, ERR_PULL_EXIT_PREFIX)):
         # Registry-side: could be the miner's registry or our network.
         # UNRULED (blocker) -> counts toward nothing. NOTE the pull-exit
         # marker MUST be tested before ERR_EXIT_PREFIX-owned strings and must
@@ -327,13 +326,13 @@ def classify_failure(ok: bool, error: Optional[str]) -> str:
     return FAULT_UNKNOWN
 
 
-def exit_code(error: Optional[str]) -> Optional[int]:
+def exit_code(error: str | None) -> int | None:
     """The exit code embedded in a runner error string, when there is one."""
     m = _EXIT_CODE_RE.search(error or "")
     return int(m.group(1)) if m else None
 
 
-def failure_reason(ok: bool, error: Optional[str]) -> str:
+def failure_reason(ok: bool, error: str | None) -> str:
     """Miner-facing label for a failed day. Display only — the strike COUNT
     never depends on this, so refining it (e.g. teaching container_runner to
     name an OOM explicitly) cannot move anybody's eviction date."""
@@ -383,7 +382,7 @@ def strike_days_in_window(
     hotkey: str,
     as_of: date,
     window_days: int = DEFAULT_WINDOW_DAYS,
-    since: Optional[date] = None,
+    since: date | None = None,
 ) -> tuple:
     """The distinct STRIKE days inside the rolling window, ascending.
 
@@ -418,7 +417,7 @@ def strikes_in_window(
     hotkey: str,
     as_of: date,
     window_days: int = DEFAULT_WINDOW_DAYS,
-    since: Optional[date] = None,
+    since: date | None = None,
 ) -> int:
     return len(strike_days_in_window(events, hotkey, as_of, window_days, since))
 
@@ -436,7 +435,7 @@ def _is_repeat(state: EvictionState, day: date,
 
 def evict(state: EvictionState, day: date,
           params: ChronicFailureParams = ChronicFailureParams(),
-          strikes: Optional[int] = None) -> tuple:
+          strikes: int | None = None) -> tuple:
     """Evict a miner as of `day`. Returns (new_state, lifecycle event).
 
     Clause (b): a FIRST eviction is eligible to return as soon as the model
@@ -552,7 +551,7 @@ def reinstate(states: Mapping[str, EvictionState], hotkey: str, day: date,
 
 def _eviction_blocked(hotkey: str, states: Mapping[str, EvictionState],
                       known: frozenset,
-                      params: "ChronicFailureParams") -> Optional[str]:
+                      params: ChronicFailureParams) -> str | None:
     """Why this eviction must not proceed, or None if it may.
 
     Two independent reasons, both from the 2026-08-03 governance ruling:

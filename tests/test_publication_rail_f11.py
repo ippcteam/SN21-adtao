@@ -3,11 +3,16 @@ from datetime import date
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from hope.publication.rail import (
-    AttestedDocument, attest, build_document, canonical_bytes, chain_ok,
-    document_sha256, verify,
-)
 from hope.publication.accuracy_feed import build_accuracy_metrics
+from hope.publication.rail import (
+    AttestedDocument,
+    attest,
+    build_document,
+    canonical_bytes,
+    chain_ok,
+    document_sha256,
+    verify,
+)
 from hope.scoring.daily_score_flow import HorizonResult
 
 KEY = Ed25519PrivateKey.generate()

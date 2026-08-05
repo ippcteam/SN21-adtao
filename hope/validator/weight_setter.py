@@ -30,14 +30,12 @@ Burn rate explained:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from hope.validator.tiered_weights import (
     MinerEpochInputs,
     TierAllocationResult,
     TieredAllocator,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +52,7 @@ class WeightSetter:
     def __init__(
         self,
         burn_fraction: float = DEFAULT_BURN_FRACTION,
-        tiered_allocator: Optional[TieredAllocator] = None,
+        tiered_allocator: TieredAllocator | None = None,
     ):
         self.burn_fraction = burn_fraction
         self.previous_weights: dict[int, float] = {}
@@ -184,7 +182,7 @@ class WeightSetter:
 
         u16: dict[int, int] = {}
         for uid, w in normalised.items():
-            value = int(round(w * 65_535))
+            value = round(w * 65_535)
             if value > 0:
                 u16[uid] = min(65_535, value)
         return u16

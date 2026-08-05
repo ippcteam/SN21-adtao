@@ -40,8 +40,8 @@ def main(argv=None) -> int:
                    help="compute + print the digest/payload but do NOT commit")
     args = p.parse_args(argv)
 
+    from hope.commitment.outcome_commitment import build_outcome_commitment, outcomes_digest
     from hope.validator.data_client import HopeDataClient
-    from hope.commitment.outcome_commitment import outcomes_digest, build_outcome_commitment
 
     client = HopeDataClient()
     package = asyncio.run(client.fetch_package(args.release, include_outcomes=True))
@@ -57,9 +57,10 @@ def main(argv=None) -> int:
         return 0
 
     import bittensor as bt
+    from bittensor.core.extrinsics.serving import publish_metadata_extrinsic
+
     from hope.validator._log import configure_logging
     from hope.validator._subtensor import make_subtensor
-    from bittensor.core.extrinsics.serving import publish_metadata_extrinsic
 
     subtensor = make_subtensor(args.network)
     configure_logging(logger, "INFO")

@@ -20,20 +20,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import logging
 import os
+import re
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 import httpx
 
 from hope.reporting.aggregator import aggregate
 from hope.reporting.epoch_artifact import EpochArtifact
 from hope.reporting.payload import EpochReportPayload
-
 
 logger = logging.getLogger("post_epoch_report")
 
@@ -72,7 +72,7 @@ def post_payload(
     *,
     endpoint: str,
     api_key: str,
-    client: Optional[httpx.Client] = None,
+    client: httpx.Client | None = None,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     backoff_initial_seconds: float = DEFAULT_BACKOFF_INITIAL_SECONDS,
     backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
@@ -95,7 +95,7 @@ def post_payload(
         own_client = True
 
     try:
-        last_response: Optional[httpx.Response] = None
+        last_response: httpx.Response | None = None
         delay = backoff_initial_seconds
         for attempt in range(1, max_attempts + 1):
             logger.info(
@@ -183,7 +183,7 @@ def _retry_after_seconds(response: httpx.Response, *, default: float) -> float:
     a `"Retry after Ns"` body hint. Clamped to [1, 10] so a hostile header
     can't stall the cron."""
     raw = response.headers.get("Retry-After") or response.headers.get("retry-after")
-    val: Optional[float] = None
+    val: float | None = None
     if raw:
         try:
             val = float(raw)
@@ -258,7 +258,7 @@ def _load_artifact(artifact_path: Path) -> EpochArtifact:
     return EpochArtifact(**data)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="POST one epoch's leaderboard report to the CMS.",
     )
@@ -276,8 +276,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                              "published/frozen epoch isn't re-posted as a fresh "
                              "-COR correction every tick.")
     parser.add_argument("--endpoint", default=None,
-                        help="Override $SN21_LEADERBOARD_ENDPOINT (default: %s)."
-                             % DEFAULT_ENDPOINT)
+                        help=f"Override $SN21_LEADERBOARD_ENDPOINT (default: {DEFAULT_ENDPOINT}).")
     parser.add_argument("--api-key", default=None,
                         help="Override $SN21_LEADERBOARD_API_KEY (default: env).")
     parser.add_argument("--dry-run", action="store_true",

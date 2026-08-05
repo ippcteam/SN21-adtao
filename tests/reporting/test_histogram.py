@@ -10,6 +10,8 @@ Two surfaces tested:
 
 from __future__ import annotations
 
+import itertools
+
 import pytest
 
 from hope.reporting.histogram import (
@@ -17,7 +19,6 @@ from hope.reporting.histogram import (
     compute_summary,
     merge_for_k_anonymity,
 )
-
 
 # ----------------------------------------------------------------------------
 # compute_histogram
@@ -40,25 +41,25 @@ def test_empty_scores_returns_all_zero_bins():
 
 
 def test_score_at_upper_bound_lands_in_last_bin():
-    edges, counts = compute_histogram([1.0])
+    _edges, counts = compute_histogram([1.0])
     assert counts[-1] == 1
     assert sum(counts) == 1
 
 
 def test_score_at_lower_bound_lands_in_first_bin():
-    edges, counts = compute_histogram([0.0])
+    _edges, counts = compute_histogram([0.0])
     assert counts[0] == 1
 
 
 def test_out_of_range_scores_are_clipped():
-    edges, counts = compute_histogram([-0.1, 1.5])
+    _edges, counts = compute_histogram([-0.1, 1.5])
     assert counts[0] == 1     # -0.1 clipped to 0.0 → first bin
     assert counts[-1] == 1    # 1.5 clipped to 1.0 → last bin
     assert sum(counts) == 2
 
 
 def test_custom_n_bins_and_range():
-    edges, counts = compute_histogram(
+    _edges, counts = compute_histogram(
         [0.2, 0.5, 0.8], n_bins=4, range_=(0.0, 1.0),
     )
     # Bins: [0,0.25), [0.25,0.5), [0.5,0.75), [0.75,1.0]
@@ -192,7 +193,7 @@ def test_merge_edges_remain_monotonic():
     edges = [0.0, 0.1, 0.3, 0.5, 0.6, 1.0]
     counts = [3, 2, 8, 1, 6]
     new_edges, _ = merge_for_k_anonymity(edges, counts)
-    for a, b in zip(new_edges, new_edges[1:]):
+    for a, b in itertools.pairwise(new_edges):
         assert a < b
 
 

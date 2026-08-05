@@ -58,7 +58,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 os.pardir))
 
-from hope.publication.receipt_feed import receipt_dir, receipt_path  # noqa: E402
+from hope.publication.receipt_feed import receipt_dir, receipt_path
 
 PASS, FAIL = "PASS", "FAIL"
 
@@ -136,8 +136,8 @@ def verify_day(root: str | None = None, day: str = "", miner: str | None = None,
                expect_anchor: str | None = None, url: str | None = None) -> dict:
     from hope.publication.rail import AttestedDocument, document_sha256, verify
     from hope.scoring.settle_day_flow import (
-        W_COVERAGE, W_DIRECTION, W_GOAL, W_QUANTILE, W_TOTAL,
-        entry_components, entry_components_v2,
+        entry_components,
+        entry_components_v2,
     )
 
     checks: dict[str, dict] = {}

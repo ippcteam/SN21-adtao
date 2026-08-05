@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from hope.protocol.episode import Episode
-from hope.protocol.prediction import Prediction, HorizonPrediction
-from hope.protocol.outcomes import Outcome, HorizonOutcome
+from hope.protocol.outcomes import HorizonOutcome, Outcome
+from hope.protocol.prediction import HorizonPrediction, Prediction
 from hope.scoring.components.base import EpisodeContext
-from hope.scoring.components.quantile_accuracy import QuantileAccuracy
 from hope.scoring.components.calibration import Calibration
 from hope.scoring.components.directional import DirectionalAccuracy
 from hope.scoring.components.goal_accuracy import GoalAccuracy
+from hope.scoring.components.quantile_accuracy import QuantileAccuracy
 from hope.scoring.weights import ScoringWeights
 
 

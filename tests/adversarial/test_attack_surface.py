@@ -113,6 +113,7 @@ class TestT1ValidatorRewritesPrediction:
         tampered_dict = dict(tampered)
         # Keep miner's original inner_sig and AES-encrypt the tampered plaintext.
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
         from hope.commitment.canonical import aes_gcm_aad
         aes = AESGCM(miner["enc"].aes_key)
         nonce = os.urandom(12)

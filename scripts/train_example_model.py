@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # (here) and at inference time (hope-miner --model trained). Drift between
 # the two is what causes "trained model performs differently in production"
 # bugs, so we keep one implementation.
-from hope.miner.models.feature_extraction import extract_features  # noqa: E402
+from hope.miner.models.feature_extraction import extract_features
 
 
 def extract_targets(outcome: dict) -> dict:
@@ -126,8 +126,8 @@ def main():
     print("\n=== Step 2: Train XGBoost Model ===")
 
     try:
-        from xgboost import XGBRegressor
         from sklearn.model_selection import cross_val_score
+        from xgboost import XGBRegressor
     except ImportError:
         print("  Install XGBoost: pip install xgboost scikit-learn")
         print("  Skipping model training — showing feature extraction only")
@@ -187,11 +187,12 @@ def main():
     # =====================================================
     print("\n=== Step 4: Score Against Ground Truth ===")
 
-    from hope.scoring import EpochScorer
-    from hope.protocol.episode import Episode
-    from hope.protocol.prediction import Prediction, HorizonPrediction, QuantilePrediction
-    from hope.protocol.outcomes import Outcome, HorizonOutcome
     from datetime import datetime, timezone
+
+    from hope.protocol.episode import Episode
+    from hope.protocol.outcomes import HorizonOutcome, Outcome
+    from hope.protocol.prediction import HorizonPrediction, Prediction, QuantilePrediction
+    from hope.scoring import EpochScorer
 
     scorer = EpochScorer()
 

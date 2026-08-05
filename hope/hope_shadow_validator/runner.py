@@ -37,7 +37,6 @@ inputs, same scorer, different signing key + chain account.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -64,7 +63,7 @@ def run_shadow_epoch(
     epoch_idx: int,
     miner_inputs: list[MinerOnChainInputs],
     archive_endpoints: list[ArchiveEndpoint],
-    archive_client: Optional[ArchiveClient],
+    archive_client: ArchiveClient | None,
     timing: TimingBounds,
     outcomes_release_round: int,
     outcomes_fetched_at_round: int,

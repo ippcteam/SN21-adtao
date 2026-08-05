@@ -19,19 +19,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from hope.commitment.archives import ArchiveEndpoint
 from hope.commitment.prediction_payload import build_horizon_entry
 from hope.miner.episode_client import EpisodeClient
+from hope.miner.models.baseline import BaselineModel
 from hope.miner.onchain_submitter import (
     MinerSubmissionResult,
     submit_miner_epoch,
 )
 from hope.miner.prediction_engine import PredictionEngine
-from hope.miner.models.baseline import BaselineModel
 from hope.protocol.prediction import Prediction
 
 logger = logging.getLogger(__name__)
@@ -67,7 +66,7 @@ class MinerRunner:
         archive_endpoints: list[ArchiveEndpoint],
         self_archive_url: str,
         blocks_until_reveal: int,
-        upload_auth_headers: Optional[dict[str, str]] = None,
+        upload_auth_headers: dict[str, str] | None = None,
     ) -> MinerSubmissionResult:
         """Run one epoch and submit predictions via the Layer 9.B chain path.
 
@@ -270,12 +269,13 @@ def main():
     # the miner spends time generating predictions and writing to chain.
     # Both checks degrade gracefully when the validator HTTP API is
     # unreachable; they only HARD-FAIL on an authoritative negative.
+    import sys as _sys_preflight
+
     from hope.miner.preflight import (
         PreflightError,
         check_registration,
         check_submission_window,
     )
-    import sys as _sys_preflight
     try:
         check_submission_window(args.validator_url)
     except PreflightError as e:
@@ -329,18 +329,20 @@ def _avg(it) -> float:
     return sum(vals) / len(vals) if vals else 0.0
 
 
-def _run_epoch_onchain_cli(args, runner: "MinerRunner", wallet) -> dict:
+def _run_epoch_onchain_cli(args, runner: MinerRunner, wallet) -> dict:
     """Bridge from CLI flags to `MinerRunner.run_epoch_onchain`.
 
     Loads chain + ed25519 signing key, fetches episodes via HTTP (the chain
     path doesn't yet read episodes from the on-chain `episodes_root`; that
     is Phase E), and submits one epoch.
     """
+    import time as _time
+
     import bittensor as bt
     from cryptography.hazmat.primitives import serialization
+
     from hope.commitment.archives import ArchiveEndpoint
     from hope.commitment.drand_lib import drand_round_at
-    import time as _time
 
     subtensor = bt.Subtensor(network=args.bt_network)
 
@@ -410,7 +412,7 @@ def _derive_ed25519_from_wallet(wallet) -> Ed25519PrivateKey:
             "wallet.hotkey.private_key not available; supply --ed25519-key-file"
         )
     if isinstance(private_key, str):
-        private_key = bytes.fromhex(private_key[2:] if private_key.startswith("0x") else private_key)
+        private_key = bytes.fromhex(private_key.removeprefix("0x"))
     if len(private_key) == 64:
         # ed25519 secret keys are sometimes stored as the 64-byte expanded form;
         # the seed is the first 32 bytes.

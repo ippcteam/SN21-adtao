@@ -48,19 +48,18 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date, timedelta
-from typing import Callable, Optional
 
 from hope.scoring import standing_ledger
 from hope.scoring.collateral_floor import (
     ANCHOR_FIRST_SETTLEMENT,
     CaptureState,
-    LAUNCH_FLOOR_ALPHA,
     active_floor,
-    ladder_anchor_from,
     compliance_view,
     fold_day,
+    ladder_anchor_from,
 )
 from hope.scoring.settle_day_flow import run_settle_day
 from hope.validator.daily_stream_weights import (
@@ -155,13 +154,13 @@ def run_daily_loop(
     ledger_root: str,
     day: date,
     outcomes_provider: Callable[[date], list],
-    earnings_provider: Optional[Callable[[date], dict[str, float]]] = None,
-    floor_alpha: Optional[float] = None,
-    key_loader: Optional[Callable[[], object]] = None,
-    chain_committer: Optional[Callable[[bytes], object]] = None,
-    chain_reader: Optional[Callable[[str], Optional[float]]] = None,
-    day_volume_provider: Optional[Callable[[date], int]] = None,
-    vertical_map_provider: Optional[Callable[[list], dict]] = None,
+    earnings_provider: Callable[[date], dict[str, float]] | None = None,
+    floor_alpha: float | None = None,
+    key_loader: Callable[[], object] | None = None,
+    chain_committer: Callable[[bytes], object] | None = None,
+    chain_reader: Callable[[str], float | None] | None = None,
+    day_volume_provider: Callable[[date], int] | None = None,
+    vertical_map_provider: Callable[[list], dict] | None = None,
     liveness_lookback_days: int = LIVENESS_LOOKBACK_DAYS,
     environ=os.environ,
 ) -> dict:
@@ -196,10 +195,13 @@ def run_daily_loop(
     # series instead of rebuilding it. Skipped silently when no provider.
     if vertical_map_provider is not None and horizon_results:
         try:
-            from hope.scoring.vertical_error_series import (
-                SeriesEntry, append_entries as append_series,
-            )
             from hope.scoring.daily_score_flow import horizon_entry_weight
+            from hope.scoring.vertical_error_series import (
+                SeriesEntry,
+            )
+            from hope.scoring.vertical_error_series import (
+                append_entries as append_series,
+            )
             vmap = vertical_map_provider(
                 sorted({r.episode_id for r in horizon_results}))
             series = []
@@ -466,7 +468,7 @@ def run_daily_loop(
     return summary
 
 
-def read_day_volume(ledger_root: str, day: date) -> Optional[int]:
+def read_day_volume(ledger_root: str, day: date) -> int | None:
     """The [D3] volume handoff for the runner: day_volume.json, trusted
     only when it records THIS day (a stale file must fail closed, not
     smuggle yesterday's volume past the gate)."""

@@ -1,29 +1,26 @@
 """W2 — [D9] soft-phase collateral floors: capture path + advisory view."""
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
-
-from datetime import timedelta
 
 from hope.scoring.collateral_floor import (
     ALPHA_LADDER,
     ALPHA_SCHEDULE,
-    BURN_SCHEDULE,
-    FIRST_LIVE_BUNDLE_DAY,
-    burn_for_day,
     ANCHOR_FIRST_SETTLEMENT,
     ANCHOR_LAUNCH,
-    ladder_anchor_from,
-    active_floor,
-    launch_date_from,
+    BURN_SCHEDULE,
+    FIRST_LIVE_BUNDLE_DAY,
     LAUNCH_FLOOR_ALPHA,
     TERMINAL_FLOOR_ALPHA,
     CaptureState,
+    active_floor,
     add_voluntary,
+    burn_for_day,
     compliance_view,
     floor_for_day,
     fold_day,
+    launch_date_from,
 )
 
 LAUNCH = date(2026, 8, 10)

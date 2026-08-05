@@ -21,6 +21,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
+import verify_epoch as ve
+
 from hope.commitment.archives import ArchiveEndpoint, FetchAggregate, FetchResult
 from hope.commitment.prediction_payload import (
     build_horizon_entry,
@@ -35,9 +37,6 @@ from hope.commitment.scoring_state import (
     build_pre_scoring_state,
 )
 from hope.scoring.onchain_adapter import HorizonTruth, score_one_miner
-
-import verify_epoch as ve
-
 
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "recorded_epoch" / "recorded_epoch.json"
 

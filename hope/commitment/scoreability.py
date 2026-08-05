@@ -44,7 +44,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from cryptography.exceptions import InvalidTag
 
@@ -86,9 +86,9 @@ class OnChainCommitTriple:
     """
 
     timelock_k_present: bool                # 9.B TimelockEncrypted(K) commit
-    sha256_ct_commit: Optional[bytes]       # 9.B Sha256(AES_ct) commit (32 bytes)
-    self_archive_url: Optional[str]         # 9.B Raw{N} commit
-    chain_block_at_k_commit: Optional[int]  # block where TLE K landed
+    sha256_ct_commit: bytes | None       # 9.B Sha256(AES_ct) commit (32 bytes)
+    self_archive_url: str | None         # 9.B Raw{N} commit
+    chain_block_at_k_commit: int | None  # block where TLE K landed
 
 
 @dataclass(frozen=True)
@@ -111,8 +111,8 @@ class ScoreabilityResult:
     """Outcome of the 8-check scoreability rule for one miner prediction."""
 
     ok: bool
-    failure: Optional[ScoreabilityFailure]
-    plaintext: Optional[dict[str, Any]]  # decoded only if ok=True
+    failure: ScoreabilityFailure | None
+    plaintext: dict[str, Any] | None  # decoded only if ok=True
     detail: str = ""
 
 
@@ -236,9 +236,10 @@ def _extract_cbor_from_decrypt(
     round-trip we need the raw bytes. We re-run AES-GCM here rather than
     refactoring decrypt_prediction to expose internals.
     """
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
     from hope.commitment.canonical import aes_gcm_aad
     from hope.commitment.prediction_payload import AES_NONCE_BYTES
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     nonce = aes_ct[:AES_NONCE_BYTES]
     ct_with_tag = aes_ct[AES_NONCE_BYTES:]
@@ -247,7 +248,7 @@ def _extract_cbor_from_decrypt(
     return cipher.decrypt(nonce, ct_with_tag, aad)
 
 
-def _check_horizon_shape(plaintext: dict[str, Any]) -> Optional[str]:
+def _check_horizon_shape(plaintext: dict[str, Any]) -> str | None:
     horizons = plaintext.get("horizons")
     if not isinstance(horizons, list) or not horizons:
         return "horizons missing or empty"

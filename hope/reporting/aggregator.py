@@ -25,8 +25,9 @@ v3 contract change (CMS-side scope expansion):
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
+from hope.reporting.epoch_artifact import EpochArtifact
 from hope.reporting.histogram import (
     compute_histogram,
     compute_summary,
@@ -35,17 +36,15 @@ from hope.reporting.histogram import (
 from hope.reporting.payload import (
     COMPETITIVE_EMISSION_SHARE,
     ELITE_EMISSION_SHARE,
+    PARTICIPATING_EMISSION_SHARE,
+    POOL_SIZE_DISTRIBUTION_FLOOR,
     EmergencyIntervention,
     EpochReportPayload,
     MinerResult,
-    PARTICIPATING_EMISSION_SHARE,
-    POOL_SIZE_DISTRIBUTION_FLOOR,
     ScoreDistribution,
     TierDistribution,
     TierSlice,
 )
-from hope.reporting.epoch_artifact import EpochArtifact
-
 
 # In v1 the simplified gate is "raw_score > baseline" with baseline=0.
 # Phase 1 of richer scoring (Q11) plumbs in per-episode conditional
@@ -157,7 +156,7 @@ def aggregate(
     top_n: int = TOP_N_SCORES_MAX,
     supersedes: str | None = None,
     epoch_id_override: str | None = None,
-    epoch_membership_uids: Optional[set[int]] = None,
+    epoch_membership_uids: set[int] | None = None,
 ) -> EpochReportPayload:
     """Aggregate a private artifact into the public payload.
 
@@ -290,7 +289,7 @@ def _build_miner_results(
     artifact: EpochArtifact,
     *,
     tier_split_active: bool,
-    epoch_membership_uids: Optional[set[int]] = None,
+    epoch_membership_uids: set[int] | None = None,
 ) -> list[MinerResult]:
     """Build the per-UID Cacheon-style table from artifact.per_uid_scores.
 

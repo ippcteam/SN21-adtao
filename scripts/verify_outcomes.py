@@ -31,9 +31,9 @@ def main(argv=None) -> int:
                    help="SS58 of the operator's outcome-signer hotkey")
     args = p.parse_args(argv)
 
-    from hope.validator.data_client import HopeDataClient
-    from hope.validator._subtensor import make_subtensor
     from hope.commitment.outcome_commitment import verify_outcome_commitment
+    from hope.validator._subtensor import make_subtensor
+    from hope.validator.data_client import HopeDataClient
 
     client = HopeDataClient()
     package = asyncio.run(client.fetch_package(args.release, include_outcomes=True))

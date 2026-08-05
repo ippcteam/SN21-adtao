@@ -299,8 +299,8 @@ class TieredAllocator:
         # Sort by EMA descending for tier placement.
         ordered = sorted(gate_passed, key=lambda pair: pair[1], reverse=True)
         n = len(ordered)
-        n_elite_candidates = max(1, int(round(n * 0.20)))
-        n_competitive = max(1, int(round(n * 0.40)))
+        n_elite_candidates = max(1, round(n * 0.20))
+        n_competitive = max(1, round(n * 0.40))
 
         # Elite quality floor: per the reward doc, the floor uses the
         # baseline value of qualifying miners' (raw - baseline). We

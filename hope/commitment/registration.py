@@ -54,14 +54,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-
 
 REG_V1_PREFIX = b"sn21-reg-v1:"
 
@@ -137,7 +135,7 @@ def build_registration_payload(
     return REG_V1_PREFIX + role.value.encode("ascii") + ed25519_pk + sig
 
 
-def parse_registration_payload(raw: bytes) -> Optional[RegistrationPayload]:
+def parse_registration_payload(raw: bytes) -> RegistrationPayload | None:
     """Parse a chain `Raw{N}` payload into a RegistrationPayload, or None.
 
     Returns None if `raw` is malformed (wrong prefix, wrong length, unknown
@@ -165,7 +163,7 @@ def verify_registration(
     payload: RegistrationPayload,
     *,
     ss58_pubkey: bytes,
-    expected_role: Optional[RegistrationRole] = None,
+    expected_role: RegistrationRole | None = None,
 ) -> bool:
     """Verify a parsed RegistrationPayload's ed25519 signature.
 
@@ -216,8 +214,9 @@ def submit_registration_commit(
 
     Returns the same `CommitResult` the underlying helper returns.
     """
-    from hope.commitment.on_chain import _to_commit_result
     from bittensor.core.extrinsics.serving import publish_metadata_extrinsic
+
+    from hope.commitment.on_chain import _to_commit_result
 
     payload = build_registration_payload(
         role=role,

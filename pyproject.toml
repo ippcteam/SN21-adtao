@@ -46,7 +46,12 @@ dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.0",
-    "ruff>=0.1",
+    # PINNED, deliberately. ruff's rule set moves between releases, so an
+    # unpinned linter means CI checks something different from what a
+    # contributor ran locally — and a lint failure blocks the test step, so
+    # the suite silently stops running. Bump this on purpose, with the fixes
+    # the new version asks for, in a commit of its own.
+    "ruff==0.16.1",
     "mypy>=1.5",
 ]
 miner = [
@@ -82,13 +87,63 @@ include = ["hope*", "scripts"]
 line-length = 120
 target-version = "py310"
 
+[tool.ruff.lint]
+# Rules switched off deliberately, each for a reason that is about this
+# codebase rather than about taste. Everything else ruff selects by default
+# is enforced, and the version is pinned above so that set cannot drift.
+ignore = [
+    # BLE001 — blind `except Exception`. The validator, the chain readers and
+    # the daily loop deliberately catch broadly at their outer boundaries: an
+    # unexpected error from a chain library or a miner's container must not
+    # take the validator out of consensus. The narrow catches live inside.
+    "BLE001",
+    # S110 / S112 — try/except/pass and try/except/continue. Same boundaries:
+    # skipping an unparseable chain event or an unreachable archive is the
+    # intended behaviour, not an oversight.
+    "S110",
+    "S112",
+    # DTZ003 / DTZ011 — naive `utcnow()` / `today()`. This codebase stores and
+    # compares UTC-naive datetimes throughout, including in the on-chain
+    # payloads and the ledgers. Making some of them aware and not others is
+    # how comparison bugs start; converting all of them is a change to the
+    # data model, not a lint fix.
+    "DTZ003",
+    "DTZ011",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# B008 fires on a call in a default argument because a MUTABLE default is
+# shared between calls. Every instance here is either FastAPI's documented
+# dependency-injection idiom or a frozen dataclass, so there is nothing to
+# mutate and nothing to share.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "hope.scoring.champion_promotion.PromotionParams",
+    "hope.scoring.chronic_failure.ChronicFailureParams",
+    "hope.scoring.participation.ParticipationParams",
+    "hope.scoring.weight_curve.CurveParams",
+]
+
 [tool.ruff.lint.per-file-ignores]
 # Integration + diagnostic scripts manipulate sys.path before importing
 # the local `hope` package. The E402 rule fires on those imports; this is
 # intentional, so we silence it per-file rather than scatter inline noqa.
 "scripts/integration/*.py" = ["E402"]
 "scripts/phase0/*.py" = ["E402"]
-"scripts/verify_epoch.py" = ["E402"]
+
+# TRY004 wants TypeError when a value is of the wrong type. These three raise
+# on CBOR that was decoded from CHAIN BYTES: a payload that decodes to
+# something other than a map is malformed input, not a caller passing the
+# wrong argument. ValueError is the honest signal, and it is what the
+# verifier's callers already catch.
+"scripts/verify_epoch.py" = ["E402", "TRY004"]
+"hope/commitment/episode_artifacts.py" = ["TRY004"]
+"hope/commitment/prediction_payload.py" = ["TRY004"]
+
+# ASYNC230 warns that a blocking open() stalls the event loop. This is a
+# single-shot CLI that awaits one fetch and then writes its output files;
+# nothing else is scheduled on the loop for it to stall.
+"scripts/generate_training_data.py" = ["ASYNC230"]
 
 [tool.mypy]
 python_version = "3.10"

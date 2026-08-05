@@ -14,7 +14,6 @@ from typing import Any
 
 import numpy as np
 
-
 # Encoding for categorical action_type. Order matters — the model learns
 # from these integer values, so changing it breaks serialised models.
 ACTION_TYPE_MAP = {
@@ -43,7 +42,7 @@ def extract_features(episode: dict[str, Any]) -> dict[str, float]:
 
     # Campaign time series (first campaign)
     campaigns = pw.get("campaigns", {}) or {}
-    camp = list(campaigns.values())[0] if campaigns else {}
+    camp = next(iter(campaigns.values())) if campaigns else {}
     cost = np.array(camp.get("cost_micros", [0] * 60), dtype=float)
     conv = np.array(camp.get("conversions", [0.0] * 60), dtype=float)
     imp_share = np.array(camp.get("impression_share", [0.0] * 60), dtype=float)

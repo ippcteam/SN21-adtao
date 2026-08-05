@@ -16,8 +16,8 @@ Pure module: corpus and predictions in, verdict out.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Optional
 
 METRICS = ("cost_delta_pct", "conversions_delta_pct", "efficiency_delta_pct")
 QUANTILES = ((0.1, "p10"), (0.5, "p50"), (0.9, "p90"))
@@ -61,7 +61,7 @@ def corpus_spread(outcomes: Iterable[OutcomeRow]) -> dict[str, float]:
 
 
 def gate_score(outcomes: list[OutcomeRow],
-               predictions: dict[tuple[str, int], dict]) -> Optional[dict]:
+               predictions: dict[tuple[str, int], dict]) -> dict | None:
     """Score a prediction set against settled outcomes.
 
     predictions: {(episode_id, horizon): {metric: {p10,p50,p90}}}

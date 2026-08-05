@@ -73,7 +73,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 
 from hope.commitment.canonical import canonical_cbor_dumps
 
-
 REVEAL_BLOB_VERSION = 1
 
 

@@ -12,16 +12,16 @@ from hope.commitment.prediction_payload import (
     AES_NONCE_BYTES,
     AES_TAG_BYTES,
     ALLOWED_HORIZONS,
-    PROBABILITY_SCALE,
     PREDICTION_PAYLOAD_VERSION,
+    PROBABILITY_SCALE,
+    _is_valid_epoch_id,
+    _scale_probability,
+    _scale_quantile,
     build_horizon_entry,
     build_prediction_plaintext,
     decrypt_prediction,
     encrypt_prediction,
     verify_prediction_inner_sig,
-    _is_valid_epoch_id,
-    _scale_probability,
-    _scale_quantile,
 )
 
 

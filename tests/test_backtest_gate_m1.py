@@ -1,9 +1,15 @@
 """M1 backtest gate — metric properties + admission logic."""
-import pytest
+
+from typing import ClassVar
 
 from hope.backtest.gate import (
-    METRICS, OutcomeRow, admission_verdict, corpus_spread, gate_score,
-    naive_baseline_prediction, pinball,
+    METRICS,
+    OutcomeRow,
+    admission_verdict,
+    corpus_spread,
+    gate_score,
+    naive_baseline_prediction,
+    pinball,
 )
 
 
@@ -25,7 +31,7 @@ class TestPinball:
 
 
 class TestGate:
-    OUT = [_o("e1", 7), _o("e2", 7, c=-0.3, v=0.1, e=0.2), _o("e1", 14, c=0.05, v=-0.1, e=0.0)]
+    OUT: ClassVar = [_o("e1", 7), _o("e2", 7, c=-0.3, v=0.1, e=0.2), _o("e1", 14, c=0.05, v=-0.1, e=0.0)]
 
     def test_oracle_beats_baseline(self):
         spread = corpus_spread(self.OUT)

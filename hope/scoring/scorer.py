@@ -17,8 +17,8 @@ import logging
 from dataclasses import dataclass, field
 
 from hope.protocol.episode import Episode
-from hope.protocol.prediction import Prediction
 from hope.protocol.outcomes import Outcome
+from hope.protocol.prediction import Prediction
 from hope.scoring.episode_scorer import EpisodeScore, EpisodeScorer
 from hope.scoring.null_penalty import NullPenalty
 from hope.scoring.skill_score import SkillScoreCalculator

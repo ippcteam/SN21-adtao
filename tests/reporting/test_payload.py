@@ -14,16 +14,15 @@ from pydantic import ValidationError
 from hope.reporting.payload import (
     COMPETITIVE_EMISSION_SHARE,
     ELITE_EMISSION_SHARE,
-    EpochReportPayload,
-    EmergencyIntervention,
     PARTICIPATING_EMISSION_SHARE,
     POOL_SIZE_DISTRIBUTION_FLOOR,
+    EmergencyIntervention,
+    EpochReportPayload,
     ScoreDistribution,
     ScoreSummary,
     TierDistribution,
     TierSlice,
 )
-
 
 # Canonical "valid full payload" reused across tests. Mirrors the
 # contract §4 example with Q9 (string epoch_id) applied.
@@ -295,9 +294,9 @@ def test_no_uid_shaped_field_in_declared_schema():
                 f"declared field {model_name}.{name!r} contains forbidden substring {sub!r}"
             )
 
-    for name in EpochReportPayload.model_fields.keys():
+    for name in EpochReportPayload.model_fields:
         assert_clean("EpochReportPayload", name)
     for sub_model in (ScoreDistribution, ScoreSummary, TierDistribution,
                       TierSlice, EmergencyIntervention):
-        for name in sub_model.model_fields.keys():
+        for name in sub_model.model_fields:
             assert_clean(sub_model.__name__, name)

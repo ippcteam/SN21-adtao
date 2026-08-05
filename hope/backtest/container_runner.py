@@ -23,8 +23,8 @@ from __future__ import annotations
 import json
 import subprocess
 import uuid
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Optional
 
 DEFAULT_MEMORY = "1g"
 DEFAULT_CPUS = "1"
@@ -43,13 +43,13 @@ ERR_DOCKER_UNAVAILABLE = "docker_not_available"   # SUBNET fault (our host)
 class RunResult:
     ok: bool
     predictions: dict = field(default_factory=dict)   # (episode_id -> horizons dict)
-    error: Optional[str] = None
+    error: str | None = None
     episodes_in: int = 0
     predictions_out: int = 0
 
 
 def docker_command(image_digest: str, memory: str = DEFAULT_MEMORY,
-                   cpus: str = DEFAULT_CPUS, name: Optional[str] = None) -> list[str]:
+                   cpus: str = DEFAULT_CPUS, name: str | None = None) -> list[str]:
     """The exact isolation flags are part of the published contract."""
     return [
         "docker", "run", "--rm", "-i",
@@ -95,9 +95,10 @@ def run_basket_docker(image_digest: str, episodes: Iterable[dict],
         proc = subprocess.run(
             docker_command(image_digest, memory=memory, name=cname),
             input=stdin_blob.encode(), capture_output=True, timeout=timeout_s,
+            check=False,
         )
     except subprocess.TimeoutExpired:
-        subprocess.run(["docker", "kill", cname], capture_output=True, timeout=30)
+        subprocess.run(["docker", "kill", cname], capture_output=True, timeout=30, check=False)
         return RunResult(
             ok=False,
             error=f"{ERR_TIMEOUT_PREFIX}{timeout_s}s (container killed)",
@@ -114,7 +115,7 @@ def run_basket_docker(image_digest: str, episodes: Iterable[dict],
                      episodes_in=len(eps), predictions_out=len(preds))
 
 
-def run_basket_callable(model: Callable[[dict], Optional[dict]],
+def run_basket_callable(model: Callable[[dict], dict | None],
                         episodes: Iterable[dict]) -> RunResult:
     """Harness mode: same framing, python callable instead of a container.
     The callable returns the horizons dict (or None to abstain)."""

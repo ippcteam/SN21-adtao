@@ -34,10 +34,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
-
 from datetime import datetime, timezone
+from typing import Any
 
 from hope.commitment.canonical import canonical_cbor_dumps
 from hope.commitment.prediction_payload import (
@@ -219,7 +219,7 @@ def score_one_miner_per_episode(
     if not per_entry_scores:
         return 0
     avg = sum(per_entry_scores) / len(per_entry_scores)
-    return int(round(max(0.0, min(1.0, avg)) * 1_000_000))
+    return round(max(0.0, min(1.0, avg)) * 1_000_000)
 
 
 def score_one_miner(
@@ -260,7 +260,7 @@ def score_one_miner(
     if not horizon_scores:
         return 0
     avg = sum(horizon_scores) / len(horizon_scores)
-    return int(round(max(0.0, min(1.0, avg)) * 1_000_000))
+    return round(max(0.0, min(1.0, avg)) * 1_000_000)
 
 
 # --- Scoring v2: spec-aligned 4-component horizon score --------------------
@@ -371,7 +371,7 @@ def score_one_miner_v2(
     if not horizon_scores:
         return 0
     avg = sum(horizon_scores) / len(horizon_scores)
-    return int(round(max(0.0, min(1.0, avg)) * 1_000_000))
+    return round(max(0.0, min(1.0, avg)) * 1_000_000)
 
 
 def make_scorer(
@@ -505,11 +505,11 @@ def aggregate_outcomes_to_truth(
             continue
         out[h] = HorizonTruth(
             horizon=h,
-            truth_cost_p50_dpct=int(round(_median(slot["cost"]) * QUANTILE_SCALE)),
-            truth_conv_p50_dpct=int(round(_median(slot["conv"]) * QUANTILE_SCALE)),
-            truth_eff_p50_dpct=int(round(_median(slot["eff"]) * QUANTILE_SCALE)),
-            goal_miss_freq_ppm=int(round(_mean(slot["miss"]) * PROBABILITY_SCALE)),
-            instab_freq_ppm=int(round(_mean(slot["instab"]) * PROBABILITY_SCALE)),
+            truth_cost_p50_dpct=round(_median(slot["cost"]) * QUANTILE_SCALE),
+            truth_conv_p50_dpct=round(_median(slot["conv"]) * QUANTILE_SCALE),
+            truth_eff_p50_dpct=round(_median(slot["eff"]) * QUANTILE_SCALE),
+            goal_miss_freq_ppm=round(_mean(slot["miss"]) * PROBABILITY_SCALE),
+            instab_freq_ppm=round(_mean(slot["instab"]) * PROBABILITY_SCALE),
         )
     return out
 
@@ -621,7 +621,7 @@ def wrap_epoch_scorer(
             except ValueError:
                 continue
             score = max(0.0, min(1.0, float(miner_score.final_score)))
-            out[hk] = int(round(score * 1_000_000))
+            out[hk] = round(score * 1_000_000)
         return out
 
     return scorer

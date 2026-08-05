@@ -47,7 +47,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 
@@ -162,8 +161,8 @@ def build_app(
         epoch_id: str,
         miner_identity: str,
         sha256_hex: str,
-        x_miner_hotkey: Optional[str] = Header(None, alias="X-Miner-Hotkey"),
-        x_miner_signature: Optional[str] = Header(None, alias="X-Miner-Signature"),
+        x_miner_hotkey: str | None = Header(None, alias="X-Miner-Hotkey"),
+        x_miner_signature: str | None = Header(None, alias="X-Miner-Signature"),
     ):
         start = time.monotonic()
         outcome = "ok"

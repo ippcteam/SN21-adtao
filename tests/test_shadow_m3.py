@@ -4,9 +4,12 @@ from datetime import date, timedelta
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from hope.backtest.container_runner import RunResult, run_basket_callable
+from hope.backtest.container_runner import run_basket_callable
 from hope.backtest.shadow import (
-    ShadowModel, cutover_ready, finalize_day, record_day, run_shadow_day,
+    ShadowModel,
+    cutover_ready,
+    finalize_day,
+    run_shadow_day,
 )
 from hope.publication.rail import AttestedDocument, verify
 from hope.scoring.episode_average import ScoredEpisode
@@ -24,7 +27,7 @@ class TestLedger:
         eps = [{"episode_id": "e1"}, {"episode_id": "e2"}]
         s = run_shadow_day("2026-08-10", eps, [M], _runner, str(tmp_path))
         assert s["models_run"] == 1 and s["results"]["hk1"]["predictions"] == 2
-        lines = open(tmp_path / "shadow" / "2026-08-10" / "hk1.jsonl").readlines()
+        lines = (tmp_path / "shadow" / "2026-08-10" / "hk1.jsonl").read_text().splitlines()
         assert len(lines) == 1
         rec = json.loads(lines[0])
         assert rec["image_digest"] == "sha256:abc" and rec["predictions_out"] == 2

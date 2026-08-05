@@ -30,8 +30,8 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional
 
 # Same strictness as model_registry.parse_model_commitment: 64 lowercase hex.
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -78,8 +78,8 @@ class ModelCommitment:
 class PullResult:
     pulled: bool
     verified: bool
-    local_ref: Optional[str] = None   # the digest-pinned ref to run
-    error: Optional[str] = None
+    local_ref: str | None = None   # the digest-pinned ref to run
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,11 +87,11 @@ class IntakeResult:
     hotkey: str
     digest: str
     status: str
-    detail: Optional[str] = None
-    gate: Optional[dict] = None       # gate-service result when it ran
+    detail: str | None = None
+    gate: dict | None = None       # gate-service result when it ran
 
 
-def validate_commitment(c: ModelCommitment) -> Optional[str]:
+def validate_commitment(c: ModelCommitment) -> str | None:
     """Return a rejection reason for a malformed commitment, else None.
     Runs BEFORE any docker interaction — miner-controlled strings that fail
     the grammar never reach a subprocess."""
@@ -107,7 +107,8 @@ def _default_puller(pinned_ref: str) -> tuple[bool, str]:
     """docker pull by digest-pinned ref. Argument list, never a shell."""
     try:
         proc = subprocess.run(["docker", "pull", pinned_ref],
-                              capture_output=True, timeout=600)
+                              capture_output=True, timeout=600,
+                              check=False)
     except subprocess.TimeoutExpired:
         return False, f"{ERR_PULL_TIMEOUT_PREFIX}600s"
     except FileNotFoundError:
@@ -124,7 +125,9 @@ def _default_inspector(pinned_ref: str) -> list[str]:
         proc = subprocess.run(
             ["docker", "image", "inspect", pinned_ref,
              "--format", "{{range .RepoDigests}}{{.}}\n{{end}}"],
-            capture_output=True, timeout=60)
+            capture_output=True, timeout=60,
+            check=False,
+        )
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return []
     if proc.returncode != 0:
@@ -134,8 +137,8 @@ def _default_inspector(pinned_ref: str) -> list[str]:
 
 
 def pull_by_digest(image_ref: str, expected_digest: str,
-                   puller: Optional[Callable[[str], tuple[bool, str]]] = None,
-                   inspector: Optional[Callable[[str], list[str]]] = None,
+                   puller: Callable[[str], tuple[bool, str]] | None = None,
+                   inspector: Callable[[str], list[str]] | None = None,
                    ) -> PullResult:
     """Pull the image digest-pinned and verify the local RepoDigests carry
     the committed digest. Validation of both inputs happens here too, so
@@ -161,8 +164,8 @@ def pull_by_digest(image_ref: str, expected_digest: str,
 
 def intake_model(commitment: ModelCommitment,
                  gate_runner: Callable[[str], dict],
-                 puller: Optional[Callable[[str], tuple[bool, str]]] = None,
-                 inspector: Optional[Callable[[str], list[str]]] = None,
+                 puller: Callable[[str], tuple[bool, str]] | None = None,
+                 inspector: Callable[[str], list[str]] | None = None,
                  ) -> IntakeResult:
     """Full intake for one commitment: validate -> pull -> verify -> gate.
 
@@ -188,7 +191,7 @@ def intake_model(commitment: ModelCommitment,
 
     try:
         gate = gate_runner(pull.local_ref)
-    except Exception as exc:  # noqa: BLE001 — per-miner isolation is the contract
+    except Exception as exc:
         return IntakeResult(commitment.hotkey, commitment.digest,
                             STATUS_REJECTED_GATE,
                             detail=f"gate raised: {exc}")
@@ -202,8 +205,8 @@ def intake_model(commitment: ModelCommitment,
 
 def intake_all(commitments: Iterable[ModelCommitment],
                gate_runner: Callable[[str], dict],
-               puller: Optional[Callable[[str], tuple[bool, str]]] = None,
-               inspector: Optional[Callable[[str], list[str]]] = None,
+               puller: Callable[[str], tuple[bool, str]] | None = None,
+               inspector: Callable[[str], list[str]] | None = None,
                ) -> dict:
     """Intake sweep over the pending-admission set. Per-miner isolation:
     every commitment gets an IntakeResult, no exception propagates."""
@@ -212,7 +215,7 @@ def intake_all(commitments: Iterable[ModelCommitment],
         try:
             results.append(intake_model(c, gate_runner,
                                         puller=puller, inspector=inspector))
-        except Exception as exc:  # noqa: BLE001 — absolute backstop
+        except Exception as exc:
             results.append(IntakeResult(c.hotkey, c.digest,
                                         STATUS_PULL_FAILED,
                                         detail=f"intake raised: {exc}"))

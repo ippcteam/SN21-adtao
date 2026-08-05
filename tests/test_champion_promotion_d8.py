@@ -2,7 +2,6 @@
 from datetime import date, timedelta
 
 from hope.scoring.champion_promotion import (
-    PromotionParams,
     PromotionState,
     observe_day,
 )

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-from typing import Optional
 from unittest.mock import patch
 
 import pytest
@@ -30,7 +29,7 @@ from hope.validator.onchain_runner import (
 from hope.validator.weights_commit import WeightsCommitResult
 
 
-def _ok_commit(block: int, reveal_round: Optional[int] = None) -> CommitResult:
+def _ok_commit(block: int, reveal_round: int | None = None) -> CommitResult:
     return CommitResult(
         success=True, message="OK", block_number=block,
         extrinsic_hash="0x" + "ab" * 32, reveal_round=reveal_round,

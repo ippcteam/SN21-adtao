@@ -26,8 +26,8 @@ _PLATFORM_PATH = os.environ.get("SN21_PLATFORM_PATH")
 if _PLATFORM_PATH:
     sys.path.insert(0, _PLATFORM_PATH)
 
-from hope.backtest.container_runner import run_basket_docker  # noqa: E402
-from hope.backtest.shadow import ShadowModel, run_shadow_day  # noqa: E402
+from hope.backtest.container_runner import run_basket_docker
+from hope.backtest.shadow import ShadowModel, run_shadow_day
 
 REFERENCE_IMAGE = "sn21-reference-model:v1"
 

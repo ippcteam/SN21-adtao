@@ -18,7 +18,6 @@ import json
 import os
 import re
 import sys
-
 import urllib.error
 import urllib.request
 
@@ -34,7 +33,7 @@ HELD_OUT_RELEASES = (14, 15, 16, 17)
 
 LEAK_KEYS = re.compile(
     r"customer_id$|account_name|campaign_name|customer_name|email|"
-    r"descriptive_name|user_email|login", re.I)
+    r"descriptive_name|user_email|login", re.IGNORECASE)
 
 
 def _api(path, method="GET", data=None, token=None, host="api.github.com"):
@@ -109,9 +108,8 @@ def safety_checks():
         _platform_path = os.environ.get("SN21_PLATFORM_PATH")
         if _platform_path:
             sys.path.insert(0, _platform_path)
-        from sqlalchemy import text as T
-
         from app.models import get_session
+        from sqlalchemy import text as T
         with get_session() as s:
             held = {r[0] for r in s.execute(T(
                 "SELECT id FROM bittensor_episode_candidates "
@@ -125,7 +123,7 @@ def safety_checks():
             ok = False
         else:
             print(f"  held-out leakage   : 0 of {len(held)} — benchmark intact")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"  FAIL: could not verify held-out exclusion ({type(e).__name__}: {e})")
         print("         refusing to publish without this check")
         ok = False
@@ -150,11 +148,12 @@ def main():
         clean = {k: v for k, v in os.environ.items()
                  if k not in ("GH_TOKEN", "GITHUB_TOKEN")}
         got = subprocess.run(["gh", "auth", "token"], capture_output=True,
-                             text=True, timeout=15, env=clean)
+                             text=True, timeout=15, env=clean,
+                             check=False)
         if got.returncode == 0:
             token = got.stdout.strip()
             print("auth: gh CLI credentials")
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     if not token:
         token = (os.environ.get("GH_TOKEN")

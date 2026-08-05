@@ -19,9 +19,9 @@ separate D7-curve step.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
-from typing import Iterable, Optional
 
 # GAP-2 v2 §7 — review-adjustable within [10, 14].
 DEFAULT_HALF_LIFE_DAYS = 12.0
@@ -57,7 +57,7 @@ def episode_weighted_average(
     as_of: date,
     half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
     window_days: int = DEFAULT_WINDOW_DAYS,
-) -> Optional[float]:
+) -> float | None:
     """The D13 standing: age-weighted mean over the retained window.
 
     Returns None when no episode falls inside the window (a miner with no

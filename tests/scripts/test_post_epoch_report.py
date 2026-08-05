@@ -24,8 +24,7 @@ import httpx
 # scripts/ isn't a package in older test setups; ensure it's importable.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts import post_epoch_report as por  # noqa: E402
-
+from scripts import post_epoch_report as por
 
 # ----------------------------------------------------------------------------
 # Fixtures
@@ -33,9 +32,9 @@ from scripts import post_epoch_report as por  # noqa: E402
 
 def _write_synthetic_artifact(tmp_path: Path, n_qualifying: int = 20) -> Path:
     """Write an EpochArtifact JSON for the script to consume."""
-    from hope.reporting.epoch_artifact import build_and_write_artifact
     from hope.commitment.on_chain import CommitResult
     from hope.commitment.scoreability import OnChainCommitTriple
+    from hope.reporting.epoch_artifact import build_and_write_artifact
     from hope.validator.onchain_reader import MinerReadResult
     from hope.validator.onchain_runner import EpochScoringOutcome
     from hope.validator.weights_commit import WeightsCommitResult

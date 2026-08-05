@@ -42,9 +42,9 @@ Pure module: no I/O, no chain calls.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
-from typing import Callable, Optional
 
 # THE PUBLISHED DATED SCHEDULE (timetable, 2026-08-03). This SUPERSEDES the
 # 2026-08-01 weekly ramp (300 -> 475 -> 650 -> 825 -> 1000), which was five even
@@ -122,7 +122,7 @@ SUGGESTED_DRAIN_RATIO_K = 0.5
 IM_LAUNCH_DATE_ENV = "SN21_IM_LAUNCH_DATE"
 
 
-def launch_date_from(environ) -> Optional[date]:
+def launch_date_from(environ) -> date | None:
     """The IM launch date from config, or None if unset.
 
     Unset and MALFORMED both return None, and None means "hold at week 0".
@@ -175,7 +175,7 @@ def ladder_anchor_from(environ) -> str:
 
 
 def active_floor(day: date, environ,
-                 first_settlement: Optional[date] = None) -> float:
+                 first_settlement: date | None = None) -> float:
     """The floor in force on `day` per configuration.
 
     The published dated schedule (2026-08-03) replaced the week-counting model, so the
@@ -219,7 +219,7 @@ def _step_value(day: date, schedule, shift_days: int = 0) -> float:
     return value
 
 
-def floor_for_day(day: date, launch_day: Optional[date] = None) -> float:
+def floor_for_day(day: date, launch_day: date | None = None) -> float:
     """The flat alpha floor in force on `day`, per the dated ALPHA_SCHEDULE.
 
     `launch_day` is the FIRST LIVE DAILY BUNDLE date. Passing one shifts the
@@ -237,7 +237,7 @@ def floor_for_day(day: date, launch_day: Optional[date] = None) -> float:
     return _step_value(day, ALPHA_SCHEDULE, shift)
 
 
-def burn_for_day(day: date, launch_day: Optional[date] = None) -> float:
+def burn_for_day(day: date, launch_day: date | None = None) -> float:
     """Planned burn fraction in force on `day`, per the published BURN_SCHEDULE.
 
     45% -> 30% (10 Aug) -> 15% (25 Aug) -> 0% (15 Sep). The validator host
@@ -341,7 +341,7 @@ def add_voluntary(state: CaptureState, alpha: float) -> CaptureState:
 def compliance_view(
     states: dict[str, CaptureState],
     floor_alpha: float,
-    chain_reader: Optional[Callable[[str], Optional[float]]] = None,
+    chain_reader: Callable[[str], float | None] | None = None,
 ) -> dict:
     """The soft-phase report: floor state per miner, aggregates for the
     review pack. `chain_reader(hotkey) -> locked alpha` is the v435 seam —

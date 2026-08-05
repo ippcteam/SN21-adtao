@@ -10,10 +10,9 @@ Formula:
 
 from __future__ import annotations
 
-
 from hope.constants import DIRECTIONAL_NEAR_ZERO_THRESHOLD
-from hope.protocol.prediction import HorizonPrediction
 from hope.protocol.outcomes import HorizonOutcome
+from hope.protocol.prediction import HorizonPrediction
 from hope.scoring.components.base import EpisodeContext, ScoringComponent
 
 

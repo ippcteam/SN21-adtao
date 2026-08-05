@@ -9,7 +9,6 @@ import pytest
 from hope.validator.heartbeat import run_heartbeat
 from hope.validator.weights_commit import WeightsCommitResult
 
-
 VAL_SS58 = "5HiWPApiuXz9DDnkyFu4M2tWs2ar6LTKt54Bo18EL6pgZsdn"
 
 

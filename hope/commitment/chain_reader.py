@@ -42,7 +42,6 @@ The chain-side caps + lag behaviour observed (Phase 0):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -66,7 +65,7 @@ class RevealedEntry:
     payload_bytes: bytes  # full SCALE-encoded Data variant including tag
 
 
-def _scale_payload_to_bytes(payload) -> Optional[bytes]:
+def _scale_payload_to_bytes(payload) -> bytes | None:
     """Normalise a SCALE-decoded byte payload to bytes across
     async-substrate-interface 1.x and 2.x.
 
@@ -106,8 +105,8 @@ def read_commitment_of(
     netuid: int,
     hotkey_ss58: str,
     *,
-    block_hash: Optional[str] = None,
-) -> Optional[list[RawCommitField]]:
+    block_hash: str | None = None,
+) -> list[RawCommitField] | None:
     """Read the non-TLE commit for (netuid, hotkey) at a specific block (or latest).
 
     Returns None if no commit exists. Otherwise a list of
@@ -183,7 +182,7 @@ def read_revealed_commitments(
     netuid: int,
     hotkey_ss58: str,
     *,
-    block_hash: Optional[str] = None,
+    block_hash: str | None = None,
 ) -> list[RevealedEntry]:
     """Read auto-decrypted TLE plaintexts for (netuid, hotkey) at a specific block.
 
@@ -254,7 +253,7 @@ def read_events_at_block(
     subtensor,
     block_hash: str,
     *,
-    module_filter: Optional[str] = "Commitments",
+    module_filter: str | None = "Commitments",
 ) -> list[CommitEvent]:
     """Scan events emitted at a specific block, optionally filtered by pallet.
 
@@ -296,8 +295,8 @@ def read_events_at_block(
         # events look like under cyscale (bittensor>=10) and was missed
         # by the original parser.
         attributes = ev_event.get("attributes") or ev_event.get("params") or []
-        netuid: Optional[int] = None
-        hotkey_ss58: Optional[str] = None
+        netuid: int | None = None
+        hotkey_ss58: str | None = None
         if isinstance(attributes, list):
             for attr in attributes:
                 if isinstance(attr, dict):
@@ -471,7 +470,7 @@ def read_commitments_budget(
     netuid: int,
     hotkey_ss58: str,
     *,
-    block_hash: Optional[str] = None,
+    block_hash: str | None = None,
 ) -> tuple[int, int, int]:
     """Read the Commitments pallet budget state for `(netuid, hotkey)`.
 
@@ -516,9 +515,9 @@ def _max_other_last_epoch(
     netuid: int,
     own_hotkey_ss58: str,
     *,
-    block_hash: Optional[str] = None,
+    block_hash: str | None = None,
     max_samples: int = 32,
-) -> Optional[int]:
+) -> int | None:
     """Conservative lower bound for the current pallet-epoch.
 
     The Commitments pallet stores `(used_space, last_epoch)` per (netuid,
@@ -543,7 +542,7 @@ def _max_other_last_epoch(
         return None
     # Sample up to `max_samples` hotkeys to bound RPC cost
     hotkeys = hotkeys[:max_samples]
-    max_epoch: Optional[int] = None
+    max_epoch: int | None = None
     for hk in hotkeys:
         try:
             query_kwargs = {
@@ -579,7 +578,7 @@ def _max_other_last_epoch(
 _PALLET_EPOCH_BLOCKS = 360
 
 
-def _current_pallet_epoch_from_block(subtensor) -> Optional[int]:
+def _current_pallet_epoch_from_block(subtensor) -> int | None:
     """Estimate the current pallet-epoch from `block_number // RateLimit`.
 
     Independent of the max-other-last-epoch heuristic — needed for the
@@ -608,7 +607,7 @@ def commitments_budget_sufficient(
     hotkey_ss58: str,
     *,
     needed_bytes: int = MIN_VALIDATOR_BUDGET_BYTES,
-    block_hash: Optional[str] = None,
+    block_hash: str | None = None,
 ) -> tuple[bool, int, int]:
     """Return ``(sufficient, remaining_bytes, last_epoch)``.
 
@@ -661,7 +660,7 @@ def validator_already_scored_epoch(
     validator_hotkey_ss58: str,
     epoch_id: str,
     *,
-    block_hash: Optional[str] = None,
+    block_hash: str | None = None,
 ) -> bool:
     """Return True if the validator has already submitted a 9.C.1 commit
     for ``epoch_id``. Used to make scoring runs idempotent.

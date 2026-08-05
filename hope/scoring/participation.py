@@ -40,7 +40,6 @@ Pure module: no I/O, no chain calls. The ledger read lives in the caller.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 # ---- RATIFIED, 2026-08-03 --------------------------------------------
 # Share of the day's bundle a miner must actually predict for the day to count
@@ -119,7 +118,7 @@ def params_from_env(environ) -> ParticipationParams:
     return ParticipationParams(mc, dc, mz)
 
 
-def day_verdict(episodes_in: Optional[int], predictions_out: Optional[int],
+def day_verdict(episodes_in: int | None, predictions_out: int | None,
                 subnet_ran: bool, params: ParticipationParams) -> str:
     """One miner, one day: SUBMITTED, MISSED, or SUBNET_DOWN.
 

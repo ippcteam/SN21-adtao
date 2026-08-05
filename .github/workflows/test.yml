@@ -6,10 +6,41 @@ on:
   pull_request:
     branches: [main]
 
+# Lint and tests are SEPARATE JOBS on purpose, and the test job does not
+# depend on the lint job. When both were steps of one job, a single lint
+# finding failed the job before `pytest` ever ran — so the suite quietly
+# stopped running while the badge showed a failure that looked like a lint
+# problem. Two jobs means a style finding and a broken test are always
+# distinguishable, and neither can hide the other.
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # ruff is pinned in pyproject.toml's dev extra. An unpinned linter
+      # changes its rule set between releases, which is how this check
+      # started failing on code nobody had touched.
+      - name: Lint
+        run: ruff check hope/ scripts/ tests/
+
   test:
     runs-on: ubuntu-latest
     strategy:
+      # Report every interpreter's result. Without this, the first failure
+      # cancels the others and a version-specific break is invisible.
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
 
@@ -26,9 +57,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-
-      - name: Lint
-        run: ruff check hope/ scripts/ tests/
 
       - name: Tests
         run: pytest tests/ -v --tb=short

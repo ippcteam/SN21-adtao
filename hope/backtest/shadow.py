@@ -17,8 +17,9 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional
+from pathlib import Path
 
 from hope.backtest.container_runner import RunResult
 from hope.publication.rail import attest, build_document, document_sha256
@@ -62,7 +63,7 @@ def record_day(root: str, day: str, model: ShadowModel, result: RunResult) -> st
 
 
 def record_run_marker(root: str, day: str, episodes: int, models: int,
-                      generated_at: Optional[str] = None) -> str:
+                      generated_at: str | None = None) -> str:
     """Mark that the subnet RAN this shadow day. Written atomically."""
     d = shadow_dir(root, day)
     os.makedirs(d, exist_ok=True)
@@ -162,7 +163,7 @@ def day_run_status(root: str, day: str) -> dict:
 
 
 def finalize_day(root: str, day: str, generated_at: str,
-                 private_key=None, prev_sha: Optional[str] = None) -> dict:
+                 private_key=None, prev_sha: str | None = None) -> dict:
     """Summarise + (optionally) attest the day's shadow ledger via the rail."""
     d = shadow_dir(root, day)
     per_model = {}
@@ -171,7 +172,8 @@ def finalize_day(root: str, day: str, generated_at: str,
             if not fn.endswith(".jsonl"):
                 continue
             hotkey = fn[:-6]
-            lines = [json.loads(l) for l in open(os.path.join(d, fn)) if l.strip()]
+            raw = Path(d, fn).read_text().splitlines()
+            lines = [json.loads(l) for l in raw if l.strip()]
             last = lines[-1] if lines else {}
             per_model[hotkey] = {
                 "ok": last.get("ok"), "episodes_in": last.get("episodes_in"),

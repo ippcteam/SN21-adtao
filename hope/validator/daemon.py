@@ -34,8 +34,8 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
 
 logger = logging.getLogger("hope-validator-daemon")
 
@@ -210,7 +210,7 @@ TIMEOUT_RC = -137
 
 
 def _default_runner(name: str, argv: list, env_overrides: dict,
-                    timeout: Optional[float] = None) -> int:
+                    timeout: float | None = None) -> int:
     """Run one tool as a subprocess; return its exit code.
 
     On timeout the child is killed (subprocess.run terminates it) and TIMEOUT_RC
@@ -219,7 +219,7 @@ def _default_runner(name: str, argv: list, env_overrides: dict,
     env = {**os.environ, **(env_overrides or {})}
     to = timeout if (timeout and timeout > 0) else None
     try:
-        proc = subprocess.run(argv, env=env, timeout=to)
+        proc = subprocess.run(argv, env=env, timeout=to, check=False)
         return int(proc.returncode)
     except subprocess.TimeoutExpired:
         logger.error("%s: exceeded %.0fs ceiling; killed (will retry next tick)",
@@ -242,8 +242,8 @@ def run_tick(cfg: DaemonConfig,
         logger.info("tick: running %s", name)
         try:
             rc = runner(name, argv, env, timeout)
-        except Exception as exc:
-            logger.exception("%s raised: %s", name, exc)
+        except Exception:
+            logger.exception("%s raised", name)
             rc = -1
         results[name] = rc
         if rc == 0:
@@ -253,7 +253,7 @@ def run_tick(cfg: DaemonConfig,
     return results
 
 
-def main(argv: Optional[list] = None) -> int:
+def main(argv: list | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--network", default=os.environ.get("BT_NETWORK", "finney"))

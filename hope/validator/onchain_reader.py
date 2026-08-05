@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from hope.commitment.archives import (
     ArchiveClient,
@@ -58,21 +58,21 @@ class MinerReadResult:
     miner_hotkey: bytes
     miner_uid: int
     ok: bool
-    plaintext: Optional[dict[str, Any]]
-    excluded_reason: Optional[str]
-    fetch: Optional[FetchAggregate]
+    plaintext: dict[str, Any] | None
+    excluded_reason: str | None
+    fetch: FetchAggregate | None
     on_chain: OnChainCommitTriple
-    scoreability: Optional[ScoreabilityResult]
+    scoreability: ScoreabilityResult | None
 
 
 @dataclass(frozen=True)
 class ChainCommits9B:
     """Three commit fields read from chain for one (netuid, hotkey)."""
 
-    timelock_k_revealed: Optional[bytes]    # auto-decrypted K (32 bytes) or None
-    sha256_ct_commit: Optional[bytes]       # raw 32 bytes
-    self_archive_url: Optional[str]         # decoded UTF-8 URL or None
-    chain_block_at_k_commit: Optional[int]  # block where K landed
+    timelock_k_revealed: bytes | None    # auto-decrypted K (32 bytes) or None
+    sha256_ct_commit: bytes | None       # raw 32 bytes
+    self_archive_url: str | None         # decoded UTF-8 URL or None
+    chain_block_at_k_commit: int | None  # block where K landed
     miner_hotkey: bytes                     # 32-byte raw ed25519 pubkey
 
 
@@ -85,7 +85,7 @@ def read_miner_for_epoch(
     timing: TimingBounds,
     miner_uid: int,
     miner_identity_for_archive: str,
-    inner_sig_pubkey: Optional[bytes] = None,
+    inner_sig_pubkey: bytes | None = None,
 ) -> MinerReadResult:
     """Read one miner's full Layer 9.B submission and run scoreability.
 
@@ -199,10 +199,10 @@ def read_miner_for_epoch(
 
 def assemble_chain_commits(
     *,
-    revealed_k_plaintext: Optional[bytes],
-    sha256_ct_commit: Optional[bytes],
-    self_archive_url: Optional[str],
-    chain_block_at_k_commit: Optional[int],
+    revealed_k_plaintext: bytes | None,
+    sha256_ct_commit: bytes | None,
+    self_archive_url: str | None,
+    chain_block_at_k_commit: int | None,
     miner_hotkey: bytes,
 ) -> ChainCommits9B:
     """Build a `ChainCommits9B` after reading raw chain state.

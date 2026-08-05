@@ -37,7 +37,9 @@ def main(argv=None) -> int:
     epoch = pub.get("epoch_id", "")
 
     from hope.commitment.outcome_commitment import (
-        outcomes_digest, parse_outcome_commitment, read_outcome_commitment,
+        outcomes_digest,
+        parse_outcome_commitment,
+        read_outcome_commitment,
     )
     from hope.validator._subtensor import make_subtensor
 

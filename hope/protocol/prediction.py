@@ -16,7 +16,7 @@ class QuantilePrediction(BaseModel):
     p90: float
 
     @model_validator(mode="after")
-    def check_ordering(self) -> "QuantilePrediction":
+    def check_ordering(self) -> QuantilePrediction:
         if not (self.p10 <= self.p50 <= self.p90):
             raise ValueError(f"Quantiles must be ordered: p10={self.p10} <= p50={self.p50} <= p90={self.p90}")
         return self
@@ -32,7 +32,7 @@ class HorizonPrediction(BaseModel):
     instability_risk: float  # [0, 1] — probability of high-variance outcome
 
     @model_validator(mode="after")
-    def check_probabilities(self) -> "HorizonPrediction":
+    def check_probabilities(self) -> HorizonPrediction:
         if not 0.0 <= self.goal_miss_probability <= 1.0:
             raise ValueError(f"goal_miss_probability must be in [0, 1], got {self.goal_miss_probability}")
         if not 0.0 <= self.instability_risk <= 1.0:

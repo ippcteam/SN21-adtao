@@ -52,7 +52,6 @@ from hope.commitment.canonical import canonical_cbor_dumps
 from hope.commitment.imt import imt_root, make_leaves_with_pointers
 from hope.commitment.inner_sig import add_inner_sig
 
-
 RELEASE_COMMIT_VERSION = 1
 
 

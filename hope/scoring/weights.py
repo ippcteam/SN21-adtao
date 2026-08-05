@@ -25,9 +25,7 @@ class ScoringWeights:
             if not (lo <= val <= hi):
                 return False
         total = self.quantile_accuracy + self.calibration + self.directional + self.goal_accuracy
-        if abs(total - 1.0) > 0.001:
-            return False
-        return True
+        return not abs(total - 1.0) > 0.001
 
     def get_horizon_weights(self, resolution: str) -> dict[str, float]:
         """Get horizon weights for a given measurement resolution."""

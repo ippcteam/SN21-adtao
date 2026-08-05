@@ -22,7 +22,6 @@ from hope.validator.registration_index import (
     RegistrationIndex,
 )
 
-
 # ---------------------------------------------------------------------------
 # Test fixtures: fake subtensor + monkey-patched chain_reader helpers
 # ---------------------------------------------------------------------------
@@ -137,7 +136,7 @@ def test_scan_finds_single_valid_registration(monkeypatch, hotkey_kp_pair):
 
 def test_lookup_returns_none_when_no_registration(monkeypatch, hotkey_kp_pair):
     """Hotkeys without a verified registration return None."""
-    hotkey_ss58, hotkey_pk = hotkey_kp_pair
+    _hotkey_ss58, hotkey_pk = hotkey_kp_pair
     _install_fakes(monkeypatch, events_by_block={}, commits_by_pin={})
 
     index = RegistrationIndex(_FakeSubtensor(), netuid=466)

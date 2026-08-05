@@ -11,8 +11,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from hope.commitment.canonical import canonical_cbor_dumps, canonical_cbor_loads
 from hope.commitment.inner_sig import verify_inner_sig
 from hope.hope_outcomes.release_commit import (
-    EpisodeRef,
     RELEASE_COMMIT_VERSION,
+    EpisodeRef,
     build_release_commit_plaintext,
     compute_episodes_root,
     compute_release_commit_digest,

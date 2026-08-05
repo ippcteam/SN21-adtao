@@ -45,7 +45,7 @@ class EpisodeClient:
         return headers
 
     @staticmethod
-    def _translate_validator_error(resp: "httpx.Response", path: str) -> str:
+    def _translate_validator_error(resp: httpx.Response, path: str) -> str:
         """Turn a non-2xx validator response into an actionable error message.
 
         Generic httpx tracebacks aren't actionable for new miners hitting

@@ -118,14 +118,14 @@ def tracked_code():
 
 def check_names(path, text):
     for name in NAMES:
-        for m in re.finditer(rf"\b{name}\b", text, re.I):
+        for m in re.finditer(rf"\b{name}\b", text, re.IGNORECASE):
             line = text[:m.start()].count("\n") + 1
             failures.append(f"NAME  {path}:{line} — '{m.group(0)}'")
 
 
 def check_internal(path, text):
     for pat in INTERNAL:
-        for m in re.finditer(pat, text, re.I):
+        for m in re.finditer(pat, text, re.IGNORECASE):
             line = text[:m.start()].count("\n") + 1
             failures.append(f"INTERNAL  {path}:{line} — '{m.group(0)[:40]}'")
 
@@ -142,7 +142,7 @@ def check_dates(path, text):
     """Any doc naming the first live basket must name BD-2026-08-03 and its
     4 August delivery together — the ambiguity that blocked publication was
     exactly one of these appearing without the other."""
-    if re.search(r"first\s+(live\s+)?(daily\s+)?(basket|bundle)", text, re.I):
+    if re.search(r"first\s+(live\s+)?(daily\s+)?(basket|bundle)", text, re.IGNORECASE):
         has_key = FIRST_BASKET_DATE in text or "BD-2026-08-03" in text
         has_del = FIRST_DELIVERY in text or "4 Aug" in text
         if not (has_key and has_del):
@@ -152,7 +152,7 @@ def check_dates(path, text):
 
 
 def check_era(path, text):
-    weekly = re.search(r"weekly epoch|hope-miner --epoch|mining deadline", text, re.I)
+    weekly = re.search(r"weekly epoch|hope-miner --epoch|mining deadline", text, re.IGNORECASE)
     if not weekly:
         return
     head = text[:2000].lower()
@@ -160,7 +160,7 @@ def check_era(path, text):
                  ("historical", "weekly era", "archived", "concluded",
                   "no longer", "obsolete", "pre-daily", "superseded"))
     # per-section markers count too
-    inline = re.search(r"historical|weekly era|concluded", text, re.I)
+    inline = re.search(r"historical|weekly era|concluded", text, re.IGNORECASE)
     if not (marked or inline):
         failures.append(
             f"ERA  {path} — weekly-era instructions with no marker; a reader "

@@ -21,6 +21,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 # Make scripts/ importable.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
+import verify_epoch as ve
+
 from hope.commitment.archives import ArchiveEndpoint, FetchAggregate, FetchResult
 from hope.commitment.prediction_payload import (
     build_horizon_entry,
@@ -34,8 +36,6 @@ from hope.commitment.scoring_state import (
     build_post_scoring_artifacts,
     build_pre_scoring_state,
 )
-
-import verify_epoch as ve
 
 
 class InMemArchive:
@@ -97,7 +97,7 @@ def epoch_setup():
     plaintext_by_pk: dict[bytes, dict] = {}
 
     for i in range(8):
-        sk, pk, plain, enc, sha_ct = _make_miner(epoch_id)
+        _sk, pk, plain, enc, sha_ct = _make_miner(epoch_id)
         archive.store(sha_ct, enc.aes_ct)
         block = 7038900 + i
         miner_states[pk] = ve.ChainMinerState(

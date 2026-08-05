@@ -195,7 +195,7 @@ SN21-adtao/
 │   ├── generate_training_data.py Pull a release into training format
 │   └── sn21_keys.py              ed25519 key-management CLI
 │
-├── tests/                        1,588 tests
+├── tests/                        1,577 tests, all passing
 │   ├── adversarial/              12 attack scenarios with passing defences
 │   ├── e2e/                      Full miner flow against a running validator (15 tests)
 │   ├── commitment/               Crypto primitives (268 tests)
@@ -371,7 +371,7 @@ blocks.
 ## Development
 
 ```bash
-# Full unit + adversarial + e2e suite (1,588 tests)
+# Full unit + adversarial + e2e suite (1,577 tests)
 pytest tests/
 
 # Adversarial scenarios only — every claimed defence has a passing attack test

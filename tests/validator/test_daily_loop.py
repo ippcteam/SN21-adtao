@@ -67,8 +67,8 @@ def test_full_loop_all_steps_report(tmp_path):
 def test_loop_is_safe_to_run_twice(tmp_path):
     root = str(tmp_path)
     _shadow(root)
-    kwargs = dict(outcomes_provider=_outcomes, key_loader=lambda: KEY,
-                  day_volume_provider=lambda d: 100, environ={})
+    kwargs = {"outcomes_provider": _outcomes, "key_loader": lambda: KEY,
+                  "day_volume_provider": lambda d: 100, "environ": {}}
     first = run_daily_loop(root, root, DAY, **kwargs)
     second = run_daily_loop(root, root, DAY, **kwargs)
     assert first["settle"]["entries_written"] == 1
@@ -328,7 +328,7 @@ def test_liveness_policy_numbers_come_from_the_environment(tmp_path):
     over = run_daily_loop(root2, root2, DAY, outcomes_provider=lambda d: [],
                           environ={"SN21_CHRONIC_STRIKES": "2"})
     assert over["liveness"]["evicted"] == ["alpha"]
-    ev = [e for e in sl.load_strike_events(root2) if e.kind == "evicted"][0]
+    ev = next(e for e in sl.load_strike_events(root2) if e.kind == "evicted")
     assert ev.detail["strikes_to_evict"] == 2
 
 
@@ -372,7 +372,7 @@ def test_liveness_does_not_double_count_a_rerun_of_the_loop(tmp_path):
 
     root = str(tmp_path)
     _shadow_run(root, DAY, "alpha", ok=False, error=f"{ERR_EXIT_PREFIX}1: b''")
-    kwargs = dict(outcomes_provider=lambda d: [], environ={})
+    kwargs = {"outcomes_provider": lambda d: [], "environ": {}}
     run_daily_loop(root, root, DAY, **kwargs)
     second = run_daily_loop(root, root, DAY, **kwargs)
     assert second["liveness"]["events_written"] == 0
@@ -406,11 +406,12 @@ def test_liveness_failure_never_silences_the_other_steps(tmp_path, monkeypatch):
 def test_vertical_series_step_tags_and_stores(tmp_path, monkeypatch):
     """J3 wiring: settled entries get the operator's vertical tag + real components."""
     from datetime import date as _date
-    from hope.validator.daily_loop import run_daily_loop
-    from hope.scoring.vertical_error_series import load_entries
-    from hope.scoring.settle_day_flow import SettledHorizon
-    from hope.backtest.shadow import ShadowModel, record_day
+
     from hope.backtest.container_runner import RunResult
+    from hope.backtest.shadow import ShadowModel, record_day
+    from hope.scoring.settle_day_flow import SettledHorizon
+    from hope.scoring.vertical_error_series import load_entries
+    from hope.validator.daily_loop import run_daily_loop
 
     shadow_root = str(tmp_path / "shadow")
     ledger_root = str(tmp_path / "ledger")

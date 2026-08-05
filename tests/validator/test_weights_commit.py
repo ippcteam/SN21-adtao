@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import pytest
 
@@ -23,7 +22,7 @@ class FakeReceipt:
 class FakeResponse:
     success: bool
     message: str
-    extrinsic_receipt: Optional[FakeReceipt]
+    extrinsic_receipt: FakeReceipt | None
 
 
 class FakeSubtensor:

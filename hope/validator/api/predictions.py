@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
-from hope.protocol.prediction import Prediction, HorizonPrediction, QuantilePrediction
+from hope.protocol.prediction import HorizonPrediction, Prediction, QuantilePrediction
 from hope.validator.api.auth import MinerIdentity, verify_miner
 from hope.validator.integrity import compute_prediction_hash, create_prediction_receipt
 

@@ -1,6 +1,8 @@
 """Model registry — commitment parsing strictness + latest-wins + admission set."""
 from hope.backtest.model_registry import (
-    MODEL_COMMIT_PREFIX, build_registry, parse_model_commitment,
+    MODEL_COMMIT_PREFIX,
+    build_registry,
+    parse_model_commitment,
 )
 
 D1 = "sha256:" + "a" * 64

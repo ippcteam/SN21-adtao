@@ -7,8 +7,9 @@ chain interaction is covered by Phase 0 testnet diagnostic scripts in
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from hope.commitment.on_chain import (
     DEFAULT_REVEAL_SAFETY_ROUNDS,

@@ -51,10 +51,8 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from hope.commitment.archives import FetchResult
-
 
 RETRY_LOG_VERSION = 1
 
@@ -67,10 +65,10 @@ class RetryLogAttempt:
     name: str
     url: str
     ok: bool
-    status_code: Optional[int]
-    sha256_match: Optional[bool]
+    status_code: int | None
+    sha256_match: bool | None
     elapsed_ms: int
-    error: Optional[str]
+    error: str | None
 
 
 @dataclass(frozen=True)
@@ -104,7 +102,7 @@ def build_retry_log_blob(
     epoch_id: str,
     epoch_idx: int,
     miner_entries: list[RetryLogMinerEntry],
-    generated_at_unix: Optional[int] = None,
+    generated_at_unix: int | None = None,
 ) -> bytes:
     """Build the canonical JSON-encoded retry-log blob.
 

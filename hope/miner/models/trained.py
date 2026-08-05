@@ -45,7 +45,7 @@ class TrainedXGBoostModel(PredictionEngine):
 
     def __init__(self, model_file: str | Path):
         try:
-            import joblib  # noqa: F401 — needed at runtime
+            import joblib
         except ImportError as e:
             raise RuntimeError(
                 "TrainedXGBoostModel requires joblib + xgboost + scikit-learn. "

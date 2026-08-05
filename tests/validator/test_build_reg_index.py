@@ -5,11 +5,9 @@ computation — without touching a live chain (scan_range is stubbed).
 """
 import json
 
-import pytest
-
 from hope.commitment.registration import RegistrationRole
 from hope.validator.registration_index import RegistrationIndex
-from scripts.build_reg_index import _save, _load, _state_path, build_once
+from scripts.build_reg_index import _load, _save, _state_path, build_once
 
 
 class _StubSubtensor:

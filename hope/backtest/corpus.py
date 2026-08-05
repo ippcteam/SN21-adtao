@@ -5,11 +5,13 @@ The efficiency metric maps to cpa_delta_pct in the outcome tables."""
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
 from hope.backtest.gate import OutcomeRow
 
 
 def load_outcomes(path: str) -> list[OutcomeRow]:
-    d = json.load(open(path))
+    d = json.loads(Path(path).read_text())
     rows: list[OutcomeRow] = []
     for rel in d.get("releases", {}).values():
         for ep in rel.get("episodes", []):

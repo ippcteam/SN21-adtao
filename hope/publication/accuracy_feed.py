@@ -10,7 +10,7 @@ Publishing clocks per v0.5 §13: first partials ~day 15, full depth day 36.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Iterable
+from collections.abc import Iterable
 
 from hope.scoring.daily_score_flow import HorizonResult
 

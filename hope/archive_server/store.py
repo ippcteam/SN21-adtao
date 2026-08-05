@@ -18,7 +18,6 @@ import hashlib
 import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
 
 class ArchiveStore(ABC):
@@ -29,7 +28,7 @@ class ArchiveStore(ABC):
         ...
 
     @abstractmethod
-    def get(self, *, epoch_id: str, miner_identity: str, sha256: bytes) -> Optional[bytes]:
+    def get(self, *, epoch_id: str, miner_identity: str, sha256: bytes) -> bytes | None:
         ...
 
     @abstractmethod

@@ -67,7 +67,7 @@ class TestMetricsEndpoint:
         )
 
     def test_404_recorded_with_outcome_not_found(self, client):
-        body, sha = _payload(100)
+        _body, sha = _payload(100)
         r = client.get(f"/archive/EP-1/M-1/{sha}")
         assert r.status_code == 404
         m = client.get("/metrics").text

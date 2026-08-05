@@ -43,7 +43,7 @@ def aes_gcm_aad(epoch_id: str) -> bytes:
     the operator's release_key format is constrained to [A-Z0-9-]{1,80}, so no
     special-character ambiguity is possible.
     """
-    return f"{_AAD_PREFIX_PREDICTION}:{epoch_id}".encode("utf-8")
+    return f"{_AAD_PREFIX_PREDICTION}:{epoch_id}".encode()
 
 
 def is_canonically_encoded(data: bytes) -> bool:

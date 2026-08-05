@@ -43,8 +43,8 @@ _PLATFORM_PATH = os.environ.get("SN21_PLATFORM_PATH")
 if _PLATFORM_PATH:
     sys.path.insert(0, _PLATFORM_PATH)
 
-from hope.backtest.container_runner import run_basket_docker  # noqa: E402
-from hope.backtest.shadow import ShadowModel, run_shadow_day  # noqa: E402
+from hope.backtest.container_runner import run_basket_docker
+from hope.backtest.shadow import ShadowModel, run_shadow_day
 
 REFERENCE_IMAGE = "sn21-reference-model:v1"
 
@@ -134,7 +134,7 @@ def reconcile_heartbeats(session, root, have):
                     episodes = rec.get("episodes_in") or 0
                     preds = rec.get("predictions_out") or 0
                     ok = bool(rec.get("ok")) and preds > 0
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"  reconcile {day}: unreadable ledger ({e}) — skipped",
                   file=sys.stderr)
             continue

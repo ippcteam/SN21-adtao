@@ -85,7 +85,6 @@ from hope.commitment.imt import imt_root, make_leaves_with_pointers
 from hope.commitment.inner_sig import add_inner_sig
 from hope.commitment.on_chain import MAX_TLE_PLAINTEXT_BYTES
 
-
 SCORING_STATE_VERSION = 1
 
 
@@ -184,8 +183,8 @@ def build_pre_scoring_state(
         "outcomes_fetched_at_round": int(outcomes_fetched_at_round),
         "miner_commits_root": compute_miner_commits_root(miner_commits),
         "excluded_miners_hash": compute_excluded_miners_hash(excluded_miners),
-        "n_miners": int(len(miner_commits)),
-        "n_excluded": int(len(excluded_miners)),
+        "n_miners": len(miner_commits),
+        "n_excluded": len(excluded_miners),
     }
     add_inner_sig(plaintext, validator_signing_key, hotkey_field="validator_hotkey")
     encoded = canonical_cbor_dumps(plaintext)
@@ -255,7 +254,7 @@ def build_post_scoring_artifacts(
         "final_score_root": compute_final_score_root(scored_miners),
         "weights_commit_block_hash": weights_commit_block_hash,
         "weights_reveal_round": int(weights_reveal_round),
-        "n_miners_scored": int(len(scored_miners)),
+        "n_miners_scored": len(scored_miners),
     }
     add_inner_sig(plaintext, validator_signing_key, hotkey_field="validator_hotkey")
     encoded = canonical_cbor_dumps(plaintext)

@@ -34,10 +34,7 @@ import json
 import logging
 import os
 import sys
-from typing import Optional
 
-from hope.validator._subtensor import make_subtensor
-from hope.validator.registration_index import _ss58_to_raw_pubkey
 from hope.commitment.chain_reader import read_commitment_of
 from hope.commitment.registration import (
     REG_V1_PREFIX,
@@ -45,6 +42,8 @@ from hope.commitment.registration import (
     parse_registration_payload,
     verify_registration,
 )
+from hope.validator._subtensor import make_subtensor
+from hope.validator.registration_index import _ss58_to_raw_pubkey
 
 logger = logging.getLogger("refresh_reg_index_head")
 
@@ -130,7 +129,7 @@ def refresh(index_path: str, network: str, netuid: int,
     return before, len(merged)
 
 
-def main(argv: Optional[list] = None) -> int:
+def main(argv: list | None = None) -> int:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

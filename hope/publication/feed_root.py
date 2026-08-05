@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional
 
 from hope.publication.merkle import build_root, inclusion_proof, verify_proof
 
@@ -55,14 +54,14 @@ def published_days(root: str) -> list[tuple[str, str]]:
     return out
 
 
-def feed_root(root: str) -> Optional[str]:
+def feed_root(root: str) -> str | None:
     """The rolling Merkle root over every published day. None if nothing has
     published — this is what goes on chain, and an empty feed must not commit
     a zero hash that would read as a real anchor."""
     return build_root([sha for _day, sha in published_days(root)])
 
 
-def day_proof(root: str, day: str) -> Optional[dict]:
+def day_proof(root: str, day: str) -> dict | None:
     """Everything a miner needs to prove `day` is in the anchored root.
 
     Returns None when the day has not published — the caller distinguishes

@@ -21,8 +21,8 @@ from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.scoring.settle_day_flow import operator_outcomes_provider  # noqa: E402
-from hope.validator.daily_loop import run_daily_loop  # noqa: E402
+from hope.scoring.settle_day_flow import operator_outcomes_provider
+from hope.validator.daily_loop import run_daily_loop
 
 
 def _key_loader():

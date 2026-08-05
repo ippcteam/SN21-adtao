@@ -24,11 +24,10 @@ import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Optional
 
 from hope.constants import (
-    PREDICTION_DEADLINE_HOURS,
     MINING_CLOSE_HOUR_UTC,
+    PREDICTION_DEADLINE_HOURS,
 )
 from hope.protocol.episode import Episode
 
@@ -55,8 +54,8 @@ from hope.scoring.weights import ScoringWeights
 from hope.validator.integrity import (
     EpisodeCommitment,
     PredictionMerkleTree,
-    compute_episode_commitment,
     build_prediction_merkle_tree,
+    compute_episode_commitment,
     compute_scoring_hash,
 )
 
@@ -87,23 +86,23 @@ class EpochContext:
     scores: dict[str, MinerScore] = field(default_factory=dict)
 
     # Integrity proofs
-    episode_commitment: Optional[EpisodeCommitment] = None  # Published before distribution
-    prediction_merkle: Optional[PredictionMerkleTree] = None  # Published before scoring
+    episode_commitment: EpisodeCommitment | None = None  # Published before distribution
+    prediction_merkle: PredictionMerkleTree | None = None  # Published before scoring
     scoring_hash: str = ""  # Deterministic hash of scoring output
 
     # Legacy commitment (for verification endpoint)
     salt: str = ""
     commitment_hash: str = ""
     merkle_root: str = ""
-    committed_at: Optional[str] = None
+    committed_at: str | None = None
 
     # Timing
-    started_at: Optional[str] = None
-    deadline: Optional[str] = None
-    closed_at: Optional[str] = None       # When submissions were closed
-    outcomes_fetched_at: Optional[str] = None  # When outcomes were fetched (AFTER deadline)
-    scored_at: Optional[str] = None
-    revealed_at: Optional[str] = None
+    started_at: str | None = None
+    deadline: str | None = None
+    closed_at: str | None = None       # When submissions were closed
+    outcomes_fetched_at: str | None = None  # When outcomes were fetched (AFTER deadline)
+    scored_at: str | None = None
+    revealed_at: str | None = None
 
     # Scoring config
     weights: ScoringWeights = field(default_factory=ScoringWeights)
@@ -113,13 +112,13 @@ class EpochManager:
     """Manages the lifecycle of epochs with phase separation."""
 
     def __init__(self):
-        self.current: Optional[EpochContext] = None
+        self.current: EpochContext | None = None
         self.history: list[EpochContext] = []
         self.scorer = EpochScorer()
         self.registered_miners: set[str] = set()  # Populated from metagraph
         self.uid_map: dict[str, int] = {}  # hotkey -> UID, populated from metagraph
 
-    def get_validator_state(self) -> "LiveState":
+    def get_validator_state(self) -> LiveState:
         """Get a live state proxy for the FastAPI app."""
         return LiveState(self)
 

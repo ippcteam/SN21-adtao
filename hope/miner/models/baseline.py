@@ -15,13 +15,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from hope.miner.prediction_engine import PredictionEngine
 from hope.protocol.episode import Episode
 from hope.protocol.prediction import (
     HorizonPrediction,
     Prediction,
     QuantilePrediction,
 )
-from hope.miner.prediction_engine import PredictionEngine
 
 
 class BaselineModel(PredictionEngine):

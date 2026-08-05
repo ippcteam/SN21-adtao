@@ -28,7 +28,6 @@ from __future__ import annotations
 import argparse
 import os
 
-
 SUBTENSOR_URL_OVERRIDE_ENV = "SN21_SUBTENSOR_URL"
 
 _NAMED_NETWORKS = ("test", "finney", "local")
@@ -50,7 +49,7 @@ def network_arg(value: str) -> str:
     """
     if value in _NAMED_NETWORKS:
         return value
-    if value.startswith("wss://") or value.startswith("ws://"):
+    if value.startswith(("wss://", "ws://")):
         return value
     raise argparse.ArgumentTypeError(
         f"invalid network: {value!r} "

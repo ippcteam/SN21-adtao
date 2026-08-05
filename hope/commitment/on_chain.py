@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Optional
 
 import bittensor_drand
 
@@ -97,9 +96,9 @@ class CommitResult:
 
     success: bool
     message: str
-    block_number: Optional[int]
-    extrinsic_hash: Optional[str]
-    reveal_round: Optional[int]  # only set for timelock commits
+    block_number: int | None
+    extrinsic_hash: str | None
+    reveal_round: int | None  # only set for timelock commits
 
 
 @dataclass(frozen=True)
@@ -232,7 +231,7 @@ def read_revealed_commitments(
     subtensor,
     netuid: int,
     hotkey_ss58: str,
-    block: Optional[int] = None,
+    block: int | None = None,
 ) -> list[RevealedCommit]:
     """Read all auto-decrypted timelock commitments for a hotkey.
 
@@ -266,7 +265,7 @@ def read_revealed_commitments(
         block_num, payload = entry
         if isinstance(payload, str):
             # Hex-encoded; strip 0x prefix if present
-            payload_bytes = bytes.fromhex(payload[2:] if payload.startswith("0x") else payload)
+            payload_bytes = bytes.fromhex(payload.removeprefix("0x"))
         elif isinstance(payload, (bytes, bytearray)):
             payload_bytes = bytes(payload)
         else:
@@ -279,8 +278,8 @@ def get_commitment(
     subtensor,
     netuid: int,
     uid: int,
-    block: Optional[int] = None,
-) -> Optional[str]:
+    block: int | None = None,
+) -> str | None:
     """Read the current (non-timelock) commitment for a UID.
 
     Used by verifier to read 9.A.1 release_commit_digest, 9.A.2 reveal_hash,
@@ -585,7 +584,7 @@ def submit_retry_log_attestation_layer_9c6(
 # ============================================================================
 
 
-def _resolve_block_via_chain(result: "CommitResult", *, subtensor, netuid, wallet) -> "CommitResult":
+def _resolve_block_via_chain(result: CommitResult, *, subtensor, netuid, wallet) -> CommitResult:
     """If the SDK didn't surface a block_number, recover it from CommitmentOf.
 
     ``set_commitment`` updates a single (netuid, hotkey) slot whose stored
@@ -607,7 +606,7 @@ def _resolve_block_via_chain(result: "CommitResult", *, subtensor, netuid, walle
     return result
 
 
-def _to_commit_result(response, *, reveal_round: Optional[int]) -> CommitResult:
+def _to_commit_result(response, *, reveal_round: int | None) -> CommitResult:
     """Map a Bittensor SDK ExtrinsicResponse to our CommitResult type.
 
     The SDK shape varies across versions — some expose block info directly

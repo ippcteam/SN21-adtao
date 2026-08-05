@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from hope.commitment.canonical import (
     aes_gcm_aad,
     canonical_cbor_dumps,

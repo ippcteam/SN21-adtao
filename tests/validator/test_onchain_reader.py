@@ -46,7 +46,7 @@ def _make_prediction(epoch_id="EPOCH-A"):
 
 @pytest.fixture
 def setup():
-    sk, pk, plain, enc = _make_prediction()
+    _sk, pk, plain, enc = _make_prediction()
     sha_ct = hashlib.sha256(enc.aes_ct).digest()
     chain = ChainCommits9B(
         timelock_k_revealed=enc.aes_key,

@@ -28,13 +28,12 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from hope.constants import HORIZONS, SCORING_FORMULA_VERSION
 from hope.reporting.git_sha import current_commit_sha
 from hope.reporting.tier_compute import compute_tier_result_from_score_map
 from hope.validator.onchain_runner import EpochScoringOutcome
-
 
 DEFAULT_ARTIFACT_DIR_ENV = "SN21_EPOCH_ARTIFACT_DIR"
 DEFAULT_ARTIFACT_DIR = Path("~/.sn21/epoch_artifacts")
@@ -58,13 +57,13 @@ class EpochArtifact:
 
     # Epoch classification (for the public payload's epoch_type fields)
     epoch_type: str
-    epoch_subtype: Optional[str]
+    epoch_subtype: str | None
     epoch_type_multiplier: float
     horizon_set: list[str]
 
     # On-chain footprint of this epoch (from the runner's outcome)
-    block_range_start: Optional[int]
-    block_range_end: Optional[int]
+    block_range_start: int | None
+    block_range_end: int | None
 
     # Pool size context
     total_registered_uids: int
@@ -91,7 +90,7 @@ class EpochArtifact:
     artifact_schema_version: int = 1
 
 
-def resolve_artifact_dir(base_dir: Optional[Path] = None) -> Path:
+def resolve_artifact_dir(base_dir: Path | None = None) -> Path:
     """Resolve the artifact directory.
 
     Precedence: explicit arg > `SN21_EPOCH_ARTIFACT_DIR` env > default.
@@ -106,13 +105,13 @@ def resolve_artifact_dir(base_dir: Optional[Path] = None) -> Path:
     return DEFAULT_ARTIFACT_DIR.expanduser().resolve()
 
 
-def artifact_path_for(epoch_id: str, base_dir: Optional[Path] = None) -> Path:
+def artifact_path_for(epoch_id: str, base_dir: Path | None = None) -> Path:
     """Return the file path this epoch_id maps to."""
     safe_epoch_id = epoch_id.replace("/", "_").replace("..", "_")
     return resolve_artifact_dir(base_dir) / f"epoch_{safe_epoch_id}.json"
 
 
-def write_artifact(artifact: EpochArtifact, base_dir: Optional[Path] = None) -> Path:
+def write_artifact(artifact: EpochArtifact, base_dir: Path | None = None) -> Path:
     """Write the artifact to disk atomically.
 
     Returns the final path. Creates `base_dir` if it does not exist.
@@ -135,7 +134,7 @@ def write_artifact(artifact: EpochArtifact, base_dir: Optional[Path] = None) -> 
     return final_path
 
 
-def read_artifact(epoch_id: str, base_dir: Optional[Path] = None) -> EpochArtifact:
+def read_artifact(epoch_id: str, base_dir: Path | None = None) -> EpochArtifact:
     """Round-trip read of a previously written artifact.
 
     The reporter's POST path reads back what was written so it can
@@ -205,7 +204,7 @@ def build_artifact(
     total_registered_uids: int,
     chain_fetch_timestamp: str,
     epoch_type: str = "Search",
-    epoch_subtype: Optional[str] = "campaign-level",
+    epoch_subtype: str | None = "campaign-level",
     epoch_type_multiplier: float = 1.0,
     baseline_score: float = 0.0,
 ) -> EpochArtifact:
@@ -262,9 +261,9 @@ def build_and_write_artifact(
     epoch_id: str,
     total_registered_uids: int,
     chain_fetch_timestamp: str,
-    base_dir: Optional[Path] = None,
+    base_dir: Path | None = None,
     epoch_type: str = "Search",
-    epoch_subtype: Optional[str] = "campaign-level",
+    epoch_subtype: str | None = "campaign-level",
     epoch_type_multiplier: float = 1.0,
     baseline_score: float = 0.0,
 ) -> Path:

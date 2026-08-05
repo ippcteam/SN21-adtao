@@ -23,20 +23,19 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict
+from collections.abc import Iterable
 from datetime import date, timedelta
-from typing import Iterable, Optional
 
-from hope.scoring.daily_score_flow import WeightedEntry
-from hope.scoring.episode_average import (
-    DEFAULT_WINDOW_DAYS,
-    ScoredEpisode,
-)
 from hope.scoring.champion_promotion import PromotionState
 from hope.scoring.chronic_failure import (
     OBSERVATION_KINDS,
     EvictionState,
     StrikeEvent,
+)
+from hope.scoring.daily_score_flow import WeightedEntry
+from hope.scoring.episode_average import (
+    DEFAULT_WINDOW_DAYS,
+    ScoredEpisode,
 )
 
 _SAFE_HOTKEY = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
@@ -105,7 +104,7 @@ def load_entries(
     return out
 
 
-def first_scored_day(root: str) -> Optional[date]:
+def first_scored_day(root: str) -> date | None:
     """The EARLIEST day any result ever entered the ledger — i.e. the day the
     subnet first settled anything, or None if it never has.
 
@@ -117,7 +116,7 @@ def first_scored_day(root: str) -> Optional[date]:
     d = standing_dir(root)
     if not os.path.isdir(d):
         return None
-    earliest: Optional[date] = None
+    earliest: date | None = None
     for name in sorted(os.listdir(d)):
         if not name.endswith(".jsonl") or name.startswith("_"):
             continue
@@ -229,7 +228,7 @@ def _strikes_path(root: str) -> str:
     return os.path.join(standing_dir(root), "_strikes.jsonl")
 
 
-def _opt_date(raw) -> Optional[date]:
+def _opt_date(raw) -> date | None:
     return date.fromisoformat(raw) if raw else None
 
 
@@ -279,12 +278,11 @@ def append_strike_events(root: str, events: Iterable[StrikeEvent]) -> int:
         return 0
     os.makedirs(standing_dir(root), exist_ok=True)
     with open(_strikes_path(root), "a") as f:
-        for e in events:
-            f.write(json.dumps({
+        f.writelines(json.dumps({
                 "day": str(e.day), "hotkey": e.hotkey, "kind": e.kind,
                 "fault": e.fault, "error": e.error, "reason": e.reason,
                 "detail": e.detail,
-            }) + "\n")
+            }) + "\n" for e in events)
     return len(events)
 
 
@@ -300,7 +298,7 @@ def _strike_event(rec: dict) -> StrikeEvent:
     )
 
 
-def _strike_event_in_window(ev: StrikeEvent, cutoff: Optional[date]) -> bool:
+def _strike_event_in_window(ev: StrikeEvent, cutoff: date | None) -> bool:
     """Which events a windowed read keeps.
 
     OBSERVATION events (strike/clean/excluded) are only ever consulted by
@@ -319,8 +317,8 @@ def _strike_event_in_window(ev: StrikeEvent, cutoff: Optional[date]) -> bool:
 
 def load_strike_events(
     root: str,
-    as_of: Optional[date] = None,
-    window_days: Optional[int] = None,
+    as_of: date | None = None,
+    window_days: int | None = None,
 ) -> list[StrikeEvent]:
     """The liveness log. With `as_of` + `window_days`, observation events
     older than the window are dropped at read time (see

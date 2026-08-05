@@ -3,6 +3,7 @@ caught the 2026-06-04 freeze the same day instead of 11 days later.
 """
 import json
 
+from hope.validator import daemon as daemon_mod
 from scripts.check_reg_index_staleness import (
     DEFAULT_THRESHOLD_BLOCKS,
     EXIT_FRESH,
@@ -12,7 +13,6 @@ from scripts.check_reg_index_staleness import (
     main,
     read_last_scanned_block,
 )
-from hope.validator import daemon as daemon_mod
 
 
 class TestEvaluate:
