@@ -53,6 +53,12 @@ dev = [
     # the new version asks for, in a commit of its own.
     "ruff==0.16.1",
     "mypy>=1.5",
+    # The settle-day outcomes provider reads the operator's database through
+    # SQLAlchemy. The package itself is not a runtime dependency of this repo
+    # — a validator only needs it if it runs that provider — but the tests
+    # that cover the frozen-goal-basis logic exercise it, so it belongs here.
+    # Without it those tests do not fail loudly, they simply never run.
+    "sqlalchemy>=2.0",
 ]
 miner = [
     "xgboost>=2.0",
