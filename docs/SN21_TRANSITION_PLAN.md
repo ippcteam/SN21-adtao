@@ -21,7 +21,15 @@ This document is the **cutover schedule** from the last weekly epoch to the dail
 | Last weekly epoch concluded | **Sunday 2 August 2026** |
 | Last weekly scored | **Monday 3 August 2026** |
 | Weekly payout window | **Monday 3 August noon EST → midnight EST Sunday 9 August 2026** |
-| Daily stream starts | **Tuesday 4 August 2026** (training + first live basket) |
+| Daily stream starts | **Tuesday 4 August 2026** — the day the first live basket was delivered |
+
+> **Two dates, and they are different.** A basket is named for the day whose
+> changes it contains, and it is delivered the **next** morning. The first live
+> basket is `BD-2026-08-03`: it covers **Monday 3 August** and was delivered on
+> **Tuesday 4 August**. Every basket follows that pattern — `BD-<date>` always
+> means "the changes that happened on `<date>`", delivered the morning after.
+> Scoring clocks run from the basket's own date, which is why the first 7-day
+> scores land on 18 August (3 Aug + 1 + 7 + 7).
 
 After the bridge period, emissions follow [SN21_REWARDS.md](./SN21_REWARDS.md). Stake rules: [SN21_STAKING.md](./SN21_STAKING.md).
 
@@ -44,8 +52,8 @@ Bittensor’s emissions-allocation methodology is changing significantly. SN21 m
 | **Sun 2 Aug** | Last weekly epoch **concludes**. | — | 0 |
 | **Mon 3 Aug** | Last weekly epoch **scored**. | 45% | 0 |
 | **Mon 3 Aug noon EST → Sun 9 Aug midnight EST** | Emissions paid **as normal** from that weekly score. | 45% | 0 |
-| **Tue 4 Aug** | **Training bundle** ships — settled weekly-era episodes with full 7/14/28-day outcomes (same input schema as the daily stream; a like-for-like daily bundle cannot exist before ~1 Sep when the first 28-day daily outcomes settle). **Fetch:** GitHub Release asset on this repo (`SN21_training_bundle.jsonl`); until the release is cut, the Discord miner channel. | 45% | 0 |
-| **Tue 4 Aug** | First **live daily basket** ships (parallel to training). | 45% | 0 |
+| **Tue 4–5 Aug** | **Training bundle** published — settled weekly-era episodes with full 7/14/28-day outcomes (same input schema as the daily stream; a like-for-like daily bundle cannot exist before ~1 Sep when the first 28-day daily outcomes settle). **Fetch:** release asset on this repo (`SN21_training_bundle.jsonl`, 3,069 episodes); if it is not visible yet, ask in the Discord miner channel. | 45% | 0 |
+| **Tue 4 Aug** | First **live daily basket** delivered — `BD-2026-08-03`, covering Monday 3 August. | 45% | 0 |
 | **Mon 10 Aug** | **Bridge starts:** weekly score still drives weights, but only **bridge-eligible** miners are paid (see below). | **30%** | **150** |
 | **Tue 18 Aug** | First **daily 7-day** settled scores begin feeding payouts. | 30% | **300** |
 | **Tue 25 Aug** | First **daily 14-day** settled scores begin feeding payouts. | **15%** | **450** |

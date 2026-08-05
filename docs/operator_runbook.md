@@ -1,11 +1,15 @@
 # SN21 Operator Runbook
 
-> **Pre-daily / operator historical.** Most of this runbook describes the
-> **weekly epoch** path (TLE commits, three-tier archives, per-epoch
-> `hope-validator` scoring). The daily stream settle clock is
-> `daily_loop` / shadow path — see [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md)
-> and [validator_daemon.md](./validator_daemon.md). Do not treat the weekly
-> sections below as the miner-facing truth for post–4 Aug 2026 operation.
+> **Most of this runbook describes the weekly-epoch path** (TLE commits,
+> three-tier archives, per-epoch `hope-validator` scoring). That era concluded
+> on 3 August 2026 and these sections are retained for verifying its history.
+>
+> **For daily-stream operation**, use
+> [validator_setup §2](./validator_setup.md#2-quick-start-local-testing) —
+> the three processes, what the daily loop needs, and when to run it — with
+> [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md) for the dates.
+> Nothing in the weekly sections below is miner-facing truth for the daily
+> stream.
 
 Production cutover playbook for subnet operators, primary validators,
 shadow validators, and miners. Covers deployment, key management,

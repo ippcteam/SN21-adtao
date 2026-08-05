@@ -394,7 +394,8 @@ Bake the trained weights **into your container**. The sandbox has **no network**
 so the image must be self-contained.
 
 Cutover training + live baskets: [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md)
-(from **4 August 2026**).
+(from **4 August 2026** — the first live basket, `BD-2026-08-03`, covers
+Monday 3 August and was delivered on Tuesday 4 August).
 
 ---
 

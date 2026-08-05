@@ -1,6 +1,12 @@
 # `hope-validator-daemon` — the consolidated validator
 
-> **Pre-daily / operator historical.** Sections describing weekly scoring timer predate the daily stream; the daily path runs `daily_loop` on the settle clock. See [SN21_TRANSITION_PLAN](./SN21_TRANSITION_PLAN.md).
+> **This daemon supervises the WEEKLY-era scoring tools.** Its scoring step is
+> `hope-validator`, which scores completed weekly epochs — the weekly era
+> concluded on 3 August 2026, so that step now has nothing new to score and
+> exits cleanly. **The daily stream is a separate process** and is not one of
+> the tick steps below: see
+> [validator_setup §2](./validator_setup.md#2-quick-start-local-testing) for how
+> to run it. The reg-index and heartbeat steps remain useful in both eras.
 
 
 One long-running process that replaces the **scoring cron + heartbeat cron +

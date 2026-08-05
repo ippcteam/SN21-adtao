@@ -35,11 +35,14 @@ Both folders have READMEs describing the shapes:
 Files pair by epoch id: `data/episodes/WR-2026-W21-PUB-E1.json` ↔
 `data/outcomes/WR-2026-W21-PUB-E1.json`.
 
-**Training bundle (4 Aug, larger and pre-joined):** 3,125 settled episodes with
-all three horizons already attached. Fetch: GitHub Release asset on this repo
-(`SN21_training_bundle.jsonl`); until the release is cut, ask in the Discord
-miner channel. A held-out set of 247 episodes is **never** published — it is how
-a submitted model gets evaluated on data it cannot have trained on.
+**Training bundle (larger and pre-joined):** 3,069 settled episodes with all
+three horizons already attached, one JSON object per line. Published as a
+release asset on this repo (`SN21_training_bundle.jsonl`); if you cannot see
+it yet, ask in the Discord miner channel and we will point you at it.
+
+A held-out set of 247 episodes is **never** published — it is how a submitted
+model gets evaluated on data it cannot have trained on. That set is the only
+clean benchmark that exists, and publishing it would destroy it permanently.
 
 ---
 

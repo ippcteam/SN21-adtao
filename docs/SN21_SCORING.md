@@ -12,6 +12,12 @@ This document explains **how your predictions are scored**. It does **not** expl
 
 ---
 
+
+> **Reading a basket's name.** `BD-2026-08-03` contains the changes that
+> happened on **3 August** and was delivered to miners on the morning of
+> **4 August**. Every scoring clock in this document counts from the basket's
+> own date, not its delivery date.
+
 ## In one line
 
 Each day a basket of real account changes is revealed; you predict outcomes; later, each prediction is scored **exactly once** against a settled outcome; those scores feed a **per-prediction moving average** that is your standing.

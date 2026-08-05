@@ -1,6 +1,10 @@
 # Validator Setup Guide
 
-> **Pre-daily / operator historical.** Sections describing weekly mining windows / hope-miner examples predate the daily stream; the daily path runs `daily_loop` on the settle clock. See [SN21_TRANSITION_PLAN](./SN21_TRANSITION_PLAN.md).
+> **The subnet runs a daily stream (from 4 August 2026).** §2 below is the
+> current setup. Sections describing weekly epochs, mining deadlines and
+> `hope-miner` submissions describe the **weekly era**, which concluded on
+> 3 August 2026 — they are retained because validators still verify weekly
+> history, and are marked where they appear.
 
 
 **For:** Running the SN21 validator
@@ -58,31 +62,31 @@ pip install -e .
 
 ## 2. Quick Start (Local Testing)
 
-**Three** commands run as **three** independent processes — typically
-one long-lived HTTP service, one weekly cron, and one frequent
-(3-4 hour) cron:
+**Three** processes: one long-lived HTTP service, one daily run, and one
+frequent (3-4 hour) cron.
 
 ```bash
-# Process A — episode-serving HTTP daemon (long-lived)
+# Process A — HTTP service (long-lived)
+# Serves episodes to miners, and the daily verifiability endpoints
+# (/v1/daily/*) that let anyone reproduce a day's scores.
 hope-validator-api \
-    --release WR-2026-W19-PUB-E1 \
     --host 0.0.0.0 --port 8080 \
     --network test --netuid 466 \
     --wallet-name my_validator --wallet-hotkey default
 ```
 
 ```bash
-# Process B — one-shot weekly scoring pass (run AFTER the miner deadline)
-hope-validator \
-    --release WR-2026-W19-PUB-E1 \
-    --network test --netuid 466 \
-    --wallet-name my_validator --wallet-hotkey default \
-    --archive-tier-2 https://adtao-deploy.onrender.com \
-    --ed25519-key-file ~/.sn21/keys/validator-ed25519.pem
+# Process B — the daily loop (run once a day from cron)
+# Settles the day's matured predictions, folds them into standings,
+# publishes the day's receipt + accuracy document, and writes the
+# intended weight vector.
+python3 scripts/run_daily_loop.py \
+    --shadow-root /var/lib/sn21_ledger \
+    --ledger-root /var/lib/sn21_ledger
 ```
 
 ```bash
-# Process C — activity-floor heartbeat (run every 3-4 hours from cron)
+# Process C — activity-floor heartbeat (every 3-4 hours from cron)
 hope-validator-heartbeat \
     --network test --netuid 466 \
     --wallet-name my_validator --wallet-hotkey default
@@ -90,20 +94,42 @@ hope-validator-heartbeat \
 
 Roles in one line each:
 
-- **A** (`hope-validator-api`) serves episodes to miners, runs forever.
-- **B** (`hope-validator`) scores after each weekly mining deadline,
-  produces the on-chain `9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` artifact
-  sequence, and exits.
-- **C** (`hope-validator-heartbeat`) re-asserts your latest weights
-  every few hours so Bittensor's `ActivityCutoff` (~16h on mainnet)
-  does not drop you from consensus between weekly scoring runs.
-  Self-throttles via `LastUpdate` check — safe to run every 3-4h on
-  cron. See §10.4 for the full mechanism.
+- **A** (`hope-validator-api`) serves episodes and the daily receipts;
+  runs forever.
+- **B** (the daily loop) settles, scores, publishes and produces the
+  weight intent for one day, then exits. Run it after the day's basket
+  has been delivered.
+- **C** (`hope-validator-heartbeat`) re-asserts your latest weights every
+  few hours so Bittensor's `ActivityCutoff` (~16h on mainnet) does not
+  drop you from consensus between runs. Self-throttles via `LastUpdate`
+  — safe on a 3-4 hour cron. See §10.4.
 
-**All three are required for sustained operation.** Skipping the
-heartbeat means your validator gets pruned from emission a day or
-two after each scoring run — even if your scoring is otherwise
-flawless.
+**All three are required for sustained operation.** Skipping the heartbeat
+means your validator is pruned from emission a day or two after each run,
+even if your scoring is flawless.
+
+### What the daily loop needs
+
+| Setting | Purpose |
+| :---- | :---- |
+| `SN21_ED25519_KEY_FILE` | Signs each day's published receipt and accuracy document. Without it, publication is skipped. |
+| `SN21_LEDGER_ROOT` | Where the feeds are written — set it on **Process A** too, so the API serves the same files the loop writes. |
+| `SN21_ANCHOR_COMMITS` | When set, the loop commits the feed's rolling Merkle root on chain. Off by default: chain spend is deliberate, never incidental. |
+
+### Timing
+
+Run the daily loop after the day's basket has been delivered. A day's
+predictions do not settle immediately — the 7-day horizon finalises 15 days
+after the basket's own date, 14-day at 22 days, 28-day at 36 — so the loop is
+idempotent by design and simply finds nothing new on a day when nothing has
+matured. Re-running it is safe.
+
+### Weekly-era scoring (historical)
+
+`hope-validator --release WR-...` scored a completed weekly epoch and produced
+the on-chain `9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` artifact sequence. The last
+weekly epoch was scored on 3 August 2026. The command remains for verifying
+weekly history; it is not part of daily operation.
 
 For testnet, swap `--network test --netuid 466`; for mainnet use
 `--network finney --netuid 21` (the defaults).
@@ -183,11 +209,30 @@ Once `hope-validator-api` is running, the daemon exposes:
 | `GET` | `/v1/epochs/{id}/episode-commitment` | None | Per-episode commitment hash |
 | `GET` | `/v1/epochs/{id}/commitment` | None | Epoch commitment proof |
 | `POST` | `/v1/epochs/{id}/predictions` | Hotkey | Submit predictions (dev/local; production miners submit on chain via Layer 9.B) |
-| `GET` | `/v1/epochs/{id}/my-predictions` | Hotkey | Inspect predictions previously POSTed by the caller |
-| `GET` | `/v1/epochs/{id}/verification` | None | Revealed outcomes (post-scoring) |
-| `GET` | `/v1/epochs/{id}/scores` | None | Per-miner scores (post-scoring) |
+| `GET` | `/v1/epochs/{id}/verification` | None | Weekly-era: revealed outcomes (post-scoring) |
 | `GET` | `/v1/training/episodes` | None | Historical training episodes |
 | `GET` | `/v1/training/summary` | None | Training-set composition stats |
+
+**Daily stream** — all public, all reproducible:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/v1/daily/{day}/receipt` | The day's full scoring record: outcomes used, every prediction verbatim, score components, and the formula that ran |
+| `GET` | `/v1/daily/{day}/accuracy` | The day's aggregate document; names the receipt it belongs to |
+| `GET` | `/v1/daily/{day}/scores` | Aggregate score summary for the day |
+| `GET` | `/v1/daily/{day}/miner/{hotkey}` | One miner's entries, components and scores |
+| `GET` | `/v1/daily/{day}/proof` | Proof that the day sits inside the anchored root |
+| `GET` | `/v1/daily/root` | The current rolling root — what is committed on chain |
+| `GET` | `/v1/daily/index` | The feed walk: every day, its hash, and its predecessor |
+
+Anyone can recompute a day's scores from these; see
+[SN21_VERIFYING](./SN21_VERIFYING.md). These endpoints read from
+`SN21_LEDGER_ROOT`, so the API process must point at the same directory the
+daily loop writes to.
+
+> `/v1/epochs/{id}/scores` and `/v1/epochs/{id}/my-predictions` are weekly-era
+> endpoints and no longer serve data. They return a pointer to the daily
+> equivalents above.
 
 ### Authentication
 
@@ -427,16 +472,26 @@ The operator's canonical Render deployment of the cron lives at
 `deploy/validator_scoring/` and pulls the latest source from this
 repo on every trigger, so production stays in lockstep with `main`.
 
-### Weekly epoch cycle
+### Daily cycle
 
-Each Monday:
-1. A new release is available from the operator (e.g., `WR-2026-W19-PUB-E1`)
-2. Restart `hope-validator-api` with the new release key
-3. Miners have until the weekly deadline (~6.5 days) to submit predictions
-4. Drand auto-reveal fires ~60 minutes after each miner's submission
-5. Run `hope-validator` (one-shot) after the deadline + reveal window
-6. Scoring artifacts (`9.C.1 → 9.C.3 → 9.C.2 → 9.C.6`) land on chain;
-   weights take effect at the next Yuma consensus step
+Every day:
+1. A basket is delivered in the morning, named for the previous day's changes
+   (`BD-2026-08-03` holds Monday 3 August's changes, delivered Tuesday 4th)
+2. Admitted miner containers are run against it; their predictions are recorded
+3. The daily loop settles whatever matured that day — 7-day results finalise
+   15 days after the basket's own date, 14-day at 22, 28-day at 36
+4. The day's receipt and accuracy document are published and hash-chained to
+   the day before
+5. The feed's rolling Merkle root is committed on chain when
+   `SN21_ANCHOR_COMMITS` is set, so any published day stays verifiable
+6. Standings update; the weight vector follows at the next consensus step
+
+### Weekly epoch cycle (historical — concluded 3 August 2026)
+
+Each Monday a release was published, miners had ~6.5 days to submit, drand
+auto-reveal fired ~60 minutes after each submission, and a one-shot scoring
+pass produced the `9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` artifacts on chain.
+Retained for verifying weekly history.
 
 ### Activity-floor heartbeat (`hope-validator-heartbeat`)
 
