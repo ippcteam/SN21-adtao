@@ -1,5 +1,12 @@
 # SN21 outcome trust model — verify scoring independently
 
+> **Era note.** The mechanisms below are the **weekly-era** ones (signed
+> outcome releases, per-epoch chain commits, `verify_epoch.py`). They remain
+> the record for epochs scored up to 3 August 2026. On the daily stream the
+> same guarantees are delivered by the daily receipt and its rolling on-chain
+> Merkle root — see [SN21_VERIFYING.md](./SN21_VERIFYING.md). The trust
+> argument in the last section applies to both.
+
 This explains exactly what a validator must trust, what it can **verify**, and
 how to do that verification yourself. Short version: **you can already fetch the
 outcomes, verify they are the operator's signed values, and re-derive every
@@ -13,7 +20,8 @@ and below is how we minimize even that.
 
 1. **Outcomes are signed.** The operator's `/releases/{key}/package?include_outcomes=true`
    response is ed25519-signed with the operator key; the public key is published
-   (tao-discovery repo). The validator client verifies it before accepting
+   in this repository (`hope/hope_public_key.py`). The validator client
+   verifies it before accepting
    (`REQUIRE_HOPE_SIGNATURE=true`). → outcomes are **attributable + tamper-evident**.
 
 2. **Scoring is anchored on-chain.** Each epoch the validator commits

@@ -84,6 +84,7 @@ is also passed to the scorer as `--reg-index-prebuilt` automatically.
 | `--scoring-timeout-seconds` | `SN21_DAEMON_SCORING_TIMEOUT_SECS` | kill a stalled scoring run past this; it's idempotent, next tick re-runs (default 1800; 0 = no limit) |
 | `--heartbeat-dry-run` | `SN21_HEARTBEAT_DRY_RUN=1` | heartbeat logs its decision but commits nothing |
 | `--skip-scoring` / `--skip-heartbeat` / `--skip-reg-index` | — | drop a tool from the tick |
+| `--once` | — | run one tick and exit (manual run / smoke test) |
 
 > **`SN21_REG_INDEX_ARCHIVE_URL` must point at a true archive node** (full history,
 > e.g. `wss://archive.chain.opentensor.ai:443` or your own archival node). A
@@ -92,7 +93,6 @@ is also passed to the scorer as `--reg-index-prebuilt` automatically.
 > archive node` and the reg-index reads **zero** blocks. The per-tick bound +
 > `300s` interval keep the heartbeat safe even on the slow public archive; for
 > steady-state speed, point this at your own archival node.
-| `--once` | — | run one tick and exit (manual run / smoke test) |
 
 `HOPE_API_KEY` / `HOPE_API_URL` are required (the scorer resolves `--release
 auto` and fetches episodes/outcomes from the operator data backend). The

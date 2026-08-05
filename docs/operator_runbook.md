@@ -75,7 +75,7 @@ python scripts/sn21_keys.py register \
 ```
 
 Cost: 1 `Raw{109}` extrinsic against MaxSpace (~609 bytes including
-overhead per §18.2 of the architecture doc).
+overhead).
 
 Verify from any third party:
 
@@ -298,9 +298,9 @@ Anyone (auditor, advertiser, third party) verifies an epoch.
 ### 8.1 Archive node requirement
 
 The Bittensor `Commitments::CommitmentOf` storage holds ONE entry per
-`(netuid, hotkey)` and is overwritten by every new commit (Phase H
-finding §19.3). To audit a PAST epoch the verifier MUST use an archive
-node + a block-pinned read:
+`(netuid, hotkey)` and is overwritten by every new commit (see
+[build_journey.md](./build_journey.md), Phase H). To audit a PAST epoch the
+verifier MUST use an archive node + a block-pinned read:
 
 ```bash
 python scripts/verify_epoch.py \
@@ -485,8 +485,9 @@ with operations to avoid mid-epoch rotation.
 
 Before flipping `--network test` → `--network finney`:
 
-- [ ] All probes from §18 of the architecture doc rerun on mainnet
-  (Q11 + Q13 specifically — testnet hyperparams may differ).
+- [ ] Testnet chain calibrations rerun on mainnet — the MaxSpace window
+  and the per-extrinsic fee specifically, since testnet hyperparameters
+  may differ ([build_journey.md](./build_journey.md), Phase 0).
 - [ ] Mainnet hotkey registration on netuid 21 (burn cost paid).
 - [ ] All 4 ed25519 keys (outcome signer / primary / shadow / first miner) bound
   on-chain via `sn21_keys.py register --network finney`.

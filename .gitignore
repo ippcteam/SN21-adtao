@@ -75,3 +75,6 @@ scripts/.doc_publish_blocklist
 # Validator ledger output (receipts, accuracy docs, shadow days) — operator
 # runtime state, published via the API, not via the repo.
 sn21_ledger/
+
+# Internal documentation working checklist — LOCAL ONLY
+docs/DOC_FIX_CHECKLIST.md

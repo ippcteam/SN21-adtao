@@ -68,8 +68,10 @@ python scripts/build_reg_index.py \
 | `--index` path | the reg-index — a **bare JSON list** of `{hotkey_ss58, hotkey_pk_hex, ed25519_pk_hex, role, block_number}` (one per hotkey; newest registration wins) |
 | `<index>.state.json` | a sidecar checkpoint `{last_scanned_block, ...}` so the next run resumes cheaply |
 
-Keep both on a **persistent disk**. (On Render, that means a web/worker service —
-cron services have no disk; co-locating with your archive node is ideal.)
+Keep both on a **persistent disk** — the checkpoint is what makes each run
+cheap. If you host on a managed platform, use a service type that offers
+persistent storage rather than an ephemeral scheduled job. Co-locating with
+your archive node is ideal.
 
 ---
 

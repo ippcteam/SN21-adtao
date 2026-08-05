@@ -118,8 +118,8 @@ On-chain epoch outcome:
 ```
 
 **Action**: usually transient — Subtensor's public RPC is load-balanced
-and a stale node may return missing reveals. Re-run on the same Render
-shell; new connections may land on a synced node.
+and a stale node may return missing reveals. Simply re-run; a new
+connection may land on a synced node.
 
 If 5+ retries all show 0 scoreable miners, the cause is one of:
 - The current epoch's bundle reveal hasn't fired yet (wait for the
@@ -149,12 +149,11 @@ If `used_space` is at or near `MaxSpace`, wait for the next pallet-epoch.
 
 ## Cron configuration
 
-The operator's Render Cron Job (in `adtao-deploy/render.yaml`) should
-fire **once per epoch deadline**. On testnet 466, the weekly schedule
-is `0 6 * * 1` (Mondays 06:00 UTC, ~1 hour after the
+Schedule the scoring run **once per epoch deadline**. On testnet 466 the
+weekly schedule was `0 6 * * 1` (Mondays 06:00 UTC, about an hour after the
 `WR-YYYY-WNN-PUB-E1` deadline).
 
-**Do not** configure auto-retry on the cron service. If a run fails,
+**Do not** configure auto-retry on the scheduled job. If a run fails,
 the runner's idempotency check will cleanly skip on the next
 pallet-epoch — no manual intervention needed unless the failure is
 persistent (then check logs for the `aborted_reason`).
@@ -176,5 +175,5 @@ If you find the validator is in a stuck state, the safe sequence is:
 5. If you genuinely need to recover from a broken validator hotkey
    (e.g., used_space stuck near MaxSpace and the pallet-epoch isn't
    rolling over fast enough) — burn a fresh validator hotkey, register
-   it on the subnet, and update Render's `HOTKEY_NAME` env var. The
+   it on the subnet, and point your deployment's `HOTKEY_NAME` at it. The
    protocol does not require a stable validator hotkey across epochs.

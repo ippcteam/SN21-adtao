@@ -1,5 +1,14 @@
 # Build Journey — SN21
 
+> **Historical record.** This describes the build of the **weekly era**, up to
+> 5 May 2026. SN21 moved to a daily stream on 4 August 2026: tiered
+> Elite / Competitive / Participating bands and four-epoch EMA pools described
+> below are retired, and the test and line counts are as they stood then.
+> For how the subnet works today, start at
+> [SN21_WHY_DAILY.md](./SN21_WHY_DAILY.md) and
+> [SN21_REWARDS.md](./SN21_REWARDS.md). The cryptographic and verification
+> machinery described here still stands.
+
 How this subnet was built, phase by phase, with the receipts.
 
 The whitepaper (`docs/whitepaper.md`) describes the protocol as it

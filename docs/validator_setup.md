@@ -190,8 +190,7 @@ idempotent against chain state: a re-run for an already-scored
 (validator, epoch) pair exits cleanly without re-committing.
 
 Typical operator deployment runs `hope-validator` from a weekly cron;
-see `deploy/validator_scoring/README.md` for the canonical Render
-configuration.
+see `deploy/validator_scoring/README.md` for a reference configuration.
 
 ---
 
@@ -468,9 +467,9 @@ hope-validator \
 tail -f validator-api.log
 ```
 
-The operator's canonical Render deployment of the cron lives at
-`deploy/validator_scoring/` and pulls the latest source from this
-repo on every trigger, so production stays in lockstep with `main`.
+A reference deployment of that cron lives at `deploy/validator_scoring/`.
+It pulls the latest source from this repository on every trigger, so a
+deployment stays in lockstep with `main`.
 
 ### Daily cycle
 

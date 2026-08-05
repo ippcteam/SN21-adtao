@@ -3,12 +3,12 @@
 | | |
 | :---- | :---- |
 | **Version** | 1.0 |
-| **Status** | Published — the canonical why-daily statement; announcements derive from this |
-| **Audience** | Miners, partners, and the wider Bittensor / ads audience (Discord / site copy derived from this) |
+| **Status** | Published — the canonical statement of why SN21 moved to a daily stream |
+| **Audience** | Miners, partners, and the wider Bittensor and advertising audience |
 | **Owner** | AdTAO / SN21 operator |
 | **Companions** | [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md) · [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_STAKING.md](./SN21_STAKING.md) · [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md) |
 
-This is the canonical why-daily statement. [DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md) is a stub pointing here. Discord / [adtao.io/sn21](https://adtao.io/sn21/) copy should be **derived from this**, not the other way around.
+This document is the reference statement; where site or channel copy differs, this file stands. [DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md) points here.
 
 ---
 
@@ -46,7 +46,7 @@ Two problems showed up in practice — and they matter as much to customers and 
 
 2. **It sanitises reality.** In live Google Ads accounts, changes rarely happen in isolation. They arrive in **baskets and clusters**. Artificially separating a single change type makes the contest cleaner and the learning path clearer — but it also makes the result less like the world we deploy into, and therefore less valuable when the winning model has to recommend what to do *next* on a real account.
 
-There was a trust problem as well. Epochs were built from **historical** settled work. This meant that should we have wished to (which we never did) we could potentially self mine with a miner who already has the settled outcomes and therefore win on a consistent basis.  The challenge was never raised to us, but that doesn't mean that the attack vector doesn't exist.
+There was a structural trust problem as well. Weekly epochs were built from **historical** settled work, which means the outcomes already existed when the epoch was released. An operator willing to act in bad faith could have mined its own subnet with foreknowledge of those outcomes and won consistently. We never did, and no miner ever raised it — but an attack vector nobody has used is still an attack vector, and a design that removes it is better than one that asks for trust.
 
 ### What daily delivers
 
@@ -125,14 +125,7 @@ Burn rates are **planned and indicative only** and may change at any time to pro
 
 **Cold start:** full scoring depth for a live basket is reached about **35 days** after that basket (28-day horizon + settle). Until then your standing is real but thinner — see scoring doc.
 
-Leaderboard / changelog (site updating this week): [https://adtao.io/sn21/](https://adtao.io/sn21/).
-
----
-
-## Still open (ops / site — not blockers for this doc)
-
-- [ ] Derive Discord + site announcement from this file.
-- [ ] Align any remaining governance-amendment / GAP-1 wording if still open.
+Leaderboard and changelog: [https://adtao.io/sn21/](https://adtao.io/sn21/).
 
 ---
 

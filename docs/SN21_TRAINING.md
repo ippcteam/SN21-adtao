@@ -15,8 +15,8 @@ yet, it says so rather than inventing a CLI.
 > **weekly-era** (`WR-*` epochs, 7- and 14-day outcomes). The live contract is
 > the **daily stream** (`BD-*` baskets, 7/14/**28**-day). Same input schema, so
 > a model trained here runs unchanged live — but the 28-day horizon has no
-> historical labels until the first daily 28-day outcomes settle around
-> **1 September 2026**. Train the 7- and 14-day heads on real data; the 28-day
+> historical labels until the first daily 28-day outcomes settle on
+> **8 September 2026**. Train the 7- and 14-day heads on real data; the 28-day
 > head starts as an extrapolation. Everyone is in that position, including us.
 
 ---

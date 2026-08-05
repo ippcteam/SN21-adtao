@@ -1,33 +1,126 @@
-# SN21 Miner Model Specification — v1 (M0 contract freeze)
+# SN21 — Miner model specification (container contract)
 
-**Status:** working draft frozen for build; ratification with the launch amendment.
-**Decisions embedded (2026-07-25):** full containers at launch · admission = beat the published naive baseline · budget 1 GB RAM / 15 min per daily basket · ≥7 shadow scored days before weight cutover.
+| | |
+| :---- | :---- |
+| **Version** | 1.1 |
+| **Audience** | Miners |
+| **Status** | Authoritative for the daily stream |
+| **Last updated** | 2026-08-05 |
+| **Related** | [miner_quickstart.md](./miner_quickstart.md) · [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_TRAINING.md](./SN21_TRAINING.md) |
+
+This is the contract between your model and the subnet: what you ship, how it
+is executed, and what it must emit. Scoring is in
+[SN21_SCORING.md](./SN21_SCORING.md); emissions are in
+[SN21_REWARDS.md](./SN21_REWARDS.md).
+
+---
 
 ## 1. What you submit
-A container image (OCI/Docker). You commit its **digest** on-chain (replaces prediction commitments — same extrinsic, new meaning). Updating your model = new digest = re-enters the backtest gate.
+
+A container image (OCI / Docker). You commit its **digest** on chain:
+
+```
+sn21-model:v1:<repo>@sha256:<64hex>
+```
+
+The digest pins the exact bits the subnet will run. Updating your model means
+pushing a new image, committing the new digest, and re-entering the admission
+gate.
 
 ## 2. Execution contract
-- Entrypoint reads **one episode payload JSON per line on stdin** (schema: episode payload v2.0 — id, metadata, account_state, pre-window series, action bundle with magnitudes) and writes **one prediction JSON per line on stdout**: `{"episode_id": ..., "horizons": {"7": {...}, "14": {...}, "28": {...}}}` — per horizon: p10/p50/p90 for cost_delta_pct, conversions_delta_pct, efficiency_delta_pct (monotone), plus goal_miss_probability and instability_risk in [0,1] (**accepted for forward compatibility, NOT scored** — no ground truth exists; spend capacity on the delta metrics).
 
-> **Schema versions, one story.** Public historical exports under `data/episodes/`
-> are the **v1.9-era weekly export** (episode fields at top level); the **training
-> bundle** wraps the same fields as `{"episode_id", "input": {...}, "labels": {...}}`;
-> the **live daily contract is this v2.0 payload**. Field names and meanings are
-> identical where they overlap — training code should read fields from `input`
-> when present, else top-level. The reference model's flattened field list is a
-> convenience view of the same schema, not a third format.
+Your entrypoint reads **one episode payload per line on stdin** and writes
+**one prediction per line on stdout**:
 
-- **No network.** The sandbox runs `--network=none`. Everything you need ships in the image.
-- **Budget: 1 GB RAM, 15 CPU-minutes per daily basket** (~250 episodes). Exceeding either aborts the day's run: no scores that day (the episode-weighted average makes missed days self-penalising; no additional punishment).
-- Deterministic output for identical input is strongly recommended (audits replay your container).
+```json
+{"episode_id": "...", "horizons": {"7": {...}, "14": {...}, "28": {...}}}
+```
+
+Each horizon carries monotone `p10` / `p50` / `p90` for `cost_delta_pct`,
+`conversions_delta_pct` and `efficiency_delta_pct`, plus `goal_miss_probability`
+and `instability_risk` in `[0, 1]`.
+
+> `goal_miss_probability` and `instability_risk` are **accepted but not
+> scored** — no ground truth exists for them. Spend your model's capacity on
+> the delta metrics.
+
+**Runtime limits:**
+
+| Limit | Value |
+| :---- | :---- |
+| Network | **None** — the sandbox runs `--network=none`; everything you need ships in the image |
+| Memory | **1 GB** |
+| CPU time | **15 minutes** per daily basket (~250 episodes) |
+| Filesystem | Read-only root |
+
+Exceeding a limit aborts that day's run: no scores for the day. Because
+standing is an average over scored predictions, a missed day costs you
+evidence rather than incurring a separate penalty.
+
+Deterministic output for identical input is strongly recommended — audits
+replay your container.
+
+### Schema versions
+
+Three surfaces, one schema:
+
+| Surface | Shape |
+| :---- | :---- |
+| Historical exports under `data/episodes/` | Weekly-era export — episode fields at the top level |
+| Training bundle | `{"episode_id", "input": {...}, "labels": {...}}` |
+| **Live daily contract** | **Episode payload v2.0** — id, metadata, account state, pre-window series, action bundle with magnitudes |
+
+Field names and meanings are identical where they overlap. Training code
+should read fields from `input` when present, otherwise from the top level.
+The reference model's flattened field list is a convenience view of the same
+schema, not a third format.
 
 ## 3. Admission — the backtest gate
-On submission, your container runs against a **held-out historical corpus** (episodes with settled outcomes). Admission requires **beating the published naive baseline** (persistence: zero-change medians with corpus-calibrated spreads) on the published gate metric (quantile pinball score blended with direction accuracy, 70/30). Every model update re-runs the gate. Gate results are published.
 
-## 4. Daily cycle (once admitted)
-**Wall clock:** miner submissions use a **midnight EST** cut-off each day (day boundary for the basket / prediction-lock cycle).
+A newly committed digest runs against a **held-out historical corpus** of
+episodes with settled outcomes. Admission requires **beating the published
+naive baseline** (persistence: zero-change medians with corpus-calibrated
+spreads) on the gate metric — quantile pinball blended with direction
+accuracy, 70/30 — and reaching at least 90% of the reference model's
+coverage. Every model update re-runs the gate, and gate results are published.
 
-Day 0 changes → Day 1 the subnet executes your container against the day's basket inside the sandbox; outputs are locked as your predictions. Outcomes at 7/14/28 days (+7-day settle) score exactly once; scores fold into your episode-age-weighted standing; weights follow the published curve; the champion changes only under the promotion rule.
+## 4. The daily cycle once admitted
 
-## 5. Liveness
-Crash/timeout/budget-breach = no scores that day. Chronic failure policy (strikes/eviction) published with the amendment.
+**Wall clock:** a **midnight EST** cut-off each day is the day boundary for
+the basket and prediction-lock cycle.
+
+| Day | What happens |
+| :---- | :---- |
+| Day 0 | Account changes occur; they become that day's basket |
+| Day 1 | The subnet executes your container against the basket in the sandbox; its output is locked as your predictions |
+| Day 15 / 22 / 36 | Each (episode, horizon) is scored exactly once at 7 / 14 / 28 days plus a 7-day settling window |
+
+Scores fold into your episode-age-weighted standing, weights follow the
+published curve, and the champion seat changes only under the promotion rule
+in [SN21_REWARDS.md](./SN21_REWARDS.md).
+
+Every scored day is published as a signed receipt you can recompute — see
+[SN21_VERIFYING.md](./SN21_VERIFYING.md).
+
+## 5. Liveness and chronic failure
+
+A crash, timeout or budget breach means no scores that day. Sustained failure
+is bounded by a published policy:
+
+| Rule | Value |
+| :---- | :---- |
+| Strike | A day your container was run and delivered nothing usable, where the fault is yours |
+| Eviction | **5 strikes within a rolling 14 days** |
+| Return | After **7 days**, on a clean run |
+
+Three things are explicitly **not** strikes:
+
+- A weak, wrong or missing **prediction**. Accuracy is priced in your
+  standing; liveness is a separate axis and stays one.
+- A day the **subnet did not run**, or ran an empty basket.
+- A failure on the **operator's** side. Those days count neither against you
+  nor for you.
+
+The policy is published ahead of enforcement, and any change to how it
+affects weights is announced through the miner channels before it takes
+effect.

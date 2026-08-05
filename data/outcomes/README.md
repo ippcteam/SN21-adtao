@@ -27,6 +27,12 @@ Each file (`WR-2026-W<week>-…-E1.json`) contains, per episode:
 `t7` / `t14` are the 7- and 14-day measurement horizons. The deltas are the
 measured percentage changes the validator scores predictions against.
 
+> **Era note.** This corpus is the **weekly era** (`WR-*` epochs, 7- and
+> 14-day horizons), which concluded on 3 August 2026. It remains the largest
+> published training set and the input schema is unchanged. On the daily
+> stream, each day's settled outcomes are published inside the day's signed
+> receipt instead — see [SN21_VERIFYING.md](../../docs/SN21_VERIFYING.md).
+
 **Only `episode_id` + the measured outcomes are published** — no customer
 identifiers, account context, or campaign payloads.
 
