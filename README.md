@@ -10,12 +10,13 @@
 > rolling standing that drives emissions. Weekly `hope-miner` prediction
 > bundles are obsolete. Why we moved: [docs/SN21_WHY_DAILY.md](docs/SN21_WHY_DAILY.md).
 >
-> **Reading order:** [Why daily](docs/SN21_WHY_DAILY.md) →
-> [Transition plan](docs/SN21_TRANSITION_PLAN.md) →
-> [Quickstart](docs/miner_quickstart.md) →
-> [Training](docs/SN21_TRAINING.md) → [Scoring](docs/SN21_SCORING.md) →
-> [Verifying your score](docs/SN21_VERIFYING.md) → [Rewards](docs/SN21_REWARDS.md) →
-> [Staking](docs/SN21_STAKING.md) → [Model spec](docs/MINER_MODEL_SPEC.md)
+> **Miners start here:** [Why daily](docs/SN21_WHY_DAILY.md) →
+> [Quickstart](docs/miner_quickstart.md) → [Training](docs/SN21_TRAINING.md) →
+> [Model spec](docs/MINER_MODEL_SPEC.md) → [Verifying your score](docs/SN21_VERIFYING.md)
+>
+> **Validators start here:** [Why daily](docs/SN21_WHY_DAILY.md) →
+> [Validator setup](docs/validator_setup.md) → [Scoring](docs/SN21_SCORING.md) →
+> [Rewards](docs/SN21_REWARDS.md) → [Verifying](docs/SN21_VERIFYING.md)
 
 Every prediction is sealed on chain before the outcome is knowable.
 Every score is reproducible by anyone with a chain reader.
@@ -28,11 +29,12 @@ No one — including the operator — can rewrite the record after the fact.
 
 Bittensor Subnet 21 · Mainnet `finney` · Testnet `test` (netuid 466)
 
-[Quickstart](docs/miner_quickstart.md) · [Scoring](docs/SN21_SCORING.md) · [Rewards](docs/SN21_REWARDS.md) · [Transition](docs/SN21_TRANSITION_PLAN.md)
+[Miner quickstart](docs/miner_quickstart.md) · [Validator setup](docs/validator_setup.md) · [Scoring](docs/SN21_SCORING.md) · [Rewards](docs/SN21_REWARDS.md)
 </div>
 
 ---
 
+- [Documentation](#documentation)
 - [Overview](#overview)
 - [How it works](#how-it-works)
 - [Architecture](#architecture)
@@ -47,6 +49,54 @@ Bittensor Subnet 21 · Mainnet `finney` · Testnet `test` (netuid 466)
 - [Verifying any epoch (weekly era)](#verifying-any-epoch-weekly-era)
 - [Development](#development)
 - [License](#license)
+
+---
+
+## Documentation
+
+**Current system = daily stream (from 4 August 2026).** Anything marked
+*weekly era* or under `docs/archive/weekly/` describes the previous protocol
+(last weekly epoch scored 3 August 2026). Do not follow weekly commands for
+live mining or validation.
+
+### For miners
+
+| Doc | What it is |
+|-----|------------|
+| [docs/SN21_WHY_DAILY.md](docs/SN21_WHY_DAILY.md) | Why the subnet moved to daily |
+| [docs/SN21_TRANSITION_PLAN.md](docs/SN21_TRANSITION_PLAN.md) | Cutover dates and bridge rules |
+| [docs/miner_quickstart.md](docs/miner_quickstart.md) | **Start here** — register, build container, commit digest |
+| [docs/SN21_TRAINING.md](docs/SN21_TRAINING.md) | Train → package → smoke test |
+| [docs/MINER_MODEL_SPEC.md](docs/MINER_MODEL_SPEC.md) | Container I/O contract the subnet enforces |
+| [docs/SN21_SCORING.md](docs/SN21_SCORING.md) | How daily settle and standings work |
+| [docs/SN21_REWARDS.md](docs/SN21_REWARDS.md) | Weight curve, emissions, champion rule |
+| [docs/SN21_STAKING.md](docs/SN21_STAKING.md) | Alpha-hold ladder |
+| [docs/SN21_VERIFYING.md](docs/SN21_VERIFYING.md) | Rerun any day's receipt and reproduce your score |
+
+You ship a **digest-pinned container**. The subnet runs it against each daily
+basket. You do **not** POST daily predictions. Weekly `hope-miner --epoch WR-…`
+commands are obsolete.
+
+### For validators
+
+| Doc | What it is |
+|-----|------------|
+| [docs/SN21_WHY_DAILY.md](docs/SN21_WHY_DAILY.md) | Why the subnet moved to daily |
+| [docs/validator_setup.md](docs/validator_setup.md) | **Start here** — daily loop, API, heartbeat, env |
+| [docs/SN21_SCORING.md](docs/SN21_SCORING.md) | Settle / standing / weight curve (authoritative) |
+| [docs/SN21_REWARDS.md](docs/SN21_REWARDS.md) | How standings map to emissions |
+| [docs/SN21_VERIFYING.md](docs/SN21_VERIFYING.md) | Public receipts and `verify_day.py` |
+| [docs/validator_daemon.md](docs/validator_daemon.md) | Consolidated supervisor — **weekly-era scoring step**; heartbeat/reg-index still useful |
+| [docs/operator_runbook.md](docs/operator_runbook.md) | Operator cutover playbook (weekly sections historical; daily points to setup §2) |
+
+**Daily validator processes (current):**
+
+1. `hope-validator-api` — long-lived HTTP (episodes + `/v1/daily/*` receipts)
+2. `scripts/run_daily_loop.py` — once per day: settle, standings, publish, weight intent
+3. `hope-validator-heartbeat` — every 3–4 hours: re-assert weights for ActivityCutoff
+
+`hope-validator --release WR-…` scores **weekly-era** history only. It is not
+the daily scoring path.
 
 ---
 
@@ -166,6 +216,9 @@ SN21-adtao/
 │   ├── SN21_WHY_DAILY.md         Why we moved to daily (canonical)
 │   ├── SN21_TRANSITION_PLAN.md   Cutover / bridge dates
 │   ├── miner_quickstart.md       Miner onboarding (daily stream)
+│   ├── validator_setup.md        Validator onboarding (daily stream) — start here
+│   ├── validator_daemon.md       Supervisor loop (weekly scoring step historical)
+│   ├── operator_runbook.md       Operator playbook (weekly sections historical)
 │   ├── SN21_TRAINING.md          Train → container → smoke test
 │   ├── SN21_SCORING.md           Daily-stream scoring (authoritative)
 │   ├── SN21_REWARDS.md           Rank curve + emissions (authoritative)
@@ -240,7 +293,9 @@ The reference baseline runs on CPU. GPU only matters if you train a heavier mode
 | GPU | Not required | — |
 | Network | 100 Mbps down / 20 Mbps up | — |
 
-Validators run scoring orchestration + an HTTP API for miners + a Tier-1 archive cache. CPU bottleneck is `EpochScorer` over all miners' decrypted predictions.
+Validators run the daily settle loop, publish receipts, and keep weights alive
+via heartbeat. CPU load is dominated by settling matured (episode × horizon)
+rows into standings and publishing the day's receipt feed.
 
 ---
 
@@ -262,15 +317,21 @@ verifying your submission, training data, troubleshooting).
 
 ## Running a validator
 
-Multiple validators are registered on SN21 — Bittensor's protocol allows open validator registration. The AdTAO operator runs canonical primary and shadow validators against the published scoring specification, and is coordinating with other validator operators to align on the same scoring logic. The Review 4 milestone tracks readiness for a formal third-party validator programme — deployment guides, scoring spec reference implementation, and operator coordination channels.
+**Current path = daily stream.** Do not use `hope-validator --release WR-…`
+for live operation — that binary scores weekly-era history only (last weekly
+epoch: 3 August 2026).
 
-If you want to run the validator code locally for testing or to mirror what the operator runs:
+Multiple validators are registered on SN21 — Bittensor's protocol allows open
+validator registration. The AdTAO operator runs canonical primary and shadow
+validators against the published scoring specification. A formal third-party
+validator programme (credentials, coordination) is tracked at Review 4; local
+mirroring of the daily loop does not require waiting on that programme.
 
 ```bash
 # Install
 pip install -e .
 
-# Generate ed25519 key + register on chain (same as miner)
+# Generate ed25519 key + register on chain
 python scripts/sn21_keys.py generate --role validator --output ~/.sn21/keys/validator.pem
 python scripts/sn21_keys.py register --role validator \
     --network finney --netuid 21 \
@@ -278,36 +339,44 @@ python scripts/sn21_keys.py register --role validator \
     --key ~/.sn21/keys/validator.pem
 ```
 
-**A complete validator runs three independent processes** — all three are required for sustained operation:
+**A complete daily validator runs three processes** — all three are required
+for sustained operation:
 
-| Process | Binary | Cadence | What it does |
+| Process | Command | Cadence | What it does |
 |---|---|---|---|
-| **HTTP API** | `hope-validator-api` | long-lived daemon | Serves episodes to miners; takes `--port` |
-| **Scoring** | `hope-validator` | weekly cron — **historical**; the daily stream scores via `daily_loop` on the settle clock at cutover | Reads miner submissions, scores, commits weights on chain |
-| **Heartbeat** | `hope-validator-heartbeat` | cron every 3-4 hours | Re-asserts the last weights commit so Bittensor's `ActivityCutoff` (~16h on mainnet) does not prune your validator from consensus between weekly scoring runs |
+| **HTTP API** | `hope-validator-api` | long-lived | Serves episodes + public `/v1/daily/*` receipts |
+| **Daily loop** | `python3 scripts/run_daily_loop.py` | once per day | Settles matured rows, updates standings, publishes receipt/accuracy, writes weight intent |
+| **Heartbeat** | `hope-validator-heartbeat` | every 3–4 hours | Re-asserts the last weights commit so `ActivityCutoff` (~16h on mainnet) does not prune you from consensus |
 
-Skipping the heartbeat means your validator drops out of emission a day or two after each scoring run — even if your scoring is otherwise flawless.
+Skipping the heartbeat means your validator drops out of emission even if
+scoring is correct.
 
-Quick example (mainnet):
+Quick example (testnet; swap to `finney` / `21` for mainnet):
 
 ```bash
-# Process A — episode API (long-lived)
-hope-validator-api --release CURRENT_RELEASE_KEY \
+# Process A — HTTP API (long-lived). Point SN21_LEDGER_ROOT at the same
+# directory the daily loop writes so /v1/daily/* can serve receipts.
+export SN21_LEDGER_ROOT=/var/lib/sn21_ledger
+hope-validator-api \
     --host 0.0.0.0 --port 8080 \
+    --network test --netuid 466 \
     --wallet-name my_validator --wallet-hotkey default
 
-# Process B — weekly scoring (cron after mining deadline)
-hope-validator --release CURRENT_RELEASE_KEY \
-    --wallet-name my_validator --wallet-hotkey default \
-    --archive-tier-2 https://adtao-deploy.onrender.com \
-    --ed25519-key-file ~/.sn21/keys/validator.pem
+# Process B — daily loop (cron once per day, after the basket is delivered)
+python3 scripts/run_daily_loop.py \
+    --shadow-root /var/lib/sn21_ledger \
+    --ledger-root /var/lib/sn21_ledger
 
-# Process C — heartbeat (cron every 3-4 hours)
+# Process C — activity-floor heartbeat (cron every 3–4 hours)
 hope-validator-heartbeat \
+    --network test --netuid 466 \
     --wallet-name my_validator --wallet-hotkey default
 ```
 
-Full guide including cron snippets, hyperparameter notes, and reg-index setup: [validator setup](docs/validator_setup.md). The heartbeat is documented in detail in §10.4.
+Full guide (env vars, anchoring, timing, weekly-era historical sections):
+[docs/validator_setup.md](docs/validator_setup.md) §2. Heartbeat details: §10.
+Scoring / rewards: [SN21_SCORING](docs/SN21_SCORING.md),
+[SN21_REWARDS](docs/SN21_REWARDS.md).
 
 ---
 

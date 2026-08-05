@@ -8,6 +8,7 @@
 > [validator_setup §2](./validator_setup.md#2-quick-start-local-testing) —
 > the three processes, what the daily loop needs, and when to run it — with
 > [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md) for the dates.
+> Docs map (miners vs validators): [README § Documentation](../README.md#documentation).
 > Nothing in the weekly sections below is miner-facing truth for the daily
 > stream.
 
