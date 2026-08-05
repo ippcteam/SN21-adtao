@@ -116,6 +116,31 @@ even if your scoring is flawless.
 | `SN21_LEDGER_ROOT` | Where the feeds are written — set it on **Process A** too, so the API serves the same files the loop writes. |
 | `SN21_ANCHOR_COMMITS` | When set, the loop commits the feed's rolling Merkle root on chain. Off by default: chain spend is deliberate, never incidental. |
 
+#### Anchoring the feed on chain
+
+With `SN21_ANCHOR_COMMITS` on, the daily loop commits the feed's rolling
+Merkle root — 32 bytes, once per published day — from the validator's hotkey.
+That root is what `verify_day --expect-anchor` compares against, so a miner
+reading it from chain can check any published day, however old.
+
+All of these are read only when the flag is on, and all are required
+together. A missing one refuses to anchor and says which: committing the
+right root from the wrong identity looks anchored and verifies against
+nothing.
+
+| Setting | Value |
+| :---- | :---- |
+| `SN21_ANCHOR_COMMITS` | `1` / `true` / `yes` / `on` |
+| `SN21_WALLET_NAME` | Bittensor wallet holding the validator hotkey |
+| `SN21_WALLET_HOTKEY` | Hotkey name (default `default`) |
+| `SN21_BT_NETWORK` | `finney` (mainnet) or `test` (testnet) |
+| `SN21_NETUID` | `21` mainnet / `466` testnet |
+
+The same root is never committed twice: the loop is idempotent and re-running
+it on a day already published would otherwise spend a second write to say the
+identical thing. A failed commit is not recorded, so the next run retries.
+Test on `test` / `466` before mainnet.
+
 ### Timing
 
 Run the daily loop after the day's basket has been delivered. A day's
