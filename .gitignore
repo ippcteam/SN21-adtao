@@ -67,3 +67,11 @@ docs/local_keys.md
 
 # Internal operator runbooks — LOCAL ONLY, never commit (this is the PUBLIC repo)
 ops-internal/
+
+# Publish-gate blocklist (real names + internal phrasing) — LOCAL ONLY.
+# Committing it would publish exactly what the gate exists to keep out.
+scripts/.doc_publish_blocklist
+
+# Validator ledger output (receipts, accuracy docs, shadow days) — operator
+# runtime state, published via the API, not via the repo.
+sn21_ledger/

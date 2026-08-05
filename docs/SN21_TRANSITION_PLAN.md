@@ -52,7 +52,7 @@ Bittensor’s emissions-allocation methodology is changing significantly. SN21 m
 | **Sun 2 Aug** | Last weekly epoch **concludes**. | — | 0 |
 | **Mon 3 Aug** | Last weekly epoch **scored**. | 45% | 0 |
 | **Mon 3 Aug noon EST → Sun 9 Aug midnight EST** | Emissions paid **as normal** from that weekly score. | 45% | 0 |
-| **Tue 4–5 Aug** | **Training bundle** published — settled weekly-era episodes with full 7/14/28-day outcomes (same input schema as the daily stream; a like-for-like daily bundle cannot exist before ~1 Sep when the first 28-day daily outcomes settle). **Fetch:** [`SN21_training_bundle.jsonl`](https://github.com/ippcteam/SN21-adtao/releases/tag/training-bundle-2026-08) — 3,069 episodes, on the releases page. | 45% | 0 |
+| **Tue 4–5 Aug** | **Training bundle** published — settled weekly-era episodes with full 7/14/28-day outcomes (same input schema as the daily stream; a like-for-like daily bundle cannot exist until the first 28-day daily outcomes settle on 8 Sep). **Fetch:** [`SN21_training_bundle.jsonl`](https://github.com/ippcteam/SN21-adtao/releases/tag/training-bundle-2026-08) — 3,069 episodes, on the releases page. | 45% | 0 |
 | **Tue 4 Aug** | First **live daily basket** delivered — `BD-2026-08-03`, covering Monday 3 August. | 45% | 0 |
 | **Mon 10 Aug** | **Bridge starts:** weekly score still drives weights, but only **bridge-eligible** miners are paid (see below). | **30%** | **150** |
 | **Tue 18 Aug** | First **daily 7-day** settled scores begin feeding payouts. | 30% | **300** |

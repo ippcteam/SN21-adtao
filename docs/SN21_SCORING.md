@@ -194,3 +194,9 @@ Standing uses only the 7-day row. Blend weight stays **0.20** for that entry; th
 
 - Why daily: [SN21_WHY_DAILY.md](./SN21_WHY_DAILY.md)
 - Model / container contract: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md)
+- **Checking our arithmetic:** [SN21_VERIFYING.md](./SN21_VERIFYING.md) — every
+  scored day is published as a signed receipt (outcomes used, predictions
+  verbatim, each score's components) and you can recompute your own scores from
+  it with `scripts/verify_day.py`. Censored horizons are stated in the receipt
+  with their count and reason, so a dropped horizon is visible rather than
+  silent.

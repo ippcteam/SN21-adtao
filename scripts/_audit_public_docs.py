@@ -21,18 +21,57 @@ import sys
 DOCS = "docs"
 ARCHIVE = os.path.join(DOCS, "archive")
 
-# Personal names must never appear in public docs. Substring-matched
-# case-insensitively against word boundaries.
-NAMES = ["rob", "jayesh", "khurram", "warner", "rabbia"]
+# The list of real names and internal jargon is itself private: writing it
+# down here would publish, in the public repo, exactly what this gate exists
+# to keep out of the public repo. So it is read from an operator-local file
+# (gitignored) or the environment, and the gate REFUSES TO RUN without it —
+# a silent skip would report CLEAN while checking nothing.
+#
+#   scripts/.doc_publish_blocklist   one entry per line; '#' comments
+#                                    plain line  -> personal name (word-boundary, case-insensitive)
+#                                    're: ...'   -> regex for internal phrasing
+#   SN21_DOC_BLOCKLIST               same content, newline- or comma-separated
+#   SN21_DOC_BLOCKLIST_FILE          alternative path to the file
+BLOCKLIST_FILE = os.environ.get(
+    "SN21_DOC_BLOCKLIST_FILE",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".doc_publish_blocklist"),
+)
 
-# Phrases that mean "this was written for us, not for a reader".
+# Phrases that are generic enough to name in public — they give nothing away.
 INTERNAL = [
     r"\bTODO\([^)]*\)", r"\bFIXME\b", r"\bXXX\b",
-    r"\bask (rob|jayesh|khurram)\b",
-    r"\bpending (rob|approval)\b", r"\[PENDING ROB\]",
+    r"\bpending approval\b",
     r"\binternal only\b", r"\bdo not publish\b",
-    r"\bK-Work\b", r"\bsession bus\b",
 ]
+NAMES = []
+
+
+def load_blocklist():
+    """Return (names, extra_patterns) or exit non-zero if unavailable."""
+    raw = os.environ.get("SN21_DOC_BLOCKLIST")
+    if raw is None:
+        if not os.path.exists(BLOCKLIST_FILE):
+            print(
+                "REFUSING TO RUN — no blocklist.\n\n"
+                f"  Expected {BLOCKLIST_FILE} (gitignored) or $SN21_DOC_BLOCKLIST.\n"
+                "  One entry per line: a bare name, or 're: <regex>' for a phrase.\n"
+                "  Without it this gate would print CLEAN while checking nothing."
+            )
+            sys.exit(2)
+        raw = open(BLOCKLIST_FILE).read()
+    names, patterns = [], []
+    for line in raw.replace(",", "\n").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.lower().startswith("re:"):
+            patterns.append(line[3:].strip())
+        else:
+            names.append(line)
+    if not names and not patterns:
+        print(f"REFUSING TO RUN — blocklist at {BLOCKLIST_FILE} is empty.")
+        sys.exit(2)
+    return names, patterns
 
 FIRST_BASKET_DATE = "2026-08-03"     # action-window day of the first live basket
 FIRST_DELIVERY = "4 August"          # the day it reached miners
@@ -106,8 +145,12 @@ def check_era(path, text):
 
 
 def main():
+    names, extra = load_blocklist()
+    NAMES.extend(names)
+    INTERNAL.extend(extra)
     files = live_docs()
-    print(f"auditing {len(files)} live docs (archive excluded)\n")
+    print(f"auditing {len(files)} live docs against {len(NAMES)} names + "
+          f"{len(INTERNAL)} phrase patterns (archive excluded)\n")
     for path in files:
         with open(path) as f:
             text = f.read()

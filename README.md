@@ -43,7 +43,8 @@ Bittensor Subnet 21 · Mainnet `finney` · Testnet `test` (netuid 466)
 - [Hardware requirements](#hardware-requirements)
 - [Running a miner](#running-a-miner)
 - [Running a validator](#running-a-validator)
-- [Verifying any epoch](#verifying-any-epoch)
+- [Verifying your score (daily stream)](#verifying-your-score-daily-stream)
+- [Verifying any epoch (weekly era)](#verifying-any-epoch-weekly-era)
 - [Development](#development)
 - [License](#license)
 
@@ -169,6 +170,7 @@ SN21-adtao/
 │   ├── SN21_SCORING.md           Daily-stream scoring (authoritative)
 │   ├── SN21_REWARDS.md           Rank curve + emissions (authoritative)
 │   ├── SN21_STAKING.md           Alpha-hold ladder
+│   ├── SN21_VERIFYING.md         Rerun and reproduce your own score
 │   ├── MINER_MODEL_SPEC.md       Container contract
 │   ├── whitepaper.md             Protocol design (weekly sections historical)
 │   └── archive/weekly/           Obsolete weekly reward / epoch / economics specs
@@ -177,6 +179,8 @@ SN21-adtao/
 │   ├── protocol/                 Episode / Prediction / Outcome models
 │   ├── commitment/               Crypto primitives (CBOR, IMT, ed25519, drand TLE, archive client, scoreability)
 │   ├── scoring/                  Pure-Python scoring (4 components + skill score + null penalty + per-episode)
+│   ├── backtest/                 Digest intake, admission gate, sandboxed container runner
+│   ├── publication/              Daily receipt + accuracy feeds, rolling Merkle root
 │   ├── miner/                    Miner SDK + runner + reference baseline model
 │   ├── validator/                Validator runner, scoring orchestration, tiered weight allocator, FastAPI
 │   ├── archive_server/           FastAPI archive (Tier-2 / Tier-3 storage)
@@ -184,21 +188,24 @@ SN21-adtao/
 │   └── hope_shadow_validator/    Shadow validator (independent scoring)
 │
 ├── scripts/
-│   ├── verify_epoch.py           Public verifier — anyone can audit any epoch
+│   ├── verify_day.py             Public verifier — rerun any daily receipt (7/14/28-day stream)
+│   ├── verify_epoch.py           Public verifier — weekly-era epochs (historical)
 │   ├── score_predictions.py      Offline scoring (miners)
 │   ├── train_example_model.py    Reference XGBoost training (miners)
 │   ├── generate_training_data.py Pull a release into training format
 │   └── sn21_keys.py              ed25519 key-management CLI
 │
-├── tests/                        412 tests
+├── tests/                        1,588 tests
 │   ├── adversarial/              12 attack scenarios with passing defences
-│   ├── e2e/                      Full miner flow against a running validator
-│   ├── commitment/               Crypto primitives (243 tests)
-│   ├── scoring/                  Scoring components + adapter (49 tests)
+│   ├── e2e/                      Full miner flow against a running validator (15 tests)
+│   ├── commitment/               Crypto primitives (268 tests)
+│   ├── scoring/                  Scoring components + adapter (251 tests)
 │   ├── miner/                    Miner runtime
 │   ├── validator/                Validator runtime
-│   └── scripts/                  Public verifier
+│   └── scripts/                  Public verifiers
 │
+├── reference_model/              Reference container (Dockerfile + baseline model)
+├── schemas/                      Episode / prediction JSON schemas
 ├── data/training/                10 sample episodes with known outcomes
 ├── min_compute.yml               Hardware requirements (miner + validator)
 ├── CONTRIBUTING.md               How to file PRs and propose protocol changes
@@ -304,7 +311,32 @@ Full guide including cron snippets, hyperparameter notes, and reg-index setup: [
 
 ---
 
-## Verifying any epoch
+## Verifying your score (daily stream)
+
+Every scored day is published as a signed **receipt** — the settled outcomes
+used, every prediction verbatim, each score's four components, and the formula
+that ran — hash-chained to the previous day and covered by a rolling Merkle
+root anchored on chain. You recompute your own scores from it:
+
+```bash
+python scripts/verify_day.py --url https://validator.adtao.io --day 2026-08-18
+
+# Close the loop to chain with the root you read yourself:
+python scripts/verify_day.py --url https://validator.adtao.io \
+    --day 2026-08-18 --expect-anchor <root read from chain>
+```
+
+`"ok": true` means every score reproduces. A failure names the exact entry that
+disagrees, and each check (`attestation`, `chain`, `anchor_linkage`,
+`feed_root`, `score_reproduction`) reports its own verdict.
+
+Full walkthrough, including doing it by hand and what each failure means:
+[docs/SN21_VERIFYING.md](docs/SN21_VERIFYING.md). First daily scores settle
+**18 August 2026**.
+
+---
+
+## Verifying any epoch (weekly era)
 
 The chain is the source of truth. The verifier supports two modes:
 
@@ -339,7 +371,7 @@ blocks.
 ## Development
 
 ```bash
-# Full unit + adversarial + e2e suite (412 tests)
+# Full unit + adversarial + e2e suite (1,588 tests)
 pytest tests/
 
 # Adversarial scenarios only — every claimed defence has a passing attack test

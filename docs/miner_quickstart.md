@@ -509,9 +509,19 @@ on live days during the bridge.
 
 ### Image fails the gate
 
-Admission requires beating the published naive baseline on the held-out corpus.
-Re-train, widen calibration, use action magnitudes for direction, rebuild, and
-commit a **new digest**.
+Admission requires beating the published naive baseline on the held-out corpus
+(and ≥90% of reference coverage). Re-train, widen calibration, use action
+magnitudes for direction, rebuild, and commit a **new digest**.
+
+### Other common symptoms
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Digest mismatch at intake | Registry tag moved after you committed | Re-commit the digest you actually pushed; never rely on tags |
+| Paid nothing despite scoring | Below the 250-unit evidence floor, below the score threshold, or stake below the day's alpha hold | Check standing and the [staking ladder](./SN21_STAKING.md) |
+| Weight fell after missed days | Bridge miss decay (1 miss 50%, 2 misses 25%, 3+ zero) | Submit ≥75% of a day's basket; weight restores immediately on return |
+| Evicted | 5 miner-fault failed days in a rolling 14 | Fix the container; return after 7 days on a clean run |
+| `verify_day` says `score_reproduction` FAIL | Your recomputed score differs from the published one | The output names the entry — post the diff in the Discord miner channel; see [SN21_VERIFYING.md](./SN21_VERIFYING.md) |
 
 ---
 
@@ -538,16 +548,3 @@ commit a **new digest**.
 *Weekly epoch quickstart material (per-epoch `hope-miner` TimelockEncrypted
 bundles, Monday–Sunday mining windows, Tier-2/3 archives) is retired. Registration
 and ed25519 binding steps above remain authoritative.*
-
----
-
-## 10. Troubleshooting
-
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Gate FAIL on submit | Model under naive baseline, or coverage < 90% of reference | Train on the bundle; make sure you emit a prediction line for (almost) every episode |
-| Digest mismatch at intake | Registry tag moved after you committed | Re-commit the digest you actually pushed; never rely on tags |
-| `predictions_out = 0` on a day | Container ran but printed nothing usable — malformed NDJSON is recorded as zero predictions | Test locally: one episode line on stdin must produce one valid prediction line on stdout |
-| Paid nothing despite scoring | Below the 250-unit evidence floor, below the score threshold, or stake below the day's alpha hold | Check standing and the [staking ladder](./SN21_STAKING.md) |
-| Weight fell after missed days | Bridge miss decay (1 miss 50%, 2 misses 25%, 3+ zero) | Submit ≥75% of a day's basket; weight restores immediately on return |
-| Evicted | 5 miner-fault failed days in a rolling 14 | Fix the container; return after 7 days on a clean run |
