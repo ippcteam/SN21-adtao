@@ -157,3 +157,25 @@ def test_formula_version_comes_from_the_injected_environ(tmp_path):
                                  environ=V2)["formula"]["version"] == "v2"
     assert build_receipt_metrics(outcomes, index, results, comps,
                                  environ={})["formula"]["version"] == "v1"
+
+
+# ---- censored horizons must be VISIBLE in the document miners read ----------
+
+def test_receipt_states_censored_counts(tmp_path):
+    """Censored horizons are excluded from `outcomes` by the provider. Without
+    this field a miner counting episodes finds fewer than the basket held and
+    has no way to learn why. Rob's attrition ruling says dropped horizons are
+    recorded — recording them only in our database misses the point."""
+    outcomes, index, results, comps = _world()
+    m = build_receipt_metrics(outcomes, index, results, comps, environ=V2,
+                              censored={"left_system": 12, "spend_inactive": 3})
+    assert m["censored"] == {"left_system": 12, "spend_inactive": 3}
+
+
+def test_no_censoring_is_an_empty_dict_not_a_missing_key(tmp_path):
+    """{} means 'nothing censored'. The key must always be present, or a
+    reader cannot tell 'none' from 'this validator did not say'."""
+    outcomes, index, results, comps = _world()
+    m = build_receipt_metrics(outcomes, index, results, comps, environ=V2)
+    assert m["censored"] == {}
+    assert "censored" in m

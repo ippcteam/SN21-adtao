@@ -26,6 +26,7 @@ from starlette.responses import JSONResponse
 
 from hope.validator.api.episodes import router as episodes_router
 from hope.validator.api.predictions import router as predictions_router
+from hope.validator.api.daily import router as daily_router
 from hope.validator.api.commitments import router as commitments_router
 from hope.validator.api.verification import router as verification_router
 from hope.validator.api.training import router as training_router
@@ -246,6 +247,11 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
     app.include_router(predictions_router, prefix="/v1/epochs", tags=["predictions"])
     app.include_router(commitments_router, prefix="/v1/epochs", tags=["commitments"])
     app.include_router(verification_router, prefix="/v1/epochs", tags=["verification"])
+    # Daily verifiability: receipts + anchored accuracy docs + the chain
+    # walk. Public and unauthenticated BY DESIGN — every document served
+    # is attested and anchored, so gating it would add no security and
+    # would break the one property it exists for: anyone can check us.
+    app.include_router(daily_router, prefix="/v1/daily", tags=["daily"])
     app.include_router(training_router, tags=["training"])
     app.include_router(registration_router, prefix="/v1", tags=["registration"])
 

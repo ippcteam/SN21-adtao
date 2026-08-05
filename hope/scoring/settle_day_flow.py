@@ -637,6 +637,7 @@ def run_settle_day(
         # the settled actuals and each miner's prediction VERBATIM
         out["settled_outcomes"] = outcomes
         out["prediction_index"] = index
+        out["censored_counts"] = last_censored_counts()
     return out
 
 
@@ -683,6 +684,17 @@ def _has_frozen_basis_column(session) -> bool:
         print(f"[settle-day] frozen-basis column probe failed ({err}) — "
               f"recomputing every basis", flush=True)
         return False
+
+
+# Censor counts from the most recent provider read. Module-level because the
+# provider is a plain Callable[[date], list] by contract — widening that
+# signature would break every injected test provider for one diagnostic.
+_LAST_CENSORED_COUNTS: dict = {}
+
+
+def last_censored_counts() -> dict:
+    """{reason: n} from the last obi_outcomes_provider call, or {}."""
+    return dict(_LAST_CENSORED_COUNTS)
 
 
 def _has_censoring_column(session) -> bool:
@@ -790,9 +802,16 @@ def obi_outcomes_provider(day: date) -> list[SettledHorizon]:
                 print("[settle-day] censored horizons excluded from scoring: "
                       + ", ".join(f"{r[0]}={r[1]}" for r in censored_counts),
                       flush=True)
+            # Stashed on the module so run_settle_day can put it in the
+            # RECEIPT. A count that only reaches our logs does not reach the
+            # miner reading the document.
+            _LAST_CENSORED_COUNTS.clear()
+            _LAST_CENSORED_COUNTS.update({str(r[0]): int(r[1])
+                                          for r in censored_counts})
         else:
             print("[settle-day] censoring migration not applied on this DB — "
                   "no censor filter (no rows can be censored yet)", flush=True)
+            _LAST_CENSORED_COUNTS.clear()
         rows = s.execute(T(f"""
             WITH ep AS (
                 SELECT o.episode_candidate_id      AS episode_id,

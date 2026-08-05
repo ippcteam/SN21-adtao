@@ -27,9 +27,16 @@ Verdicts are per check, not one bit: signature, hash chain, anchor linkage,
 and score reproduction each pass or fail independently, so a failure is
 attributable rather than just alarming.
 
-Usage:
-    python scripts/verify_day.py --root <ledger_root> --day 2026-08-18 \
-        [--miner <hotkey>] [--expect-anchor <64hex>]
+Usage (miner — the normal case):
+    python scripts/verify_day.py --url https://validator.adtao.io \
+        --day 2026-08-18 [--miner <hotkey>] [--expect-anchor <64hex>]
+
+Usage (operator, reading the ledger directly):
+    python scripts/verify_day.py --root <ledger_root> --day 2026-08-18
+
+--url and --root are the SAME code path with a different loader. That is
+deliberate: an operator-only verifier proves an operator-only property, and
+the whole point is that a miner reaches the same verdict we do.
 
 --expect-anchor is the value the miner read from chain themselves (the
 accuracy document's anchored sha256). Supplying it closes the loop to the
@@ -43,7 +50,70 @@ import json
 import os
 import sys
 
+# Path set up at module scope, not inside verify_day: _Source needs the same
+# helpers and a class body cannot wait for a function to fix sys.path.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                os.pardir))
+
+from hope.publication.receipt_feed import receipt_dir, receipt_path  # noqa: E402
+
 PASS, FAIL = "PASS", "FAIL"
+
+
+class _Source:
+    """Where documents come from. Two loaders, one verification path.
+
+    The URL loader fetches the SAME attested envelopes the ledger holds, so
+    every check below — signature, chain, anchor linkage, reproduction —
+    operates on bytes the miner received over the wire rather than on
+    anything this script derived locally.
+    """
+
+    def __init__(self, root=None, url=None):
+        if bool(root) == bool(url):
+            raise SystemExit("pass exactly one of --root or --url")
+        self.root, self.url = root, (url.rstrip("/") if url else None)
+
+    def _get_json(self, path):
+        import urllib.error
+        import urllib.request
+        try:
+            with urllib.request.urlopen(path, timeout=30) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                try:
+                    return {"_absent": json.load(e)}
+                except Exception:
+                    return {"_absent": {"reason": "not_found"}}
+            raise
+
+    def receipt(self, day):
+        if self.root:
+            p = receipt_path(self.root, day)
+            return _load(p) if os.path.exists(p) else None
+        got = self._get_json(f"{self.url}/v1/daily/{day}/receipt")
+        return None if "_absent" in got else got
+
+    def accuracy(self, day):
+        if self.root:
+            p = os.path.join(self.root, "accuracy", f"{day}.json")
+            return _load(p) if os.path.exists(p) else None
+        got = self._get_json(f"{self.url}/v1/daily/{day}/accuracy")
+        return None if "_absent" in got else got
+
+    def prior_receipt_sha(self, day):
+        """The sha of the receipt immediately before `day`, for the chain check."""
+        if self.root:
+            d = receipt_dir(self.root)
+            prior = sorted(f for f in os.listdir(d)
+                           if f.endswith(".json") and not f.startswith("_")
+                           and f[:-5] < day)
+            return _load(os.path.join(d, prior[-1]))["sha256"] if prior else None
+        idx = self._get_json(f"{self.url}/v1/daily/index")
+        rows = [r for r in idx.get("days", []) if r.get("day", "") < day
+                and r.get("receipt_sha256")]
+        return rows[-1]["receipt_sha256"] if rows else None
 
 
 def _load(path):
@@ -51,11 +121,9 @@ def _load(path):
         return json.load(f)
 
 
-def verify_day(root: str, day: str, miner: str | None = None,
-               expect_anchor: str | None = None) -> dict:
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
+def verify_day(root: str | None = None, day: str = "", miner: str | None = None,
+               expect_anchor: str | None = None, url: str | None = None) -> dict:
     from hope.publication.rail import AttestedDocument, document_sha256, verify
-    from hope.publication.receipt_feed import receipt_path, receipt_dir
     from hope.scoring.settle_day_flow import (
         W_COVERAGE, W_DIRECTION, W_GOAL, W_QUANTILE, W_TOTAL,
         entry_components, entry_components_v2,
@@ -63,12 +131,14 @@ def verify_day(root: str, day: str, miner: str | None = None,
 
     checks: dict[str, dict] = {}
     diffs: list[dict] = []
+    src = _Source(root=root, url=url)
 
     # ---- load the receipt ----------------------------------------------------
-    rpath = receipt_path(root, day)
-    if not os.path.exists(rpath):
-        return {"day": day, "fatal": f"no receipt at {rpath}", "ok": False}
-    env = _load(rpath)
+    env = src.receipt(day)
+    if env is None:
+        return {"day": day, "ok": False,
+                "fatal": f"no receipt available for {day} "
+                         f"({'url ' + url if url else 'root ' + str(root)})"}
     doc = env["document"]
     metrics = doc["metrics"]
 
@@ -89,27 +159,22 @@ def verify_day(root: str, day: str, miner: str | None = None,
     if prev is None:
         checks["chain"] = {"verdict": PASS, "note": "first receipt in the feed"}
     else:
-        prior = sorted(d for d in os.listdir(receipt_dir(root))
-                       if d.endswith(".json") and not d.startswith("_")
-                       and d[:-5] < day)
-        if not prior:
+        found = src.prior_receipt_sha(day)
+        if found is None:
             checks["chain"] = {"verdict": FAIL,
-                               "note": "prev_sha256 set but no earlier receipt "
-                                       "on disk to check against"}
+                               "note": "prev_sha256 is set but no earlier "
+                                       "receipt is available to check against"}
         else:
-            prev_env = _load(os.path.join(receipt_dir(root), prior[-1]))
-            ok = prev_env["sha256"] == prev
-            checks["chain"] = {"verdict": PASS if ok else FAIL,
-                               "prev_receipt": prior[-1],
-                               "expected": prev, "found": prev_env["sha256"]}
+            checks["chain"] = {"verdict": PASS if found == prev else FAIL,
+                               "expected": prev, "found": found}
 
     # ---- 3. anchor linkage: accuracy doc names this receipt -------------------
-    apath = os.path.join(root, "accuracy", f"{day}.json")
-    if not os.path.exists(apath):
+    aenv = src.accuracy(day)
+    if aenv is None:
         checks["anchor_linkage"] = {"verdict": FAIL,
-                                    "note": f"no accuracy document at {apath}"}
+                                    "note": "no accuracy document available "
+                                            "for this day"}
     else:
-        aenv = _load(apath)
         adoc = aenv["document"]
         linked = adoc["metrics"].get("receipt_sha256") == env["sha256"]
         a_sha_ok = document_sha256(adoc) == aenv["sha256"]
@@ -176,12 +241,16 @@ def verify_day(root: str, day: str, miner: str | None = None,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", required=True)
+    ap.add_argument("--root", default=None,
+                    help="ledger root (operator, local filesystem)")
+    ap.add_argument("--url", default=None,
+                    help="validator base URL (miner) e.g. https://validator.adtao.io")
     ap.add_argument("--day", required=True)
     ap.add_argument("--miner", default=None)
-    ap.add_argument("--expect-anchor", default=None)
+    ap.add_argument("--expect-anchor", default=None,
+                    help="the anchored sha256 you read from chain yourself")
     a = ap.parse_args()
-    out = verify_day(a.root, a.day, a.miner, a.expect_anchor)
+    out = verify_day(a.root, a.day, a.miner, a.expect_anchor, url=a.url)
     print(json.dumps(out, indent=1, default=str))
     return 0 if out.get("ok") else 1
 

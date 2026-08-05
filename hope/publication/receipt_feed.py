@@ -74,6 +74,7 @@ def build_receipt_metrics(
     results: Iterable[HorizonResult],
     components: dict,
     environ=None,
+    censored: dict | None = None,
 ) -> dict:
     """The receipt payload. Deterministic: every list sorted on a total key,
     every float already rounded upstream — two validators building from the
@@ -139,6 +140,15 @@ def build_receipt_metrics(
         "outcomes_total": len(out_rows),
         "entries_total": len(entries),
         "miners": len({e["miner"] for e in entries}),
+        # Censored horizons are EXCLUDED from `outcomes` by the provider, so
+        # without this they would vanish silently and a miner counting
+        # episodes would find fewer than the basket held with no explanation.
+        # Rob's attrition ruling says dropped horizons are recorded, never a
+        # zero — recording them only in our database and not in the document
+        # miners actually read would honour the letter and miss the point.
+        # {} = nothing censored; None = this validator could not read the
+        # censor state, which is a different statement and says so.
+        "censored": (censored if censored is not None else {}),
     }
 
 
@@ -169,6 +179,7 @@ def run_daily_receipt(
     signing_key: Ed25519PrivateKey,
     generated_at: str,
     environ=None,
+    censored: dict | None = None,
 ) -> ReceiptPublish:
     """Publish the day's receipt. Append-only; a republished day raises.
 
@@ -190,7 +201,8 @@ def run_daily_receipt(
 
     head = _load_head(root)
     metrics = build_receipt_metrics(outcomes, prediction_index, results,
-                                    components, environ=environ)
+                                    components, environ=environ,
+                                    censored=censored)
     doc = build_document(RECEIPT_FEED_NAME, day_s, metrics, generated_at,
                          prev_sha256=(head or {}).get("sha256"))
     att = attest(doc, signing_key)

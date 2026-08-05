@@ -173,6 +173,7 @@ def run_daily_loop(
     settle_components: dict = {}
     settled_outcomes: list = []
     prediction_index: dict = {}
+    censored_counts: dict = {}
     try:
         settle = run_settle_day(shadow_root, ledger_root, day,
                                 outcomes_provider, return_results=True,
@@ -181,6 +182,7 @@ def run_daily_loop(
         settle_components = settle.pop("components", {})
         settled_outcomes = settle.pop("settled_outcomes", [])
         prediction_index = settle.pop("prediction_index", {})
+        censored_counts = settle.pop("censored_counts", {})
         summary["settle"] = settle
     except Exception as e:
         summary["settle"] = {"error": str(e)}
@@ -381,6 +383,7 @@ def run_daily_loop(
                 ledger_root, day, settled_outcomes, prediction_index,
                 horizon_results, settle_components, key_loader(),
                 generated_at=f"{day}T00:00:00Z", environ=environ,
+                censored=censored_counts,
             )
             summary["receipt"] = {"published": receipt.published,
                                   "sha256": receipt.sha256,

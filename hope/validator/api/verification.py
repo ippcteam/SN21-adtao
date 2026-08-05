@@ -10,10 +10,22 @@ commitments (final_score_root, scoring_hash, weights_commit_block_hash)
 that a third-party verifier needs to reproduce the run locally with
 `scripts/verify_epoch.py`.
 
-The legacy `/scores` and `/my-predictions` endpoints rely on in-memory
-state that was populated only in the now-superseded single-binary
-architecture. They return 501 with guidance toward the chain-based
-verification path until reimplemented for two-binary operation.
+The legacy `/scores` and `/my-predictions` endpoints rely on in-memory state
+that was populated only in the now-superseded single-binary architecture.
+They remain 501 — deliberately, and not as unfinished work.
+
+They are WEEKLY-epoch endpoints (`epoch_id`-scoped), and the subnet now runs a
+DAILY stream. Resurrecting them to serve daily data would mean answering an
+epoch-shaped question with day-shaped data, which is how eras get conflated in
+a miner's head. The daily equivalents are real, public and receipt-backed:
+
+    GET /v1/daily/{day}/scores          aggregate, no hotkeys (IA D-05)
+    GET /v1/daily/{day}/miner/{hotkey}  one miner's entries + components
+    scripts/verify_day.py --url ...     reproduce every score yourself
+
+The 501 bodies now name those routes. Previously they pointed only at
+verify_epoch.py — a weekly-only tool, and therefore a dead end for exactly the
+miner most likely to be asking.
 """
 
 from __future__ import annotations
@@ -175,13 +187,21 @@ async def get_scores(epoch_id: str, request: Request):
     """
     raise HTTPException(
         status_code=501,
-        detail=(
-            f"GET /{epoch_id}/scores is no longer served via this API under the "
-            f"two-binary validator architecture. Use GET /{epoch_id}/verification "
-            f"for the chain-derived scoring commitment, and run "
-            f"scripts/verify_epoch.py locally to reproduce per-miner scores from "
-            f"public chain + operator-API data."
-        ),
+        detail={
+            "error": f"GET /{epoch_id}/scores is not served under the "
+                     f"two-binary validator architecture",
+            "era": "This is a WEEKLY-epoch endpoint. The weekly era concluded "
+                   "3 Aug 2026; the subnet now runs a daily stream.",
+            "use_instead": {
+                "daily_aggregate": "GET /v1/daily/{YYYY-MM-DD}/scores",
+                "daily_per_miner": "GET /v1/daily/{YYYY-MM-DD}/miner/{hotkey}",
+                "reproduce_it_yourself": "scripts/verify_day.py --url <this "
+                                         "validator> --day YYYY-MM-DD",
+            },
+            "weekly_history": f"GET /{epoch_id}/verification for the "
+                              f"chain-derived commitment; scripts/verify_epoch.py "
+                              f"reproduces weekly-era per-miner scores.",
+        },
     )
 
 
@@ -203,12 +223,22 @@ async def get_my_prediction_proof(
     """
     raise HTTPException(
         status_code=501,
-        detail=(
-            f"GET /{epoch_id}/my-predictions is no longer served under the "
-            f"two-binary validator architecture. The Merkle proof of your "
-            f"prediction's inclusion can be reconstructed locally from "
-            f"(a) your own 9.B bundle on chain, (b) the operator's 9.A.2 "
-            f"outcomes, and (c) the `final_score_root` field returned by "
-            f"GET /{epoch_id}/verification. See scripts/verify_epoch.py."
-        ),
+        detail={
+            "error": f"GET /{epoch_id}/my-predictions is not served under the "
+                     f"two-binary validator architecture",
+            "era": "This is a WEEKLY-epoch endpoint. The weekly era concluded "
+                   "3 Aug 2026; the subnet now runs a daily stream.",
+            "use_instead": {
+                "your_entries": "GET /v1/daily/{YYYY-MM-DD}/miner/{hotkey} — "
+                                "your predictions verbatim, their score "
+                                "components, and the receipt sha256",
+                "reproduce_it_yourself": "scripts/verify_day.py --url <this "
+                                         "validator> --day YYYY-MM-DD "
+                                         "--miner <hotkey>",
+            },
+            "weekly_history": "Reconstruct locally from your 9.B bundle on "
+                              "chain + the operator's 9.A.2 outcomes + "
+                              "final_score_root from /verification. See "
+                              "scripts/verify_epoch.py.",
+        },
     )
