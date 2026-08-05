@@ -189,5 +189,5 @@ Expected output: `OK: True` plus per-root match details. Full score recomputatio
 - [`hope/validator/runner.py`](../../hope/validator/runner.py) — `hope-validator` CLI source.
 - [`hope/validator/onchain_runner.py`](../../hope/validator/onchain_runner.py) — Layer 9.C orchestration.
 - [`scripts/verify_epoch.py`](../../scripts/verify_epoch.py) — third-party verification of any past epoch.
-- [`docs/SN21_REWARD_MECHANISM.md`](../../docs/SN21_REWARD_MECHANISM.md) — authoritative scoring spec.
-- [`docs/SN21_EPOCH_STRUCTURE.md`](../../docs/SN21_EPOCH_STRUCTURE.md) — epoch cadence + phases.
+- [`docs/SN21_SCORING.md`](../../docs/SN21_SCORING.md) · [`docs/SN21_REWARDS.md`](../../docs/SN21_REWARDS.md) — daily-stream scoring / emissions (authoritative).
+- [`docs/archive/weekly/`](../../docs/archive/weekly/) — archived weekly reward / epoch specs (historical only).

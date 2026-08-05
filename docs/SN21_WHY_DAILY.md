@@ -8,7 +8,7 @@
 | **Owner** | AdTAO / SN21 operator |
 | **Companions** | [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md) · [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_STAKING.md](./SN21_STAKING.md) · [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md) |
 
-When this draft is approved, it replaces the “why” role of [DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md) (or that file becomes a short pointer here). Discord / [adtao.io/sn21](https://adtao.io/sn21/) copy should be **derived from this**, not the other way around.
+This is the canonical why-daily statement. [DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md) is a stub pointing here. Discord / [adtao.io/sn21](https://adtao.io/sn21/) copy should be **derived from this**, not the other way around.
 
 ---
 
@@ -119,7 +119,7 @@ Full table: [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md).
 | Through **9 Aug 2026** | Last weekly score still pays (indicative burn applies). |
 | From **10 Aug** | **Bridge:** weekly-derived weights continue only for miners who **submit** on the daily stream and meet the **alpha hold**. |
 | From **18 Aug / 25 Aug / 8 Sep** | Daily **7-day**, then **14-day**, then **28-day** settled scores feed standings. |
-| Through **22 Sep** | Alpha hold ramps to **1,000**; burn plan steps down (indicative only). |
+| Through **15 Sep** | Alpha hold ramps to **1,000**; burn plan steps down (indicative only). |
 
 Burn rates are **planned and indicative only** and may change at any time to protect and grow alpha for holders.
 
@@ -129,14 +129,10 @@ Leaderboard / changelog (site updating this week): [https://adtao.io/sn21/](http
 
 ---
 
-## Review checklist (before marking this non-draft)
+## Still open (ops / site — not blockers for this doc)
 
-- [ ] Align wording with finalized governance amendment / GAP-1 (volume) if still open.
-- [ ] Confirm “no admission window” vs any operator intake reality.
-- [ ] Confirm scoring-formula “unchanged” matches production settle path.
-- [ ] Fill any remaining timeline blanks in the transition plan; keep dates there, not duplicated here.
-- [ ] Retire or pointer-ize [DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md).
 - [ ] Derive Discord + site announcement from this file.
+- [ ] Align any remaining governance-amendment / GAP-1 wording if still open.
 
 ---
 

@@ -151,4 +151,4 @@ Numeric curve parameters (threshold, shares, cap) are restated at **four-weekly*
 - Scoring: [SN21_SCORING.md](./SN21_SCORING.md)
 - Staking: [SN21_STAKING.md](./SN21_STAKING.md)
 - Cutover: [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md)
-- Direction overview: [DAILY_STREAM_DIRECTION.md](./DAILY_STREAM_DIRECTION.md)
+- Why daily: [SN21_WHY_DAILY.md](./SN21_WHY_DAILY.md)

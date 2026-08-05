@@ -51,27 +51,28 @@ Bittensor Subnet 21 · Mainnet `finney` · Testnet `test` (netuid 466)
 ## Overview
 
 SN21 is a verifiable prediction market for Google Ads campaign
-outcomes, running on Bittensor. Miners predict P10/P50/P90
-distributions over 7-day and 14-day campaign deltas. Validators score
-those predictions against measured outcomes. Every step — predictions,
-outcomes, scores, weights — is cryptographically anchored on chain.
+outcomes, running on Bittensor. Miners ship a **digest-pinned model
+container**; the subnet runs it each day against a fresh basket of real
+account changes. Models output P10/P50/P90 distributions over **7-, 14-,
+and 28-day** campaign deltas. Settled outcomes feed a rolling standing
+that drives emissions. Why daily: [docs/SN21_WHY_DAILY.md](docs/SN21_WHY_DAILY.md).
 
-Read the [Whitepaper](docs/whitepaper.md) for the full protocol.
+Protocol background (weekly-era sections historical): [Whitepaper](docs/whitepaper.md).
 
 ### Two core guarantees
 
-1. **Predictions are bound to the miner that produced them.** Every prediction is signed (`inner_sig`) and committed on chain via timelock encryption before the outcome is knowable. Late or rewritten predictions are detectable from chain state alone.
-2. **Validator scoring is independently reproducible.** Every input that affects a miner's score is anchored on chain through a Merkle root. [`scripts/verify_epoch.py`](scripts/verify_epoch.py) reads the chain, fetches the off-chain artifacts, re-runs the open-source scoring code, and either confirms or contradicts the validator's claim.
+1. **Predictions lock before outcomes exist.** Your on-chain commitment pins the container digest the subnet will run; each day's basket is scored from that run, before outcomes for that basket are knowable.
+2. **Scoring is open and reproducible.** Settle logic lives in `hope/scoring/`; standings and weights follow the published curve. Daily accuracy / receipt feeds and the public site mirror the operator's scored record — see [docs/SN21_SCORING.md](docs/SN21_SCORING.md) and [docs/SN21_REWARDS.md](docs/SN21_REWARDS.md). (Weekly-era epochs remain auditable with [`scripts/verify_epoch.py`](scripts/verify_epoch.py).)
 
 ---
 
 ## How it works
 
-- **Outcome signer** publishes a weekly stream of prediction problems (episodes) drawn from real Google Ads management data and commits the release-package digest on chain at T=0.
-- **Miners** receive structured episodes (account state, action context, 60-day pre-window) and submit P10/P50/P90 distributions per (campaign × horizon). Submissions are AES-GCM encrypted, the AES key is timelock-encrypted to a future drand round, and the ciphertext SHA + key + archive URL are committed on chain.
-- **Validators** read miner commits after the timelock reveals, fetch the encrypted predictions from a three-tier archive, run an 8-check scoreability rule, score against measured outcomes, and submit weights via `commit_timelocked_weights`. Pre- and post-scoring artifacts are committed as IMT roots on chain.
-- **A shadow validator** runs the same code on a separate hotkey and commits its own scoring artifacts. Mismatches between primary and shadow are publicly auditable.
-- **Anyone** can re-run the verifier against any past epoch and confirm — or contradict — the validator's scoring.
+- **Operator** ships a **daily basket** (`BD-*`) of qualifying real account changes (midnight EST day boundary) and later publishes settled outcomes at 7 / 14 / 28 days (+ settle window).
+- **Miners** register once, build a container (stdin episodes → stdout predictions), push it digest-pinned, and commit `sn21-model:v1:<repo>@sha256:<digest>` on chain. The subnet pulls, gate-admits, and **runs the container** each live day — miners do not POST daily predictions.
+- **Validators / settle clock** score matured (episode × horizon) rows into each miner's **standing**, map standings through the published **weight curve**, and set weights on chain. Emissions follow Bittensor tempo continuously.
+- **Champion** (who runs live for customers) is promoted under a stricter multi-day rule than who earns weight — see [docs/SN21_REWARDS.md](docs/SN21_REWARDS.md).
+- **Cutover** from the last weekly epoch (scored 3 Aug 2026) is dated in [docs/SN21_TRANSITION_PLAN.md](docs/SN21_TRANSITION_PLAN.md).
 
 ---
 
@@ -79,14 +80,13 @@ Read the [Whitepaper](docs/whitepaper.md) for the full protocol.
 
 | Component | Location | Trust model |
 |-----------|----------|-------------|
-| Episode + outcome publication | Operator (off chain) → digest on chain | Hash-anchored on chain via 9.A.1 + 9.A.2 |
-| Miner predictions | AES_ct off chain → SHA + TLE'd K + URL on chain | ed25519 inner_sig bound to miner hotkey |
-| Three-tier archive | Tier-1 (validator), Tier-2 (operator), Tier-3 (miner self) | Content-addressed by SHA-256; chain commit is the integrity anchor |
-| Scoring orchestration | Each validator | Open-source `hope/scoring/` and `hope/validator/onchain_runner.py`; reproducible by `scripts/verify_epoch.py` |
-| Pre/post scoring artifacts | On chain via TimelockEncrypted commits | IMT roots; ed25519 inner_sig; chain auto-decrypts |
-| Weights commit | Standard Subtensor `commit_timelocked_weights` | Bittensor v4 commit-reveal |
-| Drand quicknet beacon | External (League of Entropy) | BLS-on-BLS12-381 distributed beacon |
-| Yuma consensus | Subtensor runtime | Standard Bittensor weight aggregation |
+| Daily basket + outcomes | Operator (off chain) → published feeds / digests | Operator-signed outcomes; published settle schedule |
+| Miner model | Public registry image + on-chain digest commitment | Digest pin; gate admission before earn |
+| Sandbox execution | Operator-run container (`--network=none`, RAM/time budget) | Deterministic contract in [MINER_MODEL_SPEC](docs/MINER_MODEL_SPEC.md) |
+| Scoring / standing | `hope/scoring/` (settle day, episode average, weight curve) | Open-source; [SN21_SCORING](docs/SN21_SCORING.md) / [SN21_REWARDS](docs/SN21_REWARDS.md) |
+| Weights | Subtensor `set_weights` / commit-reveal path | Yuma consensus |
+| Publication | Accuracy + receipt feeds (`hope/publication/`) | Independent check of scored predictions |
+| Weekly-era archives / TLE | Historical path only | See whitepaper + `docs/archive/weekly/` |
 
 ---
 
@@ -103,7 +103,9 @@ account at a moment in time:
 | `action_bundle` | The action(s) being applied: type, magnitude, blast radius, risk | ~2 KB |
 | `campaign_metadata` | Campaign type, bid strategy, status | ~0.3 KB |
 
-You output **probabilistic distributions** (P10/P50/P90), not point estimates. You're rewarded for calibrated uncertainty.
+Your container outputs **probabilistic distributions** (P10/P50/P90) per
+horizon (**7 / 14 / 28**), not point estimates. You're rewarded for
+calibrated uncertainty.
 
 ### Phase 1 action types
 
@@ -154,12 +156,16 @@ indicative and may change to protect alpha value):
 ```
 SN21-adtao/
 ├── docs/
-│   ├── whitepaper.md             Protocol design + trust model + adversarial matrix
-│   ├── miner_quickstart.md       Miner onboarding tutorial
-│   ├── validator_setup.md        Validator deployment guide
+│   ├── SN21_WHY_DAILY.md         Why we moved to daily (canonical)
+│   ├── SN21_TRANSITION_PLAN.md   Cutover / bridge dates
+│   ├── miner_quickstart.md       Miner onboarding (daily stream)
+│   ├── SN21_TRAINING.md          Train → container → smoke test
 │   ├── SN21_SCORING.md           Daily-stream scoring (authoritative)
 │   ├── SN21_REWARDS.md           Rank curve + emissions (authoritative)
-│   └── archive: REWARD_MECHANISM / EPOCH_STRUCTURE / MINER_ECONOMICS (weekly era, banners inside)
+│   ├── SN21_STAKING.md           Alpha-hold ladder
+│   ├── MINER_MODEL_SPEC.md       Container contract
+│   ├── whitepaper.md             Protocol design (weekly sections historical)
+│   └── archive/weekly/           Obsolete weekly reward / epoch / economics specs
 │
 ├── hope/                         Core Python package (`pip install -e .`)
 │   ├── protocol/                 Episode / Prediction / Outcome models
