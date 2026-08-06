@@ -308,3 +308,112 @@ def test_front_running_is_settled_by_commit_order_which_is_the_documented_defenc
     ]
     (defended,) = digest_collisions(committed_first)
     assert defended.original == "author"
+
+
+# ---- THE RULING (2026-08-06): one payer per model ---------------------------
+
+from hope.scoring.duplication import (
+    DuplicationReport,
+    exempt_digests_from,
+    one_payer_enabled,
+    suppressed_copies,
+)
+
+
+def _group(kind, original, copies, digest=None):
+    from hope.scoring.duplication import CopyGroup
+    return CopyGroup(kind=kind, original=original, copies=tuple(copies),
+                     evidence="test", digest=digest)
+
+
+def test_only_the_first_submission_earns():
+    """The ruling verbatim: once per model, using the first submissions.
+    Submit a copy, you don't get paid."""
+    report = DuplicationReport(groups=[
+        _group("same_digest", "author", ["copy1", "copy2"], digest=DIGEST_A),
+    ])
+    assert suppressed_copies(report) == {"copy1", "copy2"}
+
+
+def test_the_original_is_never_suppressed():
+    report = DuplicationReport(groups=[
+        _group("same_digest", "author", ["copy"], digest=DIGEST_A),
+        _group("same_predictions", "author2", ["copy"]),
+    ])
+    suppressed = suppressed_copies(report)
+    assert "author" not in suppressed and "author2" not in suppressed
+
+
+def test_the_reference_model_is_exempt():
+    """Everyone starting from the published reference runs byte-identical
+    code — that is participation, not plagiarism. Without the exemption, day
+    one of enforcement would zero every newcomer except whichever registered
+    first."""
+    report = DuplicationReport(groups=[
+        _group("same_digest", "first_newcomer", ["second", "third"],
+               digest=DIGEST_A),
+    ])
+    assert suppressed_copies(report, exempt_digests=frozenset({DIGEST_A})) == set()
+
+
+def test_a_rebuilt_reference_does_not_condemn_reference_runners():
+    """A rebuilt reference behaves identically to the reference, so the
+    behaviour group contains exempt-digest members — exempting the group
+    protects the people running the published original."""
+    report = DuplicationReport(groups=[
+        _group("same_predictions", "ref_runner", ["rebuilder"]),
+    ])
+    suppressed = suppressed_copies(
+        report,
+        exempt_digests=frozenset({DIGEST_A}),
+        active_digests={"ref_runner": DIGEST_A, "rebuilder": DIGEST_B},
+    )
+    assert suppressed == set()
+
+
+def test_exemption_is_per_group_not_global():
+    report = DuplicationReport(groups=[
+        _group("same_digest", "ref1", ["ref2"], digest=DIGEST_A),      # exempt
+        _group("same_digest", "author", ["thief"], digest=DIGEST_B),   # not
+    ])
+    assert suppressed_copies(report, frozenset({DIGEST_A})) == {"thief"}
+
+
+def test_the_flag_and_exempt_list_read_from_the_environment():
+    assert one_payer_enabled({"SN21_ONE_PAYER_PER_MODEL": "true"})
+    assert not one_payer_enabled({})
+    assert exempt_digests_from(
+        {"SN21_COPY_EXEMPT_DIGESTS": f" {DIGEST_A} , {DIGEST_B}"}
+    ) == frozenset({DIGEST_A, DIGEST_B})
+    assert exempt_digests_from({}) == frozenset()
+
+
+def test_suppression_zeroes_the_copy_in_the_daily_allocation():
+    """End to end through the allocation: the copy earns nothing, the field
+    renormalises over genuine models, and promotion still observed the full
+    field (a copy's standing is a fact even when it does not pay)."""
+    from datetime import date
+
+    from hope.scoring.champion_promotion import PromotionState
+    from hope.scoring.episode_average import ScoredEpisode
+    from hope.validator.daily_stream_weights import compute_daily_allocation
+
+    day = date(2026, 8, 20)
+    entries = {}
+    for hk in ("author", "copycat", "independent"):
+        entries[hk] = [
+            ScoredEpisode(score=0.7 if hk != "independent" else 0.5,
+                          scored_on=day, weight=1.0)
+            for _ in range(300)          # past the 250 placement floor
+        ]
+
+    allocation = compute_daily_allocation(
+        entries=entries, day=day, day_episode_volume=500,
+        promotion_state=PromotionState(),
+        copy_suppressed=frozenset({"copycat"}),
+    )
+
+    assert allocation.weights.get("copycat", 0.0) == 0.0
+    assert allocation.weights["author"] > 0.0
+    assert allocation.weights["independent"] > 0.0
+    assert abs(sum(allocation.weights.values()) - 1.0) < 1e-9

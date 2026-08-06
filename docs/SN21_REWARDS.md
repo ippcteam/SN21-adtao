@@ -69,6 +69,37 @@ The champion changes **only** when a challenger:
 
 Miss any one → incumbent stays. Weights can shift gradually while the champion seat does not.
 
+## One payer per model (copied models)
+
+Models must be public and pullable, so copying one is trivial. The rules
+make it unprofitable rather than pretending it is impossible:
+
+- **Ties go to the first submission.** Ranking is standing, then precedence,
+  then hotkey — precedence being when a model was first committed on chain,
+  and for identical behaviour, when the published daily receipts first
+  record a miner producing it. You can grind a hotkey; you cannot commit
+  before the model you copied existed, and you cannot appear in the
+  receipts before its author did.
+- **Identical models pay once.** When several hotkeys run the same model —
+  same digest, or different digest with byte-identical predictions — only
+  the earliest submission earns. The rest are excluded from that day's
+  earning set. Standings are untouched and the container keeps running:
+  the exclusion lapses the moment the hotkey runs a model of its own.
+- **The published reference model is exempt.** Running the reference
+  unchanged is participation, not plagiarism. It is also how everyone
+  starts; note it cannot outrank anything, since admission requires
+  beating the baseline it defines.
+- **Evidence, not accusation.** Every detected group is published with its
+  working — the shared digest, or the matching prediction fingerprint,
+  which anyone can recompute from the day's receipt. Applies from the day
+  of switch-on, never retroactively.
+
+Rebuilding your own image is safe: identity over a behaviour follows the
+published record, so a rebuild does not reset your seniority to someone who
+copied the old build. Protect a new model before its first commitment by
+committing the digest while the image is still private — see the
+[quickstart](./miner_quickstart.md).
+
 ## Quiet days
 
 No special weekend multiplier. Thin baskets simply produce fewer scored predictions; your standing is per-prediction, so volume self-scales.

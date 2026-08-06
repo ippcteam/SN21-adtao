@@ -61,6 +61,7 @@ class CopyGroup:
     original: str                # hotkey with precedence
     copies: tuple[str, ...]      # every other member, earliest-first
     evidence: str
+    digest: str | None = None    # the shared digest, for same_digest groups
 
     @property
     def members(self) -> tuple[str, ...]:
@@ -89,6 +90,7 @@ def digest_collisions(submissions: Iterable[Submission]) -> list[CopyGroup]:
             copies=tuple(s.hotkey for s in ordered[1:]),
             evidence=(f"{len(subs)} hotkeys committed {digest}; earliest at "
                       f"block {ordered[0].first_seen_block}"),
+            digest=digest,
         ))
     return groups
 
@@ -261,7 +263,8 @@ class DuplicationReport:
         return {
             "groups": [
                 {"kind": g.kind, "original": g.original,
-                 "copies": list(g.copies), "evidence": g.evidence}
+                 "copies": list(g.copies), "evidence": g.evidence,
+                 "digest": g.digest}
                 for g in self.groups
             ],
             "copied_hotkeys": sorted(self.copied_hotkeys),
@@ -283,3 +286,63 @@ def find_duplicates(
         groups.extend(prediction_collisions(
             fingerprints, precedence_map(subs), history))
     return DuplicationReport(groups=groups)
+
+
+# ---------------------------------------------------------------------------
+# THE POLICY — ruled 2026-08-06: one payer per model.
+#
+# "Once per model, using the first submissions. We want a strong but fair
+# signal: submit a copy, you won't get paid."
+#
+# When several hotkeys run the same model, only the one with precedence
+# earns; the rest are excluded from the EARNING SET for the day. Nothing
+# else changes: standings are untouched (scores are facts), containers keep
+# being executed, and the exclusion lapses the moment the miner runs a model
+# that is theirs — the next basket under their own model earns normally.
+# Applies from switch-on, never retroactively: the flag gates the filter,
+# not history.
+
+ONE_PAYER_FLAG_ENV = "SN21_ONE_PAYER_PER_MODEL"
+EXEMPT_DIGESTS_ENV = "SN21_COPY_EXEMPT_DIGESTS"
+
+
+def one_payer_enabled(environ) -> bool:
+    return (environ.get(ONE_PAYER_FLAG_ENV) or "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def exempt_digests_from(environ) -> frozenset[str]:
+    """Digests exempt from the one-payer rule — the reference model.
+
+    Everyone starting from the published reference runs byte-identical code,
+    and that is participation, not plagiarism. Without this exemption, day
+    one of enforcement would zero every newcomer except whichever of them
+    registered first.
+    """
+    raw = (environ.get(EXEMPT_DIGESTS_ENV) or "").strip()
+    return frozenset(d.strip() for d in raw.split(",") if d.strip())
+
+
+def suppressed_copies(
+    report: DuplicationReport,
+    exempt_digests: frozenset[str] = frozenset(),
+    active_digests: Mapping[str, str] | None = None,
+) -> set[str]:
+    """Hotkeys that do not earn today under one-payer-per-model.
+
+    Per group, everyone but the original. A group is exempt when the shared
+    digest is exempt (same_digest), or when any member is running an exempt
+    digest (same_predictions — a rebuilt reference model behaves identically
+    to the reference and must not condemn the people running the original).
+    """
+    active_digests = active_digests or {}
+    suppressed: set[str] = set()
+    for group in report.groups:
+        if group.digest and group.digest in exempt_digests:
+            continue
+        if group.kind == "same_predictions" and any(
+            active_digests.get(hk) in exempt_digests for hk in group.members
+        ):
+            continue
+        suppressed.update(group.copies)
+    return suppressed

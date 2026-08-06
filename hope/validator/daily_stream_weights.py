@@ -106,6 +106,7 @@ def compute_daily_allocation(
     curve_params: CurveParams = CurveParams(),
     promotion_params: PromotionParams = PromotionParams(),
     evicted: frozenset = frozenset(),
+    copy_suppressed: frozenset = frozenset(),
 ) -> DailyAllocation:
     """One day's standings → weights (D7) + promotion observation (D8).
 
@@ -124,6 +125,17 @@ def compute_daily_allocation(
     what eviction does NOT do: ledger entries are untouched (scores are
     facts) and the container keeps being executed daily — that execution is
     how re-entry is observed.
+
+    `copy_suppressed` is the one-payer-per-model exclusion set (ruled
+    2026-08-06: identical models pay once, the first submission earns —
+    hope.scoring.duplication.suppressed_copies). Same shape and same filter
+    point as eviction, and the same limits: standings untouched, container
+    still runs, and the exclusion lapses the moment the miner runs a model
+    of their own. Unlike eviction it must NOT affect promotion — the
+    promotion margin compares MODELS, and a copy's standing is the
+    original's standing under another name, so hiding it from the margin
+    would let a copy shield its original from a genuine challenger.
+    Suppression is applied to the CURVE only.
     """
     placements: dict[str, float] = {}
     for hotkey, eps in entries.items():
@@ -137,6 +149,12 @@ def compute_daily_allocation(
     promotion = observe_day(
         promotion_state, day, placements, scored_days, promotion_params
     )
+
+    # One payer per model: drop the copies AFTER promotion observed the full
+    # field, so the curve renormalises over genuine models only.
+    if copy_suppressed:
+        placements = {hk: s for hk, s in placements.items()
+                      if hk not in copy_suppressed}
 
     gated = bool(min_daily_episodes) and day_episode_volume < min_daily_episodes
     weights = {} if gated else curve_weights(placements, curve_params)
