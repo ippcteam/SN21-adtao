@@ -417,3 +417,98 @@ def test_suppression_zeroes_the_copy_in_the_daily_allocation():
     assert allocation.weights["author"] > 0.0
     assert allocation.weights["independent"] > 0.0
     assert abs(sum(allocation.weights.values()) - 1.0) < 1e-9
+
+
+# ---- the production consumer: flag -> receipts -> suppression ---------------
+
+def _ledger_with_receipts(tmp_path, day_entries):
+    """Write minimal receipt envelopes the loop-side reader consumes."""
+    import json as _json
+    import os as _os
+    d = _os.path.join(str(tmp_path), "receipts")
+    _os.makedirs(d, exist_ok=True)
+    for day_name, entries in day_entries.items():
+        with open(_os.path.join(d, f"{day_name}.json"), "w") as f:
+            _json.dump({"document": {"metrics": {"entries": entries}}}, f)
+    return str(tmp_path)
+
+
+def _receipt_entry(miner, p50, episode="e1"):
+    return {"miner": miner, "episode_id": episode, "horizon_days": 7,
+            "prediction": {"cost_delta_pct": {"p50": p50}}}
+
+
+def test_flag_on_suppresses_the_copy_from_published_receipts(tmp_path):
+    from datetime import date as _date
+
+    from hope.validator.daily_stream_weights import (
+        one_payer_suppression_from_receipts,
+    )
+
+    root = _ledger_with_receipts(tmp_path, {
+        "2026-08-18": [_receipt_entry("author", -0.05)],
+        "2026-08-20": [_receipt_entry("author", -0.07),
+                       _receipt_entry("copycat", -0.07)],
+    })
+    suppressed = one_payer_suppression_from_receipts(
+        root, _date(2026, 8, 20), environ={})
+    assert suppressed == frozenset({"copycat"})
+
+
+def test_the_house_hotkey_group_is_exempt_loop_side(tmp_path):
+    """Reference-runners are protected via the house hotkey even before the
+    reference image has a published digest."""
+    from datetime import date as _date
+
+    from hope.validator.daily_stream_weights import (
+        one_payer_suppression_from_receipts,
+    )
+
+    root = _ledger_with_receipts(tmp_path, {
+        "2026-08-20": [_receipt_entry("house-model", -0.05),
+                       _receipt_entry("newcomer", -0.05)],
+    })
+    suppressed = one_payer_suppression_from_receipts(
+        root, _date(2026, 8, 20),
+        environ={"SN21_HOUSE_HOTKEY": "house-model"})
+    assert suppressed == frozenset()
+
+
+def test_no_receipts_means_nobody_is_suppressed(tmp_path):
+    from datetime import date as _date
+
+    from hope.validator.daily_stream_weights import (
+        one_payer_suppression_from_receipts,
+    )
+    assert one_payer_suppression_from_receipts(
+        str(tmp_path), _date(2026, 8, 20), environ={}) == frozenset()
+
+
+def test_allocation_from_ledger_honours_the_flag(tmp_path, monkeypatch):
+    """End to end at the production entrypoint: flag off -> copy earns;
+    flag on -> copy suppressed, and the intended weights say so."""
+    from datetime import date as _date
+
+    from hope.scoring import standing_ledger as sl
+    from hope.scoring.daily_score_flow import WeightedEntry
+    from hope.validator.daily_stream_weights import allocation_from_ledger
+
+    day = _date(2026, 8, 20)
+    root = _ledger_with_receipts(tmp_path, {
+        str(day): [_receipt_entry("author", -0.07),
+                   _receipt_entry("copycat", -0.07)],
+    })
+    for hk in ("author", "copycat"):
+        sl.append_entries(root, [
+            WeightedEntry(miner=hk, episode_id=f"e{i}", horizon_days=7,
+                          score=0.7, weight=1.0, entered_on=day)
+            for i in range(300)
+        ])
+
+    off = allocation_from_ledger(root, day, 500, environ={})
+    assert off.weights.get("copycat", 0) > 0        # flag off: unchanged
+
+    on = allocation_from_ledger(
+        root, day, 500, environ={"SN21_ONE_PAYER_PER_MODEL": "1"})
+    assert on.weights.get("copycat", 0.0) == 0.0
+    assert on.weights.get("author", 0) > 0

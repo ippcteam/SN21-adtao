@@ -35,6 +35,7 @@ Pure core (compute_daily_allocation) + a thin I/O convenience
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass, field, replace
@@ -51,6 +52,14 @@ from hope.scoring.champion_promotion import (
 from hope.scoring.chronic_failure import (
     chronic_failure_policy_enabled,
     evicted_hotkeys,
+)
+from hope.scoring.duplication import (
+    DuplicationReport,
+    fingerprints_from_receipt,
+    first_seen_fingerprints,
+    one_payer_enabled,
+    prediction_collisions,
+    suppressed_copies,
 )
 from hope.scoring.episode_average import ScoredEpisode, standing
 from hope.scoring.weight_curve import CurveParams, curve_weights
@@ -210,12 +219,17 @@ def allocation_from_ledger(
             if vac.event:
                 standing_ledger.append_promotion_event(root, vac.event)
 
+    copy_suppressed: frozenset = frozenset()
+    if one_payer_enabled(environ):
+        copy_suppressed = one_payer_suppression_from_receipts(root, day, environ)
+
     alloc = compute_daily_allocation(
         entries, day, day_episode_volume, state,
         min_daily_episodes=min_daily_episodes,
         curve_params=curve_params,
         promotion_params=promotion_params,
         evicted=evicted,
+        copy_suppressed=copy_suppressed,
     )
 
     # BLAST RADIUS, declared not patched: with the flag on, evicting every
@@ -282,3 +296,68 @@ def pairs_for_uids(
             continue
         pairs.append((uid, float(w)))
     return pairs
+
+
+def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozenset:
+    """The one-payer exclusion set for `day`, derived from published receipts.
+
+    Behaviour-only, deliberately. Same-digest copies produce identical
+    predictions once they are scored, and only scored models can earn — so
+    for PAYMENT purposes the fingerprint detector subsumes the digest one,
+    and this needs nothing but the ledger the loop already owns. (Digest
+    collisions still matter earlier, at intake, where the registry-side
+    report is built with chain access.)
+
+    Exemptions available here: the house hotkey (SN21_HOUSE_HOTKEY) — a
+    group containing the house model IS the reference behaviour that day,
+    which exempts reference-runners before the reference image has ever
+    been pushed digest-pinned. The digest list (SN21_COPY_EXEMPT_DIGESTS)
+    additionally applies wherever active digests are known.
+
+    Fails EMPTY, never loud: an unreadable receipt history must not zero
+    anybody's weight. Missing evidence is a reason to not suppress, not a
+    reason to suppress.
+    """
+    try:
+        receipt_dir_path = os.path.join(root, "receipts")
+        if not os.path.isdir(receipt_dir_path):
+            return frozenset()
+        days = sorted(
+            name[:-5] for name in os.listdir(receipt_dir_path)
+            if name.endswith(".json") and not name.startswith("_")
+        )
+        history_days = []
+        today_fingerprints: dict = {}
+        for day_name in days:
+            if day_name > str(day):
+                continue
+            try:
+                with open(os.path.join(receipt_dir_path, f"{day_name}.json")) as f:
+                    envelope = json.load(f)
+            except (OSError, ValueError):
+                continue
+            entries_list = ((envelope.get("document") or {})
+                            .get("metrics", {}).get("entries", []))
+            prints = fingerprints_from_receipt(entries_list)
+            history_days.append((day_name, prints))
+            if day_name == str(day):
+                today_fingerprints = prints
+
+        if not today_fingerprints:
+            return frozenset()
+
+        history = first_seen_fingerprints(history_days)
+        groups = prediction_collisions(today_fingerprints, history=history)
+        if not groups:
+            return frozenset()
+
+        house = chronic_failure.house_hotkey_from(environ)
+        exempt_hotkeys = frozenset({house}) if house else frozenset()
+        return frozenset(suppressed_copies(
+            DuplicationReport(groups=groups),
+            exempt_hotkeys=exempt_hotkeys,
+        ))
+    except Exception:
+        logger.exception(
+            "one-payer suppression failed — suppressing NOBODY for %s", day)
+        return frozenset()

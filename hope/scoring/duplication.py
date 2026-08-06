@@ -327,18 +327,28 @@ def suppressed_copies(
     report: DuplicationReport,
     exempt_digests: frozenset[str] = frozenset(),
     active_digests: Mapping[str, str] | None = None,
+    exempt_hotkeys: frozenset[str] = frozenset(),
 ) -> set[str]:
     """Hotkeys that do not earn today under one-payer-per-model.
 
-    Per group, everyone but the original. A group is exempt when the shared
-    digest is exempt (same_digest), or when any member is running an exempt
-    digest (same_predictions — a rebuilt reference model behaves identically
-    to the reference and must not condemn the people running the original).
+    Per group, everyone but the original. A group is exempt when:
+
+    - the shared digest is exempt (same_digest), or
+    - any member is running an exempt digest (same_predictions — a rebuilt
+      reference model behaves identically to the reference and must not
+      condemn the people running the original), or
+    - any member is an exempt HOTKEY. This is how the reference model is
+      exempted before its image has ever been pushed digest-pinned: the
+      house model runs the reference, so a group containing the house
+      hotkey IS the reference behaviour that day. Behaviour-derived, so it
+      needs no registry publication to work.
     """
     active_digests = active_digests or {}
     suppressed: set[str] = set()
     for group in report.groups:
         if group.digest and group.digest in exempt_digests:
+            continue
+        if exempt_hotkeys and any(hk in exempt_hotkeys for hk in group.members):
             continue
         if group.kind == "same_predictions" and any(
             active_digests.get(hk) in exempt_digests for hk in group.members
