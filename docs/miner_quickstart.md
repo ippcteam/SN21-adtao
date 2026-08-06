@@ -283,6 +283,23 @@ sub.commit(wallet=wallet, netuid=466,
 print(sub.get_commitment(netuid=466, uid=<your_uid>))
 ```
 
+> **Protect your model: commit BEFORE the image is publicly pullable.**
+> Precedence over a model belongs to whoever committed it first on chain, and
+> that is also how ties between identical models are settled. If your image is
+> public before your commitment lands, anyone watching the registry can commit
+> your digest ahead of you — the digest is content-addressed, so re-pushing
+> your bytes to their own repo does not change it. The safe order:
+>
+> 1. push to a **private** repo and take the digest from `RepoDigests`
+> 2. commit `sn21-model:v1:<repo>@sha256:<digest>` on chain
+> 3. **then** make the repo public
+>
+> An intake sweep that runs while the repo is still private simply fails to
+> pull and retries later — a pull failure is never a permanent verdict, only a
+> gate result is. Rebuilding your own image later is also safe: identity over
+> a behaviour follows the published daily record, not just commit order, so a
+> rebuild does not reset your seniority to someone who copied the old build.
+
 Rules (enforced by `hope/backtest/model_registry.py`):
 
 - Repo lowercase, no image tag on the name segment (digest pins the bits)

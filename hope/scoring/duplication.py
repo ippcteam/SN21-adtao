@@ -106,31 +106,93 @@ def prediction_fingerprint(predictions: Mapping) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def fingerprints_from_receipt(entries: Iterable[Mapping]) -> dict[str, str]:
+    """{miner: fingerprint} from one day's receipt entries.
+
+    The receipt already records every miner's predictions verbatim, so the
+    published record IS the behaviour history — no new storage, and anyone
+    can recompute these fingerprints from the same documents verify_day
+    reads. A miner with no usable predictions gets NO fingerprint rather
+    than a fingerprint of emptiness: two silent miners are not the same
+    model.
+    """
+    per_miner: dict[str, dict] = {}
+    for entry in entries:
+        miner = entry.get("miner")
+        prediction = entry.get("prediction")
+        if not miner or prediction is None:
+            continue
+        per_miner.setdefault(miner, {}).setdefault(
+            str(entry.get("episode_id")), {})[str(entry.get("horizon_days"))] = prediction
+    return {miner: prediction_fingerprint(preds)
+            for miner, preds in per_miner.items() if preds}
+
+
+def first_seen_fingerprints(
+    days: Iterable[tuple],
+) -> dict[tuple[str, str], object]:
+    """{(fingerprint, hotkey): earliest marker} across published history.
+
+    `days` is an iterable of (marker, {hotkey: fingerprint}) — the marker is
+    whatever the caller orders time by (ISO day strings from receipts, block
+    numbers…), and markers must be mutually comparable within one call.
+    """
+    first: dict[tuple[str, str], object] = {}
+    for marker, fingerprints in days:
+        for hotkey, fingerprint in fingerprints.items():
+            if not fingerprint:
+                continue
+            key = (fingerprint, hotkey)
+            held = first.get(key)
+            if held is None or marker < held:
+                first[key] = marker
+    return first
+
+
 def prediction_collisions(
     fingerprints: Mapping[str, str],
     precedence: Mapping[str, int] | None = None,
+    history: Mapping[tuple[str, str], object] | None = None,
 ) -> list[CopyGroup]:
     """Miners whose predictions are identical — the rebuilt-image case.
 
-    `fingerprints` is {hotkey: fingerprint}; `precedence` is
-    {hotkey: first_seen_block}. A hotkey with no known precedence sorts last,
-    because an unknown commit time must never outrank a known earlier one.
+    `fingerprints` is {hotkey: fingerprint} for the CURRENT basket;
+    `precedence` is {hotkey: first block of the model it is running};
+    `history` is {(fingerprint, hotkey): earliest marker this hotkey was
+    RECORDED producing this behaviour} — built from receipts via
+    `first_seen_fingerprints`.
+
+    WHY HISTORY OUTRANKS COMMIT ORDER (audit 2026-08-06, scenario D). An
+    author who rebuilds their own image gets a new digest, and a new digest
+    means a fresh commit block — so on commit order alone, the copier who
+    copied the OLD build suddenly precedes the author, and the author is
+    flagged as a copy of their own model. What survives a rebuild is the
+    behaviour, and the receipts prove who produced it first. So members of
+    a behaviour group are ordered by: recorded history of this fingerprint,
+    then commit precedence, then hotkey. A hotkey missing from either
+    source sorts after every hotkey present in it — an unknown time never
+    outranks a known earlier one.
     """
     precedence = precedence or {}
+    history = history or {}
     by_print: dict[str, list[str]] = {}
     for hotkey, fingerprint in fingerprints.items():
         if not fingerprint:
             continue
         by_print.setdefault(fingerprint, []).append(hotkey)
 
+    def member_key(fingerprint: str, hotkey: str):
+        seen = ((0, history[(fingerprint, hotkey)])
+                if (fingerprint, hotkey) in history else (1,))
+        committed = ((0, precedence[hotkey])
+                     if hotkey in precedence else (1,))
+        return (seen, committed, hotkey)
+
     groups = []
     for fingerprint, hotkeys in sorted(by_print.items()):
         if len(hotkeys) < 2:
             continue
-        ordered = sorted(
-            hotkeys,
-            key=lambda hk: (precedence.get(hk, float("inf")), hk),
-        )
+        ordered = sorted(hotkeys, key=lambda hk: member_key(fingerprint, hk))
         groups.append(CopyGroup(
             kind="same_predictions",
             original=ordered[0],
@@ -141,19 +203,48 @@ def prediction_collisions(
     return groups
 
 
-def precedence_map(submissions: Iterable[Submission]) -> dict[str, int]:
-    """{hotkey: first_seen_block} for ranking.
+def active_submission(submissions: Iterable[Submission]) -> dict[str, Submission]:
+    """{hotkey: the submission it is currently running}.
 
-    Where one hotkey has committed several times, the EARLIEST block counts:
-    precedence belongs to when a miner first showed this model, not to their
-    most recent re-commit.
+    The registry resolves a hotkey to its LATEST valid commitment, so that is
+    what "currently running" means here too.
     """
-    out: dict[str, int] = {}
+    latest: dict[str, Submission] = {}
     for sub in submissions:
-        current = out.get(sub.hotkey)
-        if current is None or sub.first_seen_block < current:
-            out[sub.hotkey] = sub.first_seen_block
-    return out
+        held = latest.get(sub.hotkey)
+        if held is None or sub.first_seen_block > held.first_seen_block:
+            latest[sub.hotkey] = sub
+    return latest
+
+
+def precedence_map(submissions: Iterable[Submission]) -> dict[str, int]:
+    """{hotkey: when this hotkey first committed THE MODEL IT IS RUNNING}.
+
+    PRECEDENCE IS PER MODEL, NOT PER HOTKEY. An earlier version of this took
+    each hotkey's earliest commit across everything it had ever submitted,
+    which a miner reported as backwards on 2026-08-06, correctly:
+
+        an attacker registered months ago with some junk model outranks the
+        author who shipped the good model last week — so the copier is
+        crowned the original and the author is labelled the copy.
+
+    Hotkey seniority is not authorship. What earns precedence over a model is
+    having committed THAT model first, so the block is looked up against the
+    hotkey's active digest and nothing else. Re-committing the same digest
+    does not reset it: the earliest time this hotkey published these bytes
+    counts, so a miner is not punished for re-pushing their own model.
+    """
+    active = active_submission(submissions)
+    first_for_pair: dict[tuple[str, str], int] = {}
+    for sub in submissions:
+        key = (sub.hotkey, sub.digest)
+        held = first_for_pair.get(key)
+        if held is None or sub.first_seen_block < held:
+            first_for_pair[key] = sub.first_seen_block
+    return {
+        hotkey: first_for_pair[(hotkey, sub.digest)]
+        for hotkey, sub in active.items()
+    }
 
 
 @dataclass
@@ -181,10 +272,14 @@ class DuplicationReport:
 def find_duplicates(
     submissions: Iterable[Submission],
     fingerprints: Mapping[str, str] | None = None,
+    history: Mapping[tuple[str, str], object] | None = None,
 ) -> DuplicationReport:
-    """Both detectors over one population."""
+    """Both detectors over one population. `history` is the receipts-derived
+    behaviour record (`first_seen_fingerprints`); pass it whenever receipts
+    exist, because commit order alone mislabels an author who rebuilt."""
     subs = list(submissions)
     groups = digest_collisions(subs)
     if fingerprints:
-        groups.extend(prediction_collisions(fingerprints, precedence_map(subs)))
+        groups.extend(prediction_collisions(
+            fingerprints, precedence_map(subs), history))
     return DuplicationReport(groups=groups)

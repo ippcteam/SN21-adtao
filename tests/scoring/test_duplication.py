@@ -17,6 +17,8 @@ from hope.scoring.duplication import (
     Submission,
     digest_collisions,
     find_duplicates,
+    fingerprints_from_receipt,
+    first_seen_fingerprints,
     precedence_map,
     prediction_collisions,
     prediction_fingerprint,
@@ -102,11 +104,24 @@ def test_precedence_within_a_block_is_deterministic():
     assert group.original == "alpha"
 
 
-def test_precedence_uses_a_hotkeys_earliest_commit():
-    """Re-committing must not reset your place in the queue."""
+def test_precedence_follows_the_model_a_hotkey_is_running():
+    """SEMANTICS CHANGED after a miner's report (2026-08-06): precedence used
+    to be the hotkey's earliest commit of ANYTHING, which crowned an old
+    hotkey with a junk history as the "original" of a model it copied last
+    week. Hotkey seniority is not authorship — precedence follows the model
+    the hotkey is running now."""
     subs = [
         Submission("miner", DIGEST_A, first_seen_block=100),
-        Submission("miner", DIGEST_B, first_seen_block=800),
+        Submission("miner", DIGEST_B, first_seen_block=800),   # switched model
+    ]
+    assert precedence_map(subs)["miner"] == 800
+
+
+def test_recommitting_the_same_digest_keeps_the_earliest_block():
+    """Re-pushing your own model must not reset your place in the queue."""
+    subs = [
+        Submission("miner", DIGEST_A, first_seen_block=100),
+        Submission("miner", DIGEST_A, first_seen_block=800),
     ]
     assert precedence_map(subs)["miner"] == 100
 
@@ -191,3 +206,105 @@ def test_max_earners_still_caps_the_field_with_precedence_applied():
     precedence = {f"hk{i:02d}": i for i in range(40)}
     weights = curve_weights(standings, CurveParams(), precedence=precedence)
     assert sum(1 for w in weights.values() if w > 0) == 20
+
+
+# ---- the second report (2026-08-06): seniority games and rebuilds ----------
+
+def test_an_old_hotkey_with_a_junk_history_does_not_own_a_model_it_copied():
+    """THE SECOND REPORTED ATTACK. The copier registered long ago with junk,
+    so under hotkey-level precedence their ancient block outranked the author
+    — the copier was crowned original and the AUTHOR was flagged as the copy.
+    Precedence must follow the model, not the hotkey's seniority."""
+    junk = "sha256:" + "9" * 64
+    rebuilt = "sha256:" + "8" * 64
+    fingerprint = "identical-behaviour"
+
+    subs = [
+        Submission("old_attacker", junk, first_seen_block=100),
+        Submission("author", DIGEST_A, first_seen_block=9000),
+        Submission("old_attacker", rebuilt, first_seen_block=9100),
+    ]
+    (group,) = prediction_collisions(
+        {"author": fingerprint, "old_attacker": fingerprint},
+        precedence_map(subs),
+    )
+    assert group.original == "author"
+    assert group.copies == ("old_attacker",)
+
+
+def test_an_author_who_rebuilds_keeps_precedence_via_recorded_history():
+    """Scenario D from the audit. A rebuild changes the digest, so on commit
+    order alone the copier of the OLD build suddenly precedes the author —
+    the author reads as a copy of their own model. What survives a rebuild is
+    the behaviour, and the receipts prove who produced it first."""
+    rebuilt_copy = "sha256:" + "8" * 64
+    authors_new_build = "sha256:" + "7" * 64
+    fingerprint = "the-behaviour"
+
+    subs = [
+        Submission("author", DIGEST_A, first_seen_block=9000),
+        Submission("copier", rebuilt_copy, first_seen_block=9100),
+        Submission("author", authors_new_build, first_seen_block=9200),
+    ]
+    # Without history the commit clock betrays the author…
+    (naive,) = prediction_collisions(
+        {"author": fingerprint, "copier": fingerprint}, precedence_map(subs))
+    assert naive.original == "copier"
+
+    # …and the receipts put it right: the author was RECORDED producing this
+    # behaviour before the copier existed.
+    history = first_seen_fingerprints([
+        ("2026-08-18", {"author": fingerprint}),
+        ("2026-08-20", {"author": fingerprint, "copier": fingerprint}),
+    ])
+    (informed,) = prediction_collisions(
+        {"author": fingerprint, "copier": fingerprint},
+        precedence_map(subs), history)
+    assert informed.original == "author"
+    assert informed.copies == ("copier",)
+
+
+def test_history_is_built_from_the_receipt_itself():
+    """No new storage: the receipt already carries every miner's predictions
+    verbatim, so anyone can recompute these fingerprints from the published
+    record."""
+    entries = [
+        {"miner": "hkA", "episode_id": "e1", "horizon_days": 7,
+         "prediction": {"cost_delta_pct": {"p50": -0.05}}},
+        {"miner": "hkB", "episode_id": "e1", "horizon_days": 7,
+         "prediction": {"cost_delta_pct": {"p50": -0.05}}},
+        {"miner": "hkSilent", "episode_id": "e1", "horizon_days": 7,
+         "prediction": None},
+    ]
+    prints = fingerprints_from_receipt(entries)
+    assert prints["hkA"] == prints["hkB"]        # identical behaviour is visible
+    assert "hkSilent" not in prints              # silence is not a behaviour
+
+
+def test_history_keeps_the_earliest_sighting():
+    history = first_seen_fingerprints([
+        ("2026-08-20", {"hk": "fp"}),
+        ("2026-08-18", {"hk": "fp"}),
+    ])
+    assert history[("fp", "hk")] == "2026-08-18"
+
+
+def test_front_running_is_settled_by_commit_order_which_is_the_documented_defence():
+    """Scenario E. A registry watcher who commits the author's digest FIRST
+    wins on chain order — the chain cannot tell builder from watcher. The
+    defence is procedural and documented: commit the digest while the image
+    is still private, then make it public. This test pins the behaviour so
+    the docs and the code cannot drift apart silently."""
+    subs = [
+        Submission("watcher", DIGEST_A, first_seen_block=9020),
+        Submission("author", DIGEST_A, first_seen_block=9050),
+    ]
+    (group,) = digest_collisions(subs)
+    assert group.original == "watcher"           # chain order, stated plainly
+
+    committed_first = [
+        Submission("author", DIGEST_A, first_seen_block=9010),
+        Submission("watcher", DIGEST_A, first_seen_block=9020),
+    ]
+    (defended,) = digest_collisions(committed_first)
+    assert defended.original == "author"

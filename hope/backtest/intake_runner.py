@@ -42,6 +42,7 @@ from dataclasses import dataclass
 
 from hope.backtest.image_intake import (
     STATUS_ADMITTED,
+    STATUS_REJECTED_GATE,
     ModelCommitment,
     intake_all,
 )
@@ -102,12 +103,34 @@ def load_admitted(ledger_root: str) -> set[str]:
         raise RuntimeError(f"admitted-digest file is unreadable: {path}")
 
 
-def verdicted_digests(ledger_root: str) -> set[str]:
-    """Every digest that already has a verdict, admitted or not.
+# Only a GATE outcome is a verdict on the MODEL. Everything else is a verdict
+# on the fetch, and fetches are retryable.
+#
+# This distinction is load-bearing for the front-running defence (audit
+# 2026-08-06, scenario E): the way an author denies a registry-watcher the
+# chance to commit their digest first is to commit BEFORE the image is
+# public — digest on chain, then flip the repo public. That discipline only
+# works if the intake sweep that runs in between, finds the image unpullable,
+# and moves on does NOT record a permanent verdict. A pull failure damning
+# the digest forever would convert the recommended defence into a
+# self-inflicted rejection.
+FINAL_STATUSES = frozenset({STATUS_ADMITTED, STATUS_REJECTED_GATE})
 
-    Rejections count. Re-running a container that failed yesterday burns the
-    same sandbox minutes to reach the same answer, and a miner who wants
-    another verdict can publish new bytes, which is a new digest.
+
+def verdicted_digests(ledger_root: str) -> set[str]:
+    """Digests with a FINAL verdict — gated and judged, either way.
+
+    A gate rejection is final: re-running yesterday's failing container burns
+    the same sandbox minutes for the same answer, and a miner who wants a new
+    verdict publishes new bytes, which is a new digest. A pull failure or a
+    registry mismatch is NOT final — the registry may simply not be public
+    yet, or still propagating — so those digests stay eligible for the next
+    sweep.
+
+    A record with no readable status is treated as final, deliberately: the
+    fail-safe direction for "I can't tell" is to not re-run an unknown
+    container, because running strangers' code is the expensive, dangerous
+    step.
     """
     directory = verdict_dir(ledger_root)
     if not os.path.isdir(directory):
@@ -121,10 +144,15 @@ def verdicted_digests(ledger_root: str) -> set[str]:
                 envelope = json.load(f)
         except (OSError, ValueError):
             continue
-        digest = ((envelope.get("document") or {})
-                  .get("metrics", {})
-                  .get("image_digest"))
-        if digest:
+        # Verdicts appear in two shapes: the attested envelope
+        # ({document: {metrics: {...}}}) and the flat record the sweep's
+        # persist callback writes. Read both.
+        body = (envelope.get("document") or {}).get("metrics") or envelope
+        digest = body.get("image_digest") or body.get("digest")
+        status = body.get("status")
+        if not digest:
+            continue
+        if status is None or status in FINAL_STATUSES:
             out.add(digest)
     return out
 

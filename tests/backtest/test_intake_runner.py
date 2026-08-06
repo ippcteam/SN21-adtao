@@ -243,3 +243,56 @@ def test_an_unreadable_admitted_file_raises_rather_than_emptying_the_field(tmp_p
 
     with pytest.raises(RuntimeError, match="unreadable"):
         load_admitted(str(tmp_path))
+
+
+# ---- fetch problems are retryable; gate verdicts are final -----------------
+
+def _write_status_verdict(root, name, digest, status):
+    d = verdict_dir(root)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, f"{name}.json"), "w") as f:
+        json.dump({"digest": digest, "status": status}, f)
+
+
+def test_a_pull_failure_does_not_damn_the_digest(tmp_path):
+    """Load-bearing for the front-running defence: the author commits the
+    digest while the image is still PRIVATE, then flips it public. The sweep
+    that runs in between fails to pull — and must leave the digest eligible,
+    or the recommended defence becomes a self-inflicted permanent rejection."""
+    root = str(tmp_path)
+    _write_status_verdict(root, "early", DIGEST_A, STATUS_PULL_FAILED)
+    ran = []
+
+    result = run_intake(
+        ledger_root=root,
+        hotkeys=["hk1"],
+        read_commitment=lambda hk: _commit(DIGEST_A),
+        gate_runner=lambda ref: ran.append(ref) or {"verdict": {"admitted": True}},
+        puller=_ok_pull,
+        inspector=_inspector_for(DIGEST_A),
+    )
+
+    assert result.gated == 1 and result.admitted == 1   # retried, and passed
+
+
+def test_a_registry_mismatch_is_retryable_too(tmp_path):
+    """A registry mid-propagation can serve stale bytes; when the miner fixes
+    it, the same digest deserves another look."""
+    root = str(tmp_path)
+    _write_status_verdict(root, "m", DIGEST_A, STATUS_REJECTED_DIGEST_MISMATCH)
+    assert DIGEST_A not in verdicted_digests(root)
+
+
+def test_gate_verdicts_are_final_in_both_directions(tmp_path):
+    root = str(tmp_path)
+    _write_status_verdict(root, "in", DIGEST_A, STATUS_ADMITTED)
+    _write_status_verdict(root, "out", DIGEST_B, STATUS_REJECTED_GATE)
+    assert verdicted_digests(root) == {DIGEST_A, DIGEST_B}
+
+
+def test_a_verdict_with_no_status_stays_final(tmp_path):
+    """Fail-safe direction for "cannot tell": do NOT re-run an unknown
+    container — running strangers' code is the expensive, dangerous step."""
+    root = str(tmp_path)
+    _write_verdict(root, "legacy", DIGEST_A)   # envelope shape, no status
+    assert DIGEST_A in verdicted_digests(root)
