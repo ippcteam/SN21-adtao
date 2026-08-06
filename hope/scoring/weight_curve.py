@@ -41,7 +41,8 @@ DEFAULT_PARAMS = CurveParams()
 
 
 def curve_weights(standings: dict[str, float],
-                  params: CurveParams = DEFAULT_PARAMS) -> dict[str, float]:
+                  params: CurveParams = DEFAULT_PARAMS,
+                  precedence: dict[str, int] | None = None) -> dict[str, float]:
     """Rank-based curve over standings → normalized weight vector.
 
     - miners BELOW the threshold (or with no standing) get exactly 0; a
@@ -57,13 +58,33 @@ def curve_weights(standings: dict[str, float],
       (fewer earners than curve slots → shares scale up proportionally,
       keeping the RATIOS of the published curve, which is the published
       object; the absolute top share grows only when the field is thin)
-    - deterministic tie-break on (standing desc, miner id asc) so equal
-      standings cannot produce nondeterministic weight vectors
+    - deterministic tie-break on (standing desc, PRECEDENCE asc, miner id
+      asc) so equal standings cannot produce nondeterministic weight vectors
+
+    PRECEDENCE EXISTS BECAUSE THE OLD TIE-BREAK PAID FOR COPYING.
+    Models are public and anonymously pullable, so a copy can be committed
+    under another hotkey within minutes of the original. An identical
+    container earns an identical standing, so the two tie — and the tie used
+    to be settled on hotkey ascending, which handed the slot to whoever
+    ground the lexicographically smaller key. That made copying strictly
+    better than building, for the price of a hotkey.
+
+    `precedence` maps hotkey -> the block at which its model was first seen
+    on chain. Chain order is the one thing a copier cannot manipulate after
+    the fact: they can grind a hotkey, they cannot commit before the model
+    they copied existed. A hotkey with no known precedence sorts last, so an
+    unknown commit time never outranks a known earlier one — and hotkey
+    remains the final key, so the result stays deterministic.
+
+    This removes the free win. It does not by itself exclude a copy from
+    earning; that is a governance decision, and `hope.scoring.duplication`
+    produces the evidence it would rest on.
     """
+    precedence = precedence or {}
     eligible = sorted(
         ((m, s) for m, s in standings.items()
          if s is not None and s >= params.score_threshold),
-        key=lambda kv: (-kv[1], kv[0]),
+        key=lambda kv: (-kv[1], precedence.get(kv[0], float("inf")), kv[0]),
     )[: params.max_earners]
 
     if not eligible:
