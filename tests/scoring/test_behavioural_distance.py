@@ -1,4 +1,11 @@
-"""Grouping on behaviour, not bytes.
+"""The scaled distance measurement.
+
+This used to be a standalone grouping control and is no longer one: a single
+distance has a single boundary, and a boundary is a target. It is now ONE of
+the four signals in the lineage test, and the grouping behaviour it used to
+own is covered by tests/scoring/test_anticlone_redteam.py.
+
+What remains here is the measurement itself, which still has to be right.
 
 Reported by a miner on 2026-08-07 and confirmed against the code: the exact
 fingerprint test groups on sha256 of the canonical JSON, so two IDENTICAL
@@ -18,11 +25,7 @@ closer. These tests pin the mechanism at those real magnitudes.
 
 import pytest
 
-from hope.scoring.duplication import (
-    MIN_OVERLAP_ROWS,
-    behavioural_distance,
-    distance_collisions,
-)
+from hope.scoring.duplication import MIN_OVERLAP_ROWS, behavioural_distance
 
 # Test-only calibration. Production values are red-teamed, not defaulted.
 TEST_TAU = 0.02
@@ -86,77 +89,3 @@ def test_only_shared_rows_are_compared():
     a = preds(-0.05, n=40)
     b = dict(preds(-0.05, n=40), extra={"7": {"cost_delta_pct": {"p50": 99.0}}})
     assert behavioural_distance(a, b, actuals()) == 0.0
-
-
-# ---- grouping at the miner's measured magnitudes ---------------------------
-
-def test_a_perturbed_clone_is_grouped():
-    by_miner = {"author": preds(-0.05), "clone": preds(-0.05, jitter=0.001)}
-    (group,) = distance_collisions(by_miner, actuals(), tau=TEST_TAU,
-                                   precedence={"author": 10, "clone": 900})
-    assert group.kind == "same_behaviour"
-    assert group.original == "author"
-    assert group.copies == ("clone",)
-
-
-def test_two_honest_lineages_are_left_alone():
-    """Their model vs the cluster's rank-1 measured 0.4346 — twenty times tau."""
-    by_miner = {"ours": preds(-0.05), "theirs": preds(-0.05, jitter=0.4346)}
-    assert distance_collisions(by_miner, actuals(), tau=TEST_TAU) == []
-
-
-def test_their_own_variants_survive_the_proposed_tau():
-    """Worth stating plainly: at the tau THEY proposed, the reporter's own
-    three variants (0.0522 apart at the closest) stay separate payees. The
-    mechanism is right; the number is a governance choice, and this test
-    exists so whoever sets it can see what it does to real configurations."""
-    by_miner = {"v1": preds(-0.05), "v2": preds(-0.05, jitter=0.0522),
-                "v3": preds(-0.05, jitter=0.1044)}
-    assert distance_collisions(by_miner, actuals(), tau=0.02) == []
-    # …and a tau above their spread would collapse them.
-    grouped = distance_collisions(by_miner, actuals(), tau=0.06)
-    assert len(grouped) == 1 and len(grouped[0].members) == 3
-
-
-def test_a_chain_of_near_clones_collapses_together():
-    """Single linkage on purpose: a clone of a clone is still a clone, and
-    all-pairs closeness would let a ladder of small perturbations walk out of
-    any threshold."""
-    by_miner = {
-        "a": preds(-0.05),
-        "b": preds(-0.05, jitter=0.015),
-        "c": preds(-0.05, jitter=0.030),
-        "d": preds(-0.05, jitter=0.045),
-    }
-    (group,) = distance_collisions(by_miner, actuals(), tau=TEST_TAU,
-                                   precedence={"a": 1, "b": 2, "c": 3, "d": 4})
-    assert set(group.members) == {"a", "b", "c", "d"}
-    assert group.original == "a"          # earliest commit pays
-
-
-def test_the_group_carries_evidence_a_miner_can_recompute():
-    by_miner = {"author": preds(-0.05), "clone": preds(-0.05, jitter=0.001)}
-    (group,) = distance_collisions(by_miner, actuals(), tau=TEST_TAU)
-    assert "tau=0.02" in group.evidence
-    assert "recomputable from the day's receipt" in group.evidence
-
-
-def test_thin_overlap_never_produces_a_group():
-    """Fail-safe: too few shared rows means no grouping, not a coin flip."""
-    by_miner = {"a": preds(-0.05, n=4), "b": preds(-0.05, n=4)}
-    assert distance_collisions(by_miner, actuals(n=4), tau=TEST_TAU) == []
-
-
-def test_one_miner_is_never_a_group():
-    assert distance_collisions({"solo": preds(-0.05)}, actuals()) == []
-
-
-def test_precedence_inside_the_group_is_the_existing_rule():
-    """Earliest commit pays; the reporter's own precedence fix still governs
-    who the payee is."""
-    by_miner = {"late_but_lexically_first": preds(-0.05),
-                "zzz_original": preds(-0.05, jitter=0.0005)}
-    (group,) = distance_collisions(
-        by_miner, actuals(), tau=TEST_TAU,
-        precedence={"zzz_original": 100, "late_but_lexically_first": 9000})
-    assert group.original == "zzz_original"

@@ -58,7 +58,6 @@ from hope.scoring.coldkey_cap import apply_coldkey_cap
 from hope.scoring.duplication import (
     DuplicationReport,
     LineageParams,
-    distance_collisions,
     fingerprints_from_receipt,
     first_seen_fingerprints,
     lineage_collisions,
@@ -436,8 +435,6 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
         )
         history_days = []
         today_fingerprints: dict = {}
-        today_predictions: dict = {}
-        today_actuals: dict = {}
         for day_name in days:
             if day_name > str(day):
                 continue
@@ -452,9 +449,6 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
             history_days.append((day_name, prints))
             if day_name == str(day):
                 today_fingerprints = prints
-                today_predictions = predictions_from_receipt(entries_list)
-                today_actuals = actuals_from_receipt(
-                    metrics_block.get("outcomes", []))
 
         if not today_fingerprints:
             return frozenset()
@@ -462,14 +456,13 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
         history = first_seen_fingerprints(history_days)
         groups = prediction_collisions(today_fingerprints, history=history)
 
-        # Byte-equality was trivially evaded — a clone need only disagree in
-        # the last decimal (miner report, 2026-08-07). Group on behaviour too.
-        # Distance-0 pairs appear in both detectors; suppressed_copies works on
-        # sets, so the overlap costs nothing.
-        groups.extend(distance_collisions(
-            today_predictions, today_actuals,
-            tau=one_payer_tau(environ),
-        ))
+        # Behavioural grouping is NOT done here. It lives in
+        # lineage_from_receipts, which uses the four-signal test and publishes
+        # its working. This path keeps the exact-fingerprint detector only:
+        # byte-identical predictions are the cheapest, clearest evidence there
+        # is, and unlike the behavioural test it needs no calibration — so it
+        # is the one thing protecting the stream before parameters are set. It
+        # is deliberately NOT the real control.
         if not groups:
             return frozenset()
 
@@ -483,34 +476,6 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
         logger.exception(
             "one-payer suppression failed — suppressing NOBODY for %s", day)
         return frozenset()
-
-
-ONE_PAYER_TAU_ENV = "SN21_ONE_PAYER_TAU"
-
-
-def one_payer_tau(environ):
-    """Behavioural-distance threshold, or None when it has not been set.
-
-    There is NO default. Ruled 2026-08-07: "do not accept miner-proposed
-    tau/K" — and the only number anyone has proposed came from the miner who
-    reported the weakness. An unset threshold means the control does not run;
-    a malformed one means the same. Both are safer than a guess that quietly
-    decides who gets paid.
-    """
-    raw = (environ.get(ONE_PAYER_TAU_ENV) or "").strip()
-    if not raw:
-        return None
-    try:
-        tau = float(raw)
-    except ValueError:
-        logger.warning("%s is not a number (%r) — behavioural collapse stays "
-                       "OFF rather than guessing", ONE_PAYER_TAU_ENV, raw)
-        return None
-    if tau <= 0:
-        logger.warning("%s must be positive (got %s) — behavioural collapse "
-                       "stays OFF", ONE_PAYER_TAU_ENV, tau)
-        return None
-    return tau
 
 
 def predictions_from_receipt(entries) -> dict:

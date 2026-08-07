@@ -513,98 +513,27 @@ def test_allocation_from_ledger_honours_the_flag(tmp_path, monkeypatch):
     assert on.weights.get("copycat", 0.0) == 0.0
     assert on.weights.get("author", 0) > 0
 
+# ---- what this path does and does not do -----------------------------------
 
-# ---- behavioural distance reaches the live suppression path ----------------
+def test_the_receipt_path_keeps_only_the_exact_detector():
+    """The behavioural grouping moved to lineage_from_receipts, which uses the
+    four-signal test and publishes its working.
 
-def test_a_perturbed_clone_is_suppressed_end_to_end(tmp_path):
-    """The whole point of the 2026-08-07 report: byte-equality let a clone
-    that differs in the last decimal be paid as a separate model. It must be
-    caught by the path that actually decides weights, not only in the pure
-    module."""
-    import json as _json
-    import os as _os
-    from datetime import date as _date
+    A scalar-distance collapse was briefly wired here and was removed: a single
+    threshold has a single boundary, and a boundary is a target. Worse, it was
+    a SECOND scheme with its own knob, so an operator could set it, believe the
+    stream was protected, and have the real control still switched off.
 
-    from hope.validator.daily_stream_weights import (
-        one_payer_suppression_from_receipts,
-    )
+    What stays is the exact-fingerprint detector. It is not the real control —
+    it is the one that needs no calibration, so it is what protects the stream
+    until the parameters are set.
+    """
+    import inspect
 
-    day = "2026-08-20"
-    entries, outcomes = [], []
-    for i in range(40):
-        outcomes.append({"episode_id": f"e{i}", "horizon_days": 7,
-                         "cost_delta_pct": 1.0})
-        entries.append({"miner": "author", "episode_id": f"e{i}",
-                        "horizon_days": 7,
-                        "prediction": {"cost_delta_pct": {"p50": -0.05}}})
-        entries.append({"miner": "clone", "episode_id": f"e{i}",
-                        "horizon_days": 7,
-                        # last-decimal perturbation — invisible to sha256
-                        "prediction": {"cost_delta_pct": {"p50": -0.050001}}})
+    from hope.validator import daily_stream_weights as dsw
 
-    d = _os.path.join(str(tmp_path), "receipts")
-    _os.makedirs(d, exist_ok=True)
-    with open(_os.path.join(d, f"{day}.json"), "w") as fh:
-        _json.dump({"document": {"metrics": {"entries": entries,
-                                             "outcomes": outcomes}}}, fh)
-
-    # An explicit threshold is REQUIRED — there is no default, so an unset
-    # environment runs no behavioural collapse at all.
-    assert one_payer_suppression_from_receipts(
-        str(tmp_path), _date(2026, 8, 20), environ={}) == frozenset(), (
-        "with no calibrated threshold the control must stay off, not guess")
-
-    suppressed = one_payer_suppression_from_receipts(
-        str(tmp_path), _date(2026, 8, 20),
-        environ={"SN21_ONE_PAYER_TAU": "0.02"})
-
-    assert suppressed == frozenset({"clone"}), (
-        "a perturbed clone must not be paid as an independent model")
-
-
-def test_there_is_no_default_threshold():
-    """Ruled 2026-08-07: do not accept miner-proposed tau/K. The only number
-    anyone proposed came from the miner who reported the weakness, and it sat
-    just outside their own fleet's spread. So the threshold has NO default —
-    unset means the control does not run, which is safer than a guess that
-    quietly decides who gets paid."""
-    from hope.validator.daily_stream_weights import one_payer_tau
-
-    assert one_payer_tau({}) is None
-    assert one_payer_tau({"SN21_ONE_PAYER_TAU": "0.035"}) == 0.035
-    # Malformed or nonsensical stays OFF rather than falling back to a number.
-    assert one_payer_tau({"SN21_ONE_PAYER_TAU": "loose"}) is None
-    assert one_payer_tau({"SN21_ONE_PAYER_TAU": "-1"}) is None
-
-
-def test_honest_models_are_not_suppressed_end_to_end(tmp_path):
-    """The measured separation between independent lineages was 0.4346 —
-    twenty times tau. Nothing about this may touch them."""
-    import json as _json
-    import os as _os
-    from datetime import date as _date
-
-    from hope.validator.daily_stream_weights import (
-        one_payer_suppression_from_receipts,
-    )
-
-    day = "2026-08-20"
-    entries, outcomes = [], []
-    for i in range(40):
-        outcomes.append({"episode_id": f"e{i}", "horizon_days": 7,
-                         "cost_delta_pct": 1.0})
-        entries.append({"miner": "ours", "episode_id": f"e{i}",
-                        "horizon_days": 7,
-                        "prediction": {"cost_delta_pct": {"p50": -0.05}}})
-        entries.append({"miner": "theirs", "episode_id": f"e{i}",
-                        "horizon_days": 7,
-                        "prediction": {"cost_delta_pct": {"p50": 0.3846}}})
-
-    d = _os.path.join(str(tmp_path), "receipts")
-    _os.makedirs(d, exist_ok=True)
-    with open(_os.path.join(d, f"{day}.json"), "w") as fh:
-        _json.dump({"document": {"metrics": {"entries": entries,
-                                             "outcomes": outcomes}}}, fh)
-
-    assert one_payer_suppression_from_receipts(
-        str(tmp_path), _date(2026, 8, 20), environ={}) == frozenset()
+    src = inspect.getsource(dsw.one_payer_suppression_from_receipts)
+    assert "prediction_collisions" in src
+    assert "distance_collisions" not in src
+    assert not hasattr(dsw, "one_payer_tau"), (
+        "SN21_ONE_PAYER_TAU is gone; thresholds live in LineageParams")

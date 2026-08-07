@@ -365,7 +365,14 @@ def suppressed_copies(
 
 
 # ---------------------------------------------------------------------------
-# BEHAVIOURAL DISTANCE — because byte-equality was trivially evaded.
+# SCALED DISTANCE — the shared measurement, not a control on its own.
+#
+# Kept because the multi-metric lineage test below uses it as ONE of its four
+# signals. It was briefly wired as a standalone collapse and that was removed:
+# a single distance has a single boundary, and a boundary is a target. Any
+# caller wanting to group models wants `lineage_collisions`.
+#
+# Original context, still worth keeping —
 #
 # Reported by a miner on 2026-08-07, and correct. `prediction_fingerprint`
 # groups on sha256 of the canonical JSON, and the docstring stated the
@@ -391,17 +398,12 @@ def suppressed_copies(
 # paid, so it belongs with the curve numbers under the four-weekly review,
 # and the default here is deliberately conservative.
 
-# NO DEFAULT TAU. Ruled 2026-08-07: "do not accept miner-proposed tau/K."
-# The only numbers available today came from the miner who reported the
-# weakness, and their proposed band sits just outside their own fleet's
-# spread — so shipping it as a default would be adopting an interested
-# party's parameter as policy. Values must come from the operator's own
-# red-team calibration (known clones vs known-independent models).
-#
-# Until one is set, behavioural collapse DOES NOT RUN. An uncalibrated
-# threshold that decides who gets paid is worse than no threshold: the
-# failure is silent and lands on somebody's income.
-TAU_UNSET = None
+# NO DEFAULT THRESHOLDS anywhere in this module. Ruled 2026-08-07: "do not
+# accept miner-proposed tau/K." The only numbers anyone proposed came from the
+# miner who reported the weakness, and their band sits just outside their own
+# fleet's spread. Values come from the operator's own red-team calibration —
+# see LineageParams, which stays unconfigured, and therefore inert, until all
+# of them are set.
 
 # Two miners who overlap on a handful of rows can look identical by accident.
 # Below this many shared (episode, horizon, metric) rows the answer is "cannot
@@ -445,91 +447,6 @@ def behavioural_distance(pred_a: Mapping, pred_b: Mapping,
         scale = max(abs(actual), 1.0) if isinstance(actual, (int, float)) else 1.0
         total += abs(rows_a[key] - rows_b[key]) / scale
     return total / len(shared)
-
-
-def _single_linkage(members: list, close) -> list:
-    """Groups where a chain of near-clones collapses together.
-
-    Single linkage on purpose: a clone of a clone is still a clone, and
-    requiring every pair in a group to be close would let a ladder of small
-    perturbations walk out of any threshold. The cost is chaining — with a
-    low tau and honest lineages an order of magnitude further apart, the
-    margin absorbs it, but that is exactly why tau is published and reviewed
-    rather than tuned quietly.
-    """
-    parent = {m: m for m in members}
-
-    def find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    for i, a in enumerate(members):
-        for b in members[i + 1:]:
-            if close(a, b):
-                ra, rb = find(a), find(b)
-                if ra != rb:
-                    parent[ra] = rb
-
-    clusters: dict = {}
-    for m in members:
-        clusters.setdefault(find(m), []).append(m)
-    return [sorted(c) for c in clusters.values() if len(c) > 1]
-
-
-def distance_collisions(
-    predictions_by_miner: Mapping[str, Mapping],
-    actuals: Mapping,
-    tau: float | None = TAU_UNSET,
-    precedence: Mapping[str, int] | None = None,
-    history: Mapping[tuple, object] | None = None,
-    min_overlap: int = MIN_OVERLAP_ROWS,
-) -> list[CopyGroup]:
-    """Miners whose predictions are the same model wearing noise.
-
-    Generalises the exact-match detector: byte-identical predictions have
-    distance 0 and are caught here too. Precedence inside a group is the
-    existing rule — recorded behaviour history first, then commit order.
-    """
-    if tau is None:
-        # Not configured is not "use something sensible" — it is "this control
-        # is off", loudly, at the caller.
-        return []
-    miners = sorted(predictions_by_miner)
-    if len(miners) < 2:
-        return []
-
-    pairwise: dict = {}
-
-    def close(a, b):
-        key = (a, b) if a < b else (b, a)
-        if key not in pairwise:
-            pairwise[key] = behavioural_distance(
-                predictions_by_miner[a], predictions_by_miner[b],
-                actuals, min_overlap)
-        d = pairwise[key]
-        return d is not None and d < tau
-
-    groups = []
-    for cluster in _single_linkage(miners, close):
-        ordered = sorted(cluster, key=lambda hk: (
-            (0, history[(hk,)]) if history and (hk,) in history else (1,),
-            (0, precedence[hk]) if precedence and hk in precedence else (1,),
-            hk,
-        ))
-        gaps = [d for (a, b), d in pairwise.items()
-                if a in cluster and b in cluster and d is not None]
-        widest = max(gaps) if gaps else 0.0
-        groups.append(CopyGroup(
-            kind="same_behaviour",
-            original=ordered[0],
-            copies=tuple(ordered[1:]),
-            evidence=(f"{len(cluster)} miners within tau={tau} behavioural "
-                      f"distance (widest pair in group {widest:.4f}); "
-                      f"recomputable from the day's receipt"),
-        ))
-    return groups
 
 
 # ---------------------------------------------------------------------------
