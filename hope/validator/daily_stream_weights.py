@@ -54,7 +54,9 @@ from hope.scoring.chronic_failure import (
     evicted_hotkeys,
 )
 from hope.scoring.duplication import (
+    DEFAULT_TAU,
     DuplicationReport,
+    distance_collisions,
     fingerprints_from_receipt,
     first_seen_fingerprints,
     one_payer_enabled,
@@ -328,6 +330,8 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
         )
         history_days = []
         today_fingerprints: dict = {}
+        today_predictions: dict = {}
+        today_actuals: dict = {}
         for day_name in days:
             if day_name > str(day):
                 continue
@@ -336,18 +340,30 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
                     envelope = json.load(f)
             except (OSError, ValueError):
                 continue
-            entries_list = ((envelope.get("document") or {})
-                            .get("metrics", {}).get("entries", []))
+            metrics_block = (envelope.get("document") or {}).get("metrics", {})
+            entries_list = metrics_block.get("entries", [])
             prints = fingerprints_from_receipt(entries_list)
             history_days.append((day_name, prints))
             if day_name == str(day):
                 today_fingerprints = prints
+                today_predictions = predictions_from_receipt(entries_list)
+                today_actuals = actuals_from_receipt(
+                    metrics_block.get("outcomes", []))
 
         if not today_fingerprints:
             return frozenset()
 
         history = first_seen_fingerprints(history_days)
         groups = prediction_collisions(today_fingerprints, history=history)
+
+        # Byte-equality was trivially evaded — a clone need only disagree in
+        # the last decimal (miner report, 2026-08-07). Group on behaviour too.
+        # Distance-0 pairs appear in both detectors; suppressed_copies works on
+        # sets, so the overlap costs nothing.
+        groups.extend(distance_collisions(
+            today_predictions, today_actuals,
+            tau=one_payer_tau(environ),
+        ))
         if not groups:
             return frozenset()
 
@@ -361,3 +377,58 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
         logger.exception(
             "one-payer suppression failed — suppressing NOBODY for %s", day)
         return frozenset()
+
+
+ONE_PAYER_TAU_ENV = "SN21_ONE_PAYER_TAU"
+
+
+def one_payer_tau(environ) -> float:
+    """Behavioural-distance threshold. Published and review-set like the curve
+    numbers, because it decides who gets paid. A malformed value falls back to
+    the conservative default rather than to something permissive."""
+    raw = (environ.get(ONE_PAYER_TAU_ENV) or "").strip()
+    if not raw:
+        return DEFAULT_TAU
+    try:
+        tau = float(raw)
+    except ValueError:
+        logger.warning("%s is not a number (%r) — using %s",
+                       ONE_PAYER_TAU_ENV, raw, DEFAULT_TAU)
+        return DEFAULT_TAU
+    if tau <= 0:
+        return DEFAULT_TAU
+    return tau
+
+
+def predictions_from_receipt(entries) -> dict:
+    """{miner: {episode: {horizon: prediction}}} from the receipt entries."""
+    out: dict = {}
+    for entry in entries or []:
+        miner = entry.get("miner")
+        prediction = entry.get("prediction")
+        if not miner or prediction is None:
+            continue
+        (out.setdefault(miner, {})
+            .setdefault(str(entry.get("episode_id")), {})
+            [str(entry.get("horizon_days"))]) = prediction
+    return out
+
+
+def actuals_from_receipt(outcomes) -> dict:
+    """{(episode, horizon, metric): actual} — the scale behind each distance.
+
+    The receipt already publishes every settled actual it scored against, so a
+    grouping computed here can be recomputed by anyone holding the same
+    document. That is what makes a suppression contestable instead of merely
+    announced.
+    """
+    metrics = ("cost_delta_pct", "conversions_delta_pct", "efficiency_delta_pct")
+    out: dict = {}
+    for row in outcomes or []:
+        episode = str(row.get("episode_id"))
+        horizon = str(row.get("horizon_days"))
+        for metric in metrics:
+            value = row.get(metric)
+            if isinstance(value, (int, float)):
+                out[(episode, horizon, metric)] = float(value)
+    return out

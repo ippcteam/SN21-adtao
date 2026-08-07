@@ -99,9 +99,15 @@ def prediction_fingerprint(predictions: Mapping) -> str:
     """A stable hash of one miner's predictions for a basket.
 
     Canonical JSON with sorted keys, so the fingerprint depends on the
-    numbers and not on dict ordering or whitespace. Two honestly different
-    models do not collide here; the float values would have to agree
-    exactly, across every episode and horizon.
+    numbers and not on dict ordering or whitespace.
+
+    THIS TEST IS EXACT, AND EXACTNESS WAS THE HOLE. The docstring used to
+    argue that two honestly different models "would have to agree exactly" —
+    true, and the converse is what mattered: two IDENTICAL models need only
+    disagree in the last decimal to be counted as separate payees. Reported
+    2026-08-07. Kept because byte-identical output is still the cleanest
+    evidence there is, but it is no longer the whole test — see
+    `distance_collisions`, which subsumes it.
     """
     canonical = json.dumps(predictions, sort_keys=True, separators=(",", ":"),
                            default=str)
@@ -356,3 +362,157 @@ def suppressed_copies(
             continue
         suppressed.update(group.copies)
     return suppressed
+
+
+# ---------------------------------------------------------------------------
+# BEHAVIOURAL DISTANCE — because byte-equality was trivially evaded.
+#
+# Reported by a miner on 2026-08-07, and correct. `prediction_fingerprint`
+# groups on sha256 of the canonical JSON, and the docstring stated the
+# weakness as if it were a strength: two honestly different models "would have
+# to agree exactly". The converse is the hole — two IDENTICAL models need only
+# disagree in the last decimal to be counted as separate payees. Perturbing a
+# clone is a one-line change; the exact-match test cannot see it.
+#
+# So grouping moves from "are these bytes equal" to "do these models BEHAVE
+# the same", measured the way scoring already measures error:
+#
+#     d(A,B) = mean over shared (episode, horizon, metric) of
+#                  |p50_A - p50_B| / max(|actual|, 1.0)
+#
+# The scale is `max(|actual|, 1.0)`, matching
+# hope/scoring/components/quantile_accuracy.py, so a distance is denominated
+# in the same units as the error the subnet pays on. Everything it needs —
+# predictions verbatim, and the settled actuals — is already in the published
+# daily receipt, so any miner can recompute a grouping and contest it. That
+# is the point: an accusation nobody can check is not evidence.
+#
+# TAU IS A PUBLISHED PARAMETER, NOT A CONSTANT OF NATURE. It decides who gets
+# paid, so it belongs with the curve numbers under the four-weekly review,
+# and the default here is deliberately conservative.
+
+DEFAULT_TAU = 0.02
+
+# Two miners who overlap on a handful of rows can look identical by accident.
+# Below this many shared (episode, horizon, metric) rows the answer is "cannot
+# tell", and cannot-tell must never cost somebody their earnings.
+MIN_OVERLAP_ROWS = 30
+
+P50_KEY = "p50"
+
+
+def _p50_rows(predictions: Mapping) -> dict:
+    """{(episode, horizon, metric): p50} from one miner's predictions."""
+    rows = {}
+    for episode_id, horizons in (predictions or {}).items():
+        for horizon, metrics in (horizons or {}).items():
+            for metric, quantiles in (metrics or {}).items():
+                if not isinstance(quantiles, Mapping):
+                    continue
+                value = quantiles.get(P50_KEY)
+                if isinstance(value, (int, float)):
+                    rows[(str(episode_id), str(horizon), str(metric))] = float(value)
+    return rows
+
+
+def behavioural_distance(pred_a: Mapping, pred_b: Mapping,
+                         actuals: Mapping,
+                         min_overlap: int = MIN_OVERLAP_ROWS):
+    """Mean scaled |p50| gap over shared rows, or None if too little overlap.
+
+    None means "cannot tell", and is deliberately distinct from 0.0 ("these
+    are the same model"). A caller must not read the absence of evidence as
+    evidence.
+    """
+    rows_a, rows_b = _p50_rows(pred_a), _p50_rows(pred_b)
+    shared = rows_a.keys() & rows_b.keys()
+    if len(shared) < min_overlap:
+        return None
+
+    total = 0.0
+    for key in shared:
+        actual = actuals.get(key)
+        scale = max(abs(actual), 1.0) if isinstance(actual, (int, float)) else 1.0
+        total += abs(rows_a[key] - rows_b[key]) / scale
+    return total / len(shared)
+
+
+def _single_linkage(members: list, close) -> list:
+    """Groups where a chain of near-clones collapses together.
+
+    Single linkage on purpose: a clone of a clone is still a clone, and
+    requiring every pair in a group to be close would let a ladder of small
+    perturbations walk out of any threshold. The cost is chaining — with a
+    low tau and honest lineages an order of magnitude further apart, the
+    margin absorbs it, but that is exactly why tau is published and reviewed
+    rather than tuned quietly.
+    """
+    parent = {m: m for m in members}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for i, a in enumerate(members):
+        for b in members[i + 1:]:
+            if close(a, b):
+                ra, rb = find(a), find(b)
+                if ra != rb:
+                    parent[ra] = rb
+
+    clusters: dict = {}
+    for m in members:
+        clusters.setdefault(find(m), []).append(m)
+    return [sorted(c) for c in clusters.values() if len(c) > 1]
+
+
+def distance_collisions(
+    predictions_by_miner: Mapping[str, Mapping],
+    actuals: Mapping,
+    tau: float = DEFAULT_TAU,
+    precedence: Mapping[str, int] | None = None,
+    history: Mapping[tuple, object] | None = None,
+    min_overlap: int = MIN_OVERLAP_ROWS,
+) -> list[CopyGroup]:
+    """Miners whose predictions are the same model wearing noise.
+
+    Generalises the exact-match detector: byte-identical predictions have
+    distance 0 and are caught here too. Precedence inside a group is the
+    existing rule — recorded behaviour history first, then commit order.
+    """
+    miners = sorted(predictions_by_miner)
+    if len(miners) < 2:
+        return []
+
+    pairwise: dict = {}
+
+    def close(a, b):
+        key = (a, b) if a < b else (b, a)
+        if key not in pairwise:
+            pairwise[key] = behavioural_distance(
+                predictions_by_miner[a], predictions_by_miner[b],
+                actuals, min_overlap)
+        d = pairwise[key]
+        return d is not None and d < tau
+
+    groups = []
+    for cluster in _single_linkage(miners, close):
+        ordered = sorted(cluster, key=lambda hk: (
+            (0, history[(hk,)]) if history and (hk,) in history else (1,),
+            (0, precedence[hk]) if precedence and hk in precedence else (1,),
+            hk,
+        ))
+        gaps = [d for (a, b), d in pairwise.items()
+                if a in cluster and b in cluster and d is not None]
+        widest = max(gaps) if gaps else 0.0
+        groups.append(CopyGroup(
+            kind="same_behaviour",
+            original=ordered[0],
+            copies=tuple(ordered[1:]),
+            evidence=(f"{len(cluster)} miners within tau={tau} behavioural "
+                      f"distance (widest pair in group {widest:.4f}); "
+                      f"recomputable from the day's receipt"),
+        ))
+    return groups
