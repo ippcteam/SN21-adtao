@@ -151,3 +151,112 @@ class TestEstimateRevealRound:
         )
         # 10 × 12 = 120; / 4 = 30
         assert r == 30
+
+# ---- merged from the duplicate tests/unit tree (2026-08-07) ----
+# These lived ONLY in tests/unit/validator/test_weights_commit.py. Both trees were collected by
+# pytest, so they ran — but a behaviour change updating one copy would
+# leave the other asserting stale behaviour. One tree now.
+
+
+@dataclass
+class _HK:
+    ss58_address: str
+
+
+class _WalletWithHotkey:
+    def __init__(self, ss58: str = "5Fake"):
+        self.hotkey = _HK(ss58)
+
+
+@dataclass
+class _Query:
+    value: object
+
+
+class TestPostCommitVerification:
+    """Bug fix: set_weights can return success=True even when the chain rejected
+    the commit (WeightsSetRateLimit). LastUpdate not advancing => downgrade."""
+
+    def test_downgrades_when_last_update_does_not_advance(self):
+        # success=True with an EMPTY receipt (triggers the fallback block stamp),
+        # but LastUpdate is stuck => the commit didn't land => report failure.
+        class StRateLimited:
+            def __init__(self):
+                self.substrate = self
+            def set_weights(self, **kwargs):
+                return FakeResponse(success=True, message="OK", extrinsic_receipt=None)
+            def get_current_block(self):
+                return 8400000
+            def get_block_hash(self, n):
+                return "0x" + "ab" * 32
+            def get_uid_for_hotkey_on_subnet(self, ss58, netuid):
+                return 64
+            def query(self, module, storage, params):
+                # LastUpdate[netuid]: index 64 is constant => no advance
+                return _Query([0] * 64 + [1000])
+
+        res = commit_weights_layer_9c3(
+            subtensor=StRateLimited(),
+            validator_wallet=_WalletWithHotkey(),
+            netuid=21,
+            uids=[1, 2],
+            weights=[0.5, 0.5],
+        )
+        assert res.success is False
+        assert "not_applied" in res.message
+        assert res.block_hash is None
+        assert res.block_number is None
+
+    def test_keeps_success_when_last_update_advances(self):
+        class StApplied:
+            def __init__(self):
+                self._calls = 0
+                self.substrate = self
+            def set_weights(self, **kwargs):
+                return FakeResponse(success=True, message="OK", extrinsic_receipt=None)
+            def get_current_block(self):
+                return 8400050
+            def get_block_hash(self, n):
+                return "0x" + "ab" * 32
+            def get_uid_for_hotkey_on_subnet(self, ss58, netuid):
+                return 64
+            def query(self, module, storage, params):
+                self._calls += 1
+                val = 1000 if self._calls == 1 else 1050  # advanced post-commit
+                return _Query([0] * 64 + [val])
+
+        res = commit_weights_layer_9c3(
+            subtensor=StApplied(),
+            validator_wallet=_WalletWithHotkey(),
+            netuid=21,
+            uids=[1, 2],
+            weights=[0.5, 0.5],
+        )
+        assert res.success is True
+        assert res.block_hash == bytes.fromhex("ab" * 32)
+
+    def test_verify_disabled_keeps_success(self):
+        # verify_applied=False => skip the LastUpdate check entirely.
+        class StRateLimited:
+            def __init__(self):
+                self.substrate = self
+            def set_weights(self, **kwargs):
+                return FakeResponse(success=True, message="OK", extrinsic_receipt=None)
+            def get_current_block(self):
+                return 8400000
+            def get_block_hash(self, n):
+                return "0x" + "ab" * 32
+            def get_uid_for_hotkey_on_subnet(self, ss58, netuid):
+                return 64
+            def query(self, module, storage, params):
+                return _Query([0] * 64 + [1000])
+
+        res = commit_weights_layer_9c3(
+            subtensor=StRateLimited(),
+            validator_wallet=_WalletWithHotkey(),
+            netuid=21,
+            uids=[1],
+            weights=[1.0],
+            verify_applied=False,
+        )
+        assert res.success is True
