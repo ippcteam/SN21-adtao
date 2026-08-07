@@ -731,8 +731,11 @@ def lineage_collisions(
         if require_medoid_edge and len(members) > 2:
             # The medoid is the member with the highest mean correlation to
             # the rest — the centre of the cluster rather than an endpoint.
-            def affinity(m):
-                vals = [signals(m, o).correlation for o in members
+            # `pool` is bound explicitly: `members` is rebound just below, and
+            # a closure over it would read the NEW value the moment this is
+            # ever called lazily.
+            def affinity(m, pool=tuple(members)):
+                vals = [signals(m, o).correlation for o in pool
                         if o != m and signals(m, o) is not None]
                 return sum(vals) / len(vals) if vals else -1.0
 
