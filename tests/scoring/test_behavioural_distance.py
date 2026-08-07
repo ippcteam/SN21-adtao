@@ -19,11 +19,13 @@ closer. These tests pin the mechanism at those real magnitudes.
 import pytest
 
 from hope.scoring.duplication import (
-    DEFAULT_TAU,
     MIN_OVERLAP_ROWS,
     behavioural_distance,
     distance_collisions,
 )
+
+# Test-only calibration. Production values are red-teamed, not defaulted.
+TEST_TAU = 0.02
 
 
 def preds(base, n=40, jitter=0.0):
@@ -90,7 +92,7 @@ def test_only_shared_rows_are_compared():
 
 def test_a_perturbed_clone_is_grouped():
     by_miner = {"author": preds(-0.05), "clone": preds(-0.05, jitter=0.001)}
-    (group,) = distance_collisions(by_miner, actuals(), tau=DEFAULT_TAU,
+    (group,) = distance_collisions(by_miner, actuals(), tau=TEST_TAU,
                                    precedence={"author": 10, "clone": 900})
     assert group.kind == "same_behaviour"
     assert group.original == "author"
@@ -100,7 +102,7 @@ def test_a_perturbed_clone_is_grouped():
 def test_two_honest_lineages_are_left_alone():
     """Their model vs the cluster's rank-1 measured 0.4346 — twenty times tau."""
     by_miner = {"ours": preds(-0.05), "theirs": preds(-0.05, jitter=0.4346)}
-    assert distance_collisions(by_miner, actuals(), tau=DEFAULT_TAU) == []
+    assert distance_collisions(by_miner, actuals(), tau=TEST_TAU) == []
 
 
 def test_their_own_variants_survive_the_proposed_tau():
@@ -126,7 +128,7 @@ def test_a_chain_of_near_clones_collapses_together():
         "c": preds(-0.05, jitter=0.030),
         "d": preds(-0.05, jitter=0.045),
     }
-    (group,) = distance_collisions(by_miner, actuals(), tau=DEFAULT_TAU,
+    (group,) = distance_collisions(by_miner, actuals(), tau=TEST_TAU,
                                    precedence={"a": 1, "b": 2, "c": 3, "d": 4})
     assert set(group.members) == {"a", "b", "c", "d"}
     assert group.original == "a"          # earliest commit pays
@@ -134,7 +136,7 @@ def test_a_chain_of_near_clones_collapses_together():
 
 def test_the_group_carries_evidence_a_miner_can_recompute():
     by_miner = {"author": preds(-0.05), "clone": preds(-0.05, jitter=0.001)}
-    (group,) = distance_collisions(by_miner, actuals(), tau=DEFAULT_TAU)
+    (group,) = distance_collisions(by_miner, actuals(), tau=TEST_TAU)
     assert "tau=0.02" in group.evidence
     assert "recomputable from the day's receipt" in group.evidence
 
@@ -142,7 +144,7 @@ def test_the_group_carries_evidence_a_miner_can_recompute():
 def test_thin_overlap_never_produces_a_group():
     """Fail-safe: too few shared rows means no grouping, not a coin flip."""
     by_miner = {"a": preds(-0.05, n=4), "b": preds(-0.05, n=4)}
-    assert distance_collisions(by_miner, actuals(n=4), tau=DEFAULT_TAU) == []
+    assert distance_collisions(by_miner, actuals(n=4), tau=TEST_TAU) == []
 
 
 def test_one_miner_is_never_a_group():
@@ -155,6 +157,6 @@ def test_precedence_inside_the_group_is_the_existing_rule():
     by_miner = {"late_but_lexically_first": preds(-0.05),
                 "zzz_original": preds(-0.05, jitter=0.0005)}
     (group,) = distance_collisions(
-        by_miner, actuals(), tau=DEFAULT_TAU,
+        by_miner, actuals(), tau=TEST_TAU,
         precedence={"zzz_original": 100, "late_but_lexically_first": 9000})
     assert group.original == "zzz_original"

@@ -391,7 +391,17 @@ def suppressed_copies(
 # paid, so it belongs with the curve numbers under the four-weekly review,
 # and the default here is deliberately conservative.
 
-DEFAULT_TAU = 0.02
+# NO DEFAULT TAU. Ruled 2026-08-07: "do not accept miner-proposed tau/K."
+# The only numbers available today came from the miner who reported the
+# weakness, and their proposed band sits just outside their own fleet's
+# spread — so shipping it as a default would be adopting an interested
+# party's parameter as policy. Values must come from the operator's own
+# red-team calibration (known clones vs known-independent models).
+#
+# Until one is set, behavioural collapse DOES NOT RUN. An uncalibrated
+# threshold that decides who gets paid is worse than no threshold: the
+# failure is silent and lands on somebody's income.
+TAU_UNSET = None
 
 # Two miners who overlap on a handful of rows can look identical by accident.
 # Below this many shared (episode, horizon, metric) rows the answer is "cannot
@@ -471,7 +481,7 @@ def _single_linkage(members: list, close) -> list:
 def distance_collisions(
     predictions_by_miner: Mapping[str, Mapping],
     actuals: Mapping,
-    tau: float = DEFAULT_TAU,
+    tau: float | None = TAU_UNSET,
     precedence: Mapping[str, int] | None = None,
     history: Mapping[tuple, object] | None = None,
     min_overlap: int = MIN_OVERLAP_ROWS,
@@ -482,6 +492,10 @@ def distance_collisions(
     distance 0 and are caught here too. Precedence inside a group is the
     existing rule — recorded behaviour history first, then commit order.
     """
+    if tau is None:
+        # Not configured is not "use something sensible" — it is "this control
+        # is off", loudly, at the caller.
+        return []
     miners = sorted(predictions_by_miner)
     if len(miners) < 2:
         return []
@@ -516,3 +530,234 @@ def distance_collisions(
                       f"recomputable from the day's receipt"),
         ))
     return groups
+
+
+# ---------------------------------------------------------------------------
+# MULTI-METRIC LINEAGE TEST — a single distance was farmable.
+#
+# Ruled 2026-08-07, and it supersedes the scalar test above as the control.
+# Two attacks defeat one number:
+#
+#   A3  sit just above a published threshold. One scalar has one boundary,
+#       and a boundary is a target.
+#   A4  chain of near-clones. Single linkage on a scalar merges or splits
+#       clusters on purpose, depending on which is convenient.
+#
+# So a pair counts as one lineage only if EVERY signal agrees. The signals are
+# chosen so that noise which defeats one tends to break another, or to wreck
+# the score the copier is trying to keep:
+#
+#   correlation        stays ~1 under output noise; drops hard for an
+#                      independent model
+#   sign agreement     direction vs zero — cheap to keep, but keeping it
+#                      while breaking correlation is hard
+#   scaled L1          the distance already implemented; noise breaks it
+#                      first and cheapest, which is why it cannot be alone
+#   disagreement rate  share of rows moved more than delta — catches "average
+#                      looks fine because a few rows moved a lot"
+#
+# The last one is the trap for the obvious evasion: perturbing a handful of
+# rows enough to lift the mean while leaving the model identical everywhere
+# else. Mean distance forgives that; a rate does not.
+
+DEFAULT_DISAGREE_DELTA = 0.05
+
+
+@dataclass(frozen=True)
+class LineageParams:
+    """Published, versioned, and calibrated by the OPERATOR's red team.
+
+    Every value is None until set, and `configured()` is False until all of
+    them are. There is no default set of numbers on purpose — see TAU_UNSET.
+    """
+    corr_min: float | None = None
+    sign_agree_min: float | None = None
+    distance_max: float | None = None
+    disagree_max: float | None = None
+    disagree_delta: float = DEFAULT_DISAGREE_DELTA
+    version: str = "unset"
+
+    def configured(self) -> bool:
+        return None not in (self.corr_min, self.sign_agree_min,
+                            self.distance_max, self.disagree_max)
+
+
+@dataclass(frozen=True)
+class PairSignals:
+    """Every number behind one pair verdict, so a receipt can publish it and
+    a miner can recompute it."""
+    overlap: int
+    correlation: float
+    sign_agreement: float
+    distance: float
+    disagreement: float
+
+    def as_dict(self) -> dict:
+        return {
+            "overlap": self.overlap,
+            "correlation": round(self.correlation, 6),
+            "sign_agreement": round(self.sign_agreement, 6),
+            "distance": round(self.distance, 6),
+            "disagreement": round(self.disagreement, 6),
+        }
+
+
+def _pearson(xs, ys) -> float:
+    """1.0 for a pair with no variance to disagree about.
+
+    Two flat, identical prediction vectors are maximally similar, but the
+    formula is 0/0 there. Returning 0.0 would call two constant clones
+    'independent' — the opposite of the truth.
+    """
+    n = len(xs)
+    if n < 2:
+        return 1.0
+    mx, my = sum(xs) / n, sum(ys) / n
+    dx = [x - mx for x in xs]
+    dy = [y - my for y in ys]
+    num = sum(a * b for a, b in zip(dx, dy))
+    denx = sum(a * a for a in dx) ** 0.5
+    deny = sum(b * b for b in dy) ** 0.5
+    if denx == 0 and deny == 0:
+        return 1.0
+    if denx == 0 or deny == 0:
+        # One side is flat and the other is not: no linear relationship, and
+        # crucially not evidence of sameness.
+        return 0.0
+    return num / (denx * deny)
+
+
+def pair_signals(pred_a: Mapping, pred_b: Mapping, actuals: Mapping,
+                 delta: float = DEFAULT_DISAGREE_DELTA,
+                 min_overlap: int = MIN_OVERLAP_ROWS) -> PairSignals | None:
+    """All four signals for one pair, or None when the overlap is too thin."""
+    rows_a, rows_b = _p50_rows(pred_a), _p50_rows(pred_b)
+    shared = sorted(rows_a.keys() & rows_b.keys())
+    if len(shared) < min_overlap:
+        return None
+
+    xs = [rows_a[k] for k in shared]
+    ys = [rows_b[k] for k in shared]
+
+    scaled = []
+    for key, x, y in zip(shared, xs, ys):
+        actual = actuals.get(key)
+        scale = max(abs(actual), 1.0) if isinstance(actual, (int, float)) else 1.0
+        scaled.append(abs(x - y) / scale)
+
+    agree = sum(1 for x, y in zip(xs, ys)
+                if (x > 0) == (y > 0) or (x == 0 and y == 0))
+
+    return PairSignals(
+        overlap=len(shared),
+        correlation=_pearson(xs, ys),
+        sign_agreement=agree / len(shared),
+        distance=sum(scaled) / len(scaled),
+        disagreement=sum(1 for d in scaled if d > delta) / len(scaled),
+    )
+
+
+def same_lineage(signals: PairSignals | None, params: LineageParams) -> bool:
+    """AND of every signal. Any one of them clearing the pair is enough to
+    call it independent, which is the direction that protects miners."""
+    if signals is None or not params.configured():
+        return False
+    return (signals.correlation >= params.corr_min
+            and signals.sign_agreement >= params.sign_agree_min
+            and signals.distance <= params.distance_max
+            and signals.disagreement <= params.disagree_max)
+
+
+def _components(members: list, linked) -> list:
+    parent = {m: m for m in members}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for i, a in enumerate(members):
+        for b in members[i + 1:]:
+            if linked(a, b):
+                ra, rb = find(a), find(b)
+                if ra != rb:
+                    parent[ra] = rb
+    out: dict = {}
+    for m in members:
+        out.setdefault(find(m), []).append(m)
+    return [sorted(c) for c in out.values() if len(c) > 1]
+
+
+def lineage_collisions(
+    predictions_by_miner: Mapping[str, Mapping],
+    actuals: Mapping,
+    params: LineageParams,
+    precedence: Mapping[str, int] | None = None,
+    require_medoid_edge: bool = True,
+    min_overlap: int = MIN_OVERLAP_ROWS,
+) -> tuple[list[CopyGroup], dict]:
+    """Components of one lineage, plus the pairwise evidence behind them.
+
+    `require_medoid_edge` cuts the chain attack (A4): after components form,
+    each member must also be same-lineage with the component's MEDOID — the
+    member most similar to the rest — not merely with one neighbour. A ladder
+    of small steps therefore cannot drag distant models into one group, and
+    anyone dropped by that second test is split back out.
+    """
+    if not params.configured():
+        return [], {}
+
+    miners = sorted(predictions_by_miner)
+    if len(miners) < 2:
+        return [], {}
+
+    cache: dict = {}
+
+    def signals(a, b):
+        key = (a, b) if a < b else (b, a)
+        if key not in cache:
+            cache[key] = pair_signals(predictions_by_miner[a],
+                                      predictions_by_miner[b], actuals,
+                                      params.disagree_delta, min_overlap)
+        return cache[key]
+
+    def linked(a, b):
+        return same_lineage(signals(a, b), params)
+
+    groups = []
+    for component in _components(miners, linked):
+        members = component
+        if require_medoid_edge and len(members) > 2:
+            # The medoid is the member with the highest mean correlation to
+            # the rest — the centre of the cluster rather than an endpoint.
+            def affinity(m):
+                vals = [signals(m, o).correlation for o in members
+                        if o != m and signals(m, o) is not None]
+                return sum(vals) / len(vals) if vals else -1.0
+
+            medoid = max(members, key=affinity)
+            members = [medoid] + [m for m in members
+                                  if m != medoid and linked(m, medoid)]
+            if len(members) < 2:
+                continue
+
+        ordered = sorted(members, key=lambda hk: (
+            (0, precedence[hk]) if precedence and hk in precedence else (1,),
+            hk,
+        ))
+        worst = max((signals(a, b).distance for a in members for b in members
+                     if a < b and signals(a, b) is not None), default=0.0)
+        groups.append(CopyGroup(
+            kind="same_lineage",
+            original=ordered[0],
+            copies=tuple(ordered[1:]),
+            evidence=(f"{len(members)} hotkeys of one lineage under "
+                      f"params@{params.version} (widest scaled distance "
+                      f"{worst:.4f}); every pair signal recomputable from the "
+                      f"day's receipt"),
+        ))
+
+    audit = {f"{a}|{b}": s.as_dict() for (a, b), s in cache.items()
+             if s is not None}
+    return groups, audit

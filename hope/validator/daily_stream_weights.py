@@ -54,7 +54,6 @@ from hope.scoring.chronic_failure import (
     evicted_hotkeys,
 )
 from hope.scoring.duplication import (
-    DEFAULT_TAU,
     DuplicationReport,
     distance_collisions,
     fingerprints_from_receipt,
@@ -382,21 +381,28 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
 ONE_PAYER_TAU_ENV = "SN21_ONE_PAYER_TAU"
 
 
-def one_payer_tau(environ) -> float:
-    """Behavioural-distance threshold. Published and review-set like the curve
-    numbers, because it decides who gets paid. A malformed value falls back to
-    the conservative default rather than to something permissive."""
+def one_payer_tau(environ):
+    """Behavioural-distance threshold, or None when it has not been set.
+
+    There is NO default. Ruled 2026-08-07: "do not accept miner-proposed
+    tau/K" — and the only number anyone has proposed came from the miner who
+    reported the weakness. An unset threshold means the control does not run;
+    a malformed one means the same. Both are safer than a guess that quietly
+    decides who gets paid.
+    """
     raw = (environ.get(ONE_PAYER_TAU_ENV) or "").strip()
     if not raw:
-        return DEFAULT_TAU
+        return None
     try:
         tau = float(raw)
     except ValueError:
-        logger.warning("%s is not a number (%r) — using %s",
-                       ONE_PAYER_TAU_ENV, raw, DEFAULT_TAU)
-        return DEFAULT_TAU
+        logger.warning("%s is not a number (%r) — behavioural collapse stays "
+                       "OFF rather than guessing", ONE_PAYER_TAU_ENV, raw)
+        return None
     if tau <= 0:
-        return DEFAULT_TAU
+        logger.warning("%s must be positive (got %s) — behavioural collapse "
+                       "stays OFF", ONE_PAYER_TAU_ENV, tau)
+        return None
     return tau
 
 

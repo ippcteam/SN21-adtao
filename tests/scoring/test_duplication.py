@@ -548,23 +548,33 @@ def test_a_perturbed_clone_is_suppressed_end_to_end(tmp_path):
         _json.dump({"document": {"metrics": {"entries": entries,
                                              "outcomes": outcomes}}}, fh)
 
+    # An explicit threshold is REQUIRED — there is no default, so an unset
+    # environment runs no behavioural collapse at all.
+    assert one_payer_suppression_from_receipts(
+        str(tmp_path), _date(2026, 8, 20), environ={}) == frozenset(), (
+        "with no calibrated threshold the control must stay off, not guess")
+
     suppressed = one_payer_suppression_from_receipts(
-        str(tmp_path), _date(2026, 8, 20), environ={})
+        str(tmp_path), _date(2026, 8, 20),
+        environ={"SN21_ONE_PAYER_TAU": "0.02"})
 
     assert suppressed == frozenset({"clone"}), (
         "a perturbed clone must not be paid as an independent model")
 
 
-def test_the_tau_is_configurable_and_falls_back_conservatively():
-    from hope.scoring.duplication import DEFAULT_TAU
+def test_there_is_no_default_threshold():
+    """Ruled 2026-08-07: do not accept miner-proposed tau/K. The only number
+    anyone proposed came from the miner who reported the weakness, and it sat
+    just outside their own fleet's spread. So the threshold has NO default —
+    unset means the control does not run, which is safer than a guess that
+    quietly decides who gets paid."""
     from hope.validator.daily_stream_weights import one_payer_tau
 
-    assert one_payer_tau({}) == DEFAULT_TAU
+    assert one_payer_tau({}) is None
     assert one_payer_tau({"SN21_ONE_PAYER_TAU": "0.035"}) == 0.035
-    # A malformed or nonsensical value falls back to the default rather than
-    # to something permissive.
-    assert one_payer_tau({"SN21_ONE_PAYER_TAU": "loose"}) == DEFAULT_TAU
-    assert one_payer_tau({"SN21_ONE_PAYER_TAU": "-1"}) == DEFAULT_TAU
+    # Malformed or nonsensical stays OFF rather than falling back to a number.
+    assert one_payer_tau({"SN21_ONE_PAYER_TAU": "loose"}) is None
+    assert one_payer_tau({"SN21_ONE_PAYER_TAU": "-1"}) is None
 
 
 def test_honest_models_are_not_suppressed_end_to_end(tmp_path):
