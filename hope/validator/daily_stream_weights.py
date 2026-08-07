@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date
 
@@ -117,6 +118,7 @@ def compute_daily_allocation(
     promotion_params: PromotionParams = PromotionParams(),
     evicted: frozenset = frozenset(),
     copy_suppressed: frozenset = frozenset(),
+    participation: Mapping[str, float] | None = None,
 ) -> DailyAllocation:
     """One day's standings → weights (D7) + promotion observation (D8).
 
@@ -146,6 +148,24 @@ def compute_daily_allocation(
     original's standing under another name, so hiding it from the margin
     would let a copy shield its original from a genuine challenger.
     Suppression is applied to the CURVE only.
+
+    `participation` is the coverage gate (hope.scoring.participation), a
+    hotkey -> multiplier in [0,1] from how much of each day's bundle the miner
+    actually answered. It closes an attack that no anti-clone control can see:
+    a skipped episode yields no ledger entry, so answering only the easy third
+    of a basket makes a standing the mean of a best third. Cherry-picking is a
+    genuinely independent model, so lineage, coldkey caps and precedence are
+    all blind to it — coverage is the only thing that prices it.
+
+    Applied to WEIGHTS, after the curve, then renormalised. Two consequences
+    worth stating because they are easy to get wrong:
+
+      * It must not touch standings or promotion. Coverage is a liveness-shaped
+        fact, not an accuracy one, and the promotion margin compares models.
+      * The penalty is RELATIVE, which is what a weight vector can express: the
+        chain renormalises whatever we submit, so a multiplier that shrank
+        every miner equally would be no penalty at all. It bites exactly when
+        one miner covers less than another, which is the case that matters.
     """
     placements: dict[str, float] = {}
     for hotkey, eps in entries.items():
@@ -168,6 +188,15 @@ def compute_daily_allocation(
 
     gated = bool(min_daily_episodes) and day_episode_volume < min_daily_episodes
     weights = {} if gated else curve_weights(placements, curve_params)
+
+    if weights and participation:
+        # Unknown hotkey -> 1.0: a miner we have no coverage record for has not
+        # been observed missing, and absence of a measurement must not cost
+        # anyone their earnings.
+        weights = {hk: w * participation.get(hk, 1.0) for hk, w in weights.items()}
+        total = sum(weights.values())
+        weights = ({hk: w / total for hk, w in weights.items()} if total > 0
+                   else dict.fromkeys(weights, 0.0))
     return DailyAllocation(
         day=day,
         gated=gated,
@@ -224,6 +253,14 @@ def allocation_from_ledger(
     if one_payer_enabled(environ):
         copy_suppressed = one_payer_suppression_from_receipts(root, day, environ)
 
+    participation: dict = {}
+    if participation_gate_enabled(environ):
+        participation = participation_multipliers(root, day, environ)
+        thin = sorted(hk for hk, m in participation.items() if m < 1.0)
+        if thin:
+            logger.info("[participation] %d hotkey(s) below the coverage floor: %s",
+                        len(thin), ", ".join(thin[:10]))
+
     alloc = compute_daily_allocation(
         entries, day, day_episode_volume, state,
         min_daily_episodes=min_daily_episodes,
@@ -231,6 +268,7 @@ def allocation_from_ledger(
         promotion_params=promotion_params,
         evicted=evicted,
         copy_suppressed=copy_suppressed,
+        participation=participation,
     )
 
     # BLAST RADIUS, declared not patched: with the flag on, evicting every
@@ -438,3 +476,56 @@ def actuals_from_receipt(outcomes) -> dict:
             if isinstance(value, (int, float)):
                 out[(episode, horizon, metric)] = float(value)
     return out
+
+
+PARTICIPATION_ENABLED_ENV = "SN21_PARTICIPATION_GATE"
+PARTICIPATION_WINDOW_DAYS = 7
+
+
+def participation_gate_enabled(environ) -> bool:
+    """Off by default. The gate changes who is paid, so it goes live when the
+    coverage floor has been published to miners — not when the code lands."""
+    return (environ.get(PARTICIPATION_ENABLED_ENV) or "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def participation_multipliers(
+    root: str,
+    day: date,
+    environ,
+    window_days: int = PARTICIPATION_WINDOW_DAYS,
+) -> dict:
+    """hotkey -> weight multiplier from recent bundle coverage.
+
+    Reads the shadow ledger's own `episodes_in` / `predictions_out` records, so
+    it needs no new plumbing and no new source of truth.
+
+    A day the SUBNET did not run is dropped entirely — it neither rewards nor
+    punishes, and it does not break a run of misses. On 2026-08-03 a worker
+    died, no bundle shipped, and a naive gate would have marked every hotkey
+    absent for OUR failure and propagated that to five mirroring validators
+    within the hour. `day_verdict` already encodes this; the caller must supply
+    an honest `subnet_ran`.
+    """
+    from datetime import timedelta
+
+    from hope.backtest import shadow
+    from hope.scoring import participation as P
+
+    params = P.params_from_env(environ)
+    days = [(day - timedelta(days=n)).isoformat()
+            for n in range(window_days - 1, -1, -1)]   # chronological
+
+    verdicts: dict = {}
+    for d in days:
+        ran = shadow.subnet_ran(root, d)
+        coverage = shadow.day_coverage(root, d) if ran else {}
+        if not ran:
+            # Nothing to record: a day we did not ship tells us nothing about
+            # anyone, so it is not appended for ANY hotkey.
+            continue
+        for hotkey, (episodes_in, predictions_out) in coverage.items():
+            verdicts.setdefault(hotkey, []).append(
+                P.day_verdict(episodes_in, predictions_out, True, params))
+
+    return {hk: P.bridge_multiplier(v, params) for hk, v in verdicts.items()}

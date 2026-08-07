@@ -11,12 +11,18 @@ WHAT A STRIKE IS
     memory/CPU budget breach.
 
 WHAT A STRIKE IS NOT — all three are load-bearing:
-  * A weak, wrong or absent PREDICTION is never a strike. Coverage
-    shortfalls are already priced by scorer.MIN_COVERAGE_FRACTION
-    (scorer.py:30) and the near-zero ramp (null_penalty.py), and a missing
-    prediction yields no ledger entry at all rather than a zero
-    (settle_day_flow module docstring). Being wrong is paid for in the
-    standing; liveness is a separate axis and must stay one.
+  * A weak, wrong or absent PREDICTION is never a strike. Being wrong is
+    paid for in the standing; liveness is a separate axis and must stay one.
+
+    Coverage shortfalls are priced SEPARATELY, by the participation gate
+    (hope/scoring/participation.py, wired at daily_stream_weights).
+    Corrected 2026-08-07: this note used to cite scorer.MIN_COVERAGE_FRACTION
+    and the near-zero ramp, both of which live in the WEEKLY scorer and are
+    unreachable from the daily path. A missing prediction yields no ledger
+    entry at all rather than a zero (settle_day_flow module docstring), so
+    for a while nothing priced coverage in the daily stream and this comment
+    said otherwise — which is how it stayed unnoticed. If you are reading
+    this to decide whether some control is live, check for an importer.
   * A day the SUBNET did not run is never a strike. A day can be absent
     from the ledger for reasons that have nothing to do with any miner, and
     a consumer that read absence as failure would strike every miner for an

@@ -162,6 +162,48 @@ def day_run_status(root: str, day: str) -> dict:
     return out
 
 
+
+def day_coverage(root: str, day: str) -> dict:
+    """hotkey -> (episodes_in, predictions_out) for one shadow day.
+
+    The COVERAGE facts, as `day_run_status` is the execution facts. Same
+    last-record-wins discipline for the same reason: a re-run supersedes the
+    run it repeated.
+
+    Why coverage and not `ok`: a container that prints rubbish exits cleanly
+    and is recorded as a SUCCESSFUL run with zero predictions, because
+    _parse_output treats non-JSON as never fatal. So `ok=True` is satisfiable
+    by a model that did nothing, and a participation gate reading `ok` would
+    pay exactly the free-riding it exists to stop. What was actually delivered
+    is the only honest measure.
+
+    A record missing `episodes_in` is skipped rather than counted as zero —
+    absence of a measurement is not a measurement of absence.
+    """
+    d = shadow_dir(root, day)
+    out: dict = {}
+    if not os.path.isdir(d):
+        return out
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".jsonl"):
+            continue
+        hotkey = fn[:-6]
+        last_with_coverage = None
+        with open(os.path.join(d, fn)) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                rec = json.loads(line)
+                if rec.get("episodes_in") is not None:
+                    last_with_coverage = rec
+        if last_with_coverage is None:
+            continue
+        out[hotkey] = (int(last_with_coverage.get("episodes_in") or 0),
+                       int(last_with_coverage.get("predictions_out") or 0))
+    return out
+
+
 def finalize_day(root: str, day: str, generated_at: str,
                  private_key=None, prev_sha: str | None = None) -> dict:
     """Summarise + (optionally) attest the day's shadow ledger via the rail."""
