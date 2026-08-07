@@ -50,6 +50,46 @@ ANCHOR_FLAG_ENV = "SN21_ANCHOR_COMMITS"
 _TRUTHY = ("1", "true", "yes", "on")
 
 
+def _coldkey_reader(environ=None):
+    """A callable returning {hotkey: coldkey}, or None with the reason printed.
+
+    The coldkey cap is the cheapest anti-sybil control there is — one coldkey,
+    one earning seat — and it needs exactly one fact the chain already knows.
+    Returning None disables the cap rather than guessing: a hotkey whose owner
+    we could not read has not been shown to be farming anything, and taking a
+    seat away over our own blind spot is the worse error.
+
+    Injected rather than imported so the loop keeps working, and keeps being
+    testable, without a chain.
+    """
+    env = os.environ if environ is None else environ
+    network = (env.get("SN21_BT_NETWORK") or "").strip()
+    netuid_raw = (env.get("SN21_NETUID") or "").strip()
+    missing = [n for n, v in (("SN21_BT_NETWORK", network),
+                              ("SN21_NETUID", netuid_raw)) if not v]
+    if missing:
+        print(f"[coldkey-cap] {', '.join(missing)} unset — the one-seat-per-"
+              f"coldkey cap is OFF", flush=True)
+        return None
+    try:
+        netuid = int(netuid_raw)
+    except ValueError:
+        print(f"[coldkey-cap] SN21_NETUID={netuid_raw!r} is not an integer — "
+              f"cap is OFF", flush=True)
+        return None
+
+    def read():
+        import bittensor as bt
+
+        metagraph = bt.subtensor(network=network).metagraph(netuid)
+        # Both lists are indexed by uid, so they line up positionally.
+        return {hk: ck for hk, ck in zip(metagraph.hotkeys, metagraph.coldkeys)}
+
+    print(f"[coldkey-cap] ON — reading identities from network={network} "
+          f"netuid={netuid}", flush=True)
+    return read
+
+
 def _anchor_committer(ledger_root: str, environ=None):
     """The chain committer, or None with the reason printed.
 
@@ -135,6 +175,7 @@ def main():
         key_loader=(lambda: key) if key is not None else None,
         day_volume_provider=_basket_volume,
         chain_committer=_anchor_committer(ledger_root),
+        coldkey_reader=_coldkey_reader(),
     )
     print(json.dumps(summary, indent=1, default=str))
 

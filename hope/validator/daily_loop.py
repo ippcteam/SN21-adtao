@@ -158,6 +158,7 @@ def run_daily_loop(
     floor_alpha: float | None = None,
     key_loader: Callable[[], object] | None = None,
     chain_committer: Callable[[bytes], object] | None = None,
+    coldkey_reader: Callable[[], object] | None = None,
     chain_reader: Callable[[str], float | None] | None = None,
     day_volume_provider: Callable[[date], int] | None = None,
     vertical_map_provider: Callable[[list], dict] | None = None,
@@ -441,8 +442,27 @@ def run_daily_loop(
                 json.dump({"day": str(day), "volume": vol}, f)
             os.replace(tmp, os.path.join(ledger_root, "day_volume.json"))
         if daily_stream_enabled(environ):
+            # One coldkey, one seat. Injected the same way the chain
+            # committer is, so the loop stays testable without a chain and a
+            # read failure cannot take the day's weights down with it.
+            coldkey_of = None
+            if coldkey_reader is not None:
+                try:
+                    coldkey_of = coldkey_reader()
+                except Exception as exc:
+                    # Fail OPEN, loudly. A metagraph we could not read is not
+                    # evidence that anybody is farming, and confiscating seats
+                    # over our own outage would be the worse error.
+                    print(f"[coldkey-cap] metagraph read failed ({exc}) — "
+                          f"the cap is NOT applied today", flush=True)
+                    coldkey_of = None
+                else:
+                    print(f"[coldkey-cap] identities read for "
+                          f"{len(coldkey_of or {})} hotkey(s)", flush=True)
+
             alloc = allocation_from_ledger(ledger_root, day, vol or 0,
-                                           environ=environ)
+                                           environ=environ,
+                                           coldkey_of=coldkey_of)
             out_path = os.path.join(ledger_root, f"intended_weights_{day}.json")
             with open(out_path + ".tmp", "w") as f:
                 json.dump({
@@ -453,11 +473,21 @@ def run_daily_loop(
                     "champion": (alloc.promotion.state.champion
                                  if alloc.promotion else None),
                     "evicted": list(alloc.evicted),
+                    # The anti-clone working: who lost a seat, to whom, under
+                    # which parameter version, with the pairwise numbers. It
+                    # was being computed and discarded, which left
+                    # verify_day --recheck-grouping comparing against nothing.
+                    "collapse_audit": alloc.collapse_audit,
                 }, f, indent=1)
             os.replace(out_path + ".tmp", out_path)
             summary["weights"] = {"path": out_path, "gated": alloc.gated,
                                   "earning_set_size": alloc.earning_set_size,
                                   "evicted": list(alloc.evicted),
+                    # The anti-clone working: who lost a seat, to whom, under
+                    # which parameter version, with the pairwise numbers. It
+                    # was being computed and discarded, which left
+                    # verify_day --recheck-grouping comparing against nothing.
+                    "collapse_audit": alloc.collapse_audit,
                                   "day_volume": vol}
         else:
             summary["weights"] = {"skipped": "SN21_DAILY_STREAM_WEIGHTS off",

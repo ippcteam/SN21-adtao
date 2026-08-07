@@ -38,6 +38,41 @@ def runner_predictions_to_gate_keys(predictions: dict) -> dict:
     return out
 
 
+# How many episodes the determinism re-run covers. Small on purpose: this is
+# one extra container start per NEW digest, and a model that varies its output
+# will almost always vary it everywhere rather than on one hidden row.
+DETERMINISM_SAMPLE_EPISODES = 25
+
+
+def _nondeterminism_detail(image_digest, episodes, first_predictions,
+                           sample_size, timeout_s):
+    """None when the re-run agrees, else a short description of the first
+    disagreement.
+
+    Compares only episodes present in BOTH runs. A model that abstains on an
+    episode is allowed to abstain; what it may not do is give two different
+    answers to the same question.
+    """
+    sample = episodes[:sample_size]
+    if not sample:
+        return None
+
+    second = run_basket_docker(image_digest, sample, timeout_s=timeout_s)
+    if not second.ok:
+        # A re-run that will not start is a liveness problem, and liveness is
+        # judged elsewhere. Not evidence of nondeterminism.
+        return None
+
+    for episode_id, again in (second.predictions or {}).items():
+        before = (first_predictions or {}).get(episode_id)
+        if before is None or again is None:
+            continue
+        if before != again:
+            return (f"episode {episode_id} answered differently on a re-run "
+                    f"of the same input")
+    return None
+
+
 def gate_submission(image_digest: str,
                     episodes: list[dict],
                     outcomes: list[OutcomeRow],
@@ -45,8 +80,20 @@ def gate_submission(image_digest: str,
                     hotkey: str = "",
                     prev_verdict_sha: str | None = None,
                     private_key=None,
-                    timeout_s: int = 15 * 60) -> dict:
-    """Run the full admission: sandbox -> gate -> attested verdict document."""
+                    timeout_s: int = 15 * 60,
+                    determinism_sample: int = DETERMINISM_SAMPLE_EPISODES) -> dict:
+    """Run the full admission: sandbox -> gate -> attested verdict document.
+
+    Includes a DETERMINISM check, because the subnet publishes that a rerun
+    reproduces the score. A model answering differently on identical input
+    makes that false through no fault of the verifier, and makes two
+    validators disagree about what a miner predicted. The spec asked for
+    determinism and nothing tested it, so "strongly recommended" was as far as
+    it went.
+
+    The check is one extra container run over a small sample, compared field
+    by field against the first run's answers for the same episodes.
+    """
     run = run_basket_docker(image_digest, episodes, timeout_s=timeout_s)
     if not run.ok:
         verdict = {"admitted": False, "reason": f"run_failed: {run.error}",
@@ -64,12 +111,24 @@ def gate_submission(image_digest: str,
                        "predictions_out": run.predictions_out}
         else:
             verdict = admission_verdict(model, base)
-            verdict.update({
-                "reason": "beats_baseline" if verdict["admitted"] else "below_baseline_or_coverage",
-                "model_detail": model, "baseline_detail": base,
-                "episodes_in": run.episodes_in,
-                "predictions_out": run.predictions_out,
-            })
+            nondeterministic = _nondeterminism_detail(
+                image_digest, episodes, run.predictions, determinism_sample,
+                timeout_s)
+            if nondeterministic:
+                # Refused, not merely noted: an admitted nondeterministic model
+                # would break every later verification of every day it ran.
+                verdict = {"admitted": False, "reason": "nondeterministic",
+                           "detail": nondeterministic,
+                           "episodes_in": run.episodes_in,
+                           "predictions_out": run.predictions_out}
+            else:
+                verdict.update({
+                    "reason": ("beats_baseline" if verdict["admitted"]
+                               else "below_baseline_or_coverage"),
+                    "model_detail": model, "baseline_detail": base,
+                    "episodes_in": run.episodes_in,
+                    "predictions_out": run.predictions_out,
+                })
 
     doc = build_document(
         ADMISSION_FEED, generated_at[:10],
