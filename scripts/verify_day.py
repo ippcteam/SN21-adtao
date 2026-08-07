@@ -285,6 +285,64 @@ def verify_day(root: str | None = None, day: str = "", miner: str | None = None,
             "miner_filter": miner}
 
 
+def recheck_grouping(root, day, params_csv, url=None):
+    """Recompute the day's copy grouping from its published receipt.
+
+    This is the check that makes a suppression contestable. The subnet says
+    "these hotkeys are one model, so only the first is paid"; this recomputes
+    that claim from the same receipt, with the published parameters, and says
+    whether it agrees. If it does not, the disagreement is the evidence.
+
+    Nothing here trusts the subnet's own answer: the grouping is rebuilt from
+    the predictions and settled outcomes in the document, which are the same
+    bytes the feed root commits to.
+    """
+    from hope.scoring.duplication import LineageParams, lineage_collisions
+
+    if not params_csv:
+        return {"ok": False,
+                "error": "--recheck-grouping needs --params "
+                         "(corr_min,sign_min,distance_max,disagree_max), "
+                         "which the subnet publishes with each parameter version"}
+    try:
+        corr, sign, dist, dis = (float(x) for x in params_csv.split(","))
+    except ValueError:
+        return {"ok": False, "error": f"could not read --params {params_csv!r}"}
+
+    envelope = _Source(root=root, url=url).receipt(day)
+    if not envelope:
+        return {"ok": False, "error": f"no receipt for {day}"}
+
+    metrics = (envelope.get("document") or {}).get("metrics", {})
+    published = ((envelope.get("document") or {}).get("collapse_audit")
+                 or metrics.get("collapse_audit") or {})
+
+    from hope.validator.daily_stream_weights import (
+        actuals_from_receipt,
+        predictions_from_receipt,
+    )
+    predictions = predictions_from_receipt(metrics.get("entries", []))
+    actuals = actuals_from_receipt(metrics.get("outcomes", []))
+
+    groups, audit = lineage_collisions(
+        predictions, actuals,
+        LineageParams(corr_min=corr, sign_agree_min=sign, distance_max=dist,
+                      disagree_max=dis, version="recheck"),
+    )
+    recomputed = sorted({hk for g in groups for hk in g.copies})
+    claimed = sorted(published.get("suppressed") or [])
+
+    return {
+        "ok": True,
+        "recomputed_suppressed": recomputed,
+        "published_suppressed": claimed,
+        "matches": recomputed == claimed,
+        "groups": [{"payee": g.original, "eliminated": list(g.copies)}
+                   for g in groups],
+        "pairs_examined": len(audit),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=None,
@@ -296,8 +354,19 @@ def main():
     ap.add_argument("--expect-anchor", default=None,
                     help="the FEED ROOT you read from chain yourself "
                          "(validator hotkey's committed sha256)")
+    ap.add_argument("--recheck-grouping", action="store_true",
+                    help="recompute the anti-clone grouping from the day's "
+                         "receipt using published parameters, and compare it "
+                         "with what the subnet published")
+    ap.add_argument("--params", default=None,
+                    help="published parameter set for --recheck-grouping, as "
+                         "corr_min,sign_min,distance_max,disagree_max")
     a = ap.parse_args()
     out = verify_day(a.root, a.day, a.miner, a.expect_anchor, url=a.url)
+    if a.recheck_grouping:
+        out["grouping"] = recheck_grouping(a.root, a.day, a.params, url=a.url)
+        if not out["grouping"].get("matches", True):
+            out["ok"] = False
     print(json.dumps(out, indent=1, default=str))
     return 0 if out.get("ok") else 1
 

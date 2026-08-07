@@ -54,11 +54,14 @@ from hope.scoring.chronic_failure import (
     chronic_failure_policy_enabled,
     evicted_hotkeys,
 )
+from hope.scoring.coldkey_cap import apply_coldkey_cap
 from hope.scoring.duplication import (
     DuplicationReport,
+    LineageParams,
     distance_collisions,
     fingerprints_from_receipt,
     first_seen_fingerprints,
+    lineage_collisions,
     one_payer_enabled,
     prediction_collisions,
     suppressed_copies,
@@ -106,6 +109,11 @@ class DailyAllocation:
     # same day would have paid somebody with the flag off. Not a patched
     # behaviour — a declared blast radius. See allocation_from_ledger.
     enforcement_emptied_earning_set: bool = False
+    # The anti-clone working: which hotkeys lost a seat, to which principal,
+    # under which parameter version, and the pairwise numbers behind every
+    # grouping. Published in the receipt so a suppression can be recomputed
+    # and argued with rather than merely announced.
+    collapse_audit: dict = field(default_factory=dict)
 
 
 def compute_daily_allocation(
@@ -119,6 +127,10 @@ def compute_daily_allocation(
     evicted: frozenset = frozenset(),
     copy_suppressed: frozenset = frozenset(),
     participation: Mapping[str, float] | None = None,
+    coldkey_of: Mapping[str, str] | None = None,
+    lineage_groups: list | None = None,
+    lineage_audit: Mapping | None = None,
+    commit_block: Mapping[str, int] | None = None,
 ) -> DailyAllocation:
     """One day's standings → weights (D7) + promotion observation (D8).
 
@@ -175,16 +187,55 @@ def compute_daily_allocation(
         if st["average"] is not None and st["placement_eligible"]:
             placements[hotkey] = st["average"]
 
+    audit: dict = {}
+    # Everything removed below still belongs on the leaderboard: scores are
+    # facts and a hotkey that is not paid is not a hotkey that did not score.
+    all_standings = dict(placements)
+
+    # ---- Layer 1: one coldkey, one seat -----------------------------------
+    # Applied BEFORE promotion, unlike copy suppression: a second hotkey on the
+    # same coldkey is not a distinct principal at all, so it should never have
+    # been a champion candidate either.
+    if coldkey_of:
+        cap = apply_coldkey_cap(placements, coldkey_of, commit_block=commit_block)
+        placements = dict(cap.kept)
+        if cap.dropped:
+            audit["coldkey_cap"] = cap.as_dict()
+
     scored_days = standing_ledger.scored_day_counts(entries)
     promotion = observe_day(
         promotion_state, day, placements, scored_days, promotion_params
     )
 
-    # One payer per model: drop the copies AFTER promotion observed the full
-    # field, so the curve renormalises over genuine models only.
-    if copy_suppressed:
+    # ---- Layer 2: one lineage, one payee ----------------------------------
+    # Dropped AFTER promotion observed the field, matching copy suppression.
+    # NOTE: the design review asks for clone hotkeys to be ignored in the
+    # promotion margin too. That is a one-line move of these two blocks and is
+    # deliberately NOT made here — it contradicts the reasoning recorded on
+    # copy_suppressed below, and which of the two is right is a ruling, not a
+    # refactor.
+    suppressed = set(copy_suppressed)
+    if lineage_groups:
+        groups_audit = []
+        for i, group in enumerate(lineage_groups):
+            suppressed.update(group.copies)
+            groups_audit.append({
+                "cluster": i,
+                "payee": group.original,
+                "eliminated": list(group.copies),
+                "kind": group.kind,
+                "evidence": group.evidence,
+            })
+        audit["lineage"] = {"groups": groups_audit}
+
+    # One payer per model: the curve renormalises over genuine models only.
+    if suppressed:
         placements = {hk: s for hk, s in placements.items()
-                      if hk not in copy_suppressed}
+                      if hk not in suppressed}
+        audit["suppressed"] = sorted(suppressed)
+
+    if lineage_audit:
+        audit.setdefault("lineage", {})["pairwise"] = dict(lineage_audit)
 
     gated = bool(min_daily_episodes) and day_episode_volume < min_daily_episodes
     weights = {} if gated else curve_weights(placements, curve_params)
@@ -201,8 +252,12 @@ def compute_daily_allocation(
         day=day,
         gated=gated,
         day_episode_volume=day_episode_volume,
-        standings=placements,
+        # Standing preserved, weight 0 — a suppressed hotkey stays visible
+        # with the score it earned. Removing it would make a payment decision
+        # look like a scoring one.
+        standings=all_standings,
         weights=weights,
+        collapse_audit=audit,
         earning_set_size=sum(1 for w in weights.values() if w > 0),
         promotion=promotion,
         evicted=tuple(sorted(evicted)),
@@ -217,6 +272,8 @@ def allocation_from_ledger(
     curve_params: CurveParams = CurveParams(),
     promotion_params: PromotionParams = PromotionParams(),
     environ=os.environ,
+    coldkey_of: Mapping[str, str] | None = None,
+    commit_block: Mapping[str, int] | None = None,
 ) -> DailyAllocation:
     """Load ledger + promotion state, compute, persist state + log events.
 
@@ -261,6 +318,14 @@ def allocation_from_ledger(
             logger.info("[participation] %d hotkey(s) below the coverage floor: %s",
                         len(thin), ", ".join(thin[:10]))
 
+    # Layer 2 runs off the published receipts, so its verdicts are
+    # recomputable by anyone holding them. Empty unless the parameters have
+    # been calibrated and set.
+    lineage_groups, lineage_audit = lineage_from_receipts(root, day, environ)
+    if lineage_groups:
+        logger.info("[lineage] %d group(s) collapsed under params@%s",
+                    len(lineage_groups), lineage_audit.get("params_version"))
+
     alloc = compute_daily_allocation(
         entries, day, day_episode_volume, state,
         min_daily_episodes=min_daily_episodes,
@@ -269,6 +334,10 @@ def allocation_from_ledger(
         evicted=evicted,
         copy_suppressed=copy_suppressed,
         participation=participation,
+        coldkey_of=coldkey_of,
+        commit_block=commit_block,
+        lineage_groups=lineage_groups,
+        lineage_audit=lineage_audit,
     )
 
     # BLAST RADIUS, declared not patched: with the flag on, evicting every
@@ -529,3 +598,100 @@ def participation_multipliers(
                 P.day_verdict(episodes_in, predictions_out, True, params))
 
     return {hk: P.bridge_multiplier(v, params) for hk, v in verdicts.items()}
+
+
+# ---------------------------------------------------------------------------
+# Lineage parameters as published configuration.
+#
+# Every value is unset by default and `configured()` is False until ALL of them
+# are supplied, which keeps the collapse OFF rather than running on numbers
+# nobody calibrated. The ruling is explicit that these come from the operator's
+# own red team against known copies and known-independent models, never from a
+# participant's proposal — however well argued, and this one was.
+
+LINEAGE_ENV = {
+    "corr_min": "SN21_LINEAGE_CORR_MIN",
+    "sign_agree_min": "SN21_LINEAGE_SIGN_MIN",
+    "distance_max": "SN21_LINEAGE_DISTANCE_MAX",
+    "disagree_max": "SN21_LINEAGE_DISAGREE_MAX",
+}
+LINEAGE_DELTA_ENV = "SN21_LINEAGE_DISAGREE_DELTA"
+LINEAGE_VERSION_ENV = "SN21_LINEAGE_PARAMS_VERSION"
+
+
+def lineage_params_from_env(environ) -> LineageParams:
+    """Unset or malformed leaves the field None, which leaves the whole control
+    off. A deploy typo must never quietly decide who is paid."""
+    values: dict = {}
+    for field_name, key in LINEAGE_ENV.items():
+        raw = (environ.get(key) or "").strip()
+        if not raw:
+            continue
+        try:
+            values[field_name] = float(raw)
+        except ValueError:
+            logger.warning("%s=%r is not a number — lineage collapse stays OFF",
+                           key, raw)
+            return LineageParams()
+    delta_raw = (environ.get(LINEAGE_DELTA_ENV) or "").strip()
+    if delta_raw:
+        try:
+            values["disagree_delta"] = float(delta_raw)
+        except ValueError:
+            logger.warning("%s=%r is not a number — using the default delta",
+                           LINEAGE_DELTA_ENV, delta_raw)
+    values["version"] = (environ.get(LINEAGE_VERSION_ENV) or "unset").strip() or "unset"
+    return LineageParams(**values)
+
+
+def lineage_from_receipts(root: str, day: date, environ):
+    """(groups, pairwise_audit) for `day`, from the published receipts.
+
+    Reads the same documents a miner reads, so any grouping this produces can
+    be recomputed by anyone holding them — which is what makes a suppression
+    contestable rather than merely announced.
+
+    Precedence inside a group is behaviour seniority: the earliest day on which
+    a hotkey appears in the published receipts. Nobody can appear in the record
+    before the model they copied existed, which is the property that makes this
+    resistant to back-dated or empty commitments.
+    """
+    params = lineage_params_from_env(environ)
+    if not params.configured():
+        return [], {}
+
+    receipt_dir_path = os.path.join(root, "receipts")
+    try:
+        days = sorted(fn[:-5] for fn in os.listdir(receipt_dir_path)
+                      if fn.endswith(".json"))
+    except OSError:
+        return [], {}
+
+    first_seen: dict = {}
+    predictions: dict = {}
+    actuals: dict = {}
+    for rank, day_name in enumerate(d for d in days if d <= str(day)):
+        try:
+            with open(os.path.join(receipt_dir_path, f"{day_name}.json")) as fh:
+                envelope = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        metrics = (envelope.get("document") or {}).get("metrics", {})
+        entries = metrics.get("entries", [])
+        for entry in entries:
+            hotkey = entry.get("miner")
+            if hotkey and hotkey not in first_seen:
+                first_seen[hotkey] = rank
+        if day_name == str(day):
+            predictions = predictions_from_receipt(entries)
+            actuals = actuals_from_receipt(metrics.get("outcomes", []))
+
+    if not predictions:
+        return [], {}
+
+    groups, audit = lineage_collisions(predictions, actuals, params,
+                                       precedence=first_seen)
+    if groups:
+        audit = dict(audit)
+        audit["params_version"] = params.version
+    return groups, audit
