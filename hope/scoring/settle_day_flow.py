@@ -720,6 +720,58 @@ def _has_censoring_column(session) -> bool:
         return False
 
 
+def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60):
+    """Settled outcomes over HTTP, so the host running the loop needs no
+    database credentials at all.
+
+    WHY THIS EXISTS. The daily loop has to know what actually happened to each
+    advertising account before it can score anything, and that lives in the
+    operator's database. The obvious host for the loop is the validator, which
+    is public-facing — and putting database credentials on a public box to read
+    a handful of columns is a poor trade.
+
+    The loop already takes its outcomes provider as an argument, so the fix is
+    a different provider rather than a different architecture: the validator
+    asks the operator's keyed internal API for the day's settled rows and holds
+    an API key instead of a database login. An API key reaches exactly one
+    read-only endpoint; a database login reaches a database.
+
+    Returns the same SettledHorizon list as the direct-database provider, so
+    the two are interchangeable and the scoring path cannot tell them apart.
+    """
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    def provider(day: date) -> list[SettledHorizon]:
+        url = (f"{base_url.rstrip('/')}/internal/bittensor/v1/daily/outcomes"
+               f"?settled_on_or_before={day.isoformat()}")
+        req = urllib.request.Request(url, headers={"X-API-Key": api_key})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                payload = _json.loads(resp.read().decode())
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(
+                f"settled-outcomes endpoint returned {exc.code} — the loop "
+                f"cannot score {day} without it, and scoring a partial day "
+                f"would write receipts that never settle correctly") from exc
+
+        rows = []
+        for r in payload.get("outcomes", []):
+            rows.append(SettledHorizon(
+                episode_id=str(r["episode_id"]),
+                horizon_days=int(r["horizon_days"]),
+                cost_delta_pct=float(r["cost_delta_pct"]),
+                conversions_delta_pct=float(r["conversions_delta_pct"]),
+                efficiency_delta_pct=float(r["efficiency_delta_pct"]),
+                finalized_on=date.fromisoformat(str(r["finalized_on"])[:10]),
+                goal_basis=(r.get("goal_basis") or "cpa"),
+            ))
+        return rows
+
+    return provider
+
+
 def operator_outcomes_provider(day: date) -> list[SettledHorizon]:
     """All measured rows settle-dated on or before `day`, post-cutover.
 

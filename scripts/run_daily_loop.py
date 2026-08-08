@@ -33,7 +33,10 @@ from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.scoring.settle_day_flow import operator_outcomes_provider
+from hope.scoring.settle_day_flow import (
+    http_outcomes_provider,
+    operator_outcomes_provider,
+)
 from hope.validator.daily_loop import run_daily_loop
 
 
@@ -48,6 +51,37 @@ def _key_loader():
 
 ANCHOR_FLAG_ENV = "SN21_ANCHOR_COMMITS"
 _TRUTHY = ("1", "true", "yes", "on")
+
+
+def _outcomes_provider(environ=None):
+    """Where the day's settled truth comes from.
+
+    Two sources, same shape. If SN21_OUTCOMES_API_URL and _API_KEY are set the
+    loop asks the operator's keyed API over HTTP and needs NO database login —
+    which is what makes it safe to run on the public-facing validator. With
+    them unset it reads the operator database directly, which suits an
+    internal host that already has those credentials.
+
+    The choice is a deployment decision, not a behavioural one: the scoring
+    path cannot tell the two apart.
+    """
+    env = os.environ if environ is None else environ
+    url = (env.get("SN21_OUTCOMES_API_URL") or "").strip()
+    key = (env.get("SN21_OUTCOMES_API_KEY") or "").strip()
+    if url and key:
+        print(f"[outcomes] over HTTP from {url} — no database login on this host",
+              flush=True)
+        return http_outcomes_provider(url, key)
+    if url or key:
+        # Half-configured means somebody intended HTTP. Falling back to a
+        # database read would silently need credentials this host should not
+        # have, so refuse rather than guess.
+        missing = "SN21_OUTCOMES_API_KEY" if url else "SN21_OUTCOMES_API_URL"
+        raise SystemExit(f"[outcomes] {missing} is unset but its partner is "
+                         f"set — refusing to fall back to a direct database "
+                         f"read on a host configured for HTTP")
+    print("[outcomes] direct from the operator database", flush=True)
+    return operator_outcomes_provider
 
 
 def _coldkey_reader(environ=None):
@@ -171,7 +205,7 @@ def main():
         shadow_root=shadow_root,
         ledger_root=ledger_root,
         day=day,
-        outcomes_provider=operator_outcomes_provider,
+        outcomes_provider=_outcomes_provider(),
         key_loader=(lambda: key) if key is not None else None,
         day_volume_provider=_basket_volume,
         chain_committer=_anchor_committer(ledger_root),
