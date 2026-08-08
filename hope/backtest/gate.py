@@ -46,8 +46,31 @@ def median(xs: list[float]) -> float:
     return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
 
 
+# How much better than persistence a model must be to be admitted.
+#
+# Ruled 2026-08-08: "adjust the baseline so the starter model doesn't qualify."
+#
+# The published rules told miners the reference model "cannot outrank
+# anything, since admission requires beating the baseline it defines". That
+# was not true in the code: the baseline was plain persistence — predict no
+# change — and the reference model is a real heuristic that beats it easily.
+# So reference-runners WERE admissible, and because a group containing the
+# reference is exempt from the one-payer rule, N hotkeys running the published
+# starter model could each hold an earning seat for one model.
+#
+# Raising the bar closes that at the source and changes no published rule: it
+# makes an existing published statement true. Starting from the reference and
+# improving on it is exactly what "it is how everyone starts" was always meant
+# to mean.
+ADMISSION_MARGIN_OVER_BASELINE = 0.05
+
+
 def naive_baseline_prediction(spread: dict[str, float]) -> dict:
-    """Persistence: zero-change medians, corpus-calibrated symmetric spread."""
+    """Persistence: zero-change medians, corpus-calibrated symmetric spread.
+
+    This is the FLOOR the margin is applied to, not the admission bar itself.
+    See ADMISSION_MARGIN_OVER_BASELINE and admission_verdict.
+    """
     return {m: {"p10": -spread[m], "p50": 0.0, "p90": spread[m]} for m in METRICS}
 
 
@@ -114,11 +137,14 @@ def admission_verdict(model_result: dict, baseline_result: dict,
                       min_coverage_ratio: float = 0.9) -> dict:
     """ADMIT iff the model beats the baseline gate_score with adequate coverage."""
     coverage_ok = model_result["covered"] >= baseline_result["covered"] * min_coverage_ratio
-    beats = model_result["gate_score"] > baseline_result["gate_score"]
+    required = baseline_result["gate_score"] * (1.0 + ADMISSION_MARGIN_OVER_BASELINE)
+    beats = model_result["gate_score"] > required
     return {
         "admitted": bool(coverage_ok and beats),
         "model_gate_score": model_result["gate_score"],
         "baseline_gate_score": baseline_result["gate_score"],
+        "required_gate_score": round(required, 6),
+        "margin_required": ADMISSION_MARGIN_OVER_BASELINE,
         "margin": round(model_result["gate_score"] - baseline_result["gate_score"], 6),
         "coverage_ok": coverage_ok,
     }

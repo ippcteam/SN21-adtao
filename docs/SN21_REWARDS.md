@@ -87,8 +87,9 @@ make it unprofitable rather than pretending it is impossible:
   the exclusion lapses the moment the hotkey runs a model of its own.
 - **The published reference model is exempt.** Running the reference
   unchanged is participation, not plagiarism. It is also how everyone
-  starts; note it cannot outrank anything, since admission requires
-  beating the baseline it defines.
+  starts. It cannot earn on its own, because admission requires beating the
+  naive baseline by a published margin and the reference model does not clear
+  its own bar — you are expected to start from it and improve on it.
 - **Evidence, not accusation.** Every detected group is published with its
   working — the shared digest, or the matching prediction fingerprint,
   which anyone can recompute from the day's receipt. Applies from the day

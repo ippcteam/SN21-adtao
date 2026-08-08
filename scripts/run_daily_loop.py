@@ -170,6 +170,24 @@ def _anchor_committer(ledger_root: str, environ=None):
 
 
 def _basket_volume(day: date) -> int:
+    """How many episodes the day's basket held — over HTTP when configured.
+
+    Same reasoning as the outcomes provider: this is one integer, and reading
+    it directly is the last thing that would force a database login onto the
+    public-facing validator.
+    """
+    url = (os.environ.get("SN21_OUTCOMES_API_URL") or "").strip()
+    key = (os.environ.get("SN21_OUTCOMES_API_KEY") or "").strip()
+    if url and key:
+        import json as _json
+        import urllib.request
+        req = urllib.request.Request(
+            f"{url.rstrip('/')}/internal/bittensor/v1/daily/basket-volume"
+            f"?day={day.isoformat()}",
+            headers={"X-API-Key": key})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return int(_json.loads(resp.read().decode()).get("episode_count") or 0)
+
     _platform_path = os.environ.get("SN21_PLATFORM_PATH")
     if _platform_path:
         sys.path.insert(0, _platform_path)
