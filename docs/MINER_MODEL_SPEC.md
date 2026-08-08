@@ -57,8 +57,43 @@ Exceeding a limit aborts that day's run: no scores for the day. Because
 standing is an average over scored predictions, a missed day costs you
 evidence rather than incurring a separate penalty.
 
-Deterministic output for identical input is strongly recommended — audits
-replay your container.
+### Determinism is required, and it is checked
+
+Your container must give the **same answer to the same question every time**.
+This is not a recommendation: at admission the same sample of episodes is put
+to your image twice, and **any disagreement rejects the submission** with the
+reason `nondeterministic`.
+
+The rule exists because the subnet publishes that anyone can replay a scored
+day and reproduce the result. A model that answers differently on a replay
+makes that promise false for every day it ran, and makes two validators
+disagree about what you predicted.
+
+**This is the rejection most likely to surprise you**, because a
+non-deterministic model usually passes local testing. The common causes:
+
+- Python hash randomisation changing set or dict iteration order
+- iterating a `set` where order reaches the output
+- an unseeded random number generator
+- timestamps, elapsed time, or anything derived from the clock
+- floating-point reduction order that varies with thread count — this one
+  passes every single-threaded test and fails on a different machine
+- GPU non-determinism from atomics or auto-tuned kernel selection
+
+Check before you submit. Run your image three times over the same basket and
+compare the output byte for byte:
+
+```bash
+for i in 1 2 3; do
+  docker run --rm -i --network=none --memory=1g --read-only \
+    <your-image> < basket.jsonl > run$i.jsonl
+done
+cmp run1.jsonl run2.jsonl && cmp run2.jsonl run3.jsonl && echo "deterministic"
+```
+
+Abstaining is always allowed — declining an episode is not the same as
+contradicting yourself, and a re-run that fails to start is treated as a
+liveness matter, not as non-determinism.
 
 ### Schema versions
 

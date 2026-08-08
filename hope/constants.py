@@ -16,7 +16,11 @@ PREDICTION_SCHEMA_VERSION = "1.0"
 SCORING_FORMULA_VERSION = "1.2.1"
 
 # Horizons
-HORIZONS = [7, 14]  # Launch: 7 + 14 only. 28-day added post-launch.
+# WEEKLY ERA. The daily stream predicts 7, 14 AND 28 days — see
+# hope/scoring/daily_score_flow.DAILY_STREAM_HORIZON_WEIGHTS. Leaving this
+# unmarked cost an engineer a day in 2026-08: it reads as the current horizon
+# set and is not.
+HORIZONS = [7, 14]  # weekly only; 28-day is live in the daily stream
 
 # Measurement resolution tiers
 RESOLUTION_HIGH = "high"
@@ -32,6 +36,12 @@ WEIGHT_RANGES = {
 }
 
 # Default scoring weights for launch
+# WEEKLY ERA component weights. The daily stream uses its own, and they are
+# NOT the same: coverage is 0.10 there, not 0.20, and they sum to 0.90 rather
+# than 1.0 (settle_day_flow.W_QUANTILE / W_COVERAGE / W_DIRECTION / W_GOAL).
+# `goal_accuracy` here is a Brier score on goal_miss_probability; the daily
+# `goal` component is accuracy on the account's OWN goal metric (CPA or ROAS),
+# which is a different measurement of a different field.
 DEFAULT_WEIGHTS = {
     "quantile_accuracy": 0.50,
     "calibration": 0.20,
@@ -64,6 +74,9 @@ EPOCH_TYPE_TABLE: tuple[tuple[str, str | None, str, str | None, float], ...] = (
 )
 
 # Horizon weights by measurement resolution
+# WEEKLY ERA. The published blend table (7/14/28) is
+# daily_score_flow.DAILY_STREAM_HORIZON_WEIGHTS and it MATCHES the docs.
+# This one does not, and is not what a daily miner is scored on.
 HORIZON_WEIGHTS = {
     "high": {"7": 0.40, "14": 0.60},      # Launch: only 7+14
     "medium": {"7": 0.35, "14": 0.65},

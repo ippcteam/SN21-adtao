@@ -18,7 +18,22 @@ Implements the launch reward mechanism:
 The output is a ``dict[hotkey -> weight]`` summing to 1.0 over
 qualifying miners. Failed-gate miners get exactly 0.0. Burn is applied
 on top of this allocation by the existing ``WeightSetter`` path.
-"""
+
+    WEEKLY ERA — NOT THE DAILY STREAM.
+
+    Nothing in this module decides daily pay. It is kept because the final
+    weekly scoring run still uses this path. If you are building a daily
+    miner, the code that scores you is:
+
+        hope/scoring/settle_day_flow.py    one (episode, horizon) -> score
+        hope/scoring/daily_score_flow.py   horizon blend weights (7/14/28)
+        hope/scoring/episode_average.py    standing
+        hope/scoring/weight_curve.py       standing -> weight
+
+    Reading this file instead of those gives the wrong numbers, and the two
+    were indistinguishable until 2026-08-08, when an engineer following the
+    published docs landed here and reported the mismatch.
+    """
 
 from __future__ import annotations
 
