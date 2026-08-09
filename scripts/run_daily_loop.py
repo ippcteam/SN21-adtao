@@ -207,16 +207,51 @@ def _basket_volume(day: date) -> int:
     return int(n or 0)
 
 
+# Options that take a value. Their value must not be mistaken for the day.
+_VALUED_OPTS = ("--shadow-root", "--ledger-root")
+
+
+def _parse_args(argv):
+    """(day, shadow_root, ledger_root) from the command line.
+
+    The previous version filtered out anything starting with "--" and treated
+    whatever was left as the date. Option VALUES do not start with "--", so
+    `--ledger-root /var/lib/...` left the path in the positional list and the
+    loop died parsing a directory as a date. It failed in under thirty seconds
+    every time, on a host with no readable logs, which made it look like an
+    environment problem for most of a morning.
+    """
+    day = None
+    shadow_root = ledger_root = "./sn21_ledger"
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in _VALUED_OPTS:
+            value = argv[i + 1] if i + 1 < len(argv) else None
+            if value is None:
+                raise SystemExit(f"{a} needs a path")
+            if a == "--shadow-root":
+                shadow_root = value
+            else:
+                ledger_root = value
+            i += 2
+            continue
+        if a.startswith("--"):
+            i += 1
+            continue
+        if day is None:
+            try:
+                day = date.fromisoformat(a)
+            except ValueError:
+                raise SystemExit(
+                    f"expected a YYYY-MM-DD day, got {a!r}. If that was meant "
+                    f"as an option value, its option is missing.") from None
+        i += 1
+    return (day or datetime.now(timezone.utc).date()), shadow_root, ledger_root
+
+
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    day = date.fromisoformat(args[0]) if args else datetime.now(timezone.utc).date()
-
-    def opt(name, default):
-        return (sys.argv[sys.argv.index(name) + 1]
-                if name in sys.argv else default)
-
-    shadow_root = opt("--shadow-root", "./sn21_ledger")
-    ledger_root = opt("--ledger-root", "./sn21_ledger")
+    day, shadow_root, ledger_root = _parse_args(sys.argv[1:])
 
     key = _key_loader()
     summary = run_daily_loop(
