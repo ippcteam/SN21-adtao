@@ -41,12 +41,39 @@ from hope.validator.daily_loop import run_daily_loop
 
 
 def _key_loader():
+    """The publication signing key, from a file OR from the env.
+
+    Every other service on this fleet carries the key as ED25519_KEY_B64, and
+    the loop only read SN21_ED25519_KEY_FILE — so on a host that had the key
+    all along, publication was silently skipped and the feed root stayed null.
+    Nothing failed; it just quietly did not publish, which is the harder kind
+    of wrong to notice.
+
+    The env form is preferred over writing a private key to disk: the file
+    variant persists the secret on a volume, the env variant keeps it in
+    process memory for the run.
+    """
     path = os.environ.get("SN21_ED25519_KEY_FILE", "")
-    if not path or not os.path.exists(path):
+    raw = None
+    if path and os.path.exists(path):
+        with open(path, "rb") as fh:
+            raw = fh.read()[:32]
+    else:
+        b64 = (os.environ.get("ED25519_KEY_B64") or "").strip()
+        if b64:
+            import base64
+            try:
+                raw = base64.b64decode(b64)[:32]
+            except Exception:
+                print("[publish] ED25519_KEY_B64 is not valid base64 — NOT "
+                      "publishing rather than signing with a broken key",
+                      flush=True)
+                return None
+    if not raw or len(raw) != 32:
         return None
+
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    with open(path, "rb") as f:
-        return Ed25519PrivateKey.from_private_bytes(f.read()[:32])
+    return Ed25519PrivateKey.from_private_bytes(raw)
 
 
 ANCHOR_FLAG_ENV = "SN21_ANCHOR_COMMITS"
