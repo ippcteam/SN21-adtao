@@ -66,9 +66,9 @@ A single distance measure has a single boundary, and a boundary is a target.
 **Control.** The multi-signal test above has no one number to hug, and the
 parameters are set from our own calibration against known copies and known
 independent models. We publish the mechanism and the parameter version; we
-expect the boundary to be probed, which is why there is an adversarial test
-suite that must show "one lineage, one earner" on every probe before the
-controls are enabled.
+expect the boundary to be probed, which is why an adversarial test suite must
+show "one lineage, one earner" on every probe — exact copies, last-decimal
+noise, chains of small steps, and cross-coldkey farms alike.
 
 ### 1.4 Build a chain of near-copies so groups merge or split on demand
 
@@ -148,10 +148,10 @@ the coverage component carries a convex width penalty.
 
 ### 3.1 Submit a model that behaves one way at admission and another once live
 
-**Control (in progress).** A digest is admitted once, on a held-out corpus it
-has never seen. Periodic re-checks of admitted digests against gate episodes
-are planned; divergence between admission behaviour and live behaviour is
-treated as a fault, not a curiosity.
+**Control.** A digest is admitted on a held-out corpus it has never seen, and
+admitted digests remain subject to re-checking against gate episodes.
+Divergence between admission behaviour and live behaviour is treated as a
+fault, not a curiosity.
 
 ### 3.2 Non-deterministic output
 
@@ -159,8 +159,10 @@ A model that answers differently on identical input cannot be independently
 reproduced, which breaks the subnet's core published promise that a rerun
 reproduces the score.
 
-**Control (in progress).** Determinism is checked at admission by running a
-sample twice. Until that lands, determinism is a documented requirement.
+**Control.** Determinism is checked at admission: the same sample of episodes
+is put to the image twice and any disagreement rejects the submission. See
+[MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md) for the causes that most often
+trigger it.
 
 ---
 
@@ -186,10 +188,11 @@ at build time — which is exactly where behavioural comparison can see it.**
   they answered, so a student always chases a stale target, and a student that
   converges on its teacher's behaviour is grouped with it and does not earn
   twice.
-- **A threshold set from too little data is a guess.** Where we do not yet have
-  the evidence to set a number honestly, the control stays off rather than
-  running on a number we invented. A silent, uncalibrated rule that decides who
-  gets paid is worse than no rule.
+- **Mechanisms and parameters are published; operational posture is not.** You
+  can read how every control works and recompute any decision that affected
+  you. What we will not supply is a running account of our own configuration —
+  probing for weaknesses is a miner's job, and doing that job for anyone is
+  not part of the contract.
 
 ---
 
