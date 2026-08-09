@@ -72,6 +72,12 @@ class PortfolioContext(BaseModel):
 
 class AccountState(BaseModel):
     customer_id_hash: str
+    # How much conversion evidence this account generates: `sparse`,
+    # `moderate`, `dense`, or null when it had no spending days to judge from.
+    # Thin accounts are never down-weighted or excluded — this exists so a
+    # forecast can be calibrated to the evidence behind it, not so anyone can
+    # be steered toward large accounts.
+    signal_class: str | None = None
     currency_code: str = "USD"
     account_type: str = "lead"
     spend_bucket: str = "mid"
