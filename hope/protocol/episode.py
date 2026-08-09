@@ -22,12 +22,39 @@ class HealthStatus(BaseModel):
 
 
 class Archetype(BaseModel):
+    """One detection from the account's most recent diagnostic sweep.
+
+    Every field except the id is OPTIONAL and may be null. That is deliberate
+    and it is a correction: severity_score and confidence used to be required,
+    so the packager filled them with 50 and 0.5 whenever the source was
+    missing — which it almost always was. 98.8% of every severity ever
+    shipped was that literal default, presented as a measurement.
+
+    A null here means "not measured". Do not read it as zero, and do not read
+    a present value as a guess: if a number is here, it came from the sweep.
+    """
+
     archetype_id: str
-    primary_q: str = "Q1"
-    severity_score: int
-    confidence: float
-    blast_radius: str = "medium"
-    base_risk: str | int = "medium"
+    primary_q: str | None = None
+    severity_score: float | None = None
+    confidence: float | None = None
+    blast_radius: str | None = None
+    base_risk: str | int | None = None
+
+    # Which entity the detection fired on. `entity_id_hash` is hashed with the
+    # same function as campaign_metadata, so a campaign-scoped finding can be
+    # joined to the campaign it belongs to.
+    entity_scope: str | None = None
+    entity_id_hash: str | None = None
+
+    # Short machine-readable reason from the detector.
+    why_code: str | None = None
+
+    # How many underlying findings rolled up into this row. A sweep writes one
+    # row per finding, so a single archetype can repeat many times for one
+    # entity — 34 erroring landing pages is one detection with occurrences=34,
+    # not 34 detections.
+    occurrences: int = 1
 
 
 class Guardrail(BaseModel):
