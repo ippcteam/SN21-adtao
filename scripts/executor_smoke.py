@@ -36,55 +36,50 @@ def _print(tag, msg):
 
 
 def check_namespace() -> bool:
-    """Exec `/bin/true`-equivalent under the sandbox with a minimal rootfs.
+    """Assert the namespace primitive directly, in-process — no exec, no copy.
 
-    We cannot assume busybox is on disk, so we build the smallest possible
-    rootfs: a directory containing whatever /bin/sh the host has, copied in.
-    If the host's sh is dynamically linked this may fail to exec inside the
-    chroot (missing libs) — which is itself useful signal, distinct from a
-    namespace-creation failure.
+    This is exactly what `unshare -Urn` does, which the probe proved is
+    permitted: create a user namespace, map ourselves to root within it, then
+    create a network namespace. If we come out as uid 0 inside the userns with
+    a fresh (empty) net namespace, the isolation the sandbox relies on works.
+
+    Doing it without exec or a rootfs keeps the check fast and unambiguous: a
+    failure here is a NAMESPACE failure, not a missing-library or slow-disk
+    artefact (the previous version copied the system lib tree and hung).
     """
-    from hope.backtest.ns_sandbox import RunSpec, run_sandboxed
-
     if not hasattr(os, "unshare"):
         _print("namespace", "FAIL os.unshare absent (not Linux?)")
         return False
 
-    root = tempfile.mkdtemp(prefix="smoke-ns-")
-    try:
-        os.makedirs(os.path.join(root, "bin"), exist_ok=True)
-        # Statically probe: try to run the host python as PID1 echoing a token.
-        # Python is present (we are running in it) and on Render is a venv, so
-        # copy the interpreter path in via bind-free chroot is not possible;
-        # instead we test the NAMESPACE machinery with a shell builtin echo.
-        sh = "/bin/sh"
-        if not os.path.exists(sh):
-            _print("namespace", "SKIP no /bin/sh to test with")
-            return True
-        import shutil
-        shutil.copy2(sh, os.path.join(root, "bin", "sh"))
-        # Copy the shared libs sh needs, if we can find them (best effort).
-        for libdir in ("/lib", "/lib64", "/usr/lib", "/usr/lib/x86_64-linux-gnu"):
-            if os.path.isdir(libdir):
-                dst = os.path.join(root, libdir.lstrip("/"))
-                try:
-                    shutil.copytree(libdir, dst, dirs_exist_ok=True,
-                                    ignore=shutil.ignore_patterns("*.a", "*.o"))
-                except Exception:
-                    pass
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid == 0:                       # child: try to build the namespaces
+        os.close(read_fd)
+        try:
+            os.unshare(os.CLONE_NEWUSER)
+            with open("/proc/self/setgroups", "w") as f:
+                f.write("deny")
+            with open("/proc/self/uid_map", "w") as f:
+                f.write(f"0 {os.getuid()} 1")
+            with open("/proc/self/gid_map", "w") as f:
+                f.write(f"0 {os.getgid()} 1")
+            os.unshare(os.CLONE_NEWNET | os.CLONE_NEWPID)
+            msg = b"OK" if os.getuid() == 0 else b"NOTROOT"
+        except Exception as exc:       # noqa: BLE001 - reported to the parent
+            msg = b"ERR:" + str(exc).encode()[:120]
+        os.write(write_fd, msg)
+        os._exit(0)
 
-        spec = RunSpec(rootfs=root, argv=["/bin/sh", "-c", "echo SMOKE_OK"],
-                       wall_timeout=30)
-        result = run_sandboxed(spec, b"")
-        if result.ok and "SMOKE_OK" in result.stdout:
-            _print("namespace", "PASS user+net+pid namespace exec works")
-            return True
-        _print("namespace",
-               f"FAIL ok={result.ok} err={result.error!r} out={result.stdout[:120]!r}")
-        return False
-    finally:
-        import shutil
-        shutil.rmtree(root, ignore_errors=True)
+    os.close(write_fd)
+    data = os.read(read_fd, 200)
+    os.close(read_fd)
+    os.waitpid(pid, 0)
+
+    if data == b"OK":
+        _print("namespace", "PASS user+net+pid namespaces created; uid 0 inside")
+        return True
+    _print("namespace", f"FAIL {data.decode(errors='replace')}")
+    return False
 
 
 def pick_digest(explicit_repo, explicit_digest):

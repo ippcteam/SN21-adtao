@@ -61,3 +61,15 @@ def test_unavailable_when_unshare_absent(monkeypatch):
     result = ns_sandbox.run_sandboxed(RunSpec(rootfs="/x", argv=["/y"]), b"")
     assert result.ok is False
     assert result.error == ns_sandbox.ERR_SANDBOX_UNAVAILABLE
+
+
+def test_reap_targets_the_process_group_not_just_the_child():
+    """The timeout must kill the whole group: the model runs as PID 1 in a new
+    PID namespace and survives its parent's death, so killing only the child
+    leaves it holding the stdout pipe and the read loop hangs. This asserts the
+    source uses killpg, because the behaviour only manifests on Linux under a
+    real hang and must not silently regress."""
+    import inspect
+    src = inspect.getsource(ns_sandbox.run_sandboxed)
+    assert "os.setsid()" in src
+    assert "killpg" in src

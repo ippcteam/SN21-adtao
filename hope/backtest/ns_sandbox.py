@@ -211,6 +211,17 @@ def run_sandboxed(spec: RunSpec, stdin_blob: bytes) -> SandboxResult:
     if pid == 0:
         os.close(in_w)
         os.close(out_r)
+        # Own session/process group. The grandchild that becomes PID 1 in the
+        # new PID namespace inherits this group, so the parent can kill the
+        # WHOLE tree on timeout with killpg(pid). Killing only `pid` leaves a
+        # hung model (PID 1) alive holding the stdout pipe, and the parent's
+        # read loop would then never see EOF — a hostile model that just
+        # sleeps would wedge the executor. setsid is what makes the timeout
+        # real.
+        try:
+            os.setsid()
+        except OSError:
+            pass
         _child(spec, in_r, out_w)
         os._exit(127)   # unreachable; _child never returns
 
@@ -230,10 +241,16 @@ def run_sandboxed(spec: RunSpec, stdin_blob: bytes) -> SandboxResult:
 
     def _reap():
         killed["flag"] = True
+        # Kill the whole process group, not just `pid` — see setsid above. The
+        # grandchild model process shares this group and must die too, or its
+        # open stdout keeps the read loop from ever returning.
         try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+            os.killpg(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
     timer = threading.Timer(spec.wall_timeout, _reap)
     timer.start()
