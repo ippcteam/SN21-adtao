@@ -276,6 +276,17 @@ def _apply_layer(tar_path: str, rootfs: str) -> None:
                     continue
             try:
                 tar.extract(member, rootfs, set_attrs=False)
+                # set_attrs=False avoids chown-to-root (we unpack unprivileged)
+                # and setuid/setgid bits — but it also strips the EXECUTE bit,
+                # which makes the image's own python3 non-runnable (exit 126,
+                # observed 2026-08-11). Restore the permission bits explicitly,
+                # masked to rwx only: keep execute, drop setuid/setgid/sticky.
+                if (member.isfile() or member.isdir()) \
+                        and not os.path.islink(target):
+                    try:
+                        os.chmod(target, member.mode & 0o777)
+                    except OSError:
+                        pass
             except (OSError, tarfile.TarError):
                 # A single bad member is not fatal; the sandbox surfaces a
                 # genuinely broken image when it fails to execute.
