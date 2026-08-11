@@ -61,9 +61,32 @@ def test_select_platform_prefers_amd64():
     assert _select_platform(index) == "sha256:amd"
 
 
-def test_select_platform_single_entry_is_accepted():
+def test_select_platform_single_unspecified_entry_is_accepted():
+    """A plain single-arch push carries no platform block — that lone entry is
+    the image itself."""
     index = {"manifests": [{"digest": "sha256:only", "platform": {}}]}
     assert _select_platform(index) == "sha256:only"
+
+
+def test_select_platform_skips_attestation_manifest():
+    """buildx adds an unknown/unknown attestation manifest; it must never be
+    selected as the runnable image."""
+    index = {"manifests": [
+        {"digest": "sha256:amd", "platform": {"os": "linux", "architecture": "amd64"}},
+        {"digest": "sha256:att", "platform": {"os": "unknown", "architecture": "unknown"}},
+    ]}
+    assert _select_platform(index) == "sha256:amd"
+
+
+def test_select_platform_rejects_arm64_only_with_clear_message():
+    """The real fingerthanos0 case (2026-08-11): arm64 image + attestation, no
+    amd64. The executor is amd64, so this cannot run — and the error says so."""
+    index = {"manifests": [
+        {"digest": "sha256:arm", "platform": {"os": "linux", "architecture": "arm64"}},
+        {"digest": "sha256:att", "platform": {"os": "unknown", "architecture": "unknown"}},
+    ]}
+    with pytest.raises(PullError, match="amd64"):
+        _select_platform(index)
 
 
 def test_select_platform_refuses_when_no_amd64_and_a_choice():

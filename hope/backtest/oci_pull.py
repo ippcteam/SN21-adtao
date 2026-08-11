@@ -192,17 +192,38 @@ class _Registry:
 
 
 def _select_platform(index: dict) -> str:
-    """The linux/amd64 manifest digest from an image index."""
-    for entry in index.get("manifests", []):
+    """The linux/amd64 manifest digest from an image index.
+
+    The executor host is amd64, so an image with no amd64 variant cannot run
+    here — a common real case is a miner who built for arm64 only. The error
+    names that explicitly so the reason is actionable, not just "no manifest".
+    """
+    manifests = index.get("manifests", [])
+    # buildx pushes an attestation manifest with platform unknown/unknown
+    # alongside the real ones; it is not runnable and must never be selected.
+    runnable = [m for m in manifests
+                if m.get("platform", {}).get("architecture") != "unknown"
+                and m.get("platform", {}).get("os") != "unknown"]
+
+    for entry in runnable:
         platform = entry.get("platform", {})
         if (platform.get("os"), platform.get("architecture")) == AMD64:
             return entry["digest"]
-    # A single-arch image published as an index with one entry is still
-    # runnable; only refuse when there is genuinely no amd64 and a choice.
-    entries = index.get("manifests", [])
-    if len(entries) == 1:
-        return entries[0]["digest"]
-    raise PullError("no linux/amd64 manifest in the image index")
+
+    # A lone runnable entry with UNSPECIFIED architecture is the image itself
+    # (a plain single-arch push carries no platform block) — accept it. But a
+    # lone entry that explicitly declares a NON-amd64 arch cannot run here.
+    if len(runnable) == 1:
+        arch = runnable[0].get("platform", {}).get("architecture")
+        if not arch:
+            return runnable[0]["digest"]
+
+    arches = sorted({f"{m.get('platform', {}).get('os')}/"
+                     f"{m.get('platform', {}).get('architecture')}"
+                     for m in runnable})
+    raise PullError(
+        f"no linux/amd64 manifest in the image index (has: {arches or 'none'}"
+        f") — the executor is amd64; the miner must publish an amd64 build")
 
 
 def _image_config(manifest: dict, registry: _Registry, work: str) -> ImageConfig:
