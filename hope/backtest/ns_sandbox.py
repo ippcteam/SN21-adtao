@@ -54,6 +54,8 @@ import json
 import os
 import resource
 import shutil
+import signal
+import subprocess
 import sys
 from dataclasses import dataclass, field
 
@@ -134,183 +136,88 @@ def _rlimits(spec: RunSpec) -> list:
     ]
 
 
-def _write_id_maps() -> None:
-    """Map our single uid/gid to root INSIDE the new user namespace.
+def unshare_command(spec: RunSpec, unshare_bin: str) -> list:
+    """The `unshare` invocation that isolates and runs the model — pure, so the
+    exact flags are testable without a Linux host.
 
-    setgroups must be denied before writing gid_map for an unprivileged
-    single-uid mapping — the kernel requires it. This is the exact dance
-    `unshare -Ur` performs, which the probe proved is permitted here.
+    Every flag was validated on the executor host (probe 2026-08-11):
+      --user --map-root-user  root inside a user namespace, mapped out to our
+                              unprivileged uid; --map-root-user does the
+                              uid/gid map the raw-syscall path got wrong.
+      --net                   no network — the load-bearing isolation.
+      --pid --fork            the model runs as PID 1 in its own PID namespace.
+      --ipc --uts             process/IPC/hostname isolation.
+      --root / --wd           chroot into the image rootfs and set the workdir,
+                              so the model sees only its own filesystem.
     """
-    uid, gid = os.getuid(), os.getgid()
-    with open("/proc/self/setgroups", "w") as f:
-        f.write("deny")
-    with open("/proc/self/uid_map", "w") as f:
-        f.write(f"0 {uid} 1")
-    with open("/proc/self/gid_map", "w") as f:
-        f.write(f"0 {gid} 1")
+    return [
+        unshare_bin,
+        "--user", "--map-root-user",
+        "--net",
+        "--pid", "--fork",
+        "--ipc", "--uts",
+        f"--root={spec.rootfs}",
+        f"--wd={spec.working_dir or '/'}",
+        "--",
+        *spec.argv,
+    ]
 
 
-def acquire_namespaces() -> bool:
-    """Enter the isolation namespaces. Returns True if a PID namespace was
-    obtained (so the caller knows whether the second fork is needed).
-
-    The NETWORK namespace is REQUIRED: running untrusted code that can reach
-    the metagraph, a registry, or the outcome it is asked to predict is not a
-    sandbox. If it cannot be created, this raises and the run is refused.
-
-    PID / IPC / UTS are best-effort. The probe validated `unshare -Urn`
-    (user+net) but not these, and at least one is denied on the host — a
-    denied *optional* namespace must not sink the sandbox, so each is tried on
-    its own and a failure is swallowed. The network wall does the load-bearing
-    work; these only tidy the view.
-    """
-    os.unshare(os.CLONE_NEWUSER)
-    _write_id_maps()
-    # Required — no fallback. A refusal here means we cannot isolate the
-    # network, and the whole point is that a miner's code cannot phone out.
-    os.unshare(os.CLONE_NEWNET)
-
-    have_pid = False
-    for flag in (getattr(os, "CLONE_NEWPID", 0),
-                 getattr(os, "CLONE_NEWIPC", 0),
-                 getattr(os, "CLONE_NEWUTS", 0)):
-        if not flag:
-            continue
-        try:
-            os.unshare(flag)
-            if flag == getattr(os, "CLONE_NEWPID", -1):
-                have_pid = True
-        except OSError:
-            pass  # optional; the network namespace is what matters
-    return have_pid
-
-
-def _child(spec: RunSpec, stdin_fd: int, stdout_fd: int) -> None:
-    """Runs in the forked child: enter namespaces, contain, exec. Never
-    returns — it either execs the model or exits with a diagnostic code."""
-    try:
-        have_pid = acquire_namespaces()
-
-        # A PID namespace only takes effect for CHILDREN, so when we have one we
-        # fork and the grandchild is PID 1 in it. Without a PID namespace there
-        # is nothing to gain from the extra fork — exec directly.
-        if have_pid:
-            pid = os.fork()
-            if pid > 0:
-                _, status = os.waitpid(pid, 0)
-                code = os.waitstatus_to_exitcode(status)
-                os._exit(code if code is not None and code >= 0 else 111)
-
-        # ---- contain and exec the untrusted image ----
-        os.dup2(stdin_fd, 0)
-        os.dup2(stdout_fd, 1)
-        os.dup2(stdout_fd, 2)
-
-        os.chroot(spec.rootfs)
-        try:
-            os.chdir(spec.working_dir or "/")
-        except OSError:
-            os.chdir("/")
-
+def _apply_rlimits(spec: RunSpec):
+    """A preexec hook that caps the child before it execs into the model.
+    Limits are inherited across unshare's exec into the entrypoint."""
+    def preexec():
         for res, soft, hard in _rlimits(spec):
             try:
                 resource.setrlimit(res, (soft, hard))
             except (ValueError, OSError):
-                pass  # a limit the host won't grant is not worth aborting over
-
-        os.execve(spec.argv[0], spec.argv, spec.env)
-    except Exception as exc:  # noqa: BLE001 — last-chance diagnostic to the parent
-        try:
-            os.write(stdout_fd, f"\n__SANDBOX_ERROR__ {exc}\n".encode())
-        except OSError:
-            pass
-        os._exit(127)
+                pass
+    return preexec
 
 
 def run_sandboxed(spec: RunSpec, stdin_blob: bytes) -> SandboxResult:
-    """Execute the spec against stdin_blob under namespaces; capture stdout.
+    """Execute the spec against stdin_blob under `unshare`; capture stdout.
 
     Returns a SandboxResult with the same shape of information the docker
     runner surfaces, so callers do not care which executor ran.
     """
-    if not hasattr(os, "unshare"):
+    unshare_bin = shutil.which("unshare")
+    if unshare_bin is None:
         return SandboxResult(ok=False, error=ERR_SANDBOX_UNAVAILABLE)
 
-    in_r, in_w = os.pipe()
-    out_r, out_w = os.pipe()
-
-    pid = os.fork()
-    if pid == 0:
-        os.close(in_w)
-        os.close(out_r)
-        # Own session/process group. The grandchild that becomes PID 1 in the
-        # new PID namespace inherits this group, so the parent can kill the
-        # WHOLE tree on timeout with killpg(pid). Killing only `pid` leaves a
-        # hung model (PID 1) alive holding the stdout pipe, and the parent's
-        # read loop would then never see EOF — a hostile model that just
-        # sleeps would wedge the executor. setsid is what makes the timeout
-        # real.
-        try:
-            os.setsid()
-        except OSError:
-            pass
-        _child(spec, in_r, out_w)
-        os._exit(127)   # unreachable; _child never returns
-
-    # ---- parent: feed stdin, collect stdout, enforce a wall-clock backstop ----
-    os.close(in_r)
-    os.close(out_w)
-    import signal
-    import threading
-
+    cmd = unshare_command(spec, unshare_bin)
+    # start_new_session puts unshare and the model it forks in one session, so
+    # a timeout can kill the WHOLE group — a model that merely sleeps must not
+    # outlive its wall clock and wedge the executor.
     try:
-        os.write(in_w, stdin_blob)
-    except OSError:
-        pass
-    os.close(in_w)
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, env=spec.env,
+            preexec_fn=_apply_rlimits(spec), start_new_session=True)
+    except OSError as exc:
+        return SandboxResult(ok=False, error=f"{ERR_SANDBOX_UNAVAILABLE}: {exc}")
 
-    killed = {"flag": False}
-
-    def _reap():
-        killed["flag"] = True
-        # Kill the whole process group, not just `pid` — see setsid above. The
-        # grandchild model process shares this group and must die too, or its
-        # open stdout keeps the read loop from ever returning.
+    killed = False
+    try:
+        out, err = proc.communicate(input=stdin_blob, timeout=spec.wall_timeout)
+    except subprocess.TimeoutExpired:
+        killed = True
         try:
-            os.killpg(pid, signal.SIGKILL)
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            proc.kill()
+        out, err = proc.communicate()
 
-    timer = threading.Timer(spec.wall_timeout, _reap)
-    timer.start()
+    stdout = (out or b"").decode("utf-8", "replace")
+    stderr = (err or b"").decode("utf-8", "replace")
 
-    chunks = []
-    try:
-        while True:
-            data = os.read(out_r, 1 << 20)
-            if not data:
-                break
-            chunks.append(data)
-    finally:
-        os.close(out_r)
-        _, status = os.waitpid(pid, 0)
-        timer.cancel()
-
-    stdout = b"".join(chunks).decode("utf-8", "replace")
-    if "__SANDBOX_ERROR__" in stdout:
-        detail = stdout.split("__SANDBOX_ERROR__", 1)[1].strip()[:200]
-        return SandboxResult(ok=False, error=f"{ERR_EXIT_PREFIX}127: {detail}")
-    if killed["flag"]:
+    if killed:
         return SandboxResult(
             ok=False, error=f"{ERR_TIMEOUT_PREFIX}{spec.wall_timeout}s")
-
-    code = os.waitstatus_to_exitcode(status)
-    if code != 0:
-        return SandboxResult(ok=False, exit_code=code, stdout=stdout,
-                             error=f"{ERR_EXIT_PREFIX}{code}")
+    if proc.returncode != 0:
+        detail = stderr.strip()[:200] or stdout.strip()[:200]
+        return SandboxResult(ok=False, exit_code=proc.returncode, stdout=stdout,
+                             error=f"{ERR_EXIT_PREFIX}{proc.returncode}: {detail}")
     return SandboxResult(ok=True, stdout=stdout, exit_code=0)
 
 

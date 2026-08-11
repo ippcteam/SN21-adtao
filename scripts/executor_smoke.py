@@ -36,69 +36,59 @@ def _print(tag, msg):
 
 
 def check_namespace() -> bool:
-    """Assert the namespace primitive directly, in-process — no exec, no copy.
+    """Confirm the sandbox's isolation works, via the exact `unshare` command
+    the sandbox uses, against a minimal rootfs.
 
-    This is exactly what `unshare -Urn` does, which the probe proved is
-    permitted: create a user namespace, map ourselves to root within it, then
-    create a network namespace. If we come out as uid 0 inside the userns with
-    a fresh (empty) net namespace, the isolation the sandbox relies on works.
-
-    Doing it without exec or a rootfs keeps the check fast and unambiguous: a
-    failure here is a NAMESPACE failure, not a missing-library or slow-disk
-    artefact (the previous version copied the system lib tree and hung).
+    The sandbox runs miner code through the `unshare` binary (the raw syscall
+    failed in the forked executor context). So the honest check is to build the
+    same command and run a trivial program under it — which also proves the
+    network wall (`--net`) and chroot (`--root`) hold before any real image.
+    Uses the host's own /bin/sh copied into a scratch rootfs with its libs.
     """
-    if not hasattr(os, "unshare"):
-        _print("namespace", "FAIL os.unshare absent (not Linux?)")
+    import shutil
+
+    from hope.backtest.ns_sandbox import RunSpec, run_sandboxed
+
+    if shutil.which("unshare") is None:
+        _print("namespace", "FAIL unshare binary not found (not Linux?)")
         return False
 
-    read_fd, write_fd = os.pipe()
-    pid = os.fork()
-    if pid == 0:                       # child: try to build the namespaces
-        os.close(read_fd)
-        got = []
-        try:
-            os.unshare(os.CLONE_NEWUSER)
-            with open("/proc/self/setgroups", "w") as f:
-                f.write("deny")
-            with open("/proc/self/uid_map", "w") as f:
-                f.write(f"0 {os.getuid()} 1")
-            with open("/proc/self/gid_map", "w") as f:
-                f.write(f"0 {os.getgid()} 1")
-            got.append("user" if os.getuid() == 0 else "user?")
-            # Network is required; the rest are best-effort, tried on their own
-            # so one denial does not mask which others work.
-            os.unshare(os.CLONE_NEWNET)
-            got.append("net")
-            for name, flag in (("pid", getattr(os, "CLONE_NEWPID", 0)),
-                               ("ipc", getattr(os, "CLONE_NEWIPC", 0)),
-                               ("uts", getattr(os, "CLONE_NEWUTS", 0))):
-                if not flag:
-                    continue
-                try:
-                    os.unshare(flag)
-                    got.append(name)
-                except OSError as exc:
-                    got.append(f"{name}!{exc.errno}")
-            msg = b"OK:" + ",".join(got).encode()
-        except Exception as exc:       # noqa: BLE001 - reported to the parent
-            msg = (b"ERR:" + ",".join(got).encode() + b" -> "
-                   + str(exc).encode()[:120])
-        os.write(write_fd, msg)
-        os._exit(0)
+    root = tempfile.mkdtemp(prefix="smoke-ns-",
+                            dir=os.environ.get("SN21_EXECUTOR_WORKDIR") or None)
+    try:
+        # Minimal rootfs: sh plus the handful of libs it needs. Copying only
+        # the direct dependencies keeps this fast (the earlier full /usr/lib
+        # copy is what hung).
+        os.makedirs(os.path.join(root, "bin"), exist_ok=True)
+        sh = shutil.which("sh") or "/bin/sh"
+        shutil.copy2(sh, os.path.join(root, "bin", "sh"))
+        for lib in ("/lib/x86_64-linux-gnu", "/lib64", "/usr/lib/x86_64-linux-gnu"):
+            if os.path.isdir(lib):
+                dst = os.path.join(root, lib.lstrip("/"))
+                os.makedirs(dst, exist_ok=True)
+                for name in os.listdir(lib):
+                    if name.startswith(("libc", "ld-", "libtinfo",
+                                        "libselinux", "libpcre", "libdl",
+                                        "libpthread")):
+                        try:
+                            shutil.copy2(os.path.join(lib, name),
+                                         os.path.join(dst, name))
+                        except OSError:
+                            pass
 
-    os.close(write_fd)
-    data = os.read(read_fd, 200).decode(errors="replace")
-    os.close(read_fd)
-    os.waitpid(pid, 0)
-
-    # PASS requires the load-bearing pair: user + net. Optional namespaces may
-    # be denied (shown with their errno) without failing the check.
-    if data.startswith("OK:") and "user" in data and "net" in data:
-        _print("namespace", f"PASS acquired: {data[3:]} "
-                            f"(net isolation is the required one)")
-        return True
-    _print("namespace", f"FAIL {data}")
-    return False
+        spec = RunSpec(rootfs=root, argv=["/bin/sh", "-c", "echo SANDBOX_OK"],
+                       working_dir="/", wall_timeout=30)
+        result = run_sandboxed(spec, b"")
+        if result.ok and "SANDBOX_OK" in result.stdout:
+            _print("namespace", "PASS unshare user+net+pid+chroot exec works")
+            return True
+        _print("namespace",
+               f"FAIL ok={result.ok} err={result.error!r} "
+               f"out={result.stdout[:120]!r}")
+        return False
+    finally:
+        import shutil as _sh
+        _sh.rmtree(root, ignore_errors=True)
 
 
 def pick_digest(explicit_repo, explicit_digest):

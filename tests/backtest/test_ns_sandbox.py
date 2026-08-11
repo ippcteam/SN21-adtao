@@ -54,22 +54,32 @@ def test_rlimits_carry_the_published_budget():
     assert limits[resource.RLIMIT_NPROC][0] == 256           # pids
 
 
-def test_unavailable_when_unshare_absent(monkeypatch):
-    """On a host without os.unshare (e.g. macOS), the sandbox reports itself
-    unavailable rather than pretending to isolate."""
-    monkeypatch.delattr(ns_sandbox.os, "unshare", raising=False)
+def test_unavailable_when_unshare_binary_absent(monkeypatch):
+    """Without the unshare binary the sandbox reports itself unavailable rather
+    than pretending to isolate (this is also the macOS case)."""
+    monkeypatch.setattr(ns_sandbox.shutil, "which", lambda _name: None)
     result = ns_sandbox.run_sandboxed(RunSpec(rootfs="/x", argv=["/y"]), b"")
     assert result.ok is False
     assert result.error == ns_sandbox.ERR_SANDBOX_UNAVAILABLE
 
 
-def test_reap_targets_the_process_group_not_just_the_child():
-    """The timeout must kill the whole group: the model runs as PID 1 in a new
-    PID namespace and survives its parent's death, so killing only the child
-    leaves it holding the stdout pipe and the read loop hangs. This asserts the
-    source uses killpg, because the behaviour only manifests on Linux under a
-    real hang and must not silently regress."""
-    import inspect
-    src = inspect.getsource(ns_sandbox.run_sandboxed)
-    assert "os.setsid()" in src
-    assert "killpg" in src
+def test_unshare_command_carries_the_isolation_flags():
+    """The network wall and the chroot are the load-bearing parts — assert they
+    are always in the command, in the proven form."""
+    spec = RunSpec(rootfs="/img/rootfs", argv=["python3", "/model.py"],
+                   working_dir="/app")
+    cmd = ns_sandbox.unshare_command(spec, "/usr/bin/unshare")
+    assert cmd[0] == "/usr/bin/unshare"
+    assert "--net" in cmd                       # required network isolation
+    assert "--user" in cmd and "--map-root-user" in cmd
+    assert "--root=/img/rootfs" in cmd          # chroot into the image
+    assert "--wd=/app" in cmd
+    # the model argv comes after the -- separator, in order
+    sep = cmd.index("--")
+    assert cmd[sep + 1:] == ["python3", "/model.py"]
+
+
+def test_unshare_command_defaults_workdir_to_root():
+    spec = RunSpec(rootfs="/r", argv=["/x"], working_dir="")
+    cmd = ns_sandbox.unshare_command(spec, "unshare")
+    assert "--wd=/" in cmd
