@@ -94,6 +94,14 @@ class RunSpec:
     nproc: int = DEFAULT_NPROC
     fsize_bytes: int = DEFAULT_FSIZE_BYTES
     wall_timeout: int = DEFAULT_WALL_TIMEOUT
+    # Opt-in virtual-address-space cap (0 = off). On a host whose OWN memory is
+    # smaller than a model might want, this makes an over-hungry model fail
+    # cleanly (its allocation returns ENOMEM, the run errors) instead of the
+    # kernel OOM-killing the whole executor service. It is a coarse guard — it
+    # caps virtual, not resident — and is deliberately off by default because
+    # on a well-sized host a real memory cap belongs in a cgroup. Set it BELOW
+    # the container's memory limit on a small host. See SN21_SANDBOX_MEM_MB.
+    as_limit_bytes: int = 0
 
 
 def sandbox_env(image_env: list) -> dict:
@@ -152,11 +160,21 @@ def _rlimits(spec: RunSpec) -> list:
     which the host exposes but needs delegation to use — tracked separately.
     Until then the wall-clock killpg is the hard backstop for hangs and fork
     bombs, and the outer container's own memory limit bounds RSS.
+
+    RLIMIT_AS is included ONLY when as_limit_bytes is set — a coarse guard for a
+    host smaller than a model might want, so an over-hungry model fails cleanly
+    rather than OOM-killing the whole service (observed 2026-08-11: a 512 MiB
+    container crash-looped on torch models). Off by default; on a well-sized
+    host, real RSS capping is a cgroup job, not this.
     """
-    return [
+    limits = [
         (resource.RLIMIT_CPU, spec.cpu_seconds, spec.cpu_seconds + 5),
         (resource.RLIMIT_FSIZE, spec.fsize_bytes, spec.fsize_bytes),
     ]
+    if spec.as_limit_bytes and spec.as_limit_bytes > 0:
+        limits.append(
+            (resource.RLIMIT_AS, spec.as_limit_bytes, spec.as_limit_bytes))
+    return limits
 
 
 def unshare_command(spec: RunSpec, unshare_bin: str) -> list:

@@ -21,12 +21,39 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from collections.abc import Iterable
 
 from hope.backtest.container_runner import RunResult, _parse_output
 from hope.backtest.ns_sandbox import RunSpec, cleanup_rootfs, run_sandboxed, sandbox_env
 from hope.backtest.oci_pull import PullError, pull_and_unpack
+
+# Opt-in virtual-memory cap for the sandboxed model, in MB. On a host whose own
+# memory is smaller than a model might want, set this BELOW the container limit
+# so an over-hungry model fails cleanly instead of OOM-killing the executor.
+MEM_MB_ENV = "SN21_SANDBOX_MEM_MB"
+
+# Refuse to unpack an image when free disk is below this — a multi-GB ML image
+# on a small ephemeral volume evicted the whole service (observed 2026-08-11).
+MIN_FREE_DISK_BYTES = 2 << 30    # 2 GB headroom
+
+
+def _as_limit_bytes(environ=os.environ) -> int:
+    raw = (environ.get(MEM_MB_ENV) or "").strip()
+    if not raw:
+        return 0
+    try:
+        return max(0, int(float(raw))) * (1 << 20)
+    except ValueError:
+        return 0
+
+
+def _free_disk_bytes(path: str) -> int:
+    try:
+        return shutil.disk_usage(path).free
+    except OSError:
+        return 1 << 62   # unknown -> do not block on it
 
 
 def split_pinned_ref(pinned: str) -> tuple[str, str]:
@@ -58,6 +85,14 @@ def run_basket_local(
 
     dest = tempfile.mkdtemp(prefix="sn21-img-", dir=workdir_root)
     try:
+        free = _free_disk_bytes(dest)
+        if free < MIN_FREE_DISK_BYTES:
+            # Better to skip than to evict the whole service unpacking a huge
+            # image onto a nearly-full volume.
+            return RunResult(
+                ok=False, episodes_in=len(eps),
+                error=f"disk_low: {free >> 20} MB free < "
+                      f"{MIN_FREE_DISK_BYTES >> 20} MB required")
         try:
             image = pull_and_unpack(image_ref, digest, dest)
         except PullError as exc:
@@ -77,6 +112,7 @@ def run_basket_local(
             argv=argv,
             env=sandbox_env(image.config.env),
             working_dir=image.config.working_dir,
+            as_limit_bytes=_as_limit_bytes(),
         )
         result = run_sandboxed(spec, stdin_blob)
         if not result.ok:
