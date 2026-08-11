@@ -80,7 +80,12 @@ def materialise_wallet():
             with open(path, "wb") as fh:
                 fh.write(base64.b64decode(blob))
             os.chmod(path, 0o600)
-    wallet = bt.wallet(name=name, hotkey=hotkey)
+    # `bt.Wallet` on current SDKs, `bt.wallet` on older ones. Resolve rather
+    # than pin: this script runs on whatever the validator host has installed.
+    wallet_cls = getattr(bt, "Wallet", None) or getattr(bt, "wallet", None)
+    if wallet_cls is None:
+        raise SystemExit("bittensor exposes neither Wallet nor wallet")
+    wallet = wallet_cls(name=name, hotkey=hotkey)
     # Touch the hotkey so a malformed blob fails here, loudly, and not
     # halfway through a commit.
     _ = wallet.hotkey.ss58_address
