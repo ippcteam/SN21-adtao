@@ -46,12 +46,16 @@ def test_resolve_argv_refuses_empty():
         resolve_argv([], None)
 
 
-def test_rlimits_carry_the_published_budget():
+def test_rlimits_are_only_the_safe_ones():
+    """CPU and FSIZE are safe and meaningful here; NPROC (per-uid-global) and
+    AS (virtual, not RSS) are deliberately excluded because they break correct
+    behaviour on a shared PaaS host — memory/pids caps are a cgroup job."""
     spec = RunSpec(rootfs="/x", argv=["/y"])
     limits = dict((r, (s, h)) for r, s, h in _rlimits(spec))
-    assert limits[resource.RLIMIT_AS][0] == 1 << 30          # 1 GB memory
     assert limits[resource.RLIMIT_CPU][0] == 15 * 60         # 15 min CPU
-    assert limits[resource.RLIMIT_NPROC][0] == 256           # pids
+    assert resource.RLIMIT_FSIZE in limits
+    assert resource.RLIMIT_NPROC not in limits              # per-uid-global
+    assert resource.RLIMIT_AS not in limits                 # virtual != RSS
 
 
 def test_unavailable_when_unshare_binary_absent(monkeypatch):

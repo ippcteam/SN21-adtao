@@ -127,11 +127,34 @@ def resolve_argv(image_argv: list, override: list | None = None) -> list:
 
 
 def _rlimits(spec: RunSpec) -> list:
-    """(resource, soft, hard) tuples — pure, so the mapping is testable."""
+    """(resource, soft, hard) tuples — pure, so the mapping is testable.
+
+    Only the limits that are SAFE on this host and actually mean what we want:
+
+      RLIMIT_CPU    caps compute time — a runaway model is stopped.
+      RLIMIT_FSIZE  caps a single file's size — a model cannot fill the disk
+                    with one giant write.
+
+    Deliberately NOT here, because on a shared PaaS host they are the wrong
+    tool and break correct behaviour:
+
+      RLIMIT_NPROC  is per-REAL-UID across the whole system, not per-sandbox.
+                    With --map-root-user the model's forks count against the
+                    host's `render` uid, which already runs many processes, so
+                    a low cap fails `unshare --fork` itself (EAGAIN). Observed
+                    2026-08-11.
+      RLIMIT_AS     caps VIRTUAL address space, not resident memory. A normal
+                    Python/numpy model reserves far more virtual than it uses,
+                    so a 1 GB cap would break legitimate models while not
+                    actually bounding RSS.
+
+    Real memory and pid caps belong in a cgroup (v2 `memory.max` / `pids.max`),
+    which the host exposes but needs delegation to use — tracked separately.
+    Until then the wall-clock killpg is the hard backstop for hangs and fork
+    bombs, and the outer container's own memory limit bounds RSS.
+    """
     return [
-        (resource.RLIMIT_AS, spec.memory_bytes, spec.memory_bytes),
         (resource.RLIMIT_CPU, spec.cpu_seconds, spec.cpu_seconds + 5),
-        (resource.RLIMIT_NPROC, spec.nproc, spec.nproc),
         (resource.RLIMIT_FSIZE, spec.fsize_bytes, spec.fsize_bytes),
     ]
 
