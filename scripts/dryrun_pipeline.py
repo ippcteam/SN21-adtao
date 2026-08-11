@@ -192,8 +192,15 @@ def run_one(uid, ref, dig, corpus, run_basket, do_determinism):
             f"in {rec['run_seconds']}s  err={str(run.error)[:150]}")
         return rec
     rec["coverage"] = round(run.predictions_out / max(1, run.episodes_in), 3)
+    # Behavioural fingerprint: a hash of the exact predictions. Two hotkeys with
+    # the same fingerprint ran byte-identical models — the copy signal the
+    # lineage controls exist to catch, made visible here on real output.
+    import hashlib
+    canon = json.dumps(run.predictions, sort_keys=True, default=str)
+    rec["fingerprint"] = hashlib.sha256(canon.encode()).hexdigest()[:16]
     log(f"    ran: {run.predictions_out}/{run.episodes_in} predictions "
-        f"in {rec['run_seconds']}s  coverage={rec['coverage']}")
+        f"in {rec['run_seconds']}s  coverage={rec['coverage']}  "
+        f"fp={rec['fingerprint']}")
 
     # ---- gate score vs the naive baseline (admission mechanics) ----
     preds_keyed = runner_predictions_to_gate_keys(run.predictions)
@@ -245,7 +252,11 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--models", type=int, default=5)
     p.add_argument("--episodes", type=int, default=40)
-    p.add_argument("--per-repo", action="store_true", default=True)
+    # By default one model per repo (breadth across registries/builds). --census
+    # takes ALL committed models up to --models — the full admission census,
+    # which also surfaces copy clusters (identical output across hotkeys).
+    p.add_argument("--census", action="store_true",
+                   help="take all committed models, not one per repo")
     p.add_argument("--no-determinism", action="store_true")
     args = p.parse_args()
 
@@ -263,9 +274,9 @@ def main():
     log(f"[corpus] {len(episodes)} episodes, {len(outcomes)} outcome rows "
         f"(PUBLIC bundle — mechanics check, not a held-out gate)")
 
-    models = pick_models(args.per_repo, args.models)
+    models = pick_models(per_repo=not args.census, limit=args.models)
     log(f"[chain] {len(models)} real committed models selected "
-        f"(one per repo, earliest first)")
+        f"({'full census' if args.census else 'one per repo'}, earliest first)")
 
     run_basket = basket_runner()
     results = []
@@ -295,6 +306,22 @@ def main():
             f"{r.get('coverage', '-')} gate_model={g.get('model_score', '-')} "
             f"settle_mean={s.get('mean_score', '-')} "
             f"{r.get('repo', '')[:40]}")
+
+    # Copy clusters: hotkeys whose predictions are byte-identical. This is the
+    # lineage/copy signal on real output — the exact thing the anti-clone
+    # controls exist to price, observed rather than assumed.
+    clusters = {}
+    for r in results:
+        fp = r.get("fingerprint")
+        if fp:
+            clusters.setdefault(fp, []).append(r.get("uid"))
+    dupes = {fp: uids for fp, uids in clusters.items() if len(uids) > 1}
+    if dupes:
+        log(f"\n  COPY CLUSTERS (identical predictions): {len(dupes)} group(s)")
+        for fp, uids in dupes.items():
+            log(f"    fp {fp}: uids {sorted(uids)}")
+    else:
+        log("\n  copy clusters: none among the models that ran")
     log("===DRYRUN-END===  (nothing was written — pure dry run)")
     return 0
 
