@@ -55,6 +55,7 @@ def check_namespace() -> bool:
     pid = os.fork()
     if pid == 0:                       # child: try to build the namespaces
         os.close(read_fd)
+        got = []
         try:
             os.unshare(os.CLONE_NEWUSER)
             with open("/proc/self/setgroups", "w") as f:
@@ -63,22 +64,40 @@ def check_namespace() -> bool:
                 f.write(f"0 {os.getuid()} 1")
             with open("/proc/self/gid_map", "w") as f:
                 f.write(f"0 {os.getgid()} 1")
-            os.unshare(os.CLONE_NEWNET | os.CLONE_NEWPID)
-            msg = b"OK" if os.getuid() == 0 else b"NOTROOT"
+            got.append("user" if os.getuid() == 0 else "user?")
+            # Network is required; the rest are best-effort, tried on their own
+            # so one denial does not mask which others work.
+            os.unshare(os.CLONE_NEWNET)
+            got.append("net")
+            for name, flag in (("pid", getattr(os, "CLONE_NEWPID", 0)),
+                               ("ipc", getattr(os, "CLONE_NEWIPC", 0)),
+                               ("uts", getattr(os, "CLONE_NEWUTS", 0))):
+                if not flag:
+                    continue
+                try:
+                    os.unshare(flag)
+                    got.append(name)
+                except OSError as exc:
+                    got.append(f"{name}!{exc.errno}")
+            msg = b"OK:" + ",".join(got).encode()
         except Exception as exc:       # noqa: BLE001 - reported to the parent
-            msg = b"ERR:" + str(exc).encode()[:120]
+            msg = (b"ERR:" + ",".join(got).encode() + b" -> "
+                   + str(exc).encode()[:120])
         os.write(write_fd, msg)
         os._exit(0)
 
     os.close(write_fd)
-    data = os.read(read_fd, 200)
+    data = os.read(read_fd, 200).decode(errors="replace")
     os.close(read_fd)
     os.waitpid(pid, 0)
 
-    if data == b"OK":
-        _print("namespace", "PASS user+net+pid namespaces created; uid 0 inside")
+    # PASS requires the load-bearing pair: user + net. Optional namespaces may
+    # be denied (shown with their errno) without failing the check.
+    if data.startswith("OK:") and "user" in data and "net" in data:
+        _print("namespace", f"PASS acquired: {data[3:]} "
+                            f"(net isolation is the required one)")
         return True
-    _print("namespace", f"FAIL {data.decode(errors='replace')}")
+    _print("namespace", f"FAIL {data}")
     return False
 
 

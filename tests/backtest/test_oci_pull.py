@@ -32,6 +32,18 @@ def test_parse_ref_docker_hub_user_image():
         "registry-1.docker.io", "assasindev/sn21-ml")
 
 
+def test_parse_ref_docker_io_alias_maps_to_registry_host():
+    """`docker.io` is the friendly name; the registry v2 API is served from
+    registry-1.docker.io. Hitting docker.io returns HTML, not a manifest."""
+    assert parse_ref("docker.io/twoided/sn21-model") == (
+        "registry-1.docker.io", "twoided/sn21-model")
+
+
+def test_parse_ref_docker_io_alias_single_name_gets_library():
+    assert parse_ref("docker.io/busybox") == (
+        "registry-1.docker.io", "library/busybox")
+
+
 def test_parse_ref_localhost_and_port():
     assert parse_ref("localhost:5000/x/y") == ("localhost:5000", "x/y")
 

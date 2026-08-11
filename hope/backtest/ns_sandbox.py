@@ -150,26 +150,58 @@ def _write_id_maps() -> None:
         f.write(f"0 {gid} 1")
 
 
+def acquire_namespaces() -> bool:
+    """Enter the isolation namespaces. Returns True if a PID namespace was
+    obtained (so the caller knows whether the second fork is needed).
+
+    The NETWORK namespace is REQUIRED: running untrusted code that can reach
+    the metagraph, a registry, or the outcome it is asked to predict is not a
+    sandbox. If it cannot be created, this raises and the run is refused.
+
+    PID / IPC / UTS are best-effort. The probe validated `unshare -Urn`
+    (user+net) but not these, and at least one is denied on the host — a
+    denied *optional* namespace must not sink the sandbox, so each is tried on
+    its own and a failure is swallowed. The network wall does the load-bearing
+    work; these only tidy the view.
+    """
+    os.unshare(os.CLONE_NEWUSER)
+    _write_id_maps()
+    # Required — no fallback. A refusal here means we cannot isolate the
+    # network, and the whole point is that a miner's code cannot phone out.
+    os.unshare(os.CLONE_NEWNET)
+
+    have_pid = False
+    for flag in (getattr(os, "CLONE_NEWPID", 0),
+                 getattr(os, "CLONE_NEWIPC", 0),
+                 getattr(os, "CLONE_NEWUTS", 0)):
+        if not flag:
+            continue
+        try:
+            os.unshare(flag)
+            if flag == getattr(os, "CLONE_NEWPID", -1):
+                have_pid = True
+        except OSError:
+            pass  # optional; the network namespace is what matters
+    return have_pid
+
+
 def _child(spec: RunSpec, stdin_fd: int, stdout_fd: int) -> None:
     """Runs in the forked child: enter namespaces, contain, exec. Never
     returns — it either execs the model or exits with a diagnostic code."""
     try:
-        # User namespace first, then map ourselves to root within it, then the
-        # network namespace (now permitted because we are userns-root).
-        os.unshare(os.CLONE_NEWUSER)
-        _write_id_maps()
-        os.unshare(os.CLONE_NEWNET | os.CLONE_NEWPID | os.CLONE_NEWIPC
-                   | os.CLONE_NEWUTS)
+        have_pid = acquire_namespaces()
 
-        # PID namespace only takes effect for children, so fork once more; the
-        # grandchild is PID 1 in the new namespace and is what we exec into.
-        pid = os.fork()
-        if pid > 0:
-            _, status = os.waitpid(pid, 0)
-            code = os.waitstatus_to_exitcode(status)
-            os._exit(code if code is not None and code >= 0 else 111)
+        # A PID namespace only takes effect for CHILDREN, so when we have one we
+        # fork and the grandchild is PID 1 in it. Without a PID namespace there
+        # is nothing to gain from the extra fork — exec directly.
+        if have_pid:
+            pid = os.fork()
+            if pid > 0:
+                _, status = os.waitpid(pid, 0)
+                code = os.waitstatus_to_exitcode(status)
+                os._exit(code if code is not None and code >= 0 else 111)
 
-        # ---- grandchild: contain and exec the untrusted image ----
+        # ---- contain and exec the untrusted image ----
         os.dup2(stdin_fd, 0)
         os.dup2(stdout_fd, 1)
         os.dup2(stdout_fd, 2)

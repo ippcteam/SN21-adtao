@@ -46,6 +46,14 @@ from dataclasses import dataclass, field
 DEFAULT_REGISTRY = "registry-1.docker.io"
 AMD64 = ("linux", "amd64")
 
+# `docker.io` is the friendly name miners write in a ref; the registry v2 API
+# is served from registry-1.docker.io. Hitting docker.io directly returns HTML
+# / an empty body, not a manifest.
+_REGISTRY_ALIASES = {
+    "docker.io": DEFAULT_REGISTRY,
+    "index.docker.io": DEFAULT_REGISTRY,
+}
+
 _MANIFEST_ACCEPT = ", ".join([
     "application/vnd.oci.image.index.v1+json",
     "application/vnd.oci.image.manifest.v1+json",
@@ -88,7 +96,12 @@ def parse_ref(image_ref: str) -> tuple[str, str]:
     # A registry host has a dot or a port; otherwise the first segment is part
     # of the repository path on the default registry.
     if "." in head or ":" in head or head == "localhost":
-        return head, image_ref.partition("/")[2]
+        registry = _REGISTRY_ALIASES.get(head, head)
+        repo = image_ref.partition("/")[2]
+        # Docker Hub single-name repos under the alias still need library/.
+        if registry == DEFAULT_REGISTRY and "/" not in repo:
+            repo = f"library/{repo}"
+        return registry, repo
     repo = image_ref
     if repo.count("/") == 0:
         repo = f"library/{repo}"
