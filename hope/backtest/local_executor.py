@@ -34,6 +34,21 @@ from hope.backtest.oci_pull import PullError, pull_and_unpack
 # so an over-hungry model fails cleanly instead of OOM-killing the executor.
 MEM_MB_ENV = "SN21_SANDBOX_MEM_MB"
 
+# Per-model wall-clock ceiling in seconds (0/unset = the published 15-min
+# budget). A dry run sets this short so a hung model is reaped in seconds
+# rather than holding the whole sweep for the full budget.
+WALL_S_ENV = "SN21_SANDBOX_WALL_S"
+
+
+def _wall_timeout(environ=os.environ) -> int:
+    raw = (environ.get(WALL_S_ENV) or "").strip()
+    if not raw:
+        return 0   # sentinel -> use RunSpec's default budget
+    try:
+        return max(1, int(float(raw)))
+    except ValueError:
+        return 0
+
 # Refuse to unpack an image when free disk is below this — a multi-GB ML image
 # on a small ephemeral volume evicted the whole service (observed 2026-08-11).
 MIN_FREE_DISK_BYTES = 2 << 30    # 2 GB headroom
@@ -107,12 +122,14 @@ def run_basket_local(
             return RunResult(ok=False, error="no runnable entrypoint in image",
                              episodes_in=len(eps))
 
+        wall = _wall_timeout()
         spec = RunSpec(
             rootfs=image.rootfs,
             argv=argv,
             env=sandbox_env(image.config.env),
             working_dir=image.config.working_dir,
             as_limit_bytes=_as_limit_bytes(),
+            **({"wall_timeout": wall} if wall else {}),
         )
         result = run_sandboxed(spec, stdin_blob)
         if not result.ok:
