@@ -53,7 +53,6 @@ from hope.backtest.chain_commitments import (
     as_registry_reader,
     bulk_model_commitments,
 )
-from hope.backtest.container_runner import run_basket_docker
 from hope.backtest.intake_runner import load_admitted
 from hope.backtest.model_registry import build_registry
 from hope.backtest.shadow import ShadowModel, run_shadow_day
@@ -174,8 +173,14 @@ def main():
         print("\ndry run — basket and registry resolved, nothing executed")
         return
 
+    # Execution mode is configuration: docker on a daemon host, the daemonless
+    # namespace sandbox on Render. One resolver, so the call site does not care.
+    from hope.backtest.execution_mode import basket_runner, executor_mode
+    run_basket = basket_runner()
+    print(f"executor mode: {executor_mode()}")
+
     def runner(m, eps):
-        return run_basket_docker(m.image_digest, eps)
+        return run_basket(m.image_digest, eps)
 
     summary = run_shadow_day(day, episodes, models, runner, root)
     print(json.dumps(summary, indent=1, default=str))

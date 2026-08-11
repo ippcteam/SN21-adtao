@@ -44,8 +44,14 @@ def runner_predictions_to_gate_keys(predictions: dict) -> dict:
 DETERMINISM_SAMPLE_EPISODES = 25
 
 
+def _default_runner(image_digest, episodes, timeout_s):
+    """The docker runner, ignoring the extra timeout kwarg the sandbox mode
+    does not take. Kept as the default so every existing caller is unchanged."""
+    return run_basket_docker(image_digest, episodes, timeout_s=timeout_s)
+
+
 def _nondeterminism_detail(image_digest, episodes, first_predictions,
-                           sample_size, timeout_s):
+                           sample_size, timeout_s, runner=None):
     """None when the re-run agrees, else a short description of the first
     disagreement.
 
@@ -57,7 +63,8 @@ def _nondeterminism_detail(image_digest, episodes, first_predictions,
     if not sample:
         return None
 
-    second = run_basket_docker(image_digest, sample, timeout_s=timeout_s)
+    run = runner or _default_runner
+    second = run(image_digest, sample, timeout_s)
     if not second.ok:
         # A re-run that will not start is a liveness problem, and liveness is
         # judged elsewhere. Not evidence of nondeterminism.
@@ -81,7 +88,8 @@ def gate_submission(image_digest: str,
                     prev_verdict_sha: str | None = None,
                     private_key=None,
                     timeout_s: int = 15 * 60,
-                    determinism_sample: int = DETERMINISM_SAMPLE_EPISODES) -> dict:
+                    determinism_sample: int = DETERMINISM_SAMPLE_EPISODES,
+                    runner=None) -> dict:
     """Run the full admission: sandbox -> gate -> attested verdict document.
 
     Includes a DETERMINISM check, because the subnet publishes that a rerun
@@ -93,8 +101,13 @@ def gate_submission(image_digest: str,
 
     The check is one extra container run over a small sample, compared field
     by field against the first run's answers for the same episodes.
+
+    `runner(image, episodes, timeout_s) -> RunResult` selects the executor.
+    Default docker, so every existing caller is unchanged; the Render worker
+    passes the namespace-sandbox runner.
     """
-    run = run_basket_docker(image_digest, episodes, timeout_s=timeout_s)
+    run_fn = runner or _default_runner
+    run = run_fn(image_digest, episodes, timeout_s)
     if not run.ok:
         verdict = {"admitted": False, "reason": f"run_failed: {run.error}",
                    "episodes_in": run.episodes_in}
@@ -113,7 +126,7 @@ def gate_submission(image_digest: str,
             verdict = admission_verdict(model, base)
             nondeterministic = _nondeterminism_detail(
                 image_digest, episodes, run.predictions, determinism_sample,
-                timeout_s)
+                timeout_s, runner=run_fn)
             if nondeterministic:
                 # Refused, not merely noted: an admitted nondeterministic model
                 # would break every later verification of every day it ran.

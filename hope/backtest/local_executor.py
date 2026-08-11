@@ -1,0 +1,114 @@
+"""Daemonless basket execution — the docker runner's stand-in on Render.
+
+This composes the puller (oci_pull) and the namespace sandbox (ns_sandbox)
+into the SAME contract `container_runner.run_basket_docker` exposes:
+
+    run_basket_local(image_ref, digest, episodes) -> RunResult
+
+so every caller — the admission gate, the shadow day, scoring — is unchanged.
+They ask for a basket to be run against an image; whether a docker daemon or
+this namespace sandbox runs it is an execution-mode detail, and the RunResult
+they get back is identical in shape and meaning.
+
+One difference from the docker path, made explicit: docker takes a single
+`repo@digest` string, but pulling without a daemon needs the repo and the
+digest separately (the digest addresses the blob; the repo names where to
+fetch it). So this entrypoint takes both, and the shadow ShadowModel already
+carries the pinned `repo@digest`, which splits cleanly.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from collections.abc import Iterable
+
+from hope.backtest.container_runner import RunResult, _parse_output
+from hope.backtest.ns_sandbox import RunSpec, cleanup_rootfs, run_sandboxed, sandbox_env
+from hope.backtest.oci_pull import PullError, pull_and_unpack
+
+
+def split_pinned_ref(pinned: str) -> tuple[str, str]:
+    """`repo@sha256:...` -> (repo, digest). The shadow model stores this
+    pinned form; the puller needs the two halves."""
+    if "@" not in pinned:
+        raise ValueError(f"not a pinned ref (need repo@digest): {pinned!r}")
+    repo, _, digest = pinned.partition("@")
+    return repo, digest
+
+
+def run_basket_local(
+    image_ref: str,
+    digest: str,
+    episodes: Iterable[dict],
+    workdir_root: str | None = None,
+    entrypoint_override: list | None = None,
+) -> RunResult:
+    """Pull `image_ref@digest`, run it against the basket under the sandbox.
+
+    Mirrors run_basket_docker: JSON episode per line on stdin, JSON prediction
+    per line on stdout, and a RunResult carrying ok / predictions / error /
+    counts. The unpacked image is always removed, success or failure — disk is
+    the scarce resource on this host.
+    """
+    eps = list(episodes)
+    ids = {str(e["episode_id"]) for e in eps}
+    stdin_blob = ("\n".join(json.dumps(e, default=str) for e in eps) + "\n").encode()
+
+    dest = tempfile.mkdtemp(prefix="sn21-img-", dir=workdir_root)
+    try:
+        try:
+            image = pull_and_unpack(image_ref, digest, dest)
+        except PullError as exc:
+            # A pull/verify failure is NOT a run failure: the fault taxonomy
+            # keeps them distinct so a registry problem never strikes a miner
+            # the way a crashing container would.
+            return RunResult(ok=False, error=f"pull_failed: {exc}",
+                             episodes_in=len(eps))
+
+        argv = _resolve_entrypoint(image, entrypoint_override)
+        if argv is None:
+            return RunResult(ok=False, error="no runnable entrypoint in image",
+                             episodes_in=len(eps))
+
+        spec = RunSpec(
+            rootfs=image.rootfs,
+            argv=argv,
+            env=sandbox_env(image.config.env),
+            working_dir=image.config.working_dir,
+        )
+        result = run_sandboxed(spec, stdin_blob)
+        if not result.ok:
+            return RunResult(ok=False, error=result.error, episodes_in=len(eps))
+
+        preds = _parse_output(result.stdout, ids)
+        return RunResult(ok=True, predictions=preds,
+                         episodes_in=len(eps), predictions_out=len(preds))
+    finally:
+        cleanup_rootfs(dest)
+
+
+def _resolve_entrypoint(image, override):
+    """The argv to exec, with the image's declared command as the default.
+
+    Returns None when neither the image nor an override names anything to run —
+    an image with no entrypoint is not runnable, which is a rejection, not a
+    crash.
+    """
+    if override:
+        return list(override)
+    argv = image.config.argv()
+    if not argv:
+        return None
+    # An entrypoint given as a bare name resolves against the image PATH; the
+    # sandbox execve needs an absolute path, so only rewrite the obvious cases.
+    if argv[0].startswith("/"):
+        return argv
+    for prefix in ("/usr/local/bin/", "/usr/bin/", "/bin/"):
+        candidate = os.path.join(image.rootfs, prefix.lstrip("/"), argv[0])
+        if os.path.exists(candidate):
+            return [prefix + argv[0]] + argv[1:]
+    # Fall back to the shell form the OCI config implies; if it is wrong the
+    # sandbox reports exec failure, which is the honest outcome.
+    return argv
