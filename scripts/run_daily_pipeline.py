@@ -131,7 +131,8 @@ def stage_intake(ledger_root, corpus, key, timeout_s, limit):
     netuid = int(os.environ.get("SN21_NETUID", "21"))
     st = bt.Subtensor(network=os.environ.get("SN21_NETWORK", "finney"))
     hotkeys = list(st.metagraph(netuid=netuid).hotkeys)
-    read = as_single_reader(bulk_model_commitments(st, netuid, hotkeys))
+    commits = bulk_model_commitments(st, netuid, hotkeys)
+    read = as_single_reader(commits)
 
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     run_basket = basket_runner()
@@ -142,11 +143,16 @@ def stage_intake(ledger_root, corpus, key, timeout_s, limit):
             private_key=key, timeout_s=timeout_s,
             runner=lambda ref, eps, _t: run_basket(ref, eps))
 
-    # Bound a single sweep so the first production run cannot be a hundred
-    # untrusted container starts unattended.
+    # Bound a single sweep so a run cannot be a hundred untrusted container
+    # starts unattended. Select the EARLIEST-committed digests (by block) —
+    # the most-established models — rather than an arbitrary hotkey sort, so a
+    # bounded sweep gates the models most likely to be real.
     commitments, _unparse = commitments_from_chain(hotkeys, read)
     if limit and len(commitments) > limit:
-        keep = {c.digest for c in sorted(commitments, key=lambda c: c.hotkey)[:limit]}
+        block_of = {c.digest: (commits.get(c.hotkey) or (0, ""))[0]
+                    for c in commitments}
+        keep = {c.digest for c in
+                sorted(commitments, key=lambda c: block_of.get(c.digest, 0))[:limit]}
         reader = lambda hk: (read(hk) if _digest_of(read(hk)) in keep else None)  # noqa: E731
     else:
         reader = read
@@ -154,8 +160,14 @@ def stage_intake(ledger_root, corpus, key, timeout_s, limit):
     result = run_intake(ledger_root, hotkeys, reader, gate_runner,
                         persist=_persist(ledger_root))
     admitted = _rewrite_admitted(ledger_root)
+    # Per-model verdicts so a rejection sweep is legible: is the gate correctly
+    # filtering weak models, or is something systematically wrong?
+    reasons = [{"uid": None, "status": d.get("status"),
+                "detail": (d.get("detail") or "")[:80]}
+               for d in (result.details or [])]
     return {"gated": result.gated, "admitted": result.admitted,
-            "rejected": result.rejected, "admitted_total": len(admitted)}
+            "rejected": result.rejected, "admitted_total": len(admitted),
+            "verdicts": reasons}
 
 
 def _digest_of(raw):
@@ -304,6 +316,8 @@ def main():
             record["stages"]["intake"] = s
             log(f"[intake] gated={s['gated']} admitted={s['admitted']} "
                 f"rejected={s['rejected']} admitted_total={s['admitted_total']}")
+            for v in s.get("verdicts", []):
+                log(f"[intake]   verdict {v['status']}: {v['detail']}")
         except Exception as e:   # noqa: BLE001
             record["stages"]["intake"] = {"error": str(e)}
             log(f"[intake] ERROR {e}")
