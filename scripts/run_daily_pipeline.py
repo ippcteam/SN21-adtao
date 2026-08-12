@@ -93,12 +93,23 @@ def resolve_basket(explicit: str | None, day: date) -> str:
 
 def fetch_basket_payloads(release_key: str) -> list:
     """Full episode payloads (episode_id + v2.0 blocks) for the basket — the
-    same package the validator serves to miners, no outcomes."""
+    same package the validator serves to miners, no outcomes.
+
+    The episode_id is on the OUTER episode object, not inside the payload
+    (payload carries account_state / action_bundle / pre_window / … but no id).
+    The model contract wants episode_id at the TOP LEVEL of the payload it
+    reads on stdin, so we inject it — matching the training-bundle shape the
+    models were built against. Getting this wrong drops every episode silently
+    (observed 2026-08-12: 328 payloads → 0).
+    """
     pkg = _api_get(f"releases/{release_key}/package")
     payloads = []
     for ep in pkg.get("episodes", []):
         payload = ep.get("payload")
-        if payload and payload.get("episode_id"):
+        eid = ep.get("episode_id")
+        if payload and eid:
+            payload = dict(payload)
+            payload["episode_id"] = str(eid)
             payloads.append(payload)
     return payloads
 
