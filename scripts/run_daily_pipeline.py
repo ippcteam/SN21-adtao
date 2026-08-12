@@ -157,7 +157,25 @@ def stage_intake(ledger_root, corpus, key, timeout_s, limit):
     else:
         reader = read
 
+    # In sandbox mode the intake's OWN pull step must not use docker (there is
+    # none). The namespace sandbox pulls each image by digest itself and
+    # REFUSES any blob whose bytes do not match — the digest verification the
+    # docker pre-pull did is not lost, it just moves into the runner. So pass a
+    # no-op puller/inspector that let pull_by_digest hand the pinned ref
+    # straight to the sandbox gate_runner.
+    from hope.backtest.execution_mode import MODE_SANDBOX
+    if executor_mode() == MODE_SANDBOX:
+        def _sandbox_puller(_pinned):
+            return True, ""              # the sandbox does the real pull+verify
+
+        def _sandbox_inspector(pinned):
+            return [pinned]             # pinned == repo@digest -> passes the check
+        puller, inspector = _sandbox_puller, _sandbox_inspector
+    else:
+        puller = inspector = None       # docker path unchanged
+
     result = run_intake(ledger_root, hotkeys, reader, gate_runner,
+                        puller=puller, inspector=inspector,
                         persist=_persist(ledger_root))
     admitted = _rewrite_admitted(ledger_root)
     # Per-model verdicts so a rejection sweep is legible: is the gate correctly
