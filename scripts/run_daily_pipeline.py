@@ -1,0 +1,328 @@
+"""The SN21 daily pipeline — one entrypoint, run once a day on the executor.
+
+    python3 -m scripts.run_daily_pipeline [--day YYYY-MM-DD] [--basket BD-...]
+        [--ledger-root DIR] [--corpus-size N] [--intake-limit N] [--dry-run]
+
+WHAT IT DOES, IN ORDER (each stage fail-soft, with its own summary line):
+
+  0. resolve   — today's basket (BD-<date>), full episode payloads fetched from
+                 the operator data API over HTTP. No operator database login.
+  1. intake    — gate every newly-committed model image through the namespace
+                 sandbox against the admission corpus; write the admitted-digest
+                 set. Idempotent: a digest with a final verdict is never
+                 re-gated.
+  2. shadow    — execute every ADMITTED model against today's basket in the
+                 sandbox; seal the predictions into the shadow ledger BEFORE any
+                 outcome exists.
+  3. settle    — settle whatever (episode × horizon) rows have matured, score
+                 them with the production scorer, fold into standings, publish
+                 the day's signed receipt + accuracy document.
+
+WHAT IT DELIBERATELY DOES NOT DO
+
+  - It does NOT set weights on chain. The daily curve stays OFF; the bridge
+    (last weekly vector + alpha hold) pays until real daily scores accumulate,
+    exactly as the transition plan mandates. Turning it on before scores exist
+    would commit an empty vector.
+  - It does NOT anchor the feed root on chain (SN21_ANCHOR_COMMITS stays off).
+  Both are deliberate future flips, gated on real settled scores, not on this
+  pipeline running.
+
+  The single run record under <ledger>/pipeline_runs/ lets a heartbeat check
+  that the pipeline actually ran, the way the OBI daily pipeline is watched.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.request
+from datetime import date, datetime, timedelta, timezone
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
+
+from hope.backtest import bundle_corpus  # noqa: E402
+from hope.backtest.execution_mode import basket_runner, executor_mode  # noqa: E402
+from hope.backtest.gate_service import gate_submission  # noqa: E402
+from hope.backtest.intake_runner import run_intake  # noqa: E402
+from hope.backtest.shadow import ShadowModel, run_shadow_day  # noqa: E402
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+# ---- 0. basket resolution over the operator data API -------------------------
+
+def _api_base_and_key():
+    url = (os.environ.get("HOPE_API_URL") or "").strip().rstrip("/")
+    key = (os.environ.get("HOPE_API_KEY") or "").strip()
+    if not url or not key:
+        raise SystemExit("HOPE_API_URL and HOPE_API_KEY are required to fetch "
+                         "the basket from the operator data API")
+    return url, key
+
+
+def _api_get(path: str):
+    url, key = _api_base_and_key()
+    req = urllib.request.Request(f"{url}/internal/bittensor/v1/{path.lstrip('/')}",
+                                 headers={"X-API-Key": key})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return json.loads(resp.read().decode())
+
+
+def resolve_basket(explicit: str | None, day: date) -> str:
+    """The basket release key. Explicit wins; else BD-<yesterday> (a basket is
+    named for the day whose changes it holds and delivered the next morning),
+    verified to exist in the operator listing."""
+    if explicit:
+        return explicit
+    candidate = f"BD-{day - timedelta(days=1)}"
+    releases = {r.get("release_key") for r in _api_get("releases").get("releases", [])}
+    if candidate in releases:
+        return candidate
+    # Fall back to the newest BD- release the operator lists.
+    bd = sorted(r for r in releases if str(r).startswith("BD-"))
+    if not bd:
+        raise SystemExit("no BD- daily basket found in the operator listing")
+    return bd[-1]
+
+
+def fetch_basket_payloads(release_key: str) -> list:
+    """Full episode payloads (episode_id + v2.0 blocks) for the basket — the
+    same package the validator serves to miners, no outcomes."""
+    pkg = _api_get(f"releases/{release_key}/package")
+    payloads = []
+    for ep in pkg.get("episodes", []):
+        payload = ep.get("payload")
+        if payload and payload.get("episode_id"):
+            payloads.append(payload)
+    return payloads
+
+
+# ---- 1. intake ---------------------------------------------------------------
+
+def stage_intake(ledger_root, corpus, key, timeout_s, limit):
+    from scripts.run_model_intake import (
+        _persist,
+        _rewrite_admitted,
+        commitments_from_chain,
+    )
+    from hope.backtest.chain_commitments import (
+        as_single_reader,
+        bulk_model_commitments,
+    )
+
+    import bittensor as bt
+    netuid = int(os.environ.get("SN21_NETUID", "21"))
+    st = bt.Subtensor(network=os.environ.get("SN21_NETWORK", "finney"))
+    hotkeys = list(st.metagraph(netuid=netuid).hotkeys)
+    read = as_single_reader(bulk_model_commitments(st, netuid, hotkeys))
+
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    run_basket = basket_runner()
+
+    def gate_runner(pinned_ref):
+        return gate_submission(
+            pinned_ref, corpus[0], corpus[1], generated_at=now,
+            private_key=key, timeout_s=timeout_s,
+            runner=lambda ref, eps, _t: run_basket(ref, eps))
+
+    # Bound a single sweep so the first production run cannot be a hundred
+    # untrusted container starts unattended.
+    commitments, _unparse = commitments_from_chain(hotkeys, read)
+    if limit and len(commitments) > limit:
+        keep = {c.digest for c in sorted(commitments, key=lambda c: c.hotkey)[:limit]}
+        reader = lambda hk: (read(hk) if _digest_of(read(hk)) in keep else None)  # noqa: E731
+    else:
+        reader = read
+
+    result = run_intake(ledger_root, hotkeys, reader, gate_runner,
+                        persist=_persist(ledger_root))
+    admitted = _rewrite_admitted(ledger_root)
+    return {"gated": result.gated, "admitted": result.admitted,
+            "rejected": result.rejected, "admitted_total": len(admitted)}
+
+
+def _digest_of(raw):
+    if not raw:
+        return None
+    from hope.backtest.model_registry import parse_model_commitment
+    p = parse_model_commitment(raw)
+    return p.get("digest") if p else None
+
+
+# ---- 2. shadow day -----------------------------------------------------------
+
+def stage_shadow(ledger_root, basket_key, episodes, include_reference):
+    from scripts.run_shadow_day_bd import (
+        REFERENCE_HOTKEY,
+        REFERENCE_IMAGE,
+        admitted_models,
+    )
+
+    as_of = str(date.today() if not hasattr(date, "today") else datetime.now(
+        timezone.utc).date())
+    models, stats = admitted_models(
+        ledger_root, os.environ.get("SN21_NETWORK", "finney"),
+        int(os.environ.get("SN21_NETUID", "21")), as_of)
+    if include_reference:
+        models.append(ShadowModel(hotkey=REFERENCE_HOTKEY,
+                                  image_digest=REFERENCE_IMAGE,
+                                  admitted_at=as_of))
+
+    day = basket_key.replace("BD-", "")
+    run_basket = basket_runner()
+
+    def runner(m, eps):
+        return run_basket(m.image_digest, eps)
+
+    summary = run_shadow_day(day, episodes, models, runner, ledger_root)
+    return {"registry": stats, "models_run": summary.get("models_run"),
+            "results": {hk: r.get("predictions")
+                        for hk, r in summary.get("results", {}).items()}}
+
+
+# ---- 3. settle + publish -----------------------------------------------------
+
+def stage_settle(ledger_root, day):
+    from scripts.run_daily_loop import (
+        _basket_volume,
+        _key_loader,
+        _outcomes_provider,
+    )
+    from hope.validator.daily_loop import run_daily_loop
+
+    key = _key_loader()
+    summary = run_daily_loop(
+        shadow_root=ledger_root,
+        ledger_root=ledger_root,
+        day=day,
+        outcomes_provider=_outcomes_provider(),
+        key_loader=(lambda: key) if key is not None else None,
+        day_volume_provider=_basket_volume,
+        chain_committer=None,     # NEVER anchor from this pipeline
+        coldkey_reader=None,      # weights are off; the cap is a weight-path input
+    )
+    # Trim the noisy nested prediction index out of the summary.
+    return {k: v for k, v in summary.items()
+            if k in ("day", "settle", "receipt", "publish", "weights",
+                     "collateral_floor_alpha")}
+
+
+# ---- run record --------------------------------------------------------------
+
+def write_run_record(ledger_root, record):
+    d = os.path.join(ledger_root, "pipeline_runs")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, f"{record['day']}.json")
+    with open(path + ".tmp", "w") as f:
+        json.dump(record, f, indent=1, default=str)
+    os.replace(path + ".tmp", path)
+    return path
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--day", default=None, help="pipeline day (default: today UTC)")
+    p.add_argument("--basket", default=None, help="basket key (default: BD-yesterday)")
+    p.add_argument("--ledger-root",
+                   default=os.environ.get("SN21_LEDGER_ROOT", "/var/data/sn21/ledger"))
+    p.add_argument("--corpus-size", type=int, default=200)
+    p.add_argument("--intake-limit", type=int, default=0)
+    p.add_argument("--gate-timeout-s", type=int, default=120)
+    p.add_argument("--no-reference", action="store_true")
+    p.add_argument("--skip-intake", action="store_true")
+    p.add_argument("--dry-run", action="store_true",
+                   help="resolve + fetch + build corpus; run no models, write nothing")
+    args = p.parse_args()
+
+    day = (date.fromisoformat(args.day) if args.day
+           else datetime.now(timezone.utc).date())
+    os.makedirs(args.ledger_root, exist_ok=True)
+    workdir = os.environ.get("SN21_EXECUTOR_WORKDIR", "/tmp/executor")
+    os.makedirs(workdir, exist_ok=True)
+
+    started = time.time()
+    record = {"day": str(day), "mode": executor_mode(), "stages": {}}
+    log("===PIPELINE-START===")
+    log(f"[pipeline] day={day} mode={executor_mode()} ledger={args.ledger_root}")
+
+    # 0. resolve + fetch basket
+    try:
+        basket_key = resolve_basket(args.basket, day)
+        episodes = fetch_basket_payloads(basket_key)
+        record["stages"]["resolve"] = {"basket": basket_key,
+                                       "episodes": len(episodes)}
+        log(f"[resolve] basket {basket_key}: {len(episodes)} full payloads")
+    except Exception as e:   # noqa: BLE001
+        record["stages"]["resolve"] = {"error": str(e)}
+        log(f"[resolve] ERROR {e}")
+        write_run_record(args.ledger_root, record)
+        log("===PIPELINE-END=== (resolve failed)")
+        return 1
+
+    if not episodes:
+        log("[resolve] empty basket — nothing to run today (not a failure)")
+        record["stages"]["resolve"]["empty"] = True
+        write_run_record(args.ledger_root, record)
+        log("===PIPELINE-END===")
+        return 0
+
+    # corpus for admission
+    from scripts.run_daily_loop import _key_loader
+    key = _key_loader()
+    bundle = bundle_corpus.fetch_bundle(workdir)
+    corpus = bundle_corpus.build_from_bundle(bundle, args.corpus_size)
+    log(f"[corpus] {len(corpus[0])} episodes, {len(corpus[1])} outcome rows "
+        f"(public bundle — mechanics gate)")
+
+    if args.dry_run:
+        log("[pipeline] DRY RUN — nothing executed or written past this point")
+        log("===PIPELINE-END===")
+        return 0
+
+    # 1. intake
+    if not args.skip_intake:
+        try:
+            s = stage_intake(args.ledger_root, corpus, key,
+                             args.gate_timeout_s, args.intake_limit)
+            record["stages"]["intake"] = s
+            log(f"[intake] gated={s['gated']} admitted={s['admitted']} "
+                f"rejected={s['rejected']} admitted_total={s['admitted_total']}")
+        except Exception as e:   # noqa: BLE001
+            record["stages"]["intake"] = {"error": str(e)}
+            log(f"[intake] ERROR {e}")
+
+    # 2. shadow day
+    try:
+        s = stage_shadow(args.ledger_root, basket_key, episodes,
+                         include_reference=not args.no_reference)
+        record["stages"]["shadow"] = {"registry": s["registry"],
+                                      "models_run": s["models_run"]}
+        log(f"[shadow] registry={s['registry']} models_run={s['models_run']}")
+    except Exception as e:   # noqa: BLE001
+        record["stages"]["shadow"] = {"error": str(e)}
+        log(f"[shadow] ERROR {e}")
+
+    # 3. settle + publish
+    try:
+        s = stage_settle(args.ledger_root, day)
+        record["stages"]["settle"] = s
+        log(f"[settle] {json.dumps(s, default=str)[:400]}")
+    except Exception as e:   # noqa: BLE001
+        record["stages"]["settle"] = {"error": str(e)}
+        log(f"[settle] ERROR {e}")
+
+    record["elapsed_s"] = round(time.time() - started, 1)
+    path = write_run_record(args.ledger_root, record)
+    log(f"[pipeline] run record -> {path}")
+    log("===PIPELINE-END===")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

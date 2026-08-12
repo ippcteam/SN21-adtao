@@ -248,6 +248,18 @@ def main(argv=None):
     else:
         keep = None
 
+    # The executor has no docker daemon, so admission must run each image
+    # through the same namespace sandbox the shadow day uses. One resolver,
+    # chosen by SN21_EXECUTOR_MODE; default docker keeps every other caller
+    # unchanged.
+    from hope.backtest.execution_mode import basket_runner, executor_mode
+    run_basket = basket_runner()
+    print(f"[intake] executor mode: {executor_mode()}", flush=True)
+
+    def _gate_exec(pinned_ref, episodes, timeout_s):
+        # gate_service passes a timeout the sandbox runner does not take.
+        return run_basket(pinned_ref, episodes)
+
     gated = {"n": 0}
 
     def gate_runner(local_ref):
@@ -255,7 +267,8 @@ def main(argv=None):
         print(f"[intake]   gating {gated['n']}: {local_ref}", flush=True)
         return gate_submission(
             local_ref, corpus["episodes"], corpus["outcomes"],
-            generated_at=now, private_key=key, timeout_s=args.timeout_s)
+            generated_at=now, private_key=key, timeout_s=args.timeout_s,
+            runner=_gate_exec)
 
     def read_filtered(hotkey):
         raw = read(hotkey)
