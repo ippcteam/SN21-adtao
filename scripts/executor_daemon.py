@@ -33,6 +33,14 @@ TRIGGER_HOUR_UTC = int(os.environ.get("SN21_PIPELINE_TRIGGER_HOUR_UTC", "11"))
 CHECK_INTERVAL_S = int(os.environ.get("SN21_PIPELINE_CHECK_INTERVAL_S", "3600"))
 LEDGER_ROOT = os.environ.get("SN21_LEDGER_ROOT", "/var/data/sn21/ledger")
 
+# Admission is the expensive stage (pull + two runs per NEW model), and it is
+# idempotent — a gated digest is never re-gated. Bounding it per day spreads
+# the one-time gating of the backlog over a few days instead of one multi-hour
+# run, while a fully-gated field then costs nothing. Corpus size trades gate
+# robustness against time.
+INTAKE_LIMIT = int(os.environ.get("SN21_INTAKE_LIMIT", "25"))
+CORPUS_SIZE = int(os.environ.get("SN21_CORPUS_SIZE", "60"))
+
 
 def log(msg):
     print(f"[executor-daemon] {datetime.now(timezone.utc).isoformat()} {msg}",
@@ -44,9 +52,13 @@ def run_record_exists(day: str) -> bool:
 
 
 def run_pipeline(day: str) -> int:
-    log(f"running the daily pipeline for {day}")
+    log(f"running the daily pipeline for {day} "
+        f"(intake_limit={INTAKE_LIMIT}, corpus={CORPUS_SIZE})")
     proc = subprocess.run(
-        [sys.executable, "-m", "scripts.run_daily_pipeline"],
+        [sys.executable, "-m", "scripts.run_daily_pipeline",
+         "--no-reference",              # the reference image is not digest-pullable here
+         "--intake-limit", str(INTAKE_LIMIT),
+         "--corpus-size", str(CORPUS_SIZE)],
         cwd=os.path.join(os.path.dirname(__file__), os.pardir))
     log(f"pipeline for {day} exited {proc.returncode}")
     return proc.returncode
