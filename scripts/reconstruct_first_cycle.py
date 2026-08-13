@@ -50,7 +50,12 @@ from hope.backtest.ns_sandbox import (  # noqa: E402
     sandbox_env,
 )
 from hope.backtest.oci_pull import PullError, pull_and_unpack  # noqa: E402
-from hope.backtest.shadow import ShadowModel, record_day, record_run_marker  # noqa: E402
+from hope.backtest.shadow import (  # noqa: E402
+    ShadowModel,
+    record_day,
+    record_run_marker,
+    shadow_dir,
+)
 
 ARCHIVE_URL = os.environ.get("SN21_REG_INDEX_ARCHIVE_URL",
                              "wss://archive.chain.opentensor.ai:443")
@@ -96,6 +101,41 @@ def fetch_basket(basket_day: date) -> list:
             payload["episode_id"] = str(eid)
             out.append(payload)
     return out
+
+
+def _sealed_digests(ledger_root: str, day: str, hotkey: str) -> set:
+    """The set of image_digests already recorded for (day, hotkey) in the
+    ledger. Reconstruction is resumable off this: a 7–10h run that dies
+    part-way must resume, not restart, and must never double-seal."""
+    path = os.path.join(shadow_dir(ledger_root, day), f"{hotkey}.jsonl")
+    if not os.path.exists(path):
+        return set()
+    seen = set()
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                dg = json.loads(line).get("image_digest")
+                if dg:
+                    seen.add(dg)
+    except (OSError, ValueError):
+        return set()
+    return seen
+
+
+def _job_remaining(ledger_root: str, pinned: str, day_map: dict) -> dict:
+    """day_map filtered to the (day, hotkey) pairs NOT yet sealed for `pinned`.
+    An empty return means the whole digest is already reconstructed — skip the
+    multi-GB pull entirely."""
+    remaining: dict = {}
+    for day, hotkeys in day_map.items():
+        todo = [hk for hk in hotkeys
+                if pinned not in _sealed_digests(ledger_root, day.isoformat(), hk)]
+        if todo:
+            remaining[day] = todo
+    return remaining
 
 
 def run_one(rootfs, config, episodes):
@@ -165,9 +205,14 @@ def main():
         return 0
 
     from hope.backtest.local_executor import split_pinned_ref
-    stats = {"digests_ok": 0, "pull_fail": 0, "sealed": 0, "run_fail": 0}
+    stats = {"digests_ok": 0, "pull_fail": 0, "sealed": 0, "run_fail": 0,
+             "skipped_done": 0}
     t0 = time.time()
     for i, (pinned, day_map) in enumerate(sorted(digest_jobs.items()), 1):
+        remaining = _job_remaining(args.ledger_root, pinned, day_map)
+        if not remaining:
+            stats["skipped_done"] += 1
+            continue
         repo, digest = split_pinned_ref(pinned)
         dest = os.path.join(args.workdir, f"recon-{i}")
         cleanup_rootfs(dest)
@@ -180,7 +225,7 @@ def main():
             cleanup_rootfs(dest)
             continue
         stats["digests_ok"] += 1
-        for day, hotkeys in day_map.items():
+        for day, hotkeys in remaining.items():
             preds = run_one(image.rootfs, image.config, episodes_by_day[day])
             if not preds or "error" in preds:
                 stats["run_fail"] += 1
@@ -196,7 +241,8 @@ def main():
         cleanup_rootfs(dest)
         if i % 10 == 0:
             log(f"[recon] {i}/{len(digest_jobs)} digests · sealed "
-                f"{stats['sealed']} · {round(time.time()-t0)}s")
+                f"{stats['sealed']} · skipped(done) {stats['skipped_done']} · "
+                f"{round(time.time()-t0)}s")
 
     for day in days:
         record_run_marker(args.ledger_root, day.isoformat(),
