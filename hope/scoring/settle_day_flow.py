@@ -103,7 +103,13 @@ MIN_ENTRY_SCALE = 0.01
 
 # Settle clock (mirrors the operator platform's constants: OUTCOME_SETTLING_WINDOW_DAYS=7;
 # settle date = window_end + 1 + horizon + settle).
-SETTLING_WINDOW_DAYS = 7
+#
+# Configurable via env for the FIRST-CYCLE reconstruction, which settles at the
+# horizon day with no late-conversion buffer (SN21_SETTLING_WINDOW_DAYS=0) so
+# the first 7-day scores can land ~18 Aug. This is a disclosed, one-time
+# shortening; steady state is the published 7-day buffer. Read once at import,
+# so a process sets the env before importing to choose its clock.
+SETTLING_WINDOW_DAYS = int(os.environ.get("SN21_SETTLING_WINDOW_DAYS", "7"))
 
 # ---- v2 restoration constants ------------------------------------------------
 # Ported from hope/scoring/onchain_adapter.py, converted from that module's

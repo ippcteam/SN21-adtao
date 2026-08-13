@@ -90,6 +90,40 @@ def bulk_model_commitments(subtensor, netuid: int, hotkeys) -> dict:
     return out
 
 
+def model_commitments_at_block(subtensor, netuid: int, block: int) -> dict:
+    """hotkey -> raw model commitment AS OF a historical block.
+
+    This is the integrity basis of the first-cycle reconstruction: to reproduce
+    the prediction a miner's model determined for an old basket, we must run the
+    digest they had committed AT THAT TIME, not their latest one. The pallet is
+    last-write-wins, so the current digest may be newer than the basket. An
+    ARCHIVE node retains the storage at `block`, so reading CommitmentOf there
+    returns exactly what each hotkey had committed then.
+
+    No hotkey filter: at a historical block the *current* metagraph is the wrong
+    membership set. The commitment map at that block is the truth about who had
+    a model then.
+    """
+    try:
+        block_hash = subtensor.substrate.get_block_hash(block)
+        rows = subtensor.substrate.query_map(
+            module="Commitments", storage_function="CommitmentOf",
+            params=[netuid], page_size=300, block_hash=block_hash)
+    except Exception:
+        return {}
+
+    out: dict = {}
+    try:
+        for key, value in rows:
+            raw = value.value if hasattr(value, "value") else value
+            text = model_string_in(raw)
+            if text:
+                out[str(key)] = text
+    except Exception:
+        return {}
+    return out
+
+
 def as_registry_reader(commitments: dict):
     """Adapt the bulk result to `build_registry`'s reader signature.
 
