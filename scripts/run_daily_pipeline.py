@@ -240,6 +240,30 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
 
 # ---- 3. settle + publish -----------------------------------------------------
 
+def _coldkey_reader():
+    """hotkey_ss58 -> coldkey_ss58 from the CURRENT metagraph, so the settle's
+    one-coldkey-one-seat cap (Layer 1) can group a principal's hotkeys and keep
+    only its best-standing seat before the vector is published.
+
+    Metagraph reads need no wallet, so the keyless executor can do this. A read
+    failure returns None: daily_loop then applies NO cap, which is the fail-OPEN
+    direction — an identity we could not read must not cost anyone a seat.
+    """
+    try:
+        import bittensor as bt
+        net = (os.environ.get("SN21_REG_INDEX_ARCHIVE_URL")
+               or os.environ.get("BT_NETWORK") or "finney")
+        netuid = int(os.environ.get("SN21_NETUID", "21"))
+        mg = bt.Subtensor(network=net).metagraph(netuid)
+        cmap = {str(mg.hotkeys[i]): str(mg.coldkeys[i])
+                for i in range(len(mg.hotkeys))}
+        log(f"[settle] coldkey map: {len(cmap)} hotkeys (one-seat cap active)")
+        return cmap
+    except Exception as exc:   # noqa: BLE001 — fail OPEN, loudly
+        log(f"[settle] coldkey read failed ({exc}) — one-seat cap NOT applied today")
+        return None
+
+
 def stage_settle(ledger_root, day):
     from scripts.run_daily_loop import (
         _basket_volume,
@@ -257,7 +281,11 @@ def stage_settle(ledger_root, day):
         key_loader=(lambda: key) if key is not None else None,
         day_volume_provider=_basket_volume,
         chain_committer=None,     # NEVER anchor from this pipeline
-        coldkey_reader=None,      # weights are off; the cap is a weight-path input
+        # The executor now computes the intended weight vector (daily-stream flag
+        # on), so it is the weight path — apply the one-coldkey-one-seat cap here
+        # so the PUBLISHED vector is already fully gated and the committer commits
+        # it verbatim.
+        coldkey_reader=_coldkey_reader,
     )
     # Trim the noisy nested prediction index out of the summary.
     return {k: v for k, v in summary.items()
