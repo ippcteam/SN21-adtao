@@ -239,3 +239,61 @@ def test_pairs_for_uids_respects_allowlist():
 def test_pairs_for_uids_drops_zero_and_unmapped():
     from hope.validator.daily_stream_weights import pairs_for_uids
     assert pairs_for_uids({"a": 0.0, "b": None, "x": 0.4}, {"a": 1, "b": 2}) == []
+
+
+# ---- allocation_from_api: the M4 committer-side bridge -----------------------
+# The committer holds the wallet but not the standing ledger; it fetches the
+# vector the executor published. These hold the two properties that keep the
+# fetch safe: a good response becomes weights to commit, and ANY failure
+# (missing vector, network, garbage body) becomes a GATED hold — never an
+# empty or fabricated on-chain commit.
+
+import io as _io
+import json as _json
+import urllib.error as _uerr
+from unittest.mock import patch as _patch
+
+from hope.validator.daily_stream_weights import allocation_from_api
+
+
+def _fake_urlopen(payload=None, exc=None):
+    class _Ctx:
+        def __enter__(self):
+            if exc:
+                raise exc
+            return _io.BytesIO(_json.dumps(payload).encode())
+        def __exit__(self, *a):
+            return False
+    return lambda req, timeout=60: _Ctx()
+
+
+def test_api_allocation_commits_published_vector():
+    payload = {"success": True, "day": "2026-08-16", "gated": False,
+               "day_episode_volume": 525, "earning_set_size": 40,
+               "weights": {"hkA": 0.6, "hkB": 0.4}}
+    with _patch("urllib.request.urlopen", _fake_urlopen(payload)):
+        alloc = allocation_from_api("https://api.example.com", "k")
+    assert alloc.gated is False
+    assert alloc.weights == {"hkA": 0.6, "hkB": 0.4}
+    assert alloc.day == date(2026, 8, 16)
+    assert alloc.day_episode_volume == 525 and alloc.earning_set_size == 40
+
+
+def test_api_allocation_missing_vector_holds_previous():
+    err = _uerr.HTTPError("u", 404, "not found", {}, None)
+    with _patch("urllib.request.urlopen", _fake_urlopen(exc=err)):
+        alloc = allocation_from_api("https://api.example.com", "k")
+    assert alloc.gated is True and not alloc.weights
+
+
+def test_api_allocation_network_error_holds_previous():
+    with _patch("urllib.request.urlopen", _fake_urlopen(exc=OSError("boom"))):
+        alloc = allocation_from_api("https://api.example.com", "k")
+    assert alloc.gated is True and not alloc.weights
+
+
+def test_api_allocation_non_numeric_weights_holds_previous():
+    with _patch("urllib.request.urlopen",
+                _fake_urlopen({"day": "2026-08-16", "weights": {"hkA": "NaNish"}})):
+        alloc = allocation_from_api("https://api.example.com", "k")
+    assert alloc.gated is True and not alloc.weights

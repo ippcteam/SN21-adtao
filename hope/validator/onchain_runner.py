@@ -528,24 +528,40 @@ def run_epoch_scoring(
         try:
             from datetime import date as _date
 
-            from hope.validator.daily_stream_weights import allocation_from_ledger
-
-            _root = _os_allow.environ.get(
-                "SN21_STANDING_LEDGER_ROOT", "./sn21_ledger"
-            )
-            # Day volume for the [D3] gate: env var wins; absent, fall back
-            # to the day_volume.json the daily loop writes (audit 2026-07-29:
-            # the env contract had NO producer — daily_loop.read_day_volume
-            # is the documented handoff, stale-day files rejected). Still
-            # absent -> 0, which with a configured D3 minimum fails CLOSED
-            # (weights hold) and with the default 0 leaves the gate disabled.
-            _vol_str = _os_allow.environ.get("SN21_DAY_EPISODE_VOLUME", "")
-            if _vol_str.strip().isdigit():
-                _vol = int(_vol_str)
+            # M4 bridge: the standing ledger lives on the (keyless) executor,
+            # not on this wallet-holding host. When SN21_DAILY_WEIGHTS_API is
+            # set, fetch the vector the executor published over the operator API
+            # instead of reading a local ledger this host does not have. Default
+            # (unset) keeps the original local-ledger path for co-located runs.
+            _weights_api = _os_allow.environ.get(
+                "SN21_DAILY_WEIGHTS_API", "").strip().lower()
+            if _weights_api in ("1", "true", "yes", "on"):
+                from hope.validator.daily_stream_weights import allocation_from_api
+                _api_url = _os_allow.environ.get("HOPE_API_URL", "").strip()
+                _api_key = _os_allow.environ.get("HOPE_API_KEY", "").strip()
+                if not _api_url or not _api_key:
+                    raise RuntimeError(
+                        "SN21_DAILY_WEIGHTS_API is set but HOPE_API_URL/"
+                        "HOPE_API_KEY are missing")
+                _alloc = allocation_from_api(_api_url, _api_key)
             else:
-                from hope.validator.daily_loop import read_day_volume
-                _vol = read_day_volume(_root, _date.today()) or 0
-            _alloc = allocation_from_ledger(_root, _date.today(), _vol)
+                from hope.validator.daily_stream_weights import allocation_from_ledger
+                _root = _os_allow.environ.get(
+                    "SN21_STANDING_LEDGER_ROOT", "./sn21_ledger"
+                )
+                # Day volume for the [D3] gate: env var wins; absent, fall back
+                # to the day_volume.json the daily loop writes (audit 2026-07-29:
+                # the env contract had NO producer — daily_loop.read_day_volume
+                # is the documented handoff, stale-day files rejected). Still
+                # absent -> 0, which with a configured D3 minimum fails CLOSED
+                # (weights hold) and with the default 0 leaves the gate disabled.
+                _vol_str = _os_allow.environ.get("SN21_DAY_EPISODE_VOLUME", "")
+                if _vol_str.strip().isdigit():
+                    _vol = int(_vol_str)
+                else:
+                    from hope.validator.daily_loop import read_day_volume
+                    _vol = read_day_volume(_root, _date.today()) or 0
+                _alloc = allocation_from_ledger(_root, _date.today(), _vol)
             if _alloc.gated:
                 print(
                     f"[daily-stream] [D3] gate held weights: volume {_vol} < "

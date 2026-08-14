@@ -74,6 +74,17 @@ def _api_get(path: str):
         return json.loads(resp.read().decode())
 
 
+def _api_post(path: str, body: dict):
+    url, key = _api_base_and_key()
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(
+        f"{url}/internal/bittensor/v1/{path.lstrip('/')}", data=data,
+        method="POST",
+        headers={"X-API-Key": key, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return json.loads(resp.read().decode())
+
+
 def resolve_basket(explicit: str | None, day: date) -> str:
     """The basket release key. Explicit wins; else BD-<yesterday> (a basket is
     named for the day whose changes it holds and delivered the next morning),
@@ -254,6 +265,37 @@ def stage_settle(ledger_root, day):
                      "collateral_floor_alpha")}
 
 
+def stage_publish_weights(ledger_root, day):
+    """Publish the intended daily weight vector to the operator API so the
+    on-chain committer — which cannot see this disk — can fetch and commit it.
+
+    The vector is written by the settle step's daily_loop as
+    intended_weights_<day>.json when SN21_DAILY_STREAM_WEIGHTS is set. An absent
+    file means nothing to publish (the flag is off, or the day was gated to hold
+    the previous vector): a no-op, not an error.
+    """
+    path = os.path.join(ledger_root, f"intended_weights_{day}.json")
+    if not os.path.exists(path):
+        return {"published": False, "reason": "no intended_weights file"}
+    with open(path) as f:
+        intent = json.load(f)
+    weights = intent.get("weights") or {}
+    if not weights:
+        return {"published": False, "reason": "empty vector (gated or no standings)"}
+    resp = _api_post("daily/weights", {
+        "day": str(day),
+        "gated": bool(intent.get("gated", False)),
+        "day_episode_volume": intent.get("day_episode_volume"),
+        "earning_set_size": intent.get("earning_set_size"),
+        "weights": weights,
+        "meta": {"champion": intent.get("champion"),
+                 "evicted": intent.get("evicted")},
+    })
+    return {"published": True, "hotkeys": len(weights),
+            "gated": bool(intent.get("gated", False)),
+            "api_ok": resp.get("success")}
+
+
 # ---- run record --------------------------------------------------------------
 
 def write_run_record(ledger_root, record):
@@ -359,6 +401,15 @@ def main():
     except Exception as e:   # noqa: BLE001
         record["stages"]["settle"] = {"error": str(e)}
         log(f"[settle] ERROR {e}")
+
+    # 4. publish the intended weight vector for the on-chain committer
+    try:
+        s = stage_publish_weights(args.ledger_root, day)
+        record["stages"]["publish_weights"] = s
+        log(f"[publish-weights] {json.dumps(s, default=str)}")
+    except Exception as e:   # noqa: BLE001
+        record["stages"]["publish_weights"] = {"error": str(e)}
+        log(f"[publish-weights] ERROR {e}")
 
     record["elapsed_s"] = round(time.time() - started, 1)
     path = write_run_record(args.ledger_root, record)

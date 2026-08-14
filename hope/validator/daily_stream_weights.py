@@ -115,6 +115,57 @@ class DailyAllocation:
     collapse_audit: dict = field(default_factory=dict)
 
 
+def allocation_from_api(base_url: str, api_key: str, timeout_s: int = 60) -> "DailyAllocation":
+    """The committer half of the M4 bridge: fetch the intended daily vector the
+    operator (executor) published and return it as a DailyAllocation.
+
+    The executor settles standings and computes the vector on its keyless disk;
+    the committer holds the wallet but not the disk, so it reads the vector here
+    over the same keyed internal API that serves baskets and outcomes. Fetches
+    the LATEST published vector (the executor's settle and the committer's
+    scoring run on independent clocks — 'latest' avoids committing nothing just
+    because today's vector is not up yet).
+
+    Fails SAFE: any read failure, a missing vector (404), or an unparseable body
+    returns a GATED allocation, which the caller reads as "hold the previous
+    vector" — it never fabricates or empties weights.
+    """
+    import json as _json
+    import urllib.error
+    import urllib.request
+    from datetime import date as _date
+
+    url = f"{base_url.rstrip('/')}/internal/bittensor/v1/daily/weights?day=latest"
+    try:
+        req = urllib.request.Request(url, headers={"X-API-Key": api_key})
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            payload = _json.loads(resp.read().decode())
+    except Exception as exc:  # noqa: BLE001 — 404/network/parse all fail safe
+        logger.warning("[daily-stream] weight-vector fetch failed (%s) — "
+                       "holding previous vector", exc)
+        return DailyAllocation(day=_date.today(), gated=True, day_episode_volume=0)
+
+    raw = payload.get("weights") or {}
+    try:
+        weights = {str(hk): float(w) for hk, w in raw.items()}
+    except (TypeError, ValueError):
+        logger.warning("[daily-stream] published vector had non-numeric weights "
+                       "— holding previous vector")
+        return DailyAllocation(day=_date.today(), gated=True, day_episode_volume=0)
+
+    try:
+        day = _date.fromisoformat(str(payload.get("day"))[:10])
+    except ValueError:
+        day = _date.today()
+    return DailyAllocation(
+        day=day,
+        gated=bool(payload.get("gated", False)),
+        day_episode_volume=int(payload.get("day_episode_volume") or 0),
+        weights=weights,
+        earning_set_size=int(payload.get("earning_set_size") or 0),
+    )
+
+
 def compute_daily_allocation(
     entries: dict[str, list[ScoredEpisode]],
     day: date,
