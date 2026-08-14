@@ -1,31 +1,20 @@
-"""First-cycle reconstruction — reproduce the predictions miners' committed
-models determined for the early daily baskets, so the first 7-day scores can
-settle on schedule (~18 Aug) without fabricating anything.
+"""Backfill shadow predictions for a range of daily baskets.
 
-    python3 -m scripts.reconstruct_first_cycle \
+    python3 -m scripts.backfill_baskets \
         --from 2026-08-06 --to 2026-08-11 [--ledger-root DIR] [--dry-run]
 
-THE INTEGRITY ARGUMENT (read this before doubting it)
+For each basket day it reads the model digest each hotkey had committed as of
+that basket's delivery block, runs that digest against the basket in the
+sandbox, and seals the resulting predictions into the shadow ledger. A committed
+model is deterministic, so running the digest a hotkey held at that time yields
+the prediction it would have produced then.
 
-    In the daily stream the SEAL is the model digest committed on chain, not a
-    submitted prediction. A committed model is deterministic (enforced at
-    admission), and both the digest and the basket were published BEFORE the
-    outcome existed. So the prediction for a basket is fully determined by two
-    values that both predate the outcome. Running the exact digest a miner had
-    committed at that basket's time reproduces the prediction that was already
-    determined — the same logic as timelock encryption: the value was sealed,
-    we are only computing it now. Anyone can verify: their historical digest +
-    the published basket -> the exact prediction.
+Resumable and idempotent: a (day, hotkey) already sealed is skipped, so a run
+that stops part-way resumes rather than restarts, and never double-seals.
 
-    This is a ONE-TIME reconstruction for the first cycle, disclosed as such.
-    The live daily path (validator executes each day forward) runs going
-    forward and needs none of this.
-
-    It touches the chain only to READ (historical commitments). It writes no
-    weights and computes no scores — it reproduces predictions and seals them
-    into the shadow ledger. Settlement + scoring + receipts happen in a
-    separate off-chain step; the on-chain payout cutover is a deliberate,
-    separate flip.
+Chain access is READ-ONLY (historical commitments). It writes no weights and
+computes no scores — settlement, scoring, and receipts happen in the normal
+off-chain settle step.
 """
 
 from __future__ import annotations
@@ -105,8 +94,8 @@ def fetch_basket(basket_day: date) -> list:
 
 def _sealed_digests(ledger_root: str, day: str, hotkey: str) -> set:
     """The set of image_digests already recorded for (day, hotkey) in the
-    ledger. Reconstruction is resumable off this: a 7–10h run that dies
-    part-way must resume, not restart, and must never double-seal."""
+    ledger. The backfill is resumable off this: a long run that dies part-way
+    must resume, not restart, and must never double-seal."""
     path = os.path.join(shadow_dir(ledger_root, day), f"{hotkey}.jsonl")
     if not os.path.exists(path):
         return set()
@@ -127,7 +116,7 @@ def _sealed_digests(ledger_root: str, day: str, hotkey: str) -> set:
 
 def _job_remaining(ledger_root: str, pinned: str, day_map: dict) -> dict:
     """day_map filtered to the (day, hotkey) pairs NOT yet sealed for `pinned`.
-    An empty return means the whole digest is already reconstructed — skip the
+    An empty return means the whole digest is already sealed — skip the
     multi-GB pull entirely."""
     remaining: dict = {}
     for day, hotkeys in day_map.items():
@@ -172,9 +161,9 @@ def main():
     os.makedirs(args.ledger_root, exist_ok=True)
     os.makedirs(args.workdir, exist_ok=True)
 
-    log("===RECON-START===")
+    log("===BACKFILL-START===")
     import bittensor as bt
-    log(f"[recon] archive {ARCHIVE_URL}")
+    log(f"[backfill] archive {ARCHIVE_URL}")
     arch = bt.Subtensor(network=ARCHIVE_URL)
 
     per_day_hotkey_digest: dict = {}     # day -> {hotkey: pinned_ref}
@@ -195,13 +184,13 @@ def main():
             resolved[hk] = pinned
             digest_jobs.setdefault(pinned, {}).setdefault(day, []).append(hk)
         per_day_hotkey_digest[day] = resolved
-        log(f"[recon] {day}: block {blk} · {len(commits)} committed models · "
+        log(f"[backfill] {day}: block {blk} · {len(commits)} committed models · "
             f"{len(resolved)} runnable · basket {len(eps)} episodes")
 
-    log(f"[recon] unique digests to reconstruct: {len(digest_jobs)}")
+    log(f"[backfill] unique digests: {len(digest_jobs)}")
     if args.dry_run:
-        log("[recon] DRY RUN — nothing pulled or executed")
-        log("===RECON-END===")
+        log("[backfill] DRY RUN — nothing pulled or executed")
+        log("===BACKFILL-END===")
         return 0
 
     from hope.backtest.local_executor import split_pinned_ref
@@ -214,13 +203,13 @@ def main():
             stats["skipped_done"] += 1
             continue
         repo, digest = split_pinned_ref(pinned)
-        dest = os.path.join(args.workdir, f"recon-{i}")
+        dest = os.path.join(args.workdir, f"job-{i}")
         cleanup_rootfs(dest)
         try:
             image = pull_and_unpack(repo, digest, dest)
         except PullError as exc:
             stats["pull_fail"] += 1
-            log(f"[recon] {i}/{len(digest_jobs)} PULL FAIL {repo[:40]}: "
+            log(f"[backfill] {i}/{len(digest_jobs)} PULL FAIL {repo[:40]}: "
                 f"{str(exc)[:80]}")
             cleanup_rootfs(dest)
             continue
@@ -235,12 +224,12 @@ def main():
                            predictions_out=len(preds))
             for hk in hotkeys:
                 model = ShadowModel(hotkey=hk, image_digest=pinned,
-                                    admitted_at="reconstructed")
+                                    admitted_at="backfill")
                 record_day(args.ledger_root, day.isoformat(), model, rr)
                 stats["sealed"] += 1
         cleanup_rootfs(dest)
         if i % 10 == 0:
-            log(f"[recon] {i}/{len(digest_jobs)} digests · sealed "
+            log(f"[backfill] {i}/{len(digest_jobs)} digests · sealed "
                 f"{stats['sealed']} · skipped(done) {stats['skipped_done']} · "
                 f"{round(time.time()-t0)}s")
 
@@ -250,8 +239,8 @@ def main():
                           len(per_day_hotkey_digest.get(day, {})),
                           generated_at=f"{day.isoformat()}T09:30:00Z")
 
-    log(f"\n[recon] DONE: {json.dumps(stats)} in {round(time.time()-t0)}s")
-    log("===RECON-END===")
+    log(f"\n[backfill] DONE: {json.dumps(stats)} in {round(time.time()-t0)}s")
+    log("===BACKFILL-END===")
     return 0
 
 

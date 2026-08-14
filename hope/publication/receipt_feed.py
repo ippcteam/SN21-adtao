@@ -149,12 +149,10 @@ def build_receipt_metrics(
         # {} = nothing censored; None = this validator could not read the
         # censor state, which is a different statement and says so.
         "censored": (censored if censored is not None else {}),
-        # An operator disclosure carried INTO the signed receipt when set, so a
-        # one-time methodology note (e.g. the first-cycle reconstruction and its
-        # shortened settling window) is visible to any miner reading the
-        # receipt and covered by the signature — not a side-channel claim. Only
-        # present when SN21_RECEIPT_DISCLOSURE is set, so normal receipts are
-        # unchanged and byte-identical across validators.
+        # Optional operator disclosure carried INTO the signed receipt when set,
+        # so any note travels inside the signed document rather than as a
+        # side-channel claim. Only present when SN21_RECEIPT_DISCLOSURE is set,
+        # so normal receipts are unchanged and byte-identical across validators.
         **({"disclosure": _disclosure}
            if (_disclosure := ((environ or os.environ).get(
                "SN21_RECEIPT_DISCLOSURE") or "").strip()) else {}),

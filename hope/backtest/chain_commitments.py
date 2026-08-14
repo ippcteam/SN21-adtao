@@ -93,9 +93,8 @@ def bulk_model_commitments(subtensor, netuid: int, hotkeys) -> dict:
 def model_commitments_at_block(subtensor, netuid: int, block: int) -> dict:
     """hotkey -> raw model commitment AS OF a historical block.
 
-    This is the integrity basis of the first-cycle reconstruction: to reproduce
-    the prediction a miner's model determined for an old basket, we must run the
-    digest they had committed AT THAT TIME, not their latest one. The pallet is
+    To evaluate a model against a basket from its own time, we need the digest a
+    hotkey had committed AT THAT TIME, not its latest one. The pallet is
     last-write-wins, so the current digest may be newer than the basket. An
     ARCHIVE node retains the storage at `block`, so reading CommitmentOf there
     returns exactly what each hotkey had committed then.
