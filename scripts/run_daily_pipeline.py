@@ -442,8 +442,38 @@ def main():
     record["elapsed_s"] = round(time.time() - started, 1)
     path = write_run_record(args.ledger_root, record)
     log(f"[pipeline] run record -> {path}")
+
+    # 5. publish a heartbeat so a watcher that is NOT this box can see the run
+    #    happened and whether any stage failed. Best-effort — a heartbeat POST
+    #    failure must never fail the pipeline itself.
+    try:
+        h = publish_pipeline_heartbeat(str(day), record)
+        log(f"[heartbeat] {json.dumps(h, default=str)}")
+    except Exception as e:   # noqa: BLE001
+        log(f"[heartbeat] publish failed (non-fatal): {e}")
+
     log("===PIPELINE-END===")
     return 0
+
+
+def publish_pipeline_heartbeat(day, record):
+    """POST a compact run summary to the operator API so an independent watcher
+    can detect a missed day or a failed stage. `ok` = no stage errored."""
+    stages = record.get("stages", {})
+    failed = [name for name, s in stages.items()
+              if isinstance(s, dict) and s.get("error")]
+    ok = not failed
+    summary = {
+        "mode": record.get("mode"),
+        "elapsed_s": record.get("elapsed_s"),
+        "failed_stages": failed,
+        # keep the summary compact but diagnostic: per-stage keys, errors verbatim
+        "stages": {name: (s if isinstance(s, dict) else {"value": s})
+                   for name, s in stages.items()},
+    }
+    resp = _api_post("daily/pipeline-heartbeat",
+                     {"day": day, "ok": ok, "summary": summary})
+    return {"ok": ok, "failed_stages": failed, "api_ok": resp.get("success")}
 
 
 if __name__ == "__main__":
