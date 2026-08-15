@@ -185,6 +185,24 @@ def apply_hold(weights: Mapping, floor_alpha: float,
                       floor_alpha=floor_alpha)
 
 
+def gate_uid_weight_vector(uids, weights, alpha_reader, floor_alpha,
+                           environ=os.environ, force=False):
+    """Convenience for the on-chain weight path: apply the alpha floor to
+    PARALLEL uid/weight lists and return new (uids, weights, GateResult).
+
+    Order is preserved for survivors. If the gate does not apply (flag off and
+    not forced, floor <= 0, empty, or it refused to empty), the ORIGINAL lists
+    are returned unchanged — so a caller can always assign the result safely.
+    """
+    vec = {int(u): float(w) for u, w in zip(uids, weights)}
+    res = apply_hold(vec, floor_alpha, alpha_reader, environ=environ, force=force)
+    if not res.applied:
+        return list(uids), list(weights), res
+    new_uids = list(res.weights.keys())
+    new_weights = [res.weights[u] for u in new_uids]
+    return new_uids, new_weights, res
+
+
 def metagraph_alpha_reader(metagraph, by_uid: bool = True):
     """alpha held per miner, read off a metagraph.
 

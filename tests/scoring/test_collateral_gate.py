@@ -117,3 +117,48 @@ def test_metagraph_reader_by_uid_and_out_of_range():
     assert read(1) == 250.0
     assert read(99) is None          # out of range -> unknown, not zero
     assert read("nope") is None
+
+
+# ---- gate_uid_weight_vector: the on-chain weight-path convenience -----------
+# The shared weight path calls this with parallel uid/weight lists. It must
+# drop miners below the floor, keep the ones we cannot read a stake for
+# (fail-open), no-op when the flag is off and not forced, refuse to empty, and
+# preserve survivor order — the same guarantees as apply_hold, list-shaped.
+
+from hope.scoring.collateral_gate import gate_uid_weight_vector
+
+
+def _reader(alpha):
+    return lambda uid: alpha.get(int(uid))
+
+
+def test_gate_vector_drops_below_floor_keeps_unreadable():
+    alpha = {10: 200.0, 11: 50.0, 12: 300.0}          # 13 absent -> unreadable
+    uids, weights, res = gate_uid_weight_vector(
+        [10, 11, 12, 13], [0.4, 0.3, 0.2, 0.1], _reader(alpha), 150.0,
+        environ={}, force=True)
+    assert set(uids) == {10, 12, 13}                  # 11 dropped; 13 kept
+    assert 13 in res.unreadable and 11 in res.excluded
+    assert abs(sum(weights) - 1.0) < 1e-9             # renormalised
+
+
+def test_gate_vector_noop_when_flag_off_and_not_forced():
+    uids, weights, res = gate_uid_weight_vector(
+        [10, 11], [0.5, 0.5], _reader({10: 200.0, 11: 50.0}), 150.0,
+        environ={}, force=False)
+    assert not res.applied and uids == [10, 11] and weights == [0.5, 0.5]
+
+
+def test_gate_vector_refuses_to_empty():
+    # all readable and all below floor -> zero survivors -> keep original
+    uids, weights, res = gate_uid_weight_vector(
+        [10, 11], [0.5, 0.5], _reader({10: 10.0, 11: 10.0}), 150.0,
+        environ={}, force=True)
+    assert not res.applied and uids == [10, 11] and "refusing to empty" in res.refused_reason
+
+
+def test_gate_vector_preserves_survivor_order():
+    uids, _, _ = gate_uid_weight_vector(
+        [12, 10], [0.5, 0.5], _reader({10: 200.0, 12: 300.0}), 150.0,
+        environ={}, force=True)
+    assert uids == [12, 10]
