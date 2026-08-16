@@ -38,6 +38,9 @@ from hope.validator.onchain_runner import EpochScoringOutcome
 DEFAULT_ARTIFACT_DIR_ENV = "SN21_EPOCH_ARTIFACT_DIR"
 DEFAULT_ARTIFACT_DIR = Path("~/.sn21/epoch_artifacts")
 
+# The daily stream settles at three horizons; the weekly-era HORIZONS is [7, 14].
+DAILY_HORIZONS = [7, 14, 28]
+
 
 @dataclass
 class EpochArtifact:
@@ -207,8 +210,12 @@ def build_artifact(
     epoch_subtype: str | None = "campaign-level",
     epoch_type_multiplier: float = 1.0,
     baseline_score: float = 0.0,
+    horizons: list[int] | None = None,
 ) -> EpochArtifact:
     """Assemble an EpochArtifact from a completed scoring run.
+
+    `horizons` overrides the published horizon set (default `HORIZONS`, the
+    weekly-era [7, 14]). The daily stream passes [7, 14, 28].
 
     Args:
         outcome: the `EpochScoringOutcome` returned by `run_epoch_scoring`.
@@ -235,6 +242,7 @@ def build_artifact(
     tier_result_obj = compute_tier_result_from_score_map(
         outcome.score_map, baseline_score=baseline_score)
     tier_result_dict = dataclasses.asdict(tier_result_obj)
+    horizons = horizons if horizons is not None else HORIZONS
 
     return EpochArtifact(
         epoch_id=epoch_id,
@@ -243,7 +251,7 @@ def build_artifact(
         epoch_type=epoch_type,
         epoch_subtype=epoch_subtype,
         epoch_type_multiplier=epoch_type_multiplier,
-        horizon_set=[f"{h}d" for h in HORIZONS],
+        horizon_set=[f"{h}d" for h in horizons],
         block_range_start=outcome.block_range_start,
         block_range_end=outcome.block_range_end,
         total_registered_uids=total_registered_uids,
@@ -279,3 +287,113 @@ def build_and_write_artifact(
         baseline_score=baseline_score,
     )
     return write_artifact(artifact, base_dir=base_dir)
+
+
+def _ss58_to_bytes(hotkey_ss58: str) -> bytes:
+    """Decode an SS58 hotkey to its 32-byte public key (score_map key type)."""
+    from substrateinterface.utils.ss58 import ss58_decode
+
+    return bytes.fromhex(ss58_decode(hotkey_ss58))
+
+
+@dataclass(frozen=True)
+class _DailyRead:
+    """The subset of MinerReadResult that `_build_per_uid_scores` reads.
+
+    The daily stream has no on-chain per-miner commit triple (it scores
+    off-chain), so we cannot build a real MinerReadResult. The artifact only
+    ever touches these four fields, so a duck-typed stand-in is both correct
+    and honest about what a daily read carries.
+    """
+
+    miner_hotkey: bytes
+    miner_uid: int
+    ok: bool
+    excluded_reason: str | None
+
+
+def build_daily_artifact(
+    *,
+    standings: dict[str, float],
+    uid_by_hotkey: dict[str, int],
+    total_registered_uids: int,
+    day: str,
+    block_range_start: int | None = None,
+    block_range_end: int | None = None,
+    baseline_score: float = 0.0,
+    registered_hotkeys: list[str] | None = None,
+    epoch_type: str = "Daily",
+    epoch_subtype: str | None = "campaign-level",
+    epoch_type_multiplier: float = 1.0,
+    chain_fetch_timestamp: str | None = None,
+) -> EpochArtifact:
+    """Assemble an EpochArtifact for a DAILY basket from the executor's standings.
+
+    The daily stream scores off-chain — the validator's on-chain path filters
+    BD- epochs out — so there is no `EpochScoringOutcome` to feed `build_artifact`.
+    This reconstructs the minimal outcome the artifact needs (a byte-keyed
+    `score_map` and `miner_reads`) from the executor's per-hotkey daily
+    standings, then reuses `build_artifact` with the daily [7, 14, 28] horizon
+    set. The result flows through the SAME `aggregate()` → `post_epoch_report`
+    pipe the weekly path uses, so the site's leaderboard needs no special case.
+
+    Args:
+        standings: `hotkey_ss58 → daily score in [0, 1]` (the D13 age-weighted
+            average the executor's ledger produces).
+        uid_by_hotkey: `hotkey_ss58 → metagraph uid` at chain-fetch time.
+        day: the basket day `YYYY-MM-DD`; the epoch id is `BD-<day>`.
+        registered_hotkeys: optional full registered set (ss58). Any hotkey in
+            this set but NOT in `standings` becomes a disqualification row
+            (`not_scored_this_day`) so the published table covers the whole
+            field, not only the scored miners.
+    """
+    score_map: dict[bytes, int] = {}
+    reads: list[_DailyRead] = []
+    scored: set[str] = set()
+    for hotkey_ss58, score in standings.items():
+        try:
+            hk_bytes = _ss58_to_bytes(hotkey_ss58)
+        except Exception:
+            # A malformed hotkey should not sink the whole artifact — skip it.
+            continue
+        scored.add(hotkey_ss58)
+        score_map[hk_bytes] = int(round(float(score) * 1_000_000))
+        reads.append(_DailyRead(
+            miner_hotkey=hk_bytes,
+            miner_uid=int(uid_by_hotkey.get(hotkey_ss58, -1)),
+            ok=True,
+            excluded_reason=None,
+        ))
+    for hotkey_ss58 in (registered_hotkeys or []):
+        if hotkey_ss58 in scored:
+            continue
+        try:
+            hk_bytes = _ss58_to_bytes(hotkey_ss58)
+        except Exception:
+            continue
+        reads.append(_DailyRead(
+            miner_hotkey=hk_bytes,
+            miner_uid=int(uid_by_hotkey.get(hotkey_ss58, -1)),
+            ok=False,
+            excluded_reason="not_scored_this_day",
+        ))
+
+    outcome = EpochScoringOutcome(
+        miner_reads=reads,
+        score_map=score_map,
+        block_range_start=block_range_start,
+        block_range_end=block_range_end,
+        report_only=True,
+    )
+    return build_artifact(
+        outcome=outcome,
+        epoch_id=f"BD-{day}",
+        total_registered_uids=total_registered_uids,
+        chain_fetch_timestamp=(
+            chain_fetch_timestamp or datetime.now(timezone.utc).isoformat()),
+        epoch_type=epoch_type,
+        epoch_subtype=epoch_subtype,
+        epoch_type_multiplier=epoch_type_multiplier,
+        baseline_score=baseline_score,
+        horizons=DAILY_HORIZONS,
+    )
