@@ -469,6 +469,10 @@ def run_daily_loop(
                     "day": str(day), "gated": alloc.gated,
                     "day_episode_volume": alloc.day_episode_volume,
                     "weights": alloc.weights,
+                    # Raw D13 standings (hotkey -> average), separate from the
+                    # gated weight vector: the public leaderboard shows SCORES,
+                    # which are facts even on a gated day when weights hold.
+                    "standings": alloc.standings,
                     "earning_set_size": alloc.earning_set_size,
                     "champion": (alloc.promotion.state.champion
                                  if alloc.promotion else None),

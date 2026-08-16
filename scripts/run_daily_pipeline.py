@@ -324,6 +324,98 @@ def stage_publish_weights(ledger_root, day):
             "api_ok": resp.get("success")}
 
 
+def _report_publish_gate():
+    """Return (allowed, reason). BOTH locks must be open before a daily report
+    reaches the public CMS, so nothing appears on the site ahead of the
+    published transition-plan reveal:
+
+      1. SN21_DAILY_REPORT_PUBLISH must be truthy — the master switch, OFF by
+         default. The stage runs every day and builds nothing observable until
+         this is flipped.
+      2. Today (UTC) must be on/after SN21_DAILY_REPORT_NOT_BEFORE (default
+         2026-08-18, the first-settlement date on /sn21/daily). A date lock so
+         even an early flag flip cannot reveal a day before the calendar says.
+    """
+    flag = os.environ.get("SN21_DAILY_REPORT_PUBLISH", "0").strip().lower()
+    if flag not in ("1", "true", "yes", "on"):
+        return False, "publish flag off (SN21_DAILY_REPORT_PUBLISH)"
+    not_before = os.environ.get("SN21_DAILY_REPORT_NOT_BEFORE", "2026-08-18")
+    try:
+        nb = date.fromisoformat(not_before)
+    except ValueError:
+        return False, f"bad SN21_DAILY_REPORT_NOT_BEFORE ({not_before!r})"
+    today = datetime.now(timezone.utc).date()
+    if today < nb:
+        return False, f"before reveal date {nb.isoformat()}"
+    return True, "open"
+
+
+def _uid_by_hotkey():
+    """hotkey_ss58 -> uid from the live metagraph. None on any read failure —
+    the report stage then no-ops rather than publish rows with unknown UIDs."""
+    try:
+        import bittensor as bt
+        net = os.environ.get("BT_NETWORK") or "finney"
+        netuid = int(os.environ.get("SN21_NETUID", "21"))
+        mg = bt.Subtensor(network=net).metagraph(netuid)
+        return {str(mg.hotkeys[i]): int(mg.uids[i])
+                for i in range(len(mg.hotkeys))}
+    except Exception as exc:   # noqa: BLE001
+        log(f"[report] metagraph read failed ({exc})")
+        return None
+
+
+def stage_publish_report(ledger_root, day):
+    """Build the daily EpochReport from the settled standings and POST it to the
+    CMS — the public leaderboard's data source. Reuses the SAME aggregate() ->
+    post_payload pipe the weekly path uses (via build_daily_artifact), so the
+    site needs no special case.
+
+    GATED. Nothing is posted before the transition-plan reveal (see
+    _report_publish_gate). The stage still runs daily so the wiring is exercised;
+    it simply reports why it held.
+    """
+    allowed, reason = _report_publish_gate()
+    if not allowed:
+        return {"published": False, "gated": True, "reason": reason}
+
+    path = os.path.join(ledger_root, f"intended_weights_{day}.json")
+    if not os.path.exists(path):
+        return {"published": False, "reason": "no intended_weights file"}
+    with open(path) as f:
+        intent = json.load(f)
+    standings = intent.get("standings") or {}
+    if not standings:
+        return {"published": False, "reason": "no standings (gated day or empty)"}
+
+    uid_by_hotkey = _uid_by_hotkey()
+    if not uid_by_hotkey:
+        # Publishing rows with uid=-1 would be rejected by the payload schema;
+        # hold rather than post a broken table.
+        return {"published": False, "reason": "metagraph unavailable"}
+
+    api_key = os.environ.get("SN21_LEADERBOARD_API_KEY", "")
+    if not api_key:
+        return {"published": False, "reason": "SN21_LEADERBOARD_API_KEY unset"}
+
+    from hope.reporting.aggregator import aggregate
+    from hope.reporting.epoch_artifact import build_daily_artifact
+    from scripts.post_epoch_report import DEFAULT_ENDPOINT, post_payload
+
+    artifact = build_daily_artifact(
+        standings={str(k): float(v) for k, v in standings.items()},
+        uid_by_hotkey=uid_by_hotkey,
+        total_registered_uids=len(uid_by_hotkey),
+        day=str(day),
+    )
+    payload = aggregate(artifact)
+    endpoint = os.environ.get("SN21_LEADERBOARD_ENDPOINT") or DEFAULT_ENDPOINT
+    resp = post_payload(payload, endpoint=endpoint, api_key=api_key)
+    ok = 200 <= resp.status_code < 300
+    return {"published": ok, "epoch_id": payload.epoch_id,
+            "miners": len(payload.miner_results), "status": resp.status_code}
+
+
 # ---- run record --------------------------------------------------------------
 
 def write_run_record(ledger_root, record):
@@ -438,6 +530,16 @@ def main():
     except Exception as e:   # noqa: BLE001
         record["stages"]["publish_weights"] = {"error": str(e)}
         log(f"[publish-weights] ERROR {e}")
+
+    # 5. publish the daily leaderboard report to the CMS (GATED — nothing is
+    #    posted before the transition-plan reveal date; see _report_publish_gate)
+    try:
+        s = stage_publish_report(args.ledger_root, day)
+        record["stages"]["publish_report"] = s
+        log(f"[publish-report] {json.dumps(s, default=str)}")
+    except Exception as e:   # noqa: BLE001
+        record["stages"]["publish_report"] = {"error": str(e)}
+        log(f"[publish-report] ERROR {e}")
 
     record["elapsed_s"] = round(time.time() - started, 1)
     path = write_run_record(args.ledger_root, record)
