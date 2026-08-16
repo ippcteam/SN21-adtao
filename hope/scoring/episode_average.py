@@ -19,6 +19,7 @@ separate D7-curve step.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
@@ -29,9 +30,27 @@ DEFAULT_HALF_LIFE_DAYS = 12.0
 # working set stays bounded and auditable (matches stream depth: day 35 is
 # when a basket's last horizon lands).
 DEFAULT_WINDOW_DAYS = 35
+
+
+def _floor_from_env(name: str, default: int) -> int:
+    """A published cold-start floor, overridable for the first-cycle bootstrap.
+
+    Steady state is `default` (250 / 1000). During the reconstruction bootstrap
+    the settled evidence is thin by construction, so the floor is temporarily
+    lowered via env and ramps back to `default` as daily volume accumulates —
+    disclosed in SN21_REWARDS.md so the published number always matches what
+    runs. Read at import; the executor sets it before the process starts.
+    """
+    try:
+        v = int((os.environ.get(name) or "").strip())
+        return v if v > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
 # Cold start (GAP-2 v2 §3.4): evidence mass, not calendar.
-PLACEMENT_FLOOR_PREDICTIONS = 250
-FULL_STANDING_PREDICTIONS = 1000
+PLACEMENT_FLOOR_PREDICTIONS = _floor_from_env("SN21_PLACEMENT_FLOOR_PREDICTIONS", 250)
+FULL_STANDING_PREDICTIONS = _floor_from_env("SN21_FULL_STANDING_PREDICTIONS", 1000)
 
 
 @dataclass(frozen=True)

@@ -50,6 +50,14 @@ You need enough scored predictions in the standing window before the curve can p
 - **250** scored predictions → eligible for placement
 - **1000** → full standing confidence
 
+> **First-cycle bootstrap.** During the weekly→daily transition the settled
+> evidence is thin by construction — the earliest daily baskets are still
+> maturing — so the placement floor starts at **50** and rises back to **250**
+> as daily volume accumulates. By the time it returns to 250, a miner
+> predicting daily is well past it, so the step-up seats and unseats no one.
+> The full-standing floor stays **1000** throughout, so thin early standings
+> are weighted conservatively.
+
 (Details in [SN21_SCORING.md](./SN21_SCORING.md).)
 
 ## Champion vs earner (two different seats)

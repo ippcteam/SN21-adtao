@@ -29,7 +29,7 @@ reason rather than guessing at a network or a hotkey.
 import json
 import os
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
@@ -199,10 +199,17 @@ def _anchor_committer(ledger_root: str, environ=None):
 def _basket_volume(day: date) -> int:
     """How many episodes the day's basket held — over HTTP when configured.
 
+    The basket processed on run-day `day` is BD-<day-1> (a basket is named for
+    the day whose changes it holds and is delivered the next morning; see
+    resolve_basket). Querying BD-<day> asks for a basket that does not exist yet
+    and returns 0 — so we ask for the basket day, matching what the pipeline
+    actually resolved and scored.
+
     Same reasoning as the outcomes provider: this is one integer, and reading
     it directly is the last thing that would force a database login onto the
     public-facing validator.
     """
+    basket_day = day - timedelta(days=1)
     url = (os.environ.get("SN21_OUTCOMES_API_URL") or "").strip()
     key = (os.environ.get("SN21_OUTCOMES_API_KEY") or "").strip()
     if url and key:
@@ -210,7 +217,7 @@ def _basket_volume(day: date) -> int:
         import urllib.request
         req = urllib.request.Request(
             f"{url.rstrip('/')}/internal/bittensor/v1/daily/basket-volume"
-            f"?day={day.isoformat()}",
+            f"?day={basket_day.isoformat()}",
             headers={"X-API-Key": key})
         with urllib.request.urlopen(req, timeout=30) as resp:
             return int(_json.loads(resp.read().decode()).get("episode_count") or 0)
@@ -230,7 +237,7 @@ def _basket_volume(day: date) -> int:
         n = s.execute(T(
             "SELECT episode_count FROM bittensor_release_registry "
             "WHERE release_key = :k"
-        ), {"k": f"BD-{day}"}).scalar()
+        ), {"k": f"BD-{basket_day}"}).scalar()
     return int(n or 0)
 
 
