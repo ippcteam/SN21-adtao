@@ -322,7 +322,13 @@ def build_daily_artifact(
     block_range_end: int | None = None,
     baseline_score: float = 0.0,
     registered_hotkeys: list[str] | None = None,
-    epoch_type: str = "Daily",
+    # epoch_type MUST be one of the CMS's accepted classifications (Search,
+    # PMax, Shopping, Video/Display, Consolidation, Championship) — "Daily" is
+    # NOT one, and posting it would be rejected. The daily baskets are
+    # predominantly search-campaign changes, so "Search" is both accepted and
+    # accurate; the stream's daily-ness is carried by the BD- epoch_id, which
+    # is what the site keys its daily framing on.
+    epoch_type: str = "Search",
     epoch_subtype: str | None = "campaign-level",
     epoch_type_multiplier: float = 1.0,
     chain_fetch_timestamp: str | None = None,

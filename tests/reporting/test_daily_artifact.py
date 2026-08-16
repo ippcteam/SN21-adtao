@@ -38,7 +38,10 @@ def test_daily_artifact_has_daily_horizons_and_epoch_id():
         block_range_end=200,
     )
     assert art.epoch_id == "BD-2026-08-16"
-    assert art.epoch_type == "Daily"
+    # epoch_type is a CMS-accepted classification ("Search"), NOT "Daily" —
+    # the daily-ness is carried by the BD- epoch_id. Posting an unknown
+    # epoch_type would be rejected by the CMS select field.
+    assert art.epoch_type == "Search"
     # The daily contract settles at three horizons, not the weekly [7,14].
     assert art.horizon_set == ["7d", "14d", "28d"]
 
