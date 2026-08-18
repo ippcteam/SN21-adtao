@@ -528,6 +528,12 @@ def run_epoch_scoring(
         try:
             from datetime import date as _date
 
+            # _vol is only assigned on the ledger path below, but the gated- and
+            # success-branch log lines reference it — on the API path that raised
+            # UnboundLocalError, the except swallowed it, and the epoch (weekly)
+            # vector was retained. Initialise so the API path can't crash on a log.
+            _vol = None
+
             # M4 bridge: the standing ledger lives on the (keyless) executor,
             # not on this wallet-holding host. When SN21_DAILY_WEIGHTS_API is
             # set, fetch the vector the executor published over the operator API
