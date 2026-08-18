@@ -576,10 +576,22 @@ def run_epoch_scoring(
                 )
             else:
                 from hope.validator.daily_stream_weights import pairs_for_uids
+                # KEY-SPACE FIX: _alloc.weights is keyed by ss58 hotkey STRINGS
+                # (the daily /weights API's shape), but uid_by_hotkey here is
+                # keyed by 32-byte pubkeys (inp.miner_hotkey). Passing it raw made
+                # pairs_for_uids match NOTHING (string vs bytes) -> every daily
+                # miner dropped -> "map to no metagraph UIDs" -> the epoch
+                # (weekly/tiered) vector was silently retained on-chain. Re-key to
+                # ss58 so the lookup lands. (Latent until the daily commit path
+                # went live 2026-08-18.)
+                _uid_by_ss58 = {
+                    _pubkey_bytes_to_ss58(_hk): _u
+                    for _hk, _u in uid_by_hotkey.items()
+                }
                 # Allowlist-aware (audit 2026-07-29: raw uid_by_hotkey here
                 # silently bypassed SN21_WEIGHT_ALLOWLIST_UIDS).
                 _pairs = pairs_for_uids(
-                    _alloc.weights, uid_by_hotkey, allowed_uids=_daily_allow
+                    _alloc.weights, _uid_by_ss58, allowed_uids=_daily_allow
                 )
                 if _pairs:
                     uids = [u for u, _ in _pairs]
