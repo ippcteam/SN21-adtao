@@ -290,8 +290,19 @@ def build_and_write_artifact(
 
 
 def _ss58_to_bytes(hotkey_ss58: str) -> bytes:
-    """Decode an SS58 hotkey to its 32-byte public key (score_map key type)."""
-    from substrateinterface.utils.ss58 import ss58_decode
+    """Decode an SS58 hotkey to its 32-byte public key (score_map key type).
+
+    Robust to which ss58 library the host actually ships. Newer bittensor pins
+    `scalecodec` but NOT `substrateinterface`, so importing only the latter (the
+    first cut) raised ImportError on the executor for EVERY hotkey — and the
+    caller's broad `except` then silently dropped the whole field, producing a
+    0-row report the CMS rejects with 400. Try substrateinterface, then fall
+    back to scalecodec (a hard bittensor dependency, so always present here).
+    """
+    try:
+        from substrateinterface.utils.ss58 import ss58_decode
+    except Exception:  # noqa: BLE001 — missing dep, not a decode error
+        from scalecodec.utils.ss58 import ss58_decode
 
     return bytes.fromhex(ss58_decode(hotkey_ss58))
 
@@ -356,11 +367,20 @@ def build_daily_artifact(
     score_map: dict[bytes, int] = {}
     reads: list[_DailyRead] = []
     scored: set[str] = set()
+    _skipped = 0
     for hotkey_ss58, score in standings.items():
         try:
             hk_bytes = _ss58_to_bytes(hotkey_ss58)
-        except Exception:
-            # A malformed hotkey should not sink the whole artifact — skip it.
+        except Exception as _e:  # noqa: BLE001
+            # A single malformed hotkey should not sink the whole artifact — but
+            # a decoder that fails for EVERY key once emptied the entire report
+            # (0 rows -> CMS 400). Surface the first failure loudly and count the
+            # rest so a broken decoder can never masquerade as "no miners".
+            _skipped += 1
+            if _skipped == 1:
+                import sys
+                print(f"[artifact] ss58 decode FAILED for {hotkey_ss58[:12]}..: "
+                      f"{type(_e).__name__}: {_e}", file=sys.stderr, flush=True)
             continue
         scored.add(hotkey_ss58)
         score_map[hk_bytes] = int(round(float(score) * 1_000_000))
