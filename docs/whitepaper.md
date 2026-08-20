@@ -120,9 +120,10 @@ skill.
 The mechanism solves each piece of the structural gap:
 
 - **Structured prediction problems at scale.** The data pipeline
-  normalises thousands of Google Ads accounts into a consistent v1.9
-  episode schema and publishes weekly. Miners face the same problem
-  shape every epoch and can build models that compound across cycles.
+  normalises thousands of Google Ads accounts into a consistent episode
+  schema (v2.0 since August 2026, covering all change types) and
+  publishes daily. Miners face the same problem shape every day and can
+  build models that compound across cycles.
 - **Settlement against measured outcomes.** Outcomes are measured
   from live Google Ads data and committed on chain. The scoring
   function is open source and deterministic. Prediction skill is
