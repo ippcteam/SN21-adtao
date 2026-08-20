@@ -16,6 +16,11 @@ This document explains **how emissions are allocated** once you have a standing.
 
 Your **standing** (moving-average score) is mapped through a **published weight curve** into on-chain weights; emissions flow continuously on Bittensor’s tempo from those weights. The model that **runs live** (champion) is chosen by a separate, stricter rule.
 
+> **Where you see it.** The public dashboard updates itself daily: each
+> day's report publishes automatically when the scoring run completes
+> (from 20 August 2026). Only corrections and weekly-era reports go
+> through manual review.
+
 ## From standing to weight
 
 1. Scoring produces a per-miner standing ([SN21_SCORING.md](./SN21_SCORING.md)).

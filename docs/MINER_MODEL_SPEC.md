@@ -113,6 +113,15 @@ The reference model's flattened field list is a convenience view of the same
 schema, not a third format. The v2 bundle and its change types are in
 [SN21_TRAINING.md](./SN21_TRAINING.md).
 
+New per-action fields in v2 payloads, worth modelling: `from_value` /
+`to_value` on budget and target changes (the change's actual size),
+`client_type` (Google's record of who made the change), and a
+`source_mix` summary on the bundle (user = web/mobile interface,
+system = scripts, API, rules). `transition_key` is low-cardinality by
+design — families like `BUDGET:up_large`, `NEGATIVE_KEYWORD_ADD`, and
+`COMPOSITE:<dominant>+<n>` for mixed 72-hour windows, where the
+prediction is the net effect of the listed actions together.
+
 ## 3. Admission — the backtest gate
 
 A newly committed digest runs against a **held-out historical corpus** of
