@@ -21,6 +21,12 @@ yet, it says so rather than inventing a CLI.
 > expanded change types are already in this bundle **and** in live daily
 > baskets from **20 August 2026**. A model trained only on budget and
 > campaign-pause will miss that population.
+>
+> Two things are deliberately excluded from both the bundle and the live
+> baskets: IP-blocklist hygiene churn, and budget moves under $5/day.
+> Label coverage in v2: every episode carries 7-day outcomes, ~4 in 5 carry
+> 14-day, and about half carry 28-day — a share that grows with each refresh
+> as more windows mature.
 
 ---
 
