@@ -393,13 +393,18 @@ when a check fails: **[SN21_VERIFYING.md](./SN21_VERIFYING.md)**.
 > **Full end-to-end training path:** [SN21_TRAINING.md](./SN21_TRAINING.md)
 > — data → join → train → containerise → smoke test → self-score.
 
-Use settled historical baskets (training bundle from the transition, public
-exports under `data/episodes/` / `data/outcomes/` when available, plus the
-bundled sample):
+Train on the **rich v2 bundle** (29,129 reconstructed daily-stream episodes,
+all change types — not only budget / pause). Those types are already in live
+daily baskets from **20 August 2026**. Weekly-era public exports under
+`data/episodes/` / `data/outcomes/` and the in-repo sample remain available
+but will not prepare you for that population:
 
 ```bash
+curl -L -o SN21_rich_training_v2.jsonl \
+  https://github.com/ippcteam/SN21-adtao/releases/download/training-v2-2026-08/SN21_rich_training_v2.jsonl
+
 # Bundled sample — a PIPELINE CHECK only (10 episodes). A model trained
-# on this alone will not clear the gate; train on the full bundle.
+# on this alone will not clear the gate; train on the v2 bundle.
 python scripts/train_example_model.py \
     --data-file data/training/training_episodes.json
 
@@ -419,19 +424,31 @@ Monday 3 August and was delivered on Tuesday 4 August).
 ## 7. What an episode looks like
 
 Episodes describe account state before interventions. Fields include metadata,
-account state, ~60-day pre-window series, and an action bundle with magnitudes.
+account state, a 60-day pre-window baseline plus an 8-week history series,
+detected archetypes when present, and an action bundle (single change or a
+**composite** window). Full field list and counts:
+[SN21_TRAINING.md](./SN21_TRAINING.md).
 
-Launch action types (see `hope/constants.py:LAUNCH_ACTION_TYPES`):
+Launch types already in live baskets:
 
 | Type | Key signal |
 |------|------------|
-| `BUDGET_CHANGE` | `magnitude.spend_change_pct` |
+| `BUDGET_CHANGE` | `from_value` / `to_value` (daily budget) |
 | `BID_STRATEGY_CHANGE` | strategy `from` / `to` — expect learning-period volatility |
 | `TARGET_VALUE_CHANGE` | new tCPA/tROAS vs current |
 | `CAMPAIGN_PAUSE` | spend change ≈ −100% |
 
+These types are already in the v2 training bundle **and** in live baskets
+from **20 August 2026**: `NEGATIVE_KEYWORD_ADD` / `REMOVE`, `CRITERION_*`,
+`GEO_CHANGE`, `SCHEDULE_CHANGE`, `AUDIENCE_CHANGE`, `ASSET_CHANGE`,
+`KEYWORD_ADD` / `REMOVE`, `AD_*`, `ADGROUP_*`, `DEMOGRAPHIC_CHANGE`,
+`DEVICE_TARGETING_CHANGE`, `PLACEMENT_CHANGE`, and composite windows
+(`transition_key` starts `COMPOSITE:`). Predict the **net** effect.
+
 `coverage_status = "trust_enriched"` episodes may include archetypes, guardrails,
-health, and portfolio context — use them when present.
+health, and portfolio context — use them when present. v2 records carry
+`account_state.archetypes` on 84% of rows and `source_mix` (`user` vs `system`)
+on every bundle.
 
 Full field walkthrough examples remain in repo training JSON and public episode
 exports; the **execution contract** is NDJSON in → NDJSON out as in §4.

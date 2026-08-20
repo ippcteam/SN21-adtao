@@ -4,56 +4,116 @@
 | :---- | :---- |
 | **Audience** | Miners |
 | **Status** | Authoritative training path for the daily stream |
-| **Last updated** | 2026-08-04 |
+| **Last updated** | 2026-08-20 |
 | **Prerequisites** | Registered hotkey ([quickstart §2](./miner_quickstart.md)) |
 
 One route from published data to a container the subnet will run. Six steps,
 each with the exact command. If a step needs something that does not exist
 yet, it says so rather than inventing a CLI.
 
-> **What you are training on, plainly.** The published corpus is
-> **weekly-era** (`WR-*` epochs, 7- and 14-day outcomes). The live contract is
-> the **daily stream** (`BD-*` baskets, 7/14/**28**-day). Same input schema, so
-> a model trained here runs unchanged live — but the 28-day horizon has no
-> historical labels until the first daily 28-day outcomes settle on
-> **8 September 2026**. Train the 7- and 14-day heads on real data; the 28-day
-> head starts as an extrapolation. Everyone is in that position, including us.
+> **What you are training on, plainly.** The current published corpus is
+> **rich daily-stream v2** (`training-v2-2026-08`): reconstructed real account
+> change windows whose outcome periods have already elapsed, with measured
+> 7- and 14-day labels and 28-day labels where they have matured. The live
+> contract is the **daily stream** (`BD-*` baskets, 7/14/**28**-day). The first
+> *live* 28-day daily outcomes still settle on **8 September 2026**; v2 already
+> carries 28-day labels on the historical windows that have elapsed. The
+> expanded change types are already in this bundle **and** in live daily
+> baskets from **20 August 2026**. A model trained only on budget and
+> campaign-pause will miss that population.
 
 ---
 
 ## 1. Get the data
 
-**Published corpus (in this repo):**
+**Rich training bundle v2 (current, train on this):** 29,129 reconstructed
+daily-stream episodes, one JSON object per line. First line is a `_manifest`.
+Windows span **2026-06-15 – 2026-08-04**. Labels are measured results, not
+simulations.
 
 ```bash
-ls data/episodes/    # inputs  — features you predict on
-ls data/outcomes/    # labels  — measured results, published after each deadline
+curl -L -o SN21_rich_training_v2.jsonl \
+  https://github.com/ippcteam/SN21-adtao/releases/download/training-v2-2026-08/SN21_rich_training_v2.jsonl
 ```
 
-Both folders have READMEs describing the shapes:
-[episodes](../data/episodes/README.md) · [outcomes](../data/outcomes/README.md).
-Files pair by epoch id: `data/episodes/WR-2026-W21-PUB-E1.json` ↔
+Also on the [releases page](https://github.com/ippcteam/SN21-adtao/releases/tag/training-v2-2026-08).
+
+Each record is `{"episode_id", "input": {"payload", "transition_key"}, "labels"}`.
+`input.payload` is what you train on:
+
+| Field | What it is |
+| :---- | :---- |
+| `pre_window` | 60-day baseline (`avg_daily_cost_micros`, conversions, conversion value, `baseline_days` / `active_days`) plus an 8-week `weekly_series` (`cost_micros`, `conversions`; a week may be `null`) |
+| `account_state.archetypes` | Detected archetypes in the 30 days before the change — present on **84%** of records |
+| `action_bundle.actions` | Each change: `type`, `ts`, `op`, `entity_type`, `client_type`, plus `from_value` / `to_value` or `from_strategy` / `to_strategy` when they apply |
+| `action_bundle.bundle_summary` | `action_count`, `action_types`, `transition_key`, `source_mix` (`user` / `system` from the Google Ads client type) |
+| `labels` | Settled deltas vs the 60-day baseline: `cost_delta_pct`, `conversions_delta_pct`, `cpa_delta_pct`, `conversion_value_delta_pct` at horizons **7** (28,592), **14** (23,384), **28** (14,849) |
+
+**Change types.** Not only budget and pause. About 16.9k records are
+**composite** windows — several changes land together; predict the net effect.
+
+| Type | Episodes containing it | Signal |
+| :---- | ---: | :---- |
+| `BUDGET_CHANGE` | 15,422 | `from_value` / `to_value` (daily budget) |
+| `NEGATIVE_KEYWORD_ADD` | 6,720 | criterion create |
+| `CAMPAIGN_PAUSE` | 3,465 | campaign status → paused |
+| `TARGET_VALUE_CHANGE` | 2,801 | new tCPA / tROAS |
+| `CRITERION_CHANGE` | 2,434 | campaign / ad-group criterion update |
+| `BID_STRATEGY_CHANGE` | 1,721 | `from_strategy` / `to_strategy` |
+| `ASSET_CHANGE` | 804 | campaign asset |
+| `NEGATIVE_KEYWORD_REMOVE` | 602 | criterion remove |
+| Also present | — | `GEO_CHANGE`, `SCHEDULE_CHANGE`, `AUDIENCE_CHANGE`, `KEYWORD_ADD` / `KEYWORD_REMOVE`, `AD_CREATE` / `AD_PAUSE` / `AD_ENABLE` / `AD_REMOVE`, `ADGROUP_*`, `DEMOGRAPHIC_CHANGE`, `DEVICE_TARGETING_CHANGE`, `PLACEMENT_CHANGE`, `CRITERION_*` |
+
+Campaign identifiers are one-way hashes. This release is
+**campaign-resolvable** changes; keyword-level (ad-group-scoped) episodes
+follow in a later release. Outcome deltas naturally skew negative: many real
+changes intentionally cut volume. `source_mix` treats web/mobile as `user`
+and scripts/API/rules as `system`.
+
+A held-out evaluation set is **never** published, and any training episode
+that overlapped it has been removed. That set is the only clean benchmark
+that exists; publishing it would destroy it permanently.
+
+**Weekly-era bundle (superseded for training):** the 10,791-record
+[`SN21_training_bundle.jsonl`](https://github.com/ippcteam/SN21-adtao/releases/tag/training-bundle-2026-08)
+is still available. It is almost entirely `BUDGET_CHANGE` / `CAMPAIGN_PAUSE`
+and predates the 72-hour episode cap now live on the daily stream. Use v2.
+
+**Weekly-era exports (in this repo):** still useful as a second, narrower
+corpus. Pair by epoch id:
+`data/episodes/WR-2026-W21-PUB-E1.json` ↔
 `data/outcomes/WR-2026-W21-PUB-E1.json`.
-
-**Training bundle (larger and pre-joined):** 3,069 settled episodes with all
-three horizons already attached, one JSON object per line.
+Shapes: [episodes](../data/episodes/README.md) ·
+[outcomes](../data/outcomes/README.md).
 
 ```bash
-curl -L -o SN21_training_bundle.jsonl \
-  https://github.com/ippcteam/SN21-adtao/releases/download/training-bundle-2026-08/SN21_training_bundle.jsonl
+ls data/episodes/    # weekly-era inputs
+ls data/outcomes/    # weekly-era labels
 ```
-
-Also on the [releases page](https://github.com/ippcteam/SN21-adtao/releases/tag/training-bundle-2026-08).
-
-A held-out set of 247 episodes is **never** published — it is how a submitted
-model gets evaluated on data it cannot have trained on. That set is the only
-clean benchmark that exists, and publishing it would destroy it permanently.
 
 ---
 
 ## 2. Join inputs to labels
 
-Both files carry an `episodes` array; `episode_id` is the join key.
+The rich bundle is already joined. Skip the first line (`_manifest`), then
+`json.loads` per line. Features live under `input.payload`; labels under
+`labels` keyed `"7"` / `"14"` / `"28"`.
+
+```python
+import json
+
+records = []
+with open("SN21_rich_training_v2.jsonl") as f:
+    for i, line in enumerate(f):
+        obj = json.loads(line)
+        if i == 0 and "_manifest" in obj:
+            continue
+        records.append((obj["input"]["payload"], obj["labels"]))
+
+print(f"{len(records)} (payload, labels) pairs")
+```
+
+Weekly-era files still join on `episode_id` (both carry an `episodes` array):
 
 ```python
 import json, glob, os
@@ -72,14 +132,15 @@ for ep_path in sorted(glob.glob("data/episodes/*.json")):
 print(f"{len(pairs)} (input, outcome) pairs")
 ```
 
-The bundle is already joined — one JSON object per line, `{"episode_id",
-"input", "labels"}` — so with it, step 2 is just `json.loads` per line.
-
-> **One schema, three wrappings.** Published exports are `v1.9` with fields
-> under `input`; the bundle uses the same `input` wrapper; the live daily
-> payload is `v2.0` with those fields at top level. Read from `input` when
-> present, else top level, and the same code handles all three. See
-> [MINER_MODEL_SPEC](./MINER_MODEL_SPEC.md).
+> **One schema, several wrappings.** Weekly-era exports are `v1.9` with
+> fields under `input`. The rich v2 bundle wraps the same ideas as
+> `input.payload` (`schema_version: v2.0`). The live daily payload is v2.0
+> with those fields at top level. Read `input.payload` when present, else
+> `input`, else the top level, and the same code handles all three. See
+> [MINER_MODEL_SPEC](./MINER_MODEL_SPEC.md). The container still emits
+> `cost_delta_pct` / `conversions_delta_pct` / `efficiency_delta_pct`; map
+> the v2 `cpa_delta_pct` (or conversion-value) label onto the efficiency
+> head from the account's own goal.
 
 ---
 

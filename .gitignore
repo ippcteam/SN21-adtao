@@ -43,6 +43,9 @@ checkpoints/
 # bundled samples; otherwise leave commented to ship the launch sample set.
 # data/training/
 
+# Published training bundle (GitHub release asset; ~159MB, not for the repo)
+SN21_training_bundle.jsonl
+
 # Internal test files (kept locally, not in public repo)
 tests/unit/test_auth_signatures.py
 tests/unit/test_validator_api.py

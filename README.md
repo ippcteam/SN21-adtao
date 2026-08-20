@@ -150,18 +150,18 @@ account at a moment in time:
 | Section | What's in it | Size |
 |---|---|---|
 | `episode_metadata` | ID, schema version, resolution, horizons | ~0.5 KB |
-| `account_state` | Customer hash, goal, spend bucket, optional enrichment | ~1 KB |
-| `pre_window` | 60-day campaign time series + account aggregates | ~8 KB |
-| `action_bundle` | The action(s) being applied: type, magnitude, blast radius, risk | ~2 KB |
+| `account_state` | Customer hash, goal, spend bucket, optional archetypes | ~1 KB |
+| `pre_window` | 60-day baseline + 8-week `weekly_series` | ~8 KB |
+| `action_bundle` | The action(s) being applied — one type or a composite window | ~2 KB |
 | `campaign_metadata` | Campaign type, bid strategy, status | ~0.3 KB |
 
 Your container outputs **probabilistic distributions** (P10/P50/P90) per
 horizon (**7 / 14 / 28**), not point estimates. You're rewarded for
 calibrated uncertainty.
 
-### Phase 1 action types
+### Action types
 
-Defined in [`hope/constants.py:LAUNCH_ACTION_TYPES`](hope/constants.py):
+The launch set (already in live baskets):
 
 | Type | What it means |
 |---|---|
@@ -169,6 +169,12 @@ Defined in [`hope/constants.py:LAUNCH_ACTION_TYPES`](hope/constants.py):
 | `BID_STRATEGY_CHANGE` | Bidding strategy switched |
 | `TARGET_VALUE_CHANGE` | tCPA / tROAS target adjusted |
 | `CAMPAIGN_PAUSE` | Campaign paused |
+
+**From 20 August 2026** live baskets also carry negatives, geo, schedule,
+audience, assets, keywords, ads, ad-groups, demographics, device, placement,
+and **composite** windows. Train on the rich v2 bundle — counts and fields
+are in [docs/SN21_TRAINING.md](docs/SN21_TRAINING.md). The original four
+remain listed in [`hope/constants.py:LAUNCH_ACTION_TYPES`](hope/constants.py).
 
 ---
 

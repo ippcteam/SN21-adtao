@@ -2,10 +2,10 @@
 
 | | |
 | :---- | :---- |
-| **Version** | 1.3 |
+| **Version** | 1.4 |
 | **Audience** | Miners |
 | **Status** | Authoritative for cutover dates and bridge rules |
-| **Last updated** | 2026-08-04 |
+| **Last updated** | 2026-08-20 |
 | **Update independently of** | [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_STAKING.md](./SN21_STAKING.md) |
 
 This document is the **cutover schedule** from the last weekly epoch to the daily prediction stream. Steady-state scoring and rewards are in the companion docs; this file is only about **what happens when**.
@@ -52,10 +52,11 @@ Bittensor’s emissions-allocation methodology is changing significantly. SN21 m
 | **Sun 2 Aug** | Last weekly epoch **concludes**. | — | 0 |
 | **Mon 3 Aug** | Last weekly epoch **scored**. | 45% | 0 |
 | **Mon 3 Aug noon EST → Sun 9 Aug midnight EST** | Emissions paid **as normal** from that weekly score. | 45% | 0 |
-| **Tue 4–5 Aug** | **Training bundle** published — settled weekly-era episodes with full 7/14/28-day outcomes (same input schema as the daily stream; a like-for-like daily bundle cannot exist until the first 28-day daily outcomes settle on 8 Sep). **Fetch:** [`SN21_training_bundle.jsonl`](https://github.com/ippcteam/SN21-adtao/releases/tag/training-bundle-2026-08) — 3,069 episodes, on the releases page. | 45% | 0 |
+| **Tue 4–5 Aug** | **Training bundle** published — settled weekly-era episodes with full 7/14/28-day outcomes (later refreshed to 10,791 records). **Fetch (superseded for training):** [`SN21_training_bundle.jsonl`](https://github.com/ippcteam/SN21-adtao/releases/tag/training-bundle-2026-08). | 45% | 0 |
 | **Tue 4 Aug** | First **live daily basket** delivered — `BD-2026-08-03`, covering Monday 3 August. | 45% | 0 |
 | **Mon 10 Aug** | **Bridge starts:** weekly score still drives weights, but only **bridge-eligible** miners are paid (see below). | **30%** | **150** |
 | **Tue 18 Aug** | First **daily 7-day** settled scores begin feeding payouts. | 30% | **300** |
+| **Wed 20 Aug** | **Rich training data v2** published — 29,129 reconstructed daily-stream episodes, all change types (not only budget/pause), 60-day baseline + 8-week series, archetypes, source mix. The same expanded types are **already in live daily baskets** from this date. **Fetch:** [`SN21_rich_training_v2.jsonl`](https://github.com/ippcteam/SN21-adtao/releases/tag/training-v2-2026-08). How to train: [SN21_TRAINING.md](./SN21_TRAINING.md). | 30% | 300 |
 | **Tue 25 Aug** | First **daily 14-day** settled scores begin feeding payouts. | **15%** | **450** |
 | **Tue 8 Sep** | First **daily 28-day** (35-day settled) scores begin feeding payouts. | 15% | **700** |
 | **Tue 15 Sep** | **Terminal alpha hold** in force; burn steps to target. Steady-state daily stream. | **0%** | **1,000** |
@@ -144,8 +145,9 @@ Fail the hold → **not paid**, even if you submitted.
 
 | When | Action |
 | :---- | :---- |
-| **From 4 Aug** | Use the **training bundle**; run against **live daily baskets**. |
+| **From 4 Aug** | Run against **live daily baskets**. |
 | **Before 10 Aug** | Be ready to submit every live day; hold **≥150 alpha**. |
+| **From 20 Aug** | Train on the **rich v2 bundle**. Expanded change types are already in live daily baskets; the weekly-era bundle does not cover them. |
 | **Through 15 Sep** | Follow the stake ramp; expect 7d → 14d → 28d settlements on the dates in the master table. |
 
 Scoring & rewards: [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./SN21_REWARDS.md).
@@ -163,6 +165,7 @@ Scoring & rewards: [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_REWARDS.md](./S
 ## Related
 
 - [SN21_WHY_DAILY.md](./SN21_WHY_DAILY.md)
+- [SN21_TRAINING.md](./SN21_TRAINING.md)
 - [SN21_SCORING.md](./SN21_SCORING.md)
 - [SN21_REWARDS.md](./SN21_REWARDS.md)
 - [SN21_STAKING.md](./SN21_STAKING.md)

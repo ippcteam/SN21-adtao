@@ -1,7 +1,13 @@
 # SN21 (AdTAO) — revealed epoch outcomes
 
-This folder holds the **measured outcomes** for each scored epoch, published after
-the submission deadline so miners can train on them and anyone can audit them.
+This folder holds the **weekly-era measured outcomes** for each scored epoch,
+published after the submission deadline so miners can train on them and
+anyone can audit them.
+
+**Current training path:** the rich daily-stream bundle v2 already joins
+inputs to labels
+([`SN21_rich_training_v2.jsonl`](https://github.com/ippcteam/SN21-adtao/releases/tag/training-v2-2026-08)).
+How to use it: [docs/SN21_TRAINING.md](../../docs/SN21_TRAINING.md).
 
 Each file (`WR-2026-W<week>-…-E1.json`) contains, per episode:
 
