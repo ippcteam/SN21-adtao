@@ -80,3 +80,19 @@ def test_build_scored_entries_glue():
     assert entries[0].transition_key == "BUDGET:up"
     assert entries[0].horizon == "7"
     assert entries[1].transition_key == "UNKNOWN"   # missing map row buckets, never drops
+
+
+def test_public_cut_strips_miner_identities():
+    from hope.reporting.aggregator import _public_type_accuracy
+
+    raw = {"by_type": {"BUDGET": {"7": {
+        "n": 12, "field_mean": 0.6, "champion_mean": 0.4,
+        "best": {"miner": "hk123", "mean": 0.8, "n": 6}}}},
+        "by_miner": {"hk123": {"BUDGET": {"7": {"n": 6, "mean": 0.8}}}}}
+    pub = _public_type_accuracy(raw)
+    cell = pub["BUDGET"]["7"]
+    assert cell == {"n": 12, "field_mean": 0.6, "champion_mean": 0.4}
+    import json
+    assert "hk123" not in json.dumps(pub)   # the payload invariant, enforced
+    assert _public_type_accuracy(None) is None
+    assert _public_type_accuracy({}) is None

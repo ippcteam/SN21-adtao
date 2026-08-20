@@ -157,6 +157,7 @@ def aggregate(
     supersedes: str | None = None,
     epoch_id_override: str | None = None,
     epoch_membership_uids: set[int] | None = None,
+    accuracy_by_type: dict | None = None,
 ) -> EpochReportPayload:
     """Aggregate a private artifact into the public payload.
 
@@ -221,6 +222,7 @@ def aggregate(
     emergency = EmergencyIntervention(triggered=False)
 
     return EpochReportPayload(
+        accuracy_by_type=_public_type_accuracy(accuracy_by_type),
         # `epoch_id_override` is used by the correction flow (IA D-13): a
         # frozen/published epoch can't be mutated, so a correction is posted
         # under a new `{orig}-COR-N` epoch_id with `supersedes=orig`. Stays a
@@ -469,3 +471,28 @@ def _find_uid_for_hotkey(artifact: EpochArtifact, hotkey: str) -> int | None:
             except (KeyError, TypeError, ValueError):
                 return None
     return None
+
+
+def _public_type_accuracy(raw: dict | None) -> dict | None:
+    """Reduce the daily accuracy artifact to its PUBLIC cut.
+
+    Keeps n / field_mean / champion_mean per (family, horizon); drops the
+    'best' block (it names a miner) and everything per-miner — the payload
+    invariant is aggregate-only, and this is where it is enforced for the
+    accuracy feed."""
+    if not raw:
+        return None
+    by_type = raw.get("by_type", raw)
+    out: dict = {}
+    for fam, horizons in by_type.items():
+        if not isinstance(horizons, dict):
+            continue
+        for h, cell in horizons.items():
+            if not isinstance(cell, dict):
+                continue
+            out.setdefault(str(fam), {})[str(h)] = {
+                "n": int(cell.get("n", 0)),
+                "field_mean": cell.get("field_mean"),
+                "champion_mean": cell.get("champion_mean"),
+            }
+    return out or None

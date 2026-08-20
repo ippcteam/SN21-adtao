@@ -201,6 +201,21 @@ class EmergencyIntervention(BaseModel):
     summary_text: str | None = Field(default=None, max_length=280)
 
 
+class TypeAccuracyCell(BaseModel):
+    """One public accuracy cell: a change-type family at one horizon.
+
+    Aggregate-only by construction — carries counts and means, never a
+    miner identity (the payload invariant below). champion_mean is the
+    CURRENT champion's mean on this cell, None when the champion has no
+    scored predictions there."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    n: int = Field(ge=0)
+    field_mean: float | None = None
+    champion_mean: float | None = None
+
+
 class EpochReportPayload(BaseModel):
     """Public per-epoch payload posted to the leaderboard CMS.
 
@@ -245,6 +260,10 @@ class EpochReportPayload(BaseModel):
 
     # Emergency state
     emergency_intervention: EmergencyIntervention
+
+    # Accuracy by change type (Rob, 20 Aug 2026): family -> horizon ->
+    # public cell. Optional; None on payloads from before the rich era.
+    accuracy_by_type: dict[str, dict[str, TypeAccuracyCell]] | None = None
 
     # Snapshot timestamps (ISO8601 UTC)
     validator_output_snapshot_timestamp: str

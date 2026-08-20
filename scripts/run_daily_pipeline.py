@@ -464,7 +464,18 @@ def stage_publish_report(ledger_root, day):
         total_registered_uids=len(uid_by_hotkey),
         day=str(day),
     )
-    payload = aggregate(artifact)
+    # Accuracy-by-type: attach the day's PUBLIC cut when the 1c stage
+    # produced it (fail-soft: a missing or unreadable artifact publishes
+    # the report without the block, never blocks the report itself).
+    _acc = None
+    try:
+        _acc_path = os.path.join(ledger_root, "accuracy_by_type", f"{day}.json")
+        if os.path.exists(_acc_path):
+            with open(_acc_path) as _f:
+                _acc = json.load(_f)
+    except Exception as _e:  # noqa: BLE001
+        log(f"[publish-report] accuracy artifact unreadable ({_e}) — publishing without it")
+    payload = aggregate(artifact, accuracy_by_type=_acc)
     endpoint = os.environ.get("SN21_LEADERBOARD_ENDPOINT") or DEFAULT_ENDPOINT
     resp = post_payload(payload, endpoint=endpoint, api_key=api_key)
     ok = 200 <= resp.status_code < 300
