@@ -1,8 +1,15 @@
 # SN21 (AdTAO) — episode inputs (training features)
 
-This folder holds the **episode inputs** for each revealed epoch — the features
-miners predict on. It's the companion to `data/outcomes/`, which holds the
-measured labels. Together they reconstruct trainable `(input, outcome)` pairs.
+This folder holds the **weekly-era episode inputs** for each revealed epoch —
+the features miners predict on. It's the companion to `data/outcomes/`, which
+holds the measured labels. Together they reconstruct trainable
+`(input, outcome)` pairs.
+
+**Current training path:** the rich daily-stream bundle v2
+([`SN21_rich_training_v2.jsonl`](https://github.com/ippcteam/SN21-adtao/releases/tag/training-v2-2026-08),
+29,129 episodes, all change types). How to use it:
+[docs/SN21_TRAINING.md](../../docs/SN21_TRAINING.md). The files in this folder
+remain the published weekly-era exports.
 
 Each file (`WR-2026-W<week>-…-E1.json`):
 

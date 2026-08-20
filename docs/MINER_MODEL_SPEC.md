@@ -5,13 +5,14 @@
 | **Version** | 1.1 |
 | **Audience** | Miners |
 | **Status** | Authoritative for the daily stream |
-| **Last updated** | 2026-08-05 |
-| **Related** | [miner_quickstart.md](./miner_quickstart.md) · [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_TRAINING.md](./SN21_TRAINING.md) |
+| **Last updated** | 2026-08-20 |
+| **Related** | [miner_quickstart.md](./miner_quickstart.md) · [SN21_SCORING.md](./SN21_SCORING.md) · [SN21_TRAINING.md](./SN21_TRAINING.md) · [SN21_MODEL_PRIVACY.md](./SN21_MODEL_PRIVACY.md) |
 
 This is the contract between your model and the subnet: what you ship, how it
 is executed, and what it must emit. Scoring is in
 [SN21_SCORING.md](./SN21_SCORING.md); emissions are in
-[SN21_REWARDS.md](./SN21_REWARDS.md).
+[SN21_REWARDS.md](./SN21_REWARDS.md). When image bytes are closed vs
+released is in [SN21_MODEL_PRIVACY.md](./SN21_MODEL_PRIVACY.md).
 
 ---
 
@@ -97,18 +98,20 @@ liveness matter, not as non-determinism.
 
 ### Schema versions
 
-Three surfaces, one schema:
+Several surfaces, one schema:
 
 | Surface | Shape |
 | :---- | :---- |
 | Historical exports under `data/episodes/` | Weekly-era export — episode fields at the top level |
-| Training bundle | `{"episode_id", "input": {...}, "labels": {...}}` |
+| Weekly-era training bundle | `{"episode_id", "input": {...}, "labels": {...}}` |
+| **Rich training bundle v2** | `{"episode_id", "input": {"payload": {...}, "transition_key"}, "labels": {...}}` — first line is a `_manifest` |
 | **Live daily contract** | **Episode payload v2.0** — id, metadata, account state, pre-window series, action bundle with magnitudes |
 
 Field names and meanings are identical where they overlap. Training code
-should read fields from `input` when present, otherwise from the top level.
+should read `input.payload` when present, else `input`, else the top level.
 The reference model's flattened field list is a convenience view of the same
-schema, not a third format.
+schema, not a third format. The v2 bundle and its change types are in
+[SN21_TRAINING.md](./SN21_TRAINING.md).
 
 ## 3. Admission — the backtest gate
 
