@@ -162,6 +162,7 @@ def run_daily_loop(
     chain_reader: Callable[[str], float | None] | None = None,
     day_volume_provider: Callable[[date], int] | None = None,
     vertical_map_provider: Callable[[list], dict] | None = None,
+    transition_key_provider: Callable[[list], dict] | None = None,
     liveness_lookback_days: int = LIVENESS_LOOKBACK_DAYS,
     environ=os.environ,
 ) -> dict:
@@ -228,6 +229,35 @@ def run_daily_loop(
             }
         except Exception as e:
             summary["vertical_series"] = {"error": str(e)}
+
+    # 1c. Accuracy by change type (Rob, 20 Aug) — the one aggregation behind
+    # the public accuracy page (7/14/28 selector) and per-miner win/lose
+    # feedback. Same provider pattern as 1b: the operator platform maps
+    # episode ids to transition keys; a missing map row buckets as UNKNOWN
+    # rather than thinning the page. Fail-soft like every other step.
+    if transition_key_provider is not None and horizon_results:
+        try:
+            from hope.reporting.type_accuracy import (
+                aggregate_type_accuracy,
+                build_scored_entries,
+            )
+            tmap = transition_key_provider(
+                sorted({str(r.episode_id) for r in horizon_results}))
+            agg = aggregate_type_accuracy(
+                build_scored_entries(horizon_results, tmap or {}))
+            _ta_dir = os.path.join(ledger_root, "accuracy_by_type")
+            os.makedirs(_ta_dir, exist_ok=True)
+            _ta_path = os.path.join(_ta_dir, f"{day}.json")
+            with open(_ta_path, "w") as _f:
+                json.dump({"day": str(day), **agg}, _f, sort_keys=True)
+            summary["type_accuracy"] = {
+                "entries": agg["totals"]["entries"],
+                "miners": agg["totals"]["miners"],
+                "types": agg["totals"]["types"],
+                "path": _ta_path,
+            }
+        except Exception as e:
+            summary["type_accuracy"] = {"error": str(e)}
 
     # 1c. liveness — chronic-failure observation (strikes/eviction).
     # Reads the day's EXECUTION facts off the shadow ledger and folds them

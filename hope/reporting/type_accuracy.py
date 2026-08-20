@@ -103,3 +103,19 @@ def aggregate_type_accuracy(entries, champion_miner: str | None = None) -> dict:
         },
         "min_n_for_best": MIN_N_FOR_BEST,
     }
+
+
+def build_scored_entries(horizon_results, transition_key_map: dict) -> list:
+    """Glue: settle-flow HorizonResult objects + an episode->transition_key
+    map -> ScoredEntry list. Unknown episodes bucket as UNKNOWN rather than
+    dropping — a missing map row must not silently thin the page."""
+    out = []
+    for r in horizon_results:
+        out.append(ScoredEntry(
+            miner=str(r.miner),
+            episode_id=str(r.episode_id),
+            transition_key=transition_key_map.get(str(r.episode_id), "UNKNOWN"),
+            horizon=str(int(r.horizon_days)),
+            score=float(r.score),
+        ))
+    return out

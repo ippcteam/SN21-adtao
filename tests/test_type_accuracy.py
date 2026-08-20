@@ -62,3 +62,21 @@ def test_json_serialisable_and_deterministic():
     a = json.dumps(aggregate_type_accuracy(entries), sort_keys=True)
     b = json.dumps(aggregate_type_accuracy(list(reversed(entries))), sort_keys=True)
     assert a == b
+
+
+def test_build_scored_entries_glue():
+    from dataclasses import dataclass
+    from hope.reporting.type_accuracy import build_scored_entries
+
+    @dataclass
+    class R:
+        miner: str
+        episode_id: str
+        horizon_days: int
+        score: float
+
+    rs = [R("m1", "42", 7, 0.5), R("m1", "43", 14, 0.9)]
+    entries = build_scored_entries(rs, {"42": "BUDGET:up"})
+    assert entries[0].transition_key == "BUDGET:up"
+    assert entries[0].horizon == "7"
+    assert entries[1].transition_key == "UNKNOWN"   # missing map row buckets, never drops

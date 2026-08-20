@@ -264,6 +264,61 @@ def _coldkey_reader():
         return None
 
 
+
+def _transition_key_provider(ledger_root):
+    """episode_id -> transition_key, from payloads already on this disk.
+
+    The executor holds every episode payload it runs (shadow store), so the
+    accuracy-by-type stage needs no network and no credentials. Tolerant of
+    layout (json/jsonl, basket lines or payload dicts), early-exits once all
+    wanted ids are found, and fails soft to {} — daily_loop buckets missing
+    rows as UNKNOWN rather than failing the stage.
+    """
+    import json as _json
+
+    def _extract(d):
+        if not isinstance(d, dict):
+            return None, None
+        eid = d.get("episode_id") or d.get("episode_candidate_id")
+        inp = d.get("input") if isinstance(d.get("input"), dict) else d
+        tkey = inp.get("transition_key")
+        if tkey is None and isinstance(inp.get("payload"), dict):
+            pay = inp["payload"]
+            eid = eid or (pay.get("episode_metadata") or {}).get("episode_id")
+            tkey = ((pay.get("action_bundle") or {}).get("bundle_summary")
+                    or {}).get("transition_key")
+        return (str(eid) if eid is not None else None), tkey
+
+    def provider(episode_ids):
+        wanted = {str(e) for e in episode_ids}
+        out = {}
+        root = os.path.join(ledger_root, "shadow")
+        if not os.path.isdir(root):
+            return out
+        for dirpath, _dirs, files in os.walk(root):
+            for fn in files:
+                if not fn.endswith((".json", ".jsonl")):
+                    continue
+                p = os.path.join(dirpath, fn)
+                try:
+                    if os.path.getsize(p) > 64 * 1024 * 1024:
+                        continue
+                    with open(p) as fh:
+                        docs = ([_json.loads(ln) for ln in fh if ln.strip()]
+                                if fn.endswith(".jsonl") else [_json.load(fh)])
+                except Exception:  # noqa: BLE001 — unreadable file is not our stage failing
+                    continue
+                for d in docs if isinstance(docs, list) else []:
+                    eid, tkey = _extract(d)
+                    if eid in wanted and tkey and eid not in out:
+                        out[eid] = str(tkey)
+                if wanted <= set(out):
+                    return out
+        return out
+
+    return provider
+
+
 def stage_settle(ledger_root, day):
     from scripts.run_daily_loop import (
         _basket_volume,
@@ -286,6 +341,7 @@ def stage_settle(ledger_root, day):
         # so the PUBLISHED vector is already fully gated and the committer commits
         # it verbatim.
         coldkey_reader=_coldkey_reader,
+        transition_key_provider=_transition_key_provider(ledger_root),
     )
     # Trim the noisy nested prediction index out of the summary.
     return {k: v for k, v in summary.items()
