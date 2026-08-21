@@ -372,16 +372,20 @@ miner channel and are answered from the ledger.
 
 ## 5c. Verify your score (once scores exist)
 
-From 18 August, when the first daily scores settle, you can recompute your own
-scores and check they match ours:
+Daily scores settle since 16 August. You can recompute your own scores and
+check they match ours:
 
 ```bash
-python scripts/verify_day.py --url https://validator.adtao.io --day 2026-08-18
+python scripts/verify_day.py --url https://hope-bittensor-api.onrender.com --day 2026-08-18
 ```
 
 `"ok": true` means every one of your scores reproduces from the published
 outcomes and your own published predictions. A failure names the exact entry
 that disagrees.
+
+No tooling needed for a quick look: <https://adtao.io/sn21/miner-status>
+shows your scored entries per day and your win/lose by change type against
+the field, straight from the same receipts.
 
 Full walkthrough, including reading the on-chain root yourself and what to do
 when a check fails: **[SN21_VERIFYING.md](./SN21_VERIFYING.md)**.
@@ -464,8 +468,10 @@ exports; the **execution contract** is NDJSON in → NDJSON out as in §4.
 | Alpha hold ramp | [SN21_STAKING.md](./SN21_STAKING.md) |
 | Cutover dates, bridge, indicative burn | [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md) |
 
-**Before 10 August 2026:** hold **≥150 alpha** and be delivering daily predictions
-via your admitted container (bridge eligibility).
+**Current requirement (since 18 August 2026):** hold **≥300 alpha** on your
+miner and be delivering daily predictions via your admitted container. The
+full ramp schedule is in [SN21_STAKING.md](./SN21_STAKING.md); scoring does
+not require the hold — payment does.
 
 Burn rates in the transition plan are **planned and indicative only** and may
 change to protect alpha for holders.

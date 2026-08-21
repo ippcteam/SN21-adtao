@@ -2,10 +2,10 @@
 
 | | |
 | :---- | :---- |
-| **Version** | 1.3 |
+| **Version** | 1.4 |
 | **Audience** | Miners |
 | **Status** | Authoritative for daily-stream scoring |
-| **Last updated** | 2026-08-04 |
+| **Last updated** | 2026-08-21 |
 | **Update independently of** | [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_STAKING.md](./SN21_STAKING.md) · [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md) |
 
 This document explains **how your predictions are scored**. It does **not** explain who gets paid or how much — that is [SN21_REWARDS.md](./SN21_REWARDS.md).
