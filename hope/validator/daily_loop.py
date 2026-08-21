@@ -235,16 +235,21 @@ def run_daily_loop(
     # feedback. Same provider pattern as 1b: the operator platform maps
     # episode ids to transition keys; a missing map row buckets as UNKNOWN
     # rather than thinning the page. Fail-soft like every other step.
+    _tkey_map: dict = {}
+    if transition_key_provider is not None and horizon_results:
+        try:
+            _tkey_map = transition_key_provider(
+                sorted({str(r.episode_id) for r in horizon_results})) or {}
+        except Exception as e:
+            summary["transition_keys"] = {"error": str(e)}
     if transition_key_provider is not None and horizon_results:
         try:
             from hope.reporting.type_accuracy import (
                 aggregate_type_accuracy,
                 build_scored_entries,
             )
-            tmap = transition_key_provider(
-                sorted({str(r.episode_id) for r in horizon_results}))
             agg = aggregate_type_accuracy(
-                build_scored_entries(horizon_results, tmap or {}))
+                build_scored_entries(horizon_results, _tkey_map))
             _ta_dir = os.path.join(ledger_root, "accuracy_by_type")
             os.makedirs(_ta_dir, exist_ok=True)
             _ta_path = os.path.join(_ta_dir, f"{day}.json")
@@ -417,6 +422,12 @@ def run_daily_loop(
                 horizon_results, settle_components, key_loader(),
                 generated_at=f"{day}T00:00:00Z", environ=environ,
                 censored=censored_counts,
+                # Change type per entry (Rob, 21 Aug): the receipt is where a
+                # miner already looks, so the where-do-I-lose signal rides in
+                # it. None (no provider) keeps the receipt byte-identical to
+                # the pre-21-Aug shape.
+                transition_map=(_tkey_map if transition_key_provider is not None
+                                else None),
             )
             summary["receipt"] = {"published": receipt.published,
                                   "sha256": receipt.sha256,

@@ -100,9 +100,13 @@ def main() -> int:
               f"across {miners} miners")
         if args.dry_run:
             continue
+        from scripts.run_daily_pipeline import _transition_key_provider
+        tmap = _transition_key_provider(ledger)(
+            sorted({str(r.episode_id) for r in results})) or {}
         rec = run_daily_receipt(
             ledger, d, day_outcomes, index, results, comps, key,
-            generated_at=datetime.now(timezone.utc).isoformat())
+            generated_at=datetime.now(timezone.utc).isoformat(),
+            transition_map=tmap)
         print(f"{d}: published={rec.published} sha256={rec.sha256}")
         published += 1
 

@@ -75,6 +75,7 @@ def build_receipt_metrics(
     components: dict,
     environ=None,
     censored: dict | None = None,
+    transition_map: dict | None = None,
 ) -> dict:
     """The receipt payload. Deterministic: every list sorted on a total key,
     every float already rounded upstream — two validators building from the
@@ -115,6 +116,14 @@ def build_receipt_metrics(
             }),
             "score": r.score,
             "finalized_on": str(r.finalized_on),
+            # Which change type this entry scored (Rob, 21 Aug: miners must
+            # see WHERE they win and lose, and the receipt is the surface
+            # they already trust). Only present when the builder was given a
+            # map — the keys come from the shadow-store payloads, the same
+            # distributed data predictions come from, so validators sharing
+            # the store still byte-match. UNKNOWN = payload had no key.
+            **({"transition_key": transition_map.get(eid, "UNKNOWN")}
+               if transition_map is not None else {}),
         })
 
     # The formula version must be read from the SAME environment the settle
@@ -187,6 +196,7 @@ def run_daily_receipt(
     generated_at: str,
     environ=None,
     censored: dict | None = None,
+    transition_map: dict | None = None,
 ) -> ReceiptPublish:
     """Publish the day's receipt. Append-only; a republished day raises.
 
@@ -209,7 +219,8 @@ def run_daily_receipt(
     head = _load_head(root)
     metrics = build_receipt_metrics(outcomes, prediction_index, results,
                                     components, environ=environ,
-                                    censored=censored)
+                                    censored=censored,
+                                    transition_map=transition_map)
     doc = build_document(RECEIPT_FEED_NAME, day_s, metrics, generated_at,
                          prev_sha256=(head or {}).get("sha256"))
     att = attest(doc, signing_key)
