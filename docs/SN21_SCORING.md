@@ -63,6 +63,22 @@ Each finalised (episode, horizon) receives a score in **[0, 1]** from four compo
 > `goal_miss_probability` and `instability_risk` fields are **not scored** —
 > no ground truth exists for them.
 
+> **Is v2 actually what runs? Check the receipt, not the code default.** In
+> the code, v2 sits behind `SN21_SETTLE_SCORING_V2` and the default is off —
+> a fresh checkout without that flag would score v1. That default is not what
+> production runs: the flag is set on the production scoring validator (there
+> is exactly one), and **every daily settle since the first scored day,
+> 2026-08-16, has run v2**. No daily-stream results were ever scored with v1.
+> You do not have to take this paragraph's word for it: every published daily
+> receipt records `formula.version` and the exact weights that scored it, and
+> `scripts/verify_day.py` recomputes your scores with the receipt's own
+> recorded formula — so a scorer change without a receipt change is
+> impossible to hide. Fetch any day and look:
+> `https://hope-bittensor-api.onrender.com/v1/daily/2026-08-18/receipt`
+> (`document.metrics.formula` → `{"version": "v2", "weights": {"quantile":
+> 0.5, "coverage": 0.1, "direction": 0.15, "goal": 0.15, "normaliser":
+> 0.9}}`). Train against v2.
+
 | Component | Weight |
 | :---- | :---- |
 | Quantile accuracy (pinball on P10/P50/P90) | **50%** |

@@ -4,7 +4,16 @@
 | :---- | :---- |
 | **Audience** | Miners, and anyone who wants to audit the subnet |
 | **Status** | Authoritative for the daily stream |
-| **Last updated** | 2026-08-05 |
+| **Last updated** | 2026-08-21 |
+
+> **Where the feeds are served.** The URL in every example below is the
+> operator API mirror — the validator pushes each day's signed documents
+> there after settle, and it serves them byte-for-byte. The documents are
+> attested and chain-anchored, so WHERE you fetch them from changes nothing
+> about what verification proves: a tampered mirror fails the same signature
+> and root checks a tampered validator would. Days from 2026-08-16 onward
+> are published. Miners can also see their own slice without any tooling at
+> <https://adtao.io/sn21/miner-status>.
 
 You do not have to trust our scoring. Every day the validator publishes a
 **receipt** — the settled outcomes it used, every miner's predictions exactly
@@ -20,7 +29,7 @@ it, and the output names the exact entry that disagrees.
 ## The short version
 
 ```bash
-python scripts/verify_day.py --url https://validator.adtao.io --day 2026-08-18
+python scripts/verify_day.py --url https://hope-bittensor-api.onrender.com --day 2026-08-18
 ```
 
 `"ok": true` means your scores reproduce. Anything else prints which check
@@ -29,7 +38,7 @@ failed and why.
 To close the loop all the way to the chain, pass the root you read yourself:
 
 ```bash
-python scripts/verify_day.py --url https://validator.adtao.io \
+python scripts/verify_day.py --url https://hope-bittensor-api.onrender.com \
     --day 2026-08-18 --expect-anchor <root you read from chain>
 ```
 
@@ -55,7 +64,7 @@ matters: a signature failure and a score mismatch mean very different things.
 **1. Get the receipt.**
 
 ```bash
-curl https://validator.adtao.io/v1/daily/2026-08-18/receipt > receipt.json
+curl https://hope-bittensor-api.onrender.com/v1/daily/2026-08-18/receipt > receipt.json
 ```
 
 It contains `outcomes` (what actually happened), `entries` (per episode,
@@ -65,7 +74,7 @@ horizon and miner: the prediction, the four components, the final score) and
 **2. Find your entries.**
 
 ```bash
-curl "https://validator.adtao.io/v1/daily/2026-08-18/miner/<your-hotkey>"
+curl "https://hope-bittensor-api.onrender.com/v1/daily/2026-08-18/miner/<your-hotkey>"
 ```
 
 Compare the `prediction` field against what your container actually emitted
@@ -81,8 +90,8 @@ what you assume.
 **4. Check it is the history the chain committed to.**
 
 ```bash
-curl https://validator.adtao.io/v1/daily/2026-08-18/proof   # inclusion proof
-curl https://validator.adtao.io/v1/daily/root               # current root
+curl https://hope-bittensor-api.onrender.com/v1/daily/2026-08-18/proof   # inclusion proof
+curl https://hope-bittensor-api.onrender.com/v1/daily/root               # current root
 ```
 
 Read the validator hotkey's commitment from chain yourself and compare it to

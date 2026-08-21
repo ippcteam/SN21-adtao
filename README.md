@@ -394,10 +394,10 @@ that ran — hash-chained to the previous day and covered by a rolling Merkle
 root anchored on chain. You recompute your own scores from it:
 
 ```bash
-python scripts/verify_day.py --url https://validator.adtao.io --day 2026-08-18
+python scripts/verify_day.py --url https://hope-bittensor-api.onrender.com --day 2026-08-18
 
 # Close the loop to chain with the root you read yourself:
-python scripts/verify_day.py --url https://validator.adtao.io \
+python scripts/verify_day.py --url https://hope-bittensor-api.onrender.com \
     --day 2026-08-18 --expect-anchor <root read from chain>
 ```
 
