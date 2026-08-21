@@ -608,6 +608,29 @@ def main():
         record["stages"]["publish_report"] = {"error": str(e)}
         log(f"[publish-report] ERROR {e}")
 
+    # 6. sync the verification feeds to the operator API mirror. The public
+    #    validator API serves a different host's ledger, so without this push
+    #    the receipts and accuracy documents exist but nobody can fetch them
+    #    (found 21 Aug: every daily feed endpoint answered "never published"
+    #    while attested documents sat on this disk). Best-effort: a mirror
+    #    failure must never fail the pipeline; the next run re-syncs
+    #    everything anyway because proofs and the root are re-rendered in
+    #    full each time.
+    try:
+        from hope.publication.mirror_sync import sync_mirror
+        _api_url = (os.environ.get("HOPE_API_URL") or "").strip()
+        _api_key = (os.environ.get("HOPE_API_KEY") or "").strip()
+        if _api_url and _api_key:
+            s = sync_mirror(args.ledger_root, _api_url, _api_key)
+            record["stages"]["mirror_sync"] = s
+            log(f"[mirror-sync] {json.dumps(s, default=str)}")
+        else:
+            record["stages"]["mirror_sync"] = {
+                "skipped": "HOPE_API_URL/HOPE_API_KEY unset"}
+    except Exception as e:   # noqa: BLE001
+        record["stages"]["mirror_sync"] = {"error": str(e)}
+        log(f"[mirror-sync] ERROR (non-fatal) {e}")
+
     record["elapsed_s"] = round(time.time() - started, 1)
     path = write_run_record(args.ledger_root, record)
     log(f"[pipeline] run record -> {path}")
