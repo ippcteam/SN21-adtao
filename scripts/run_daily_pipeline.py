@@ -620,8 +620,16 @@ def main():
         from hope.publication.mirror_sync import sync_mirror
         _api_url = (os.environ.get("HOPE_API_URL") or "").strip()
         _api_key = (os.environ.get("HOPE_API_KEY") or "").strip()
+        _mirror_url = (os.environ.get("SN21_MIRROR_API_URL") or "").strip()
+        if _mirror_url:
+            _api_url = _mirror_url
         if _api_url and _api_key:
-            s = sync_mirror(args.ledger_root, _api_url, _api_key)
+            # Recent days only: receipts and accuracy docs are immutable,
+            # so the daily run re-ships a short window plus the always-
+            # changing proofs/index/root. Backfills use recent_days=None.
+            s = sync_mirror(args.ledger_root, _api_url, _api_key,
+                            recent_days=int(os.environ.get(
+                                "SN21_MIRROR_SYNC_DAYS", "10")))
             record["stages"]["mirror_sync"] = s
             log(f"[mirror-sync] {json.dumps(s, default=str)}")
         else:

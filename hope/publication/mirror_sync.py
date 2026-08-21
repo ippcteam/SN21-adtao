@@ -55,8 +55,16 @@ def _feed_days(root: str, feed_dir: str) -> list[str]:
                   if f.endswith(".json") and not f.startswith("_"))
 
 
-def build_mirror_items(ledger_root: str) -> list[dict]:
-    """Every mirrored path and its exact response body, current as of now."""
+def build_mirror_items(ledger_root: str,
+                       recent_days: int | None = None) -> list[dict]:
+    """Every mirrored path and its exact response body, current as of now.
+
+    recent_days limits which RECEIPT and ACCURACY bodies are included (the
+    last N by day) — they are immutable once published, so the daily run
+    has no reason to re-ship history it already shipped. Proofs, index,
+    root, and the series are always rendered in full: they legitimately
+    change whenever a new day publishes. None = everything (backfill).
+    """
     from hope.publication.feed_root import (
         day_proof,
         feed_root,
@@ -65,7 +73,11 @@ def build_mirror_items(ledger_root: str) -> list[dict]:
 
     items: list[dict] = []
 
-    for day in _feed_days(ledger_root, "receipts"):
+    rec_days = _feed_days(ledger_root, "receipts")
+    ship_rec = set(rec_days if recent_days is None else rec_days[-recent_days:])
+    for day in rec_days:
+        if day not in ship_rec:
+            continue
         items.append({
             "path": f"/v1/daily/{day}/receipt",
             "body": _read_envelope(
@@ -73,11 +85,13 @@ def build_mirror_items(ledger_root: str) -> list[dict]:
         })
 
     acc_days = _feed_days(ledger_root, "accuracy")
+    ship_acc = set(acc_days if recent_days is None else acc_days[-recent_days:])
     index_rows = []
     for day in acc_days:
         env = _read_envelope(
             os.path.join(ledger_root, "accuracy", f"{day}.json"))
-        items.append({"path": f"/v1/daily/{day}/accuracy", "body": env})
+        if day in ship_acc:
+            items.append({"path": f"/v1/daily/{day}/accuracy", "body": env})
         receipt_sha = (env.get("document", {}).get("metrics", {})
                        .get("receipt_sha256"))
         index_rows.append({
@@ -128,16 +142,50 @@ def build_mirror_items(ledger_root: str) -> list[dict]:
     return items
 
 
-def sync_mirror(ledger_root: str, api_url: str, api_key: str,
-                timeout: int = 120) -> dict:
-    """Render and POST everything. Returns the API's summary response."""
-    items = build_mirror_items(ledger_root)
+# Keep each POST comfortably inside proxy/worker request limits. The
+# reconstruction-era receipts are tens of megabytes; one monolithic POST
+# 502'd at the gateway on the first live run (21 Aug), which is how this
+# number earned its existence.
+MAX_POST_BYTES = 4_000_000
+
+
+def _post(api_url: str, api_key: str, items: list[dict],
+          timeout: int) -> dict:
     req = urllib.request.Request(
         api_url.rstrip("/") + MIRROR_POST_PATH,
         data=json.dumps({"items": items}).encode(),
         method="POST",
         headers={"X-API-Key": api_key, "Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        out = json.loads(resp.read().decode())
-    out["items_sent"] = len(items)
-    return out
+        return json.loads(resp.read().decode())
+
+
+def sync_mirror(ledger_root: str, api_url: str, api_key: str,
+                timeout: int = 120,
+                recent_days: int | None = None) -> dict:
+    """Render and POST everything, batched by size. An oversized single
+    item still ships alone — the endpoint has no per-item cap, only the
+    gateway's request limit, and one item per request is as small as a
+    request gets."""
+    items = build_mirror_items(ledger_root, recent_days=recent_days)
+    batches: list[list[dict]] = []
+    batch: list[dict] = []
+    batch_bytes = 0
+    for it in items:
+        size = len(json.dumps(it))
+        if batch and batch_bytes + size > MAX_POST_BYTES:
+            batches.append(batch)
+            batch, batch_bytes = [], 0
+        batch.append(it)
+        batch_bytes += size
+    if batch:
+        batches.append(batch)
+
+    stored = 0
+    rejected: list = []
+    for b in batches:
+        out = _post(api_url, api_key, b, timeout)
+        stored += int(out.get("stored") or 0)
+        rejected.extend(out.get("rejected") or [])
+    return {"success": True, "stored": stored, "rejected": rejected,
+            "items_sent": len(items), "posts": len(batches)}
