@@ -122,6 +122,39 @@ design — families like `BUDGET:up_large`, `NEGATIVE_KEYWORD_ADD`, and
 `COMPOSITE:<dominant>+<n>` for mixed 72-hour windows, where the
 prediction is the net effect of the listed actions together.
 
+### `account_state.goal_basis` — which efficiency metric you are scored on
+
+Each episode is scored on the account's own optimization goal, resolved and
+**frozen at reveal** so it cannot move after you predict. `account_state`
+carries it:
+
+```json
+"goal_basis": {
+  "basis": "cpa | conversion_value",
+  "source": "configured | taxonomy | default",
+  "guarded": false,
+  "frozen_at": "2026-08-22T14:05:13.896676+00:00"
+}
+```
+
+- **basis** — which measured column supplies the efficiency delta the scorer
+  compares your prediction against: `cpa` (cost-per-acquisition) or
+  `conversion_value` (a ROAS / value goal).
+- **source** — which rung resolved the basis: `configured` (the account has
+  an explicit goal metric, e.g. Target CPA or Target ROAS — this wins
+  outright), `taxonomy` (no explicit goal, but the account's vertical is a
+  value vertical → `conversion_value`), or `default` (neither → `cpa`).
+- **guarded** — `true` means the account *intended* `conversion_value` but had
+  no conversion-value baseline in the pre-window, so the basis was vetoed down
+  to `cpa`; `source` still records the intended rung.
+
+The basis is **per episode, not a fixed account attribute**: if an advertiser
+changes a campaign's optimization goal, later episodes flip basis. Model on
+the resolved `goal_basis` in each payload, not on a per-campaign assumption.
+Published daily receipts also record the resolved basis per outcome
+(`efficiency_basis`), and the historical episode-id → basis mapping is served
+alongside the daily feeds for retrospective scoring.
+
 ## 3. Admission — the backtest gate
 
 A newly committed digest runs against a **held-out historical corpus** of
