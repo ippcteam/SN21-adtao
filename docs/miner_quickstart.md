@@ -557,6 +557,7 @@ magnitudes for direction, rebuild, and commit a **new digest**.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
+| Registered + staked but **never scored**; admission verdict `no_scoreable_predictions` | Your container runs but its output does not match the prediction contract, so every line is dropped | Emit **one JSON object per line on stdout**: `{"episode_id": "...", "horizons": {"7": {...}, "14": {...}, "28": {...}}}`. Echo `episode_id` back exactly; horizon keys are the strings `"7"`/`"14"`/`"28"`; each horizon needs monotone `p10`/`p50`/`p90` for **all three** metrics (`cost_delta_pct`, `conversions_delta_pct`, `efficiency_delta_pct`) plus `goal_miss_probability` and `instability_risk` in `[0,1]`. No nulls/NaN, no point estimates, no log lines on stdout. Run your image against a sample basket and confirm every line parses before re-committing. |
 | Digest mismatch at intake | Registry tag moved after you committed | Re-commit the digest you actually pushed; never rely on tags |
 | Paid nothing despite scoring | Below the 250-unit evidence floor, below the score threshold, or stake below the day's alpha hold | Check standing and the [staking ladder](./SN21_STAKING.md) |
 | Weight fell after missed days | Bridge miss decay (1 miss 50%, 2 misses 25%, 3+ zero) | Submit ≥75% of a day's basket; weight restores immediately on return |
