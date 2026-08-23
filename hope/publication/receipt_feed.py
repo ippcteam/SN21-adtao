@@ -94,7 +94,11 @@ def build_receipt_metrics(
             "cost_delta_pct": o.cost_delta_pct,
             "conversions_delta_pct": o.conversions_delta_pct,
             "efficiency_delta_pct": o.efficiency_delta_pct,
-            "efficiency_basis": getattr(o, "efficiency_basis", None),
+            # The provider's dataclass names this goal_basis; the receipt key
+            # keeps its documented name. Reading the wrong attribute here
+            # published null for every entry until 23 Aug (found by a miner
+            # whose model selection depended on it).
+            "efficiency_basis": getattr(o, "goal_basis", None),
             "finalized_on": str(o.finalized_on),
         })
 
