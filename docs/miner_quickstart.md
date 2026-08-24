@@ -561,7 +561,7 @@ magnitudes for direction, rebuild, and commit a **new digest**.
 | Digest mismatch at intake | Registry tag moved after you committed | Re-commit the digest you actually pushed; never rely on tags |
 | Paid nothing despite scoring | Below the 250-unit evidence floor, below the score threshold, or stake below the day's alpha hold | Check standing and the [staking ladder](./SN21_STAKING.md) |
 | Weight fell after missed days | Bridge miss decay (1 miss 50%, 2 misses 25%, 3+ zero) | Submit ≥75% of a day's basket; weight restores immediately on return |
-| **Score** fell after missed days | Absence penalty (from 2026-08-24 amendment): every uncovered episode of a subnet-run day enters your standing at the 0.30 floor | Cover every day fully; the charge log is public at `/v1/daily/absence-penalties` — see [SN21_REWARDS.md](./SN21_REWARDS.md) |
+| **Score** fell after missed days | Absence penalty (from 2026-08-24 amendment): every uncovered episode of a subnet-run day enters your standing as a full-weight zero | Cover every day fully; the charge log is public at `/v1/daily/absence-penalties` — see [SN21_REWARDS.md](./SN21_REWARDS.md) |
 | Evicted | 5 miner-fault failed days in a rolling 14 | Fix the container; return after 7 days on a clean run |
 | `verify_day` says `score_reproduction` FAIL | Your recomputed score differs from the published one | The output names the entry — post the diff in the Discord miner channel; see [SN21_VERIFYING.md](./SN21_VERIFYING.md) |
 

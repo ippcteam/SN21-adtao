@@ -62,9 +62,12 @@ Exceeding a limit aborts that day's run: no scores for the day.
 > rule a miner absent on hard days kept a spotless average built on easy
 > days and held first place while every participant's score moved. From
 > the published effective date, every episode of a subnet-run day you do
-> not return a scoreable prediction for enters your **standing** as one
-> entry at the published floor score (**0.30** — below every scoring band
-> observed in production, so participating always beats being absent).
+> not return a scoreable prediction for enters your **standing** as a
+> zero (floor **0.00**) carried at the **full episode weight** — the same
+> standing mass a covered episode contributes — so covering an episode at
+> any honest score always leaves a standing at least as high as dropping
+> it. (Corrected same-day from an initially published 0.30 floor, before
+> any charge was ever applied; see SN21_REWARDS for the open correction.)
 > There is no coverage threshold to duck under and no exit: you are
 > charged for every uncovered day as long as you hold a board position,
 > so going quiet bleeds your standing until you return or your entries

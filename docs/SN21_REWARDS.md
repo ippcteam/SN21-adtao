@@ -71,9 +71,24 @@ A board position must be defended every day the subnet runs. From the
 published effective date:
 
 **Every episode of a subnet-run day that you do not return a scoreable
-prediction for enters your standing as one entry at the floor score of
-0.30.** Miss a 400-episode day, carry 400 floor-scored entries in your
-average. Cover the day fully and this rule never touches you.
+prediction for enters your standing as a zero (floor score 0.00), carried
+at the full episode weight — the same 1.0 standing mass a covered episode
+contributes across its horizons.** Miss a 400-episode day, carry 400
+full-weight zeros in your average. Cover the day fully and this rule never
+touches you.
+
+> **Corrected 2026-08-24, the same day the rule went live, before any
+> charge was ever applied** (the public penalty log was still empty). The
+> floor was first published as 0.30, argued from day-MEAN score bands.
+> That was wrong in two ways, and we would rather say so than let anyone
+> optimise against it: 11.4% of real per-entry honest scores fall below
+> 0.30 (measured over 134,425 production entries), so on those episodes
+> the "penalty" would have paid better than an honest prediction; and the
+> single 0.20-weight charge carried a fifth of a covered episode's
+> standing mass, so dropping a below-average episode stayed rational.
+> Both corrected: floor 0.00 at full weight, so covering an episode at
+> any honest score always leaves a standing at least as high as dropping
+> it. No penalty was ever applied under the old numbers.
 
 The design, stated plainly so nobody has to reverse-engineer it:
 
@@ -87,10 +102,11 @@ The design, stated plainly so nobody has to reverse-engineer it:
    until you return, or your entries age out and you leave the board the
    natural way. This is deliberate: a standing you are not defending is
    not a standing.
-3. **The floor is below every scoring band we have observed** (field
-   day-means have ranged ~0.45–0.62), so being scored on a brutal day
-   always beats being absent for it. The floor value is published here
-   and any change to it is a published rule change.
+3. **A penalty can never beat honesty.** The floor (0.00) is at or below
+   every achievable honest score, and the charge carries the same weight
+   a covered episode would have — so predicting always weakly dominates
+   skipping, episode by episode, with no tail exception. The floor value
+   is published here and any change to it is a published rule change.
 4. **Days the subnet fails to run charge nobody.** Our downtime is never
    your penalty.
 5. **One charge per (day, miner), forever** — re-runs and catch-up sweeps

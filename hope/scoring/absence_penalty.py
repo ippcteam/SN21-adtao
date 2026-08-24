@@ -18,10 +18,22 @@ THE RULE (published before enabled):
   window empties and you leave the board naturally. This deliberately
   replaces a separate staleness rule — going quiet IS the bleed.
 
-  Floor = 0.30, strictly below every scoring band observed in production
-  (field means 0.50-0.62 on normal days, ~0.45 after the worst batch on
-  record), so participation dominates absence on any day we have ever
-  seen. Env-overridable; the published value is the contract.
+  Floor = 0.00, and each uncovered episode is charged at the FULL standing
+  mass a covered episode would have contributed (weight 1.0). Amended
+  2026-08-24 (same day the rule went live, before any charge was ever
+  applied — the penalty log was still empty): the floor was first published
+  as 0.30, justified against day-MEAN bands (0.45-0.62). That reasoning
+  conflated day means with per-entry scores: 11.4% of real per-entry
+  honest scores fall below 0.30 (measured over 134,425 production entries,
+  16-20 Aug), so on those episodes the "penalty" would have paid BETTER
+  than an honest prediction — a censor line, not a floor. And the original
+  single 0.20-weight entry per episode carried a fifth of the mass a
+  covered episode contributes (0.20+0.35+0.45 across its horizons), so
+  dropping any below-average episode stayed rational. With floor 0.0 at
+  weight 1.0, covering an episode at any honest score s >= 0 always yields
+  a standing >= dropping it: participation strictly dominates, per episode,
+  with no tail exception. Env-overridable; the published value is the
+  contract.
 
 WHO IS CHARGED — "ranked or active", precisely:
   a) any hotkey with standing-ledger entries inside the 35-day window
@@ -53,11 +65,18 @@ from datetime import date, timedelta
 
 from hope.backtest import shadow
 from hope.scoring import standing_ledger
-from hope.scoring.daily_score_flow import WeightedEntry, horizon_entry_weight
+from hope.scoring.daily_score_flow import WeightedEntry
 
 FLAG_ENV = "SN21_ABSENCE_PENALTY"
 SCORE_ENV = "SN21_ABSENCE_PENALTY_SCORE"
-DEFAULT_PENALTY_SCORE = 0.30   # published floor; below every observed band
+DEFAULT_PENALTY_SCORE = 0.0    # published floor; <= every achievable honest
+                               # score, so a penalty can never beat honesty
+# One uncovered episode costs the same standing mass a covered episode would
+# have contributed: its three horizon entries sum to 1.0 (0.20+0.35+0.45).
+# At the original 0.20 (one 7-day-high entry) dropping a below-average
+# episode swapped 1.0 mass of low scores for a fifth of the mass — rational
+# to drop. At 1.0, cover(s>=0) >= drop(0.0) holds per episode, always.
+PENALTY_ENTRY_WEIGHT = 1.0
 ACTIVE_LOOKBACK_DAYS = 7       # shadow presence within this window = playing
 CATCHUP_DAYS = 3               # each run re-checks this many trailing days
 
@@ -167,7 +186,7 @@ def apply_penalties(root: str, day: date, environ=os.environ) -> dict:
         d = day - timedelta(days=n)
         for p in compute_penalties(root, d):
             entries = [WeightedEntry(miner=p["hotkey"], score=score,
-                                     weight=horizon_entry_weight(7, "high"),
+                                     weight=PENALTY_ENTRY_WEIGHT,
                                      entered_on=d)
                        for _ in range(p["missed"])]
             written += standing_ledger.append_entries(root, entries)

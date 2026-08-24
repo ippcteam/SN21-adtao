@@ -119,7 +119,45 @@ def test_absence_actually_drags_the_standing(tmp_path):
     after = episode_weighted_average(
         standing_ledger.load_entries(root, as_of=DAY)["carol"], as_of=DAY)
     assert after < before
-    assert after < 0.55  # 100 old at 0.62 + 100 penalties at 0.30, decayed
+    assert after < 0.30  # 100 old at 0.62 + 100 full-weight zeros, decayed
+
+
+def test_covering_a_bad_episode_beats_dropping_it(tmp_path):
+    # THE GAP-A1/A2 regression (amended 2026-08-24). At the original floor
+    # 0.30 / weight 0.20, any episode a miner expected to score below ~0.30
+    # was RATIONAL to drop: the "penalty" out-paid the honest prediction and
+    # carried a fifth of the mass. With floor 0.0 at full episode weight,
+    # covering at ANY honest score s >= 0 must leave a standing >= dropping.
+    from hope.scoring.daily_score_flow import WeightedEntry
+    root_cover = str(tmp_path / "cover")
+    root_drop = str(tmp_path / "drop")
+    for root in (root_cover, root_drop):
+        _standing(root, "mallory", 100, 0.55, "2026-08-18")
+    # drop branch: mallory skips the day's single episode -> penalty
+    _shadow_day(root_drop, "2026-08-24", {"alice": (1, 1), "mallory": (1, 0)})
+    apply_penalties(root_drop, DAY)
+    # cover branch: mallory answers it honestly and scores badly (0.20)
+    standing_ledger.append_entries(root_cover, [WeightedEntry(
+        miner="mallory", score=0.20, weight=1.0, entered_on=DAY)])
+
+    def avg(root):
+        return episode_weighted_average(
+            standing_ledger.load_entries(root, as_of=DAY)["mallory"], as_of=DAY)
+
+    assert avg(root_cover) > avg(root_drop)
+
+
+def test_penalty_entries_carry_full_episode_weight(tmp_path):
+    # The 5x-underweight hole: a dropped episode must cost the same standing
+    # mass a covered one contributes (1.0 across its horizons), not a single
+    # 7-day-high entry's 0.20.
+    root = str(tmp_path)
+    _shadow_day(root, "2026-08-24", {"alice": (10, 10), "bob": (10, 0)})
+    apply_penalties(root, DAY)
+    entries = standing_ledger.load_entries(root, as_of=DAY)["bob"]
+    assert len(entries) == 10
+    assert all(e.weight == 1.0 for e in entries)
+    assert all(e.score == DEFAULT_PENALTY_SCORE == 0.0 for e in entries)
 
 
 def test_flag_default_off(monkeypatch):
