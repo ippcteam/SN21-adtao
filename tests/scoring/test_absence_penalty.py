@@ -98,13 +98,13 @@ def test_apply_is_idempotent_and_logged(tmp_path):
 
 def test_catchup_covers_trailing_days(tmp_path):
     root = str(tmp_path)
-    _shadow_day(root, "2026-08-22", {"alice": (50, 0)})
-    _shadow_day(root, "2026-08-23", {"alice": (60, 60)})
-    _shadow_day(root, "2026-08-24", {"alice": (70, 70)})
-    r = apply_penalties(root, DAY)
-    # only the 22nd owed anything, and the sweep caught it
+    _shadow_day(root, "2026-08-24", {"alice": (50, 0)})
+    _shadow_day(root, "2026-08-25", {"alice": (60, 60)})
+    _shadow_day(root, "2026-08-26", {"alice": (70, 70)})
+    r = apply_penalties(root, date(2026, 8, 26))
+    # only the 24th owed anything, and the sweep caught it
     assert r["penalty_entries"] == 50
-    assert {p["day"] for p in penalty_log(root)} == {"2026-08-22"}
+    assert {p["day"] for p in penalty_log(root)} == {"2026-08-24"}
 
 
 def test_absence_actually_drags_the_standing(tmp_path):
@@ -127,3 +127,12 @@ def test_flag_default_off(monkeypatch):
     assert absence_penalty_enabled(os.environ) is False
     monkeypatch.setenv("SN21_ABSENCE_PENALTY", "1")
     assert absence_penalty_enabled(os.environ) is True
+
+
+def test_never_charges_before_the_effective_date(tmp_path):
+    # Rob announced 24 Aug. The catch-up sweep must not reach behind it,
+    # no matter when the flag flips.
+    root = str(tmp_path)
+    _shadow_day(root, "2026-08-23", {"alice": (50, 0)})
+    from hope.scoring.absence_penalty import compute_penalties as cp
+    assert cp(root, date(2026, 8, 23)) == []

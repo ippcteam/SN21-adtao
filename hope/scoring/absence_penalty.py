@@ -61,6 +61,11 @@ DEFAULT_PENALTY_SCORE = 0.30   # published floor; below every observed band
 ACTIVE_LOOKBACK_DAYS = 7       # shadow presence within this window = playing
 CATCHUP_DAYS = 3               # each run re-checks this many trailing days
 
+# The announced effective date (Rob, 24 Aug 2026). Days before it are never
+# charged, no matter when the flag flips or how far the catch-up sweep
+# reaches — "applied forward" is a property of the code, not of timing.
+EFFECTIVE_FROM = date(2026, 8, 24)
+
 
 def absence_penalty_enabled(environ=os.environ) -> bool:
     return (environ.get(FLAG_ENV) or "").strip().lower() in (
@@ -128,6 +133,8 @@ def compute_penalties(root: str, day: date) -> list[dict]:
     per episode of the day it did not return a scoreable prediction for —
     a fully absent hotkey owes the whole day.
     """
+    if day < EFFECTIVE_FROM:
+        return []
     d = day.isoformat()
     if not shadow.subnet_ran(root, d):
         return []
