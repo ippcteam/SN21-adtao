@@ -21,6 +21,25 @@ Your **standing** (moving-average score) is mapped through a **published weight 
 > (from 20 August 2026). Only corrections and weekly-era reports go
 > through manual review.
 
+> **Leaderboard vs chain — the timing, stated once.** Scores, the
+> leaderboard, and on-chain weights update on three clocks:
+> 1. **Scoring** happens once per day, when the daily run settles matured
+>    outcomes (late morning UTC).
+> 2. **The leaderboard** publishes minutes after that run — it reads the
+>    fresh standings directly.
+> 3. **The chain** lags by design: the validator commits the new weight
+>    vector under Bittensor's commit-reveal, which reveals roughly **72
+>    minutes** after the commit, and emissions then move on the chain's own
+>    tempo. So on-chain rankings normally reflect a leaderboard change
+>    within **one to three hours**, not instantly.
+>
+> If the chain has not caught up with the leaderboard within ~6 hours,
+> that is not the mechanism — report it in the miner channel. (This
+> happened 2026-08-22→24: a scheduler fault stopped fresh commits while
+> the activity heartbeat kept re-signing the previous vector, so the chain
+> looked alive but frozen. A miner's report surfaced it; the commit path
+> no longer depends on the retired weekly cadence.)
+
 ## From standing to weight
 
 1. Scoring produces a per-miner standing ([SN21_SCORING.md](./SN21_SCORING.md)).
