@@ -514,6 +514,122 @@ def run_epoch_scoring(
         uids = [u for u, _ in _funded]
         weights = [w for _, w in _funded]
 
+    # Weight composition + 9.C.3 commit — shared with run_daily_weights_only
+    # (the weekly stream has ended; the daily vector must be committable
+    # without a resolvable weekly epoch — see compose_and_commit_weights).
+    _uid_by_ss58 = {
+        _pubkey_bytes_to_ss58(_hk): _u for _hk, _u in uid_by_hotkey.items()
+    }
+    weights_commit = compose_and_commit_weights(
+        subtensor=subtensor,
+        validator_wallet=validator_wallet,
+        netuid=netuid,
+        uids=uids,
+        weights=weights,
+        uid_by_ss58=_uid_by_ss58,
+        score_map=score_map,
+        daily_allow=_daily_allow,
+    )
+    if not weights_commit.success or weights_commit.block_hash is None:
+        return EpochScoringOutcome(
+            pre_scoring_commit=pre_commit,
+            weights_commit=weights_commit,
+            miner_reads=miner_reads,
+            score_map=score_map,
+            aborted_reason=f"weights_commit_failed: {weights_commit.message}",
+        )
+    weights_reveal_round = estimate_weights_reveal_round(
+        current_round=outcomes_fetched_at_round,
+        blocks_until_reveal=blocks_until_weights_reveal,
+    )
+
+    # ---- 5. build + commit 9.C.2 post-scoring artifacts ----
+    post_blob = build_post_scoring_artifacts(
+        validator_hotkey=validator_hotkey,
+        validator_signing_key=validator_signing_key,
+        epoch_id=epoch_id,
+        epoch_idx=epoch_idx,
+        scoring_inputs_hash=scoring_inputs_hash,
+        scored_miners=scored_records,
+        weights_commit_block_hash=weights_commit.block_hash,
+        weights_reveal_round=weights_reveal_round,
+    )
+    post_commit = submit_post_scoring_artifacts_layer_9c2(
+        subtensor=subtensor,
+        validator_wallet=validator_wallet,
+        netuid=netuid,
+        post_scoring_artifacts_cbor=post_blob,
+        blocks_until_reveal=blocks_until_post_scoring_reveal,
+    )
+    if not post_commit.success:
+        start, end = compute_block_range(miner_inputs, pre_commit, weights_commit)
+        return EpochScoringOutcome(
+            pre_scoring_commit=pre_commit,
+            weights_commit=weights_commit,
+            post_scoring_commit=post_commit,
+            miner_reads=miner_reads,
+            score_map=score_map,
+            aborted_reason=f"post_scoring_commit_failed: {post_commit.message}",
+            block_range_start=start,
+            block_range_end=end,
+        )
+
+    # ---- 6. optional 9.C.6 retry log ----
+    retry_blob: bytes | None = None
+    retry_commit: CommitResult | None = None
+    if retry_entries:
+        retry_blob = build_retry_log_blob(
+            validator_hotkey=validator_hotkey,
+            epoch_id=epoch_id,
+            epoch_idx=epoch_idx,
+            miner_entries=retry_entries,
+        )
+        retry_sha256 = compute_retry_log_sha256(retry_blob)
+        retry_commit = submit_retry_log_attestation_layer_9c6(
+            subtensor=subtensor,
+            validator_wallet=validator_wallet,
+            netuid=netuid,
+            retry_log_blob_sha256=retry_sha256,
+        )
+
+    logger.info(
+        "epoch %s scoring complete: scored=%d excluded=%d retry_log=%s "
+        "weights_block=%s",
+        epoch_id, len(score_map), len(excluded), retry_commit is not None,
+        weights_commit.block_number,
+    )
+    start, end = compute_block_range(miner_inputs, pre_commit, weights_commit)
+    return EpochScoringOutcome(
+        pre_scoring_commit=pre_commit,
+        weights_commit=weights_commit,
+        post_scoring_commit=post_commit,
+        retry_log_commit=retry_commit,
+        retry_log_blob=retry_blob,
+        miner_reads=miner_reads,
+        score_map=score_map,
+        block_range_start=start,
+        block_range_end=end,
+    )
+
+
+def compose_and_commit_weights(*, subtensor, validator_wallet, netuid,
+                               uids, weights, uid_by_ss58, score_map,
+                               daily_allow):
+    """Weight composition + 9.C.3 commit — the tail every commit path shares.
+
+    Extracted from run_epoch_scoring (2026-08-24) so the daily-stream vector
+    can commit WITHOUT a resolvable weekly epoch: the weekly stream has wound
+    down, --release auto fails once the backend listing holds a single WR-
+    epoch, and the daily commit that lived inside that run silently stopped —
+    the heartbeat kept re-asserting the stale vector, so the chain showed
+    activity while the rankings froze (miner-reported 2026-08-24, ~2 days).
+    Behaviour is IDENTICAL for the epoch path: daily-allocation swap ->
+    alpha gate -> burn/override -> commit_weights_layer_9c3, every fail-safe
+    intact (an empty final vector skips the commit and leaves the prior
+    on-chain weights standing).
+    """
+    import os as _os_allow
+
     # Optional daily-stream allocation (Design v0.5 §12 — the M4 switch).
     # When SN21_DAILY_STREAM_WEIGHTS is set, the per-epoch score vector is
     # replaced by the standing-ledger allocation: D13 episode-age standings
@@ -582,22 +698,17 @@ def run_epoch_scoring(
                 )
             else:
                 from hope.validator.daily_stream_weights import pairs_for_uids
-                # KEY-SPACE FIX: _alloc.weights is keyed by ss58 hotkey STRINGS
-                # (the daily /weights API's shape), but uid_by_hotkey here is
-                # keyed by 32-byte pubkeys (inp.miner_hotkey). Passing it raw made
-                # pairs_for_uids match NOTHING (string vs bytes) -> every daily
-                # miner dropped -> "map to no metagraph UIDs" -> the epoch
-                # (weekly/tiered) vector was silently retained on-chain. Re-key to
-                # ss58 so the lookup lands. (Latent until the daily commit path
-                # went live 2026-08-18.)
-                _uid_by_ss58 = {
-                    _pubkey_bytes_to_ss58(_hk): _u
-                    for _hk, _u in uid_by_hotkey.items()
-                }
+                # KEY-SPACE: _alloc.weights is keyed by ss58 hotkey strings;
+                # uid_by_ss58 arrives PRE-CONVERTED by the caller (the epoch
+                # path converts its 32-byte pubkeys via _pubkey_bytes_to_ss58;
+                # daily-only reads ss58 straight off the metagraph). History:
+                # raw pubkey keys here matched nothing and silently retained
+                # the epoch vector (latent until 2026-08-18).
+                _uid_by_ss58 = uid_by_ss58
                 # Allowlist-aware (audit 2026-07-29: raw uid_by_hotkey here
                 # silently bypassed SN21_WEIGHT_ALLOWLIST_UIDS).
                 _pairs = pairs_for_uids(
-                    _alloc.weights, _uid_by_ss58, allowed_uids=_daily_allow
+                    _alloc.weights, _uid_by_ss58, allowed_uids=daily_allow
                 )
                 if _pairs:
                     uids = [u for u, _ in _pairs]
@@ -780,83 +891,32 @@ def run_epoch_scoring(
             block_number=None, block_hash=None, extrinsic_hash=None,
         )
     )
-    if not weights_commit.success or weights_commit.block_hash is None:
-        return EpochScoringOutcome(
-            pre_scoring_commit=pre_commit,
-            weights_commit=weights_commit,
-            miner_reads=miner_reads,
-            score_map=score_map,
-            aborted_reason=f"weights_commit_failed: {weights_commit.message}",
-        )
-    weights_reveal_round = estimate_weights_reveal_round(
-        current_round=outcomes_fetched_at_round,
-        blocks_until_reveal=blocks_until_weights_reveal,
-    )
+    return weights_commit
 
-    # ---- 5. build + commit 9.C.2 post-scoring artifacts ----
-    post_blob = build_post_scoring_artifacts(
-        validator_hotkey=validator_hotkey,
-        validator_signing_key=validator_signing_key,
-        epoch_id=epoch_id,
-        epoch_idx=epoch_idx,
-        scoring_inputs_hash=scoring_inputs_hash,
-        scored_miners=scored_records,
-        weights_commit_block_hash=weights_commit.block_hash,
-        weights_reveal_round=weights_reveal_round,
-    )
-    post_commit = submit_post_scoring_artifacts_layer_9c2(
-        subtensor=subtensor,
-        validator_wallet=validator_wallet,
-        netuid=netuid,
-        post_scoring_artifacts_cbor=post_blob,
-        blocks_until_reveal=blocks_until_post_scoring_reveal,
-    )
-    if not post_commit.success:
-        start, end = compute_block_range(miner_inputs, pre_commit, weights_commit)
-        return EpochScoringOutcome(
-            pre_scoring_commit=pre_commit,
-            weights_commit=weights_commit,
-            post_scoring_commit=post_commit,
-            miner_reads=miner_reads,
-            score_map=score_map,
-            aborted_reason=f"post_scoring_commit_failed: {post_commit.message}",
-            block_range_start=start,
-            block_range_end=end,
-        )
 
-    # ---- 6. optional 9.C.6 retry log ----
-    retry_blob: bytes | None = None
-    retry_commit: CommitResult | None = None
-    if retry_entries:
-        retry_blob = build_retry_log_blob(
-            validator_hotkey=validator_hotkey,
-            epoch_id=epoch_id,
-            epoch_idx=epoch_idx,
-            miner_entries=retry_entries,
-        )
-        retry_sha256 = compute_retry_log_sha256(retry_blob)
-        retry_commit = submit_retry_log_attestation_layer_9c6(
-            subtensor=subtensor,
-            validator_wallet=validator_wallet,
-            netuid=netuid,
-            retry_log_blob_sha256=retry_sha256,
-        )
+def run_daily_weights_only(*, subtensor, validator_wallet, netuid):
+    """Commit the executor-published DAILY vector with no weekly epoch at all.
 
-    logger.info(
-        "epoch %s scoring complete: scored=%d excluded=%d retry_log=%s "
-        "weights_block=%s",
-        epoch_id, len(score_map), len(excluded), retry_commit is not None,
-        weights_commit.block_number,
-    )
-    start, end = compute_block_range(miner_inputs, pre_commit, weights_commit)
-    return EpochScoringOutcome(
-        pre_scoring_commit=pre_commit,
-        weights_commit=weights_commit,
-        post_scoring_commit=post_commit,
-        retry_log_commit=retry_commit,
-        retry_log_blob=retry_blob,
-        miner_reads=miner_reads,
-        score_map=score_map,
-        block_range_start=start,
-        block_range_end=end,
-    )
+    Entry for the post-weekly world: the metagraph supplies the uid map, the
+    epoch vector starts empty, and the shared composition takes it from
+    there — a healthy daily allocation replaces the empty vector; any
+    failure (API down, gated day, no placement-eligible standings) leaves
+    the vector empty and the commit is SKIPPED, keeping the prior on-chain
+    weights standing exactly as the epoch path would.
+    """
+    import os as _os
+    mg = subtensor.metagraph(netuid)
+    uid_by_ss58 = {str(mg.hotkeys[i]): int(mg.uids[i])
+                   for i in range(len(mg.hotkeys))}
+    daily_allow = None
+    _allow_str = _os.environ.get("SN21_WEIGHT_ALLOWLIST_UIDS", "").strip()
+    if _allow_str:
+        try:
+            daily_allow = {int(x) for x in
+                           _allow_str.replace(" ", "").split(",") if x}
+        except ValueError:
+            daily_allow = None
+    return compose_and_commit_weights(
+        subtensor=subtensor, validator_wallet=validator_wallet, netuid=netuid,
+        uids=[], weights=[], uid_by_ss58=uid_by_ss58, score_map={},
+        daily_allow=daily_allow)

@@ -187,6 +187,46 @@ def main():
         try:
             args.release = _asyncio.run(client.discover_scoreable_release())
         except Exception as exc:
+            # POST-WEEKLY WORLD (2026-08-24). The weekly stream has wound down:
+            # once the backend listing holds a single WR- epoch, auto-resolution
+            # fails FOREVER — and the daily on-chain weight commit, which lived
+            # inside the epoch run, silently stopped with it. The chain kept
+            # showing activity (the heartbeat re-asserts the LAST vector) while
+            # the rankings froze; a miner reported the ~2-day gap between the
+            # dashboard and the chain. When the daily stream is on, a failed
+            # weekly resolution is therefore NOT fatal: commit the daily vector
+            # through the same composition (allowlist -> alpha gate -> burn/
+            # override -> 9.C.3) and return.
+            _daily_on = os.environ.get(
+                "SN21_DAILY_STREAM_WEIGHTS", "").strip().lower() in (
+                "1", "true", "yes", "on")
+            if _daily_on and not args.no_chain:
+                logger.warning(
+                    "--release auto failed (%s: %s); weekly stream has wound "
+                    "down — committing the DAILY vector only",
+                    type(exc).__name__, exc)
+                _runner = ValidatorRunner(
+                    hope_api_key=args.api_key,
+                    network=args.network,
+                    netuid=args.netuid,
+                    wallet_name=args.wallet_name,
+                    wallet_hotkey=args.wallet_hotkey,
+                    no_chain=args.no_chain,
+                )
+                _runner.init_bittensor()
+                from hope.validator._log import configure_logging
+                configure_logging(logger, "INFO")
+                from hope.validator.onchain_runner import run_daily_weights_only
+                _res = run_daily_weights_only(
+                    subtensor=_runner.subtensor,
+                    validator_wallet=_runner.wallet,
+                    netuid=args.netuid,
+                )
+                print("\nDaily-weights-only outcome:")
+                print(f"  ok: {_res.success}")
+                print(f"  message: {_res.message}")
+                print(f"  block: {_res.block_number}")
+                return 0 if _res.success else 1
             parser.error(
                 f"--release auto failed to resolve a scoreable (closed) epoch: "
                 f"{type(exc).__name__}: {exc}. Either pass --release <EPOCH_ID> "
