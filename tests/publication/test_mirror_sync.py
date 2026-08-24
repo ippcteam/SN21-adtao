@@ -7,13 +7,22 @@ So these tests publish a real day with the real rail and check the
 rendered items against the envelope files and pure functions directly.
 """
 
+import io
 import json
+import urllib.error
 from datetime import date
 
+import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from hope.publication import mirror_sync as ms
 from hope.publication.daily_accuracy_runner import publish_day
-from hope.publication.mirror_sync import build_mirror_items
+from hope.publication.mirror_sync import (
+    MirrorSyncError,
+    _post,
+    build_mirror_items,
+    sync_mirror,
+)
 from hope.publication.receipt_feed import run_daily_receipt
 from hope.scoring.daily_score_flow import HorizonResult
 from hope.scoring.settle_day_flow import SettledHorizon, score_entry_v2
@@ -89,3 +98,89 @@ def test_index_root_and_proof_are_consistent(tmp_path):
     assert proof["feed_root"] == root_doc["feed_root"]
     assert root_doc["leaf_count"] == 1
     assert "how_to_verify" in proof
+
+
+# --- transport resilience (regression: 2026-08-24 mirror 502 froze the feed) ---
+
+class _Resp(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _resp(payload):
+    return _Resp(json.dumps(payload).encode())
+
+
+def test_post_retries_transient_502_then_succeeds(monkeypatch):
+    # A gateway blip must not surface: retry absorbs it inside the run.
+    monkeypatch.setattr(ms.time, "sleep", lambda _s: None)
+    calls = {"n": 0}
+
+    def fake(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise urllib.error.HTTPError(req.full_url, 502, "Bad Gateway", {}, None)
+        return _resp({"stored": 1, "rejected": []})
+
+    monkeypatch.setattr(ms.urllib.request, "urlopen", fake)
+    out = _post("https://x", "k", [{"path": "/v1/daily/root", "body": {}}], timeout=5)
+    assert calls["n"] == 3 and out["stored"] == 1
+
+
+def test_post_does_not_retry_client_error(monkeypatch):
+    # A 4xx (bad key/payload) will never fix on retry — fail fast, once.
+    monkeypatch.setattr(ms.time, "sleep", lambda _s: None)
+    calls = {"n": 0}
+
+    def fake(req, timeout=None):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", {}, None)
+
+    monkeypatch.setattr(ms.urllib.request, "urlopen", fake)
+    with pytest.raises(urllib.error.HTTPError):
+        _post("https://x", "k", [{"path": "p", "body": {}}], timeout=5)
+    assert calls["n"] == 1
+
+
+def test_post_raises_after_exhausting_retries(monkeypatch):
+    monkeypatch.setattr(ms.time, "sleep", lambda _s: None)
+    calls = {"n": 0}
+
+    def fake(req, timeout=None):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(req.full_url, 503, "Unavailable", {}, None)
+
+    monkeypatch.setattr(ms.urllib.request, "urlopen", fake)
+    with pytest.raises(urllib.error.HTTPError):
+        _post("https://x", "k", [{"path": "p", "body": {}}], timeout=5, retries=2)
+    assert calls["n"] == 3  # 1 initial + 2 retries
+
+
+def test_sync_ships_index_and_root_when_a_receipt_batch_fails(tmp_path, monkeypatch):
+    # The core regression: index/root/absence-penalties ride in the LAST
+    # batches, so one failed receipt batch must not strand them, and the
+    # failure must still be raised so the heartbeat sees it.
+    root = str(tmp_path)
+    _publish_real_day(root)
+    monkeypatch.setattr(ms, "MAX_POST_BYTES", 1)  # one item per batch
+    shipped = []
+
+    def fake_post(url, key, batch, timeout, **_kw):
+        paths = [it["path"] for it in batch]
+        if any("/receipt" in p for p in paths):
+            raise RuntimeError("simulated permanent 502 on the receipt batch")
+        shipped.extend(paths)
+        return {"stored": len(batch), "rejected": []}
+
+    monkeypatch.setattr(ms, "_post", fake_post)
+    with pytest.raises(MirrorSyncError) as ei:
+        sync_mirror(root, "https://x", "k")
+
+    summary = ei.value.summary
+    assert "/v1/daily/index" in shipped      # shipped despite the receipt failure
+    assert "/v1/daily/root" in shipped
+    assert any("/receipt" in p
+               for f in summary["failed_posts"] for p in f["paths"])
