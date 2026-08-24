@@ -155,18 +155,25 @@ def stage_intake(ledger_root, corpus, key, timeout_s, limit):
             runner=lambda ref, eps, _t: run_basket(ref, eps))
 
     # Bound a single sweep so a run cannot be a hundred untrusted container
-    # starts unattended. Select the EARLIEST-committed digests (by block) —
-    # the most-established models — rather than an arbitrary hotkey sort, so a
-    # bounded sweep gates the models most likely to be real.
+    # starts unattended. The bound applies to digests that still NEED a
+    # verdict: it used to rank ALL commitments earliest-first, so once more
+    # than `limit` digests existed on chain the same long-admitted earliest
+    # window was selected every day and NEWLY committed digests were starved
+    # forever — UID 136/138 (2026-08-24): fixed containers committed a day
+    # earlier sat pending_admission while every sweep gated 0. Filtering the
+    # already-verdicted out FIRST keeps the container-start cap and gates the
+    # earliest-committed of the digests actually awaiting judgement.
+    from hope.backtest.intake_runner import verdicted_digests
     commitments, _unparse = commitments_from_chain(hotkeys, read)
-    if limit and len(commitments) > limit:
+    _done = verdicted_digests(ledger_root)
+    fresh = [c for c in commitments if c.digest not in _done]
+    if limit and len(fresh) > limit:
         block_of = {c.digest: (commits.get(c.hotkey) or (0, ""))[0]
-                    for c in commitments}
-        keep = {c.digest for c in
-                sorted(commitments, key=lambda c: block_of.get(c.digest, 0))[:limit]}
-        reader = lambda hk: (read(hk) if _digest_of(read(hk)) in keep else None)  # noqa: E731
-    else:
-        reader = read
+                    for c in fresh}
+        fresh = sorted(fresh,
+                       key=lambda c: block_of.get(c.digest, 0))[:limit]
+    keep = {c.digest for c in fresh}
+    reader = lambda hk: (read(hk) if _digest_of(read(hk)) in keep else None)  # noqa: E731
 
     # In sandbox mode the intake's OWN pull step must not use docker (there is
     # none). The namespace sandbox pulls each image by digest itself and
