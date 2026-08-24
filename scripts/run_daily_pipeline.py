@@ -343,10 +343,13 @@ def stage_settle(ledger_root, day):
         coldkey_reader=_coldkey_reader,
         transition_key_provider=_transition_key_provider(ledger_root),
     )
-    # Trim the noisy nested prediction index out of the summary.
+    # Trim the noisy nested prediction index out of the summary. Keep
+    # absence_penalty: it moves standings and, on its first live days, "who was
+    # charged and how much" must show in the run log and heartbeat rather than
+    # being knowable only from the published penalty file.
     return {k: v for k, v in summary.items()
             if k in ("day", "settle", "receipt", "publish", "weights",
-                     "collateral_floor_alpha")}
+                     "collateral_floor_alpha", "absence_penalty")}
 
 
 def stage_publish_weights(ledger_root, day):
