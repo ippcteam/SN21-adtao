@@ -65,6 +65,45 @@ You need enough scored predictions in the standing window before the curve can p
 
 (Details in [SN21_SCORING.md](./SN21_SCORING.md).)
 
+## Absence penalty (rule amendment, published 2026-08-24)
+
+A board position must be defended every day the subnet runs. From the
+published effective date:
+
+**Every episode of a subnet-run day that you do not return a scoreable
+prediction for enters your standing as one entry at the floor score of
+0.30.** Miss a 400-episode day, carry 400 floor-scored entries in your
+average. Cover the day fully and this rule never touches you.
+
+The design, stated plainly so nobody has to reverse-engineer it:
+
+1. **No threshold to duck under.** The 75% participation bar still gates
+   *payment* exactly as before, but the score penalty charges every
+   uncovered episode — covering 80% of a day still charges the other 20%.
+   Predicting only the comfortable episodes is not a strategy.
+2. **No exit.** You are charged for every uncovered subnet-run day for as
+   long as you hold any entries in the 35-day standing window. Going
+   quiet does not freeze your number — it bleeds it toward the floor
+   until you return, or your entries age out and you leave the board the
+   natural way. This is deliberate: a standing you are not defending is
+   not a standing.
+3. **The floor is below every scoring band we have observed** (field
+   day-means have ranged ~0.45–0.62), so being scored on a brutal day
+   always beats being absent for it. The floor value is published here
+   and any change to it is a published rule change.
+4. **Days the subnet fails to run charge nobody.** Our downtime is never
+   your penalty.
+5. **One charge per (day, miner), forever** — re-runs and catch-up sweeps
+   cannot double-charge, and every applied charge is published at
+   `/v1/daily/absence-penalties` beside the receipts, so your standing —
+   penalties included — reproduces from public documents alone.
+
+Why: under the previous rules, absence touched only transient weight and
+never the score, so a miner absent on hard days kept an average built
+only on easy days — and held first place with it while every participant
+moved. That is not a board worth topping. This amendment makes absence a
+scored event, which is the only way "show up every day" means anything.
+
 ## Champion vs earner (two different seats)
 
 | | **Weights (who earns)** | **Champion (who runs live)** |

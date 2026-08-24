@@ -54,9 +54,25 @@ and `instability_risk` in `[0, 1]`.
 | CPU time | **15 minutes** per daily basket (~250 episodes) |
 | Filesystem | Read-only root |
 
-Exceeding a limit aborts that day's run: no scores for the day. Because
-standing is an average over scored predictions, a missed day costs you
-evidence rather than incurring a separate penalty.
+Exceeding a limit aborts that day's run: no scores for the day.
+
+> **Amended 2026-08-24 — the absence penalty.** This document previously
+> said a missed day "costs you evidence rather than incurring a separate
+> penalty." That is no longer true, and here is why, openly: under that
+> rule a miner absent on hard days kept a spotless average built on easy
+> days and held first place while every participant's score moved. From
+> the published effective date, every episode of a subnet-run day you do
+> not return a scoreable prediction for enters your **standing** as one
+> entry at the published floor score (**0.30** — below every scoring band
+> observed in production, so participating always beats being absent).
+> There is no coverage threshold to duck under and no exit: you are
+> charged for every uncovered day as long as you hold a board position,
+> so going quiet bleeds your standing until you return or your entries
+> age out of the 35-day window. Days the **subnet** fails to run charge
+> nobody. Every applied penalty is published beside the receipts
+> (`/v1/daily/absence-penalties`), so your standing stays reproducible
+> from public documents, penalties included. Full details in
+> [SN21_REWARDS.md](./SN21_REWARDS.md).
 
 ### Determinism is required, and it is checked
 

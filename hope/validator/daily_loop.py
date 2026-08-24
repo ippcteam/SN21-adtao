@@ -264,6 +264,26 @@ def run_daily_loop(
         except Exception as e:
             summary["type_accuracy"] = {"error": str(e)}
 
+    # 1e. Absence penalties (Rob's ruling, 24 Aug) — every uncovered episode
+    # on a subnet-run day enters the absentee's standing at the published
+    # floor, so a board position cannot be held from the sidelines. Runs
+    # BEFORE the weights step so the day's published standings already carry
+    # the day's penalties. Flag-gated until the rule is published; fail-soft
+    # like every other step.
+    try:
+        from hope.scoring.absence_penalty import (
+            absence_penalty_enabled,
+            apply_penalties,
+        )
+        if absence_penalty_enabled(environ):
+            summary["absence_penalty"] = apply_penalties(
+                ledger_root, day, environ=environ)
+        else:
+            summary["absence_penalty"] = {
+                "skipped": "SN21_ABSENCE_PENALTY off"}
+    except Exception as e:
+        summary["absence_penalty"] = {"error": str(e)}
+
     # 1c. liveness — chronic-failure observation (strikes/eviction).
     # Reads the day's EXECUTION facts off the shadow ledger and folds them
     # into the liveness state machine. Runs whether or not

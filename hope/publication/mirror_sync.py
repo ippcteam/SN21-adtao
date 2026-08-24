@@ -139,6 +139,20 @@ def build_mirror_items(ledger_root: str,
         # receipts from reaching miners.
         pass
 
+    # Absence penalties change standings, and standings must stay
+    # reproducible from public documents alone — so the applied-penalty log
+    # publishes beside the receipts. Empty log publishes as an empty list,
+    # which is itself the statement "no penalties have been charged".
+    try:
+        from hope.scoring.absence_penalty import penalty_log
+        items.append({"path": "/v1/daily/absence-penalties",
+                      "body": {"note": ("every applied absence penalty: one "
+                                        "standing entry per missed episode "
+                                        "at the published floor score"),
+                               "penalties": penalty_log(ledger_root)}})
+    except Exception:
+        pass
+
     return items
 
 
