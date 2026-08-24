@@ -167,9 +167,24 @@ carries it:
 The basis is **per episode, not a fixed account attribute**: if an advertiser
 changes a campaign's optimization goal, later episodes flip basis. Model on
 the resolved `goal_basis` in each payload, not on a per-campaign assumption.
-Published daily receipts also record the resolved basis per outcome
-(`efficiency_basis`), and the historical episode-id → basis mapping is served
-alongside the daily feeds for retrospective scoring.
+
+Published daily receipts also record the resolved basis per outcome under the
+field name `efficiency_basis`. Two basis maps are published, both keyed by
+`episode_id` (= `candidate_key[:16]`, the same id the bundle and receipts use)
+and both carrying `{episode_id, efficiency_basis, source, guarded}`:
+
+| Map | Route | Covers |
+| :---- | :---- | :---- |
+| Daily | `/v1/daily/episode-basis-map` | Episodes that have appeared in a settled **daily receipt**. |
+| Training | `/v1/daily/training-basis-map` | Every episode in the published **rich training-v2** corpus. |
+
+The two populations do not overlap: the daily map is recent settled receipts,
+the training map is the reconstructed historical windows in the bundle. If you
+train on the bundle, use the **training** map. Fetch either from the same host
+as the receipts, e.g.
+`https://hope-bittensor-api.onrender.com/v1/daily/training-basis-map`. From the
+**next** training-bundle refresh, the resolved basis also ships inline on every
+record as `account_state.goal_basis`, so no join is needed.
 
 ## 3. Admission — the backtest gate
 

@@ -55,6 +55,18 @@ Each record is `{"episode_id", "input": {"payload", "transition_key"}, "labels"}
 | `action_bundle.bundle_summary` | `action_count`, `action_types`, `transition_key`, `source_mix` (`user` / `system` from the Google Ads client type) |
 | `labels` | Settled deltas vs the 60-day baseline: `cost_delta_pct`, `conversions_delta_pct`, `cpa_delta_pct`, `conversion_value_delta_pct` at horizons **7** (28,592), **14** (23,384), **28** (14,849) |
 
+> **Which efficiency label is graded — the basis map.** Every record carries
+> both `cpa_delta_pct` and `conversion_value_delta_pct`, but each episode is
+> graded on only **one**, the account's own optimization basis. The map from
+> `episode_id` to that basis is published for this exact corpus at
+> `https://hope-bittensor-api.onrender.com/v1/daily/training-basis-map`
+> (`{episode_id, efficiency_basis, source, guarded}`; `efficiency_basis` is
+> `cpa` or `conversion_value`). It covers the training-v2 episodes; the daily
+> map at `/v1/daily/episode-basis-map` covers settled daily-receipt episodes
+> and does not overlap this corpus. From the next refresh, the basis also ships
+> inline on each record as `account_state.goal_basis`. See
+> [MINER_MODEL_SPEC](./MINER_MODEL_SPEC.md#account_stategoal_basis--which-efficiency-metric-you-are-scored-on).
+
 **Change types.** Not only budget and pause. About 16.9k records are
 **composite** windows — several changes land together; predict the net effect.
 
