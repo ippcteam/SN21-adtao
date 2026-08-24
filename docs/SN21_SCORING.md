@@ -86,7 +86,17 @@ Each finalised (episode, horizon) receives a score in **[0, 1]** from four compo
 | Directional accuracy | **15%** |
 | Goal-metric accuracy | **15%** |
 
-Missing a prediction for a settled episode does **not** insert a zero score. It simply adds no evidence that day — your standing is diluted only by having fewer scored entries.
+> **Amended 2026-08-24 — missing an episode now costs a full-weight zero.**
+> This document previously said a missed prediction "does not insert a zero
+> score; it simply adds no evidence." That rule made absence on hard days
+> strictly profitable and is retired: from 24 August, every episode of a
+> subnet-run day you do not return a scoreable prediction for enters your
+> standing as a **zero at the full episode weight** — the same standing mass
+> a covered episode contributes. Covering an episode at any honest score
+> therefore always leaves a standing at least as high as skipping it. Days
+> the subnet fails to run charge nobody, and every applied charge is
+> published at `/v1/daily/absence-penalties`. Full rule and the openly
+> recorded same-day floor correction: [SN21_REWARDS.md](./SN21_REWARDS.md).
 
 ## Account attrition (stop spending / leave the network)
 
@@ -190,7 +200,9 @@ A thin day with fewer entries would simply add fewer rows — there is no per-da
 
 ### Example D — missing a prediction
 
-If you never submitted the 14-day prediction for this episode, the Day-22 row never appears. Your standing uses only the 7-day and 28-day entries. That is **not** a zero score for 14-day; it is absent evidence (and less total weight toward the placement floors).
+**Pre-amendment behaviour (until 23 August):** if you never submitted the 14-day prediction, the Day-22 row never appeared — absent evidence, no zero.
+
+**From 24 August (absence penalty):** an episode you do not cover at all on a subnet-run day enters your standing as a zero at full episode weight on that day, so skipping is never better than an honest prediction. (A *partially* covered episode still scores only the horizons you submitted; the penalty charges per uncovered episode of the day's basket, not per horizon.) See [SN21_REWARDS.md](./SN21_REWARDS.md#absence-penalty-rule-amendment-published-2026-08-24).
 
 ### Example E — account leaves after 7-day has settled
 
