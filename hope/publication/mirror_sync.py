@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+import urllib.error
 import urllib.request
 
 MIRROR_POST_PATH = "/internal/bittensor/v1/daily/mirror"
@@ -163,15 +165,49 @@ def build_mirror_items(ledger_root: str,
 MAX_POST_BYTES = 4_000_000
 
 
+# Gateway statuses worth a retry: the operator backend can 502/503/504 on cold
+# start or under load, and one blip must not leave the public mirror stale until
+# the next hourly run (2026-08-24: a single 502 mid-sync did exactly that, and
+# because index/root ship in the LAST batches, the whole feed read as of the
+# previous day for an hour). 4xx (bad key, bad payload) never fixes on retry.
+_RETRY_STATUSES = frozenset({502, 503, 504})
+
+
+class MirrorSyncError(RuntimeError):
+    """Raised when batches remain failed after retries. Carries the summary so
+    the caller (and the heartbeat) can see what shipped and what did not."""
+
+    def __init__(self, summary: dict):
+        self.summary = summary
+        failed_paths = [p for f in summary["failed_posts"] for p in f["paths"]]
+        super().__init__(
+            f"{len(summary['failed_posts'])} of {summary['posts']} mirror "
+            f"batches failed after retries (stored {summary['stored']}; "
+            f"index/root/absence-penalties were still attempted). "
+            f"failed paths: {failed_paths[:8]}")
+
+
 def _post(api_url: str, api_key: str, items: list[dict],
-          timeout: int) -> dict:
-    req = urllib.request.Request(
-        api_url.rstrip("/") + MIRROR_POST_PATH,
-        data=json.dumps({"items": items}).encode(),
-        method="POST",
-        headers={"X-API-Key": api_key, "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode())
+          timeout: int, retries: int = 3, backoff: float = 2.0) -> dict:
+    data = json.dumps({"items": items}).encode()
+    for attempt in range(retries + 1):
+        req = urllib.request.Request(
+            api_url.rstrip("/") + MIRROR_POST_PATH,
+            data=data,
+            method="POST",
+            headers={"X-API-Key": api_key, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            if e.code not in _RETRY_STATUSES or attempt == retries:
+                raise
+        except urllib.error.URLError:
+            # socket timeout / connection reset / DNS blip — all transient.
+            if attempt == retries:
+                raise
+        time.sleep(backoff * (2 ** attempt))   # 2s, 4s, 8s
+    raise RuntimeError("unreachable: retry loop neither returned nor raised")
 
 
 def sync_mirror(ledger_root: str, api_url: str, api_key: str,
@@ -197,9 +233,23 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
 
     stored = 0
     rejected: list = []
-    for b in batches:
-        out = _post(api_url, api_key, b, timeout)
-        stored += int(out.get("stored") or 0)
-        rejected.extend(out.get("rejected") or [])
-    return {"success": True, "stored": stored, "rejected": rejected,
-            "items_sent": len(items), "posts": len(batches)}
+    failed: list = []
+    for i, b in enumerate(batches):
+        try:
+            out = _post(api_url, api_key, b, timeout)
+            stored += int(out.get("stored") or 0)
+            rejected.extend(out.get("rejected") or [])
+        except Exception as e:  # noqa: BLE001
+            # Do NOT abort the loop: index, root and the absence-penalty log
+            # ride in the FINAL batches, and a stale root is worse than a
+            # missing receipt. Record the failure and keep shipping; surface
+            # it after every batch has been attempted.
+            failed.append({"batch": i,
+                           "paths": [it.get("path") for it in b],
+                           "error": str(e)})
+    summary = {"success": not failed, "stored": stored, "rejected": rejected,
+               "items_sent": len(items), "posts": len(batches),
+               "failed_posts": failed}
+    if failed:
+        raise MirrorSyncError(summary)
+    return summary
