@@ -33,6 +33,14 @@ TRIGGER_HOUR_UTC = int(os.environ.get("SN21_PIPELINE_TRIGGER_HOUR_UTC", "11"))
 CHECK_INTERVAL_S = int(os.environ.get("SN21_PIPELINE_CHECK_INTERVAL_S", "3600"))
 LEDGER_ROOT = os.environ.get("SN21_LEDGER_ROOT", "/var/data/sn21/ledger")
 
+# Operator override: SN21_RERUN_DAY=YYYY-MM-DD makes that one day rerunnable
+# even though its run record exists — for the case where a run completed
+# against bad inputs (e.g. the 25 Aug run that scored a stale basket) and the
+# day must be redone. Nothing is deleted: the loop just stops treating the
+# existing record as "done" for that day until a rerun exits 0, whose record
+# then overwrites the old one. Unset the var once the rerun lands.
+RERUN_DAY = os.environ.get("SN21_RERUN_DAY", "")
+
 # Admission is the expensive stage (pull + two runs per NEW model), and it is
 # idempotent — a gated digest is never re-gated. Bounding it per day spreads
 # the one-time gating of the backlog over a few days instead of one multi-hour
@@ -66,13 +74,21 @@ def run_pipeline(day: str) -> int:
 
 def main():
     log(f"start: trigger>={TRIGGER_HOUR_UTC}:00 UTC, check every "
-        f"{CHECK_INTERVAL_S}s, ledger={LEDGER_ROOT}")
+        f"{CHECK_INTERVAL_S}s, ledger={LEDGER_ROOT}"
+        + (f", rerun override for {RERUN_DAY}" if RERUN_DAY else ""))
+    rerun_pending = bool(RERUN_DAY)
     while True:
         now = datetime.now(timezone.utc)
         day = now.date().isoformat()
+        rerun_today = rerun_pending and day == RERUN_DAY
         try:
-            if now.hour >= TRIGGER_HOUR_UTC and not run_record_exists(day):
-                run_pipeline(day)
+            if now.hour >= TRIGGER_HOUR_UTC and (
+                    rerun_today or not run_record_exists(day)):
+                rc = run_pipeline(day)
+                if rerun_today and rc == 0:
+                    rerun_pending = False
+                    log(f"rerun override for {RERUN_DAY} satisfied "
+                        "(clean run recorded)")
             else:
                 reason = ("already ran today" if run_record_exists(day)
                           else f"before trigger hour ({now.hour} < "
