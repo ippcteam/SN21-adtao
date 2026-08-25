@@ -382,11 +382,24 @@ def build_daily_artifact(
                 print(f"[artifact] ss58 decode FAILED for {hotkey_ss58[:12]}..: "
                       f"{type(_e).__name__}: {_e}", file=sys.stderr, flush=True)
             continue
+        # DEREGISTERED (fixed 2026-08-25): a hotkey can hold standings and yet
+        # be gone from the metagraph — one deregistered overnight on 24 Aug,
+        # its row got the -1 sentinel, and the payload schema (uid ge=0)
+        # rejected the ENTIRE daily report: one departed miner blanked the
+        # public leaderboard for everyone. The board is uid-keyed, so a
+        # departed hotkey cannot be displayed anyway — skip it, loudly.
+        _uid = uid_by_hotkey.get(hotkey_ss58)
+        if _uid is None:
+            import sys
+            print(f"[artifact] {hotkey_ss58[:12]}.. holds a standing but is "
+                  f"not in the metagraph (deregistered) — row skipped",
+                  file=sys.stderr, flush=True)
+            continue
         scored.add(hotkey_ss58)
         score_map[hk_bytes] = int(round(float(score) * 1_000_000))
         reads.append(_DailyRead(
             miner_hotkey=hk_bytes,
-            miner_uid=int(uid_by_hotkey.get(hotkey_ss58, -1)),
+            miner_uid=int(_uid),
             ok=True,
             excluded_reason=None,
         ))
@@ -397,9 +410,12 @@ def build_daily_artifact(
             hk_bytes = _ss58_to_bytes(hotkey_ss58)
         except Exception:
             continue
+        _uid = uid_by_hotkey.get(hotkey_ss58)
+        if _uid is None:            # same deregistration guard as above
+            continue
         reads.append(_DailyRead(
             miner_hotkey=hk_bytes,
-            miner_uid=int(uid_by_hotkey.get(hotkey_ss58, -1)),
+            miner_uid=int(_uid),
             ok=False,
             excluded_reason="not_scored_this_day",
         ))

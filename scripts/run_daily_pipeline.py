@@ -85,21 +85,37 @@ def _api_post(path: str, body: dict):
         return json.loads(resp.read().decode())
 
 
+class BasketNotReady(RuntimeError):
+    """The day's own basket is not in the operator listing yet. TRANSIENT by
+    definition — the upstream build may simply be late — so the caller must
+    NOT write a run record for it (the daemon then retries next tick and the
+    day self-heals when the basket lands)."""
+
+
 def resolve_basket(explicit: str | None, day: date) -> str:
     """The basket release key. Explicit wins; else BD-<yesterday> (a basket is
     named for the day whose changes it holds and delivered the next morning),
-    verified to exist in the operator listing."""
+    verified to exist in the operator listing.
+
+    FAIL LOUDLY, NEVER FALL BACK (fixed 2026-08-25). This used to fall back to
+    the newest BD- release when the day's basket was missing. Three incidents:
+    a stale 11:53 run published a wrong-day report (22 Aug), and on 24+25 Aug —
+    with the upstream basket build stalled — two consecutive runs silently
+    re-predicted the SAME stale 5-episode basket, re-writing an already-locked
+    shadow day. A wrong basket is strictly worse than a late one: predictions
+    land against episodes nobody meant to serve, and the miss is invisible.
+    """
     if explicit:
         return explicit
     candidate = f"BD-{day - timedelta(days=1)}"
     releases = {r.get("release_key") for r in _api_get("releases").get("releases", [])}
     if candidate in releases:
         return candidate
-    # Fall back to the newest BD- release the operator lists.
-    bd = sorted(r for r in releases if str(r).startswith("BD-"))
-    if not bd:
-        raise SystemExit("no BD- daily basket found in the operator listing")
-    return bd[-1]
+    newest = sorted(r for r in releases if str(r).startswith("BD-"))
+    raise BasketNotReady(
+        f"{candidate} is not in the operator listing (newest BD- present: "
+        f"{newest[-1] if newest else 'none'}). Refusing to run against a stale "
+        f"basket; will retry next tick. Pass --basket explicitly to override.")
 
 
 def fetch_basket_payloads(release_key: str) -> list:
@@ -222,6 +238,19 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
         REFERENCE_IMAGE,
         admitted_models,
     )
+
+    # PREDICTIONS ARE LOCKED (added 2026-08-25). A basket day that already
+    # has a shadow run marker must never be executed again by the pipeline:
+    # on 24+25 Aug the stale-basket fallback made two runs shadow the SAME
+    # day, silently re-writing predictions that the contract says lock once.
+    # An operator who truly must re-run a day removes the day's _run.json
+    # deliberately — the pipeline never does it by accident.
+    _guard_day = basket_key.replace("BD-", "")
+    from hope.backtest import shadow as _shadow_store
+    if _shadow_store.subnet_ran(ledger_root, _guard_day):
+        return {"registry": None, "models_run": 0,
+                "skipped": (f"shadow day {_guard_day} already ran — "
+                            f"predictions are locked; refusing to re-run")}
 
     as_of = str(date.today() if not hasattr(date, "today") else datetime.now(
         timezone.utc).date())
@@ -538,6 +567,13 @@ def main():
         record["stages"]["resolve"] = {"basket": basket_key,
                                        "episodes": len(episodes)}
         log(f"[resolve] basket {basket_key}: {len(episodes)} full payloads")
+    except BasketNotReady as e:
+        # TRANSIENT: no run record, so the once-per-day daemon guard does not
+        # trip and the next hourly tick retries — the day self-heals when the
+        # late basket lands instead of burning on a stale one.
+        log(f"[resolve] BASKET NOT READY — {e}")
+        log("===PIPELINE-END=== (will retry next tick)")
+        return 1
     except Exception as e:   # noqa: BLE001
         record["stages"]["resolve"] = {"error": str(e)}
         log(f"[resolve] ERROR {e}")
@@ -584,8 +620,13 @@ def main():
         s = stage_shadow(args.ledger_root, basket_key, episodes,
                          include_reference=not args.no_reference)
         record["stages"]["shadow"] = {"registry": s["registry"],
-                                      "models_run": s["models_run"]}
-        log(f"[shadow] registry={s['registry']} models_run={s['models_run']}")
+                                      "models_run": s["models_run"],
+                                      **({"skipped": s["skipped"]}
+                                         if "skipped" in s else {})}
+        if "skipped" in s:
+            log(f"[shadow] SKIPPED — {s['skipped']}")
+        else:
+            log(f"[shadow] registry={s['registry']} models_run={s['models_run']}")
     except Exception as e:   # noqa: BLE001
         record["stages"]["shadow"] = {"error": str(e)}
         log(f"[shadow] ERROR {e}")
@@ -595,6 +636,10 @@ def main():
         s = stage_settle(args.ledger_root, day)
         record["stages"]["settle"] = s
         log(f"[settle] {json.dumps(s, default=str)[:400]}")
+        # The 400-char cap above can cut the absence-penalty summary off the
+        # log tail; a money-moving rule's charges get their own line.
+        if isinstance(s, dict) and "absence_penalty" in s:
+            log(f"[absence] {json.dumps(s['absence_penalty'], default=str)[:400]}")
     except Exception as e:   # noqa: BLE001
         record["stages"]["settle"] = {"error": str(e)}
         log(f"[settle] ERROR {e}")
