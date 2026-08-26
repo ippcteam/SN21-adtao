@@ -139,6 +139,38 @@ only on easy days — and held first place with it while every participant
 moved. That is not a board worth topping. This amendment makes absence a
 scored event, which is the only way "show up every day" means anything.
 
+## Earning-set activation (rule amendment, published 2026-08-26)
+
+Two rules governing WHO the curve pays are active from **2026-08-26**,
+applied from that day's run forward, never retroactively. Standings,
+receipts, and past weights are unchanged.
+
+**1. One payer per model — switched ON.** The rule below ("One payer per
+model") was published with its switch-on pending; that switch-on is now
+effective 2026-08-26. Detected groups are published with their working in
+the day's allocation audit, as promised.
+
+**2. Earning-set tenure — new.** A hotkey enters the paid earning set only
+once it has scored entries on at least **7 distinct settle days** within the
+standing window. Before that:
+
+- the hotkey appears on the leaderboard as usual — scores are facts and
+  accrue from the first settled entry;
+- its model keeps being executed daily, which is exactly how tenure
+  accrues: keep a model committed and running, and the horizons maturing
+  do the rest;
+- it holds no seat in the paid curve, so a standing computed over a small
+  number of settled days cannot out-earn a track record.
+
+Why: a standing is an average, and an average over one or two settled days
+carries no evidence of sustained accuracy. Payment follows a track record.
+The day count uses the same distinct-scored-days measure the champion rules
+already use; absence-penalty entries count as scored days (sitting out
+accrues days only at full-weight zero scores, which is not a path into the
+curve anyone would want). The gate never removes the last remaining
+eligible miners: if applying it would empty the curve entirely, it stands
+down for that day and the allocation audit records that it did.
+
 ## Champion vs earner (two different seats)
 
 | | **Weights (who earns)** | **Champion (who runs live)** |

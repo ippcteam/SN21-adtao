@@ -43,6 +43,11 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 
 from hope.scoring import chronic_failure, standing_ledger
+from hope.scoring.tenure import (
+    short_tenure_hotkeys,
+    tenure_gate_enabled,
+    tenure_min_days,
+)
 from hope.scoring.champion_promotion import (
     PromotionDecision,
     PromotionParams,
@@ -181,6 +186,8 @@ def compute_daily_allocation(
     lineage_groups: list | None = None,
     lineage_audit: Mapping | None = None,
     commit_block: Mapping[str, int] | None = None,
+    tenure_min: int = 0,
+    tenure_exempt: frozenset = frozenset(),
 ) -> DailyAllocation:
     """One day's standings → weights (D7) + promotion observation (D8).
 
@@ -284,6 +291,25 @@ def compute_daily_allocation(
                       if hk not in suppressed}
         audit["suppressed"] = sorted(suppressed)
 
+    # Earning-set tenure (hope.scoring.tenure): the curve pays only hotkeys
+    # with >= tenure_min distinct scored days. Same limits as copy
+    # suppression: standings untouched, promotion untouched, curve only.
+    # Stand-down guard: if gating would empty the curve, gate nobody — a
+    # young field must not zero the whole vector.
+    if tenure_min > 0:
+        short = short_tenure_hotkeys(
+            scored_days, placements.keys(), tenure_min, tenure_exempt)
+        if short and len(short) < len(placements):
+            placements = {hk: s for hk, s in placements.items()
+                          if hk not in short}
+            audit["tenure_gated"] = {
+                "min_days": tenure_min, "hotkeys": sorted(short)}
+        elif short:
+            audit["tenure_gated"] = {
+                "min_days": tenure_min, "stood_down": True,
+                "reason": "gating would empty the curve",
+                "hotkeys": sorted(short)}
+
     if lineage_audit:
         audit.setdefault("lineage", {})["pairwise"] = dict(lineage_audit)
 
@@ -360,6 +386,13 @@ def allocation_from_ledger(
     if one_payer_enabled(environ):
         copy_suppressed = one_payer_suppression_from_receipts(root, day, environ)
 
+    tenure_min = tenure_min_days(environ) if tenure_gate_enabled(environ) else 0
+    _house = chronic_failure.house_hotkey_from(environ)
+    tenure_exempt = frozenset({_house}) if _house else frozenset()
+    if tenure_min:
+        logger.info("[tenure] earning-set gate active: min %d scored days",
+                    tenure_min)
+
     participation: dict = {}
     if participation_gate_enabled(environ):
         participation = participation_multipliers(root, day, environ)
@@ -388,6 +421,8 @@ def allocation_from_ledger(
         commit_block=commit_block,
         lineage_groups=lineage_groups,
         lineage_audit=lineage_audit,
+        tenure_min=tenure_min,
+        tenure_exempt=tenure_exempt,
     )
 
     # BLAST RADIUS, declared not patched: with the flag on, evicting every
