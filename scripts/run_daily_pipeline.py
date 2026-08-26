@@ -412,7 +412,11 @@ def stage_publish_weights(ledger_root, day):
         "earning_set_size": intent.get("earning_set_size"),
         "weights": weights,
         "meta": {"champion": intent.get("champion"),
-                 "evicted": intent.get("evicted")},
+                 "evicted": intent.get("evicted"),
+                 # The rule working — one-payer suppression groups and the
+                 # tenure-gated list — published with the vector so the
+                 # docs' "evidence, not accusation" promise holds off-disk.
+                 "collapse_audit": intent.get("collapse_audit") or {}},
     })
     return {"published": True, "hotkeys": len(weights),
             "gated": bool(intent.get("gated", False)),

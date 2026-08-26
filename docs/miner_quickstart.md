@@ -473,6 +473,20 @@ miner and be delivering daily predictions via your admitted container. The
 full ramp schedule is in [SN21_STAKING.md](./SN21_STAKING.md); scoring does
 not require the hold — payment does.
 
+**Earning rules active since 26 August 2026** (details and reasoning in
+[SN21_REWARDS.md](./SN21_REWARDS.md), "Earning-set activation"):
+
+1. **Identical models pay once.** If two or more hotkeys run the same model
+   (same digest, or byte-identical predictions in the published receipts),
+   only the earliest submission earns. The others stay on the leaderboard
+   and become payable again as soon as they run a distinct model.
+2. **7 scored days before payment.** A hotkey enters the paid earning set
+   once it has scored entries on at least 7 distinct settle days. Scores
+   count from your first settled entry; keep your model running and the
+   maturing horizons build your track record.
+
+Neither rule ever changes past days, scores, or receipts.
+
 Burn rates in the transition plan are **planned and indicative only** and may
 change to protect alpha for holders.
 
