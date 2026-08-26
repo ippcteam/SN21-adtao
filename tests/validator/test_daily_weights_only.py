@@ -117,3 +117,29 @@ def test_no_placement_eligible_standings_skips_commit(daily_env, monkeypatch):
 
     assert not res.success
     commit.assert_not_called()
+
+
+# ---------------------------------------------- one-payer subprocess ----
+
+def test_one_payer_subprocess_returns_reader_result(tmp_path):
+    """The child re-runs the real reader over the same ledger; an empty
+    receipts dir means an empty suppression set, delivered via the boundary."""
+    from datetime import date
+    from hope.validator.daily_stream_weights import (
+        one_payer_suppression_subprocess,
+    )
+    (tmp_path / "receipts").mkdir()
+    out = one_payer_suppression_subprocess(
+        str(tmp_path), date(2026, 8, 26), {"SN21_ONE_PAYER_PER_MODEL": "1"})
+    assert out == frozenset()
+
+
+def test_one_payer_subprocess_child_death_suppresses_nobody(tmp_path):
+    """A dead child (here: killed by timeout) must fail EMPTY, not loud."""
+    from datetime import date
+    from hope.validator.daily_stream_weights import (
+        one_payer_suppression_subprocess,
+    )
+    out = one_payer_suppression_subprocess(
+        str(tmp_path / "missing"), date(2026, 8, 26), {}, timeout_s=1)
+    assert out == frozenset()

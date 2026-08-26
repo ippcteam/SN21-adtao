@@ -384,7 +384,7 @@ def allocation_from_ledger(
 
     copy_suppressed: frozenset = frozenset()
     if one_payer_enabled(environ):
-        copy_suppressed = one_payer_suppression_from_receipts(root, day, environ)
+        copy_suppressed = one_payer_suppression_subprocess(root, day, environ)
 
     tenure_min = tenure_min_days(environ) if tenure_gate_enabled(environ) else 0
     _house = chronic_failure.house_hotkey_from(environ)
@@ -489,6 +489,56 @@ def pairs_for_uids(
             continue
         pairs.append((uid, float(w)))
     return pairs
+
+
+def one_payer_suppression_subprocess(
+    root: str, day: date, environ, timeout_s: int = 600,
+) -> frozenset:
+    """one_payer_suppression_from_receipts behind a process boundary.
+
+    Fingerprinting a ledger of receipts means json-loading documents with
+    tens of thousands of entries; the transient allocation on top of a
+    settle process already holding the day's ledger OOM-killed the 2G pod
+    three times on 2026-08-26 — a kill loop, because the day had no run
+    record yet. The subprocess caps the blast radius the same way the
+    collector's batches do: the child pays the memory bill and dies alone.
+
+    Fails EMPTY on any child failure — same direction as the in-process
+    reader: missing evidence never suppresses anybody.
+    """
+    import subprocess
+    import sys
+    payload = json.dumps({
+        "root": root, "day": str(day),
+        "env": {k: v for k, v in dict(environ).items()
+                if k.startswith(("SN21_", "HOPE_"))},
+    })
+    child = (
+        "import json, sys, os\n"
+        "from datetime import date\n"
+        "spec = json.loads(sys.stdin.read())\n"
+        "os.environ.update(spec['env'])\n"
+        "from hope.validator.daily_stream_weights import "
+        "one_payer_suppression_from_receipts\n"
+        "out = one_payer_suppression_from_receipts(\n"
+        "    spec['root'], date.fromisoformat(spec['day']), os.environ)\n"
+        "print(json.dumps(sorted(out)))\n"
+    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", child], input=payload,
+            capture_output=True, text=True, timeout=timeout_s)
+        if proc.returncode != 0:
+            logger.warning(
+                "one-payer child exited %d — suppressing NOBODY for %s "
+                "(stderr tail: %s)", proc.returncode, day,
+                (proc.stderr or "")[-200:])
+            return frozenset()
+        return frozenset(json.loads(proc.stdout.strip() or "[]"))
+    except Exception:
+        logger.exception(
+            "one-payer subprocess failed — suppressing NOBODY for %s", day)
+        return frozenset()
 
 
 def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozenset:
