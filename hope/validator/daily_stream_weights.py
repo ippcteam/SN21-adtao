@@ -491,6 +491,73 @@ def pairs_for_uids(
     return pairs
 
 
+def _fingerprint_index_dir(root: str) -> str:
+    return os.path.join(root, "fingerprints")
+
+
+def _load_day_fingerprints(root: str, day_name: str) -> dict | None:
+    """{hotkey: fingerprint} for one settle day — from the index if present.
+
+    The index file is a few KB; the receipt it derives from can carry tens
+    of thousands of entries. Reading receipts every day made the one-payer
+    check cost ~1GB of transient memory and OOM-killed the 2G executor pod
+    (kill loops on 26 and 27 Aug). Missing or unreadable index → derive from
+    the receipt once and persist, so the heavy path runs at most once per
+    day ever. None → no usable source; the caller skips the day.
+    """
+    ipath = os.path.join(_fingerprint_index_dir(root), f"{day_name}.json")
+    try:
+        with open(ipath) as f:
+            loaded = json.load(f)
+        if isinstance(loaded, dict):
+            return loaded
+    except (OSError, ValueError):
+        pass
+    rpath = os.path.join(root, "receipts", f"{day_name}.json")
+    try:
+        with open(rpath) as f:
+            envelope = json.load(f)
+    except (OSError, ValueError):
+        return None
+    entries = (envelope.get("document") or {}).get("metrics", {}).get("entries", [])
+    prints = fingerprints_from_receipt(entries)
+    try:
+        os.makedirs(_fingerprint_index_dir(root), exist_ok=True)
+        tmp = ipath + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(prints, f)
+        os.replace(tmp, ipath)
+    except OSError:
+        pass    # index is an optimisation; the derived prints still serve
+    return prints
+
+
+def ensure_fingerprint_indexes(root: str, up_to_day=None) -> int:
+    """Backfill fingerprint indexes for every receipt day lacking one.
+
+    Loads receipts ONE AT A TIME and frees each before the next — call this
+    while the process is still light (early in the pipeline), so the one-off
+    heavy pass never lands on top of settle's peak. Returns how many were
+    built; 0 on a warm ledger, making it free to call daily.
+    """
+    rdir = os.path.join(root, "receipts")
+    if not os.path.isdir(rdir):
+        return 0
+    built = 0
+    for name in sorted(os.listdir(rdir)):
+        if not name.endswith(".json") or name.startswith("_"):
+            continue
+        day_name = name[:-5]
+        if up_to_day is not None and day_name > str(up_to_day):
+            continue
+        ipath = os.path.join(_fingerprint_index_dir(root), name)
+        if os.path.exists(ipath):
+            continue
+        if _load_day_fingerprints(root, day_name) is not None:
+            built += 1
+    return built
+
+
 def one_payer_suppression_subprocess(
     root: str, day: date, environ, timeout_s: int = 600,
 ) -> frozenset:
@@ -574,14 +641,9 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
         for day_name in days:
             if day_name > str(day):
                 continue
-            try:
-                with open(os.path.join(receipt_dir_path, f"{day_name}.json")) as f:
-                    envelope = json.load(f)
-            except (OSError, ValueError):
+            prints = _load_day_fingerprints(root, day_name)
+            if prints is None:
                 continue
-            metrics_block = (envelope.get("document") or {}).get("metrics", {})
-            entries_list = metrics_block.get("entries", [])
-            prints = fingerprints_from_receipt(entries_list)
             history_days.append((day_name, prints))
             if day_name == str(day):
                 today_fingerprints = prints

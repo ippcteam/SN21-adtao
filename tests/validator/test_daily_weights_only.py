@@ -143,3 +143,54 @@ def test_one_payer_subprocess_child_death_suppresses_nobody(tmp_path):
     out = one_payer_suppression_subprocess(
         str(tmp_path / "missing"), date(2026, 8, 26), {}, timeout_s=1)
     assert out == frozenset()
+
+
+# ------------------------------------------- fingerprint index ----
+
+def _mini_receipt(tmp_path, day, entries):
+    import json as _json
+    rdir = tmp_path / "receipts"
+    rdir.mkdir(exist_ok=True)
+    (rdir / f"{day}.json").write_text(_json.dumps(
+        {"document": {"metrics": {"entries": entries}}}))
+
+
+def _entry(miner, episode, score=0.5, h=7, p50=1.0):
+    return {"miner": miner, "episode_id": episode, "horizon_days": h,
+            "score": score,
+            "prediction": {"cost_delta_pct": {"p10": 0.0, "p50": p50, "p90": 2.0}}}
+
+
+def test_index_is_built_once_and_reused(tmp_path):
+    import json as _json
+    from hope.validator.daily_stream_weights import (
+        ensure_fingerprint_indexes, _load_day_fingerprints,
+    )
+    _mini_receipt(tmp_path, "2026-08-20", [_entry("A", "e1"), _entry("B", "e1", p50=9.9)])
+    assert ensure_fingerprint_indexes(str(tmp_path)) == 1
+    assert ensure_fingerprint_indexes(str(tmp_path)) == 0   # warm: nothing to build
+    idx = tmp_path / "fingerprints" / "2026-08-20.json"
+    assert idx.exists()
+    prints = _load_day_fingerprints(str(tmp_path), "2026-08-20")
+    assert set(prints) == {"A", "B"} and prints["A"] != prints["B"]
+    # a corrupted index heals itself from the receipt
+    idx.write_text("{corrupt")
+    prints2 = _load_day_fingerprints(str(tmp_path), "2026-08-20")
+    assert prints2 == prints
+    assert _json.loads(idx.read_text()) == prints
+
+
+def test_suppression_via_index_matches_direct_receipts(tmp_path):
+    from datetime import date
+    from hope.validator.daily_stream_weights import (
+        ensure_fingerprint_indexes, one_payer_suppression_from_receipts,
+    )
+    # day1: A alone produces the behaviour; day2: B copies A exactly
+    _mini_receipt(tmp_path, "2026-08-20", [_entry("A", "e1")])
+    _mini_receipt(tmp_path, "2026-08-21", [_entry("A", "e2"), _entry("B", "e2")])
+    direct = one_payer_suppression_from_receipts(
+        str(tmp_path), date(2026, 8, 21), {})
+    ensure_fingerprint_indexes(str(tmp_path))
+    via_index = one_payer_suppression_from_receipts(
+        str(tmp_path), date(2026, 8, 21), {})
+    assert direct == via_index == frozenset({"B"})   # the copy, not the author

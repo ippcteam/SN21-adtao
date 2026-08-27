@@ -571,6 +571,19 @@ def main():
         record["stages"]["resolve"] = {"basket": basket_key,
                                        "episodes": len(episodes)}
         log(f"[resolve] basket {basket_key}: {len(episodes)} full payloads")
+
+        # 0b. fingerprint indexes — build any missing ones NOW, while this
+        # process is still light. The one-payer check at settle then reads
+        # only the small index files; deriving them lazily at settle time
+        # put a receipt-sized allocation on top of settle's peak.
+        try:
+            from hope.validator.daily_stream_weights import (
+                ensure_fingerprint_indexes,
+            )
+            _built = ensure_fingerprint_indexes(args.ledger_root)
+            log(f"[fingerprint-index] built={_built}")
+        except Exception as e:   # noqa: BLE001 — an optimisation, never fatal
+            log(f"[fingerprint-index] skipped ({e})")
     except BasketNotReady as e:
         # TRANSIENT: no run record, so the once-per-day daemon guard does not
         # trip and the next hourly tick retries — the day self-heals when the
