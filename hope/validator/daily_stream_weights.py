@@ -188,6 +188,8 @@ def compute_daily_allocation(
     commit_block: Mapping[str, int] | None = None,
     tenure_min: int = 0,
     tenure_exempt: frozenset = frozenset(),
+    one_payer_on: bool | None = None,
+    lineage_on: bool | None = None,
 ) -> DailyAllocation:
     """One day's standings → weights (D7) + promotion observation (D8).
 
@@ -253,11 +255,22 @@ def compute_daily_allocation(
     # Applied BEFORE promotion, unlike copy suppression: a second hotkey on the
     # same coldkey is not a distinct principal at all, so it should never have
     # been a champion candidate either.
+    coldkey_state: dict = {"applied": False, "identities": 0, "dropped": 0}
     if coldkey_of:
         cap = apply_coldkey_cap(placements, coldkey_of, commit_block=commit_block)
         placements = dict(cap.kept)
+        coldkey_state = {"applied": True, "identities": len(coldkey_of),
+                         "dropped": len(cap.dropped)}
         if cap.dropped:
             audit["coldkey_cap"] = cap.as_dict()
+    else:
+        # Without identities the cap cannot run, and it used to leave no trace
+        # when that happened — no key in the audit, which reads exactly like a
+        # day on which the cap ran and found nothing to do. The cap normally
+        # removes a substantial share of the field, so those two days are very
+        # different and must not publish the same record. A control that
+        # cannot say "I did not run" cannot be audited.
+        coldkey_state["reason"] = "no coldkey identities available"
 
     scored_days = standing_ledger.scored_day_counts(entries)
     promotion = observe_day(
@@ -312,6 +325,40 @@ def compute_daily_allocation(
 
     if lineage_audit:
         audit.setdefault("lineage", {})["pairwise"] = dict(lineage_audit)
+
+    # ---- every documented control states its status, every day ------------
+    # The detail blocks above are written only when a control has something to
+    # SAY. That makes silence ambiguous three different ways — the control was
+    # off, or it ran and found nothing, or it could not run at all — and all
+    # three published an identical record, while meaning very different things
+    # about who was paid.
+    #
+    # SN21_REWARDS.md and SN21_THREAT_MODEL.md name these controls to miners,
+    # so "did it run today" has to be answerable from the published document
+    # rather than from our logs. This block is that answer, and it is present
+    # whether or not anything was suppressed.
+    #
+    # `None` means the caller did not tell us — recorded as unknown rather
+    # than guessed, because a status we invented is worse than one we admit
+    # we do not have.
+    audit["policies"] = {
+        "coldkey_cap": coldkey_state,
+        "one_payer": {
+            "enabled": one_payer_on,
+            "suppressed": len(suppressed),
+        },
+        "lineage": {
+            "configured": lineage_on,
+            "groups": len(lineage_groups or []),
+            "pairs_examined": len(lineage_audit or {}),
+        },
+        "tenure": {
+            "enabled": tenure_min > 0,
+            "min_days": tenure_min,
+            "gated": len(audit.get("tenure_gated", {}).get("hotkeys", [])),
+            "stood_down": bool(audit.get("tenure_gated", {}).get("stood_down")),
+        },
+    }
 
     gated = bool(min_daily_episodes) and day_episode_volume < min_daily_episodes
     weights = {} if gated else curve_weights(placements, curve_params)
@@ -423,6 +470,12 @@ def allocation_from_ledger(
         lineage_audit=lineage_audit,
         tenure_min=tenure_min,
         tenure_exempt=tenure_exempt,
+        # Read from the environment HERE, where the switches actually live, so
+        # the published status is what the run was configured with rather than
+        # something inferred from an empty result. "Suppressed nobody" and
+        # "was switched off" are different facts and must not share a record.
+        one_payer_on=one_payer_enabled(environ),
+        lineage_on=lineage_params_from_env(environ).configured(),
     )
 
     # BLAST RADIUS, declared not patched: with the flag on, evicting every
