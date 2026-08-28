@@ -531,7 +531,7 @@ def stage_publish_report(ledger_root, day):
 
     from hope.reporting.aggregator import aggregate
     from hope.reporting.epoch_artifact import build_daily_artifact
-    from scripts.post_epoch_report import DEFAULT_ENDPOINT, post_payload
+    from scripts.post_epoch_report import DEFAULT_ENDPOINT, post_with_correction
 
     artifact = build_daily_artifact(
         standings={str(k): float(v) for k, v in standings.items()},
@@ -552,10 +552,21 @@ def stage_publish_report(ledger_root, day):
         log(f"[publish-report] accuracy artifact unreadable ({_e}) — publishing without it")
     payload = aggregate(artifact, accuracy_by_type=_acc)
     endpoint = os.environ.get("SN21_LEADERBOARD_ENDPOINT") or DEFAULT_ENDPOINT
-    resp = post_payload(payload, endpoint=endpoint, api_key=api_key)
+
+    # A re-run of an already-published day gets 409: the epoch is frozen
+    # (IA D-13). Posting once and stopping there left the LEDGER and the chain
+    # vector corrected while the public leaderboard still showed the
+    # superseded numbers — the one surface everybody actually looks at was the
+    # only one that did not get the correction. The successor flow already
+    # existed for hand-driven posts; the daily path now uses the same one.
+    resp, posted_as = post_with_correction(
+        artifact, payload, endpoint=endpoint, api_key=api_key)
     ok = 200 <= resp.status_code < 300
-    return {"published": ok, "epoch_id": payload.epoch_id,
-            "miners": len(payload.miner_results), "status": resp.status_code}
+    out = {"published": ok, "epoch_id": posted_as,
+           "miners": len(payload.miner_results), "status": resp.status_code}
+    if posted_as != payload.epoch_id:
+        out["supersedes"] = payload.epoch_id
+    return out
 
 
 # ---- run record --------------------------------------------------------------

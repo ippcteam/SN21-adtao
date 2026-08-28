@@ -198,6 +198,70 @@ def _retry_after_seconds(response: httpx.Response, *, default: float) -> float:
     return max(1.0, min(10.0, val))
 
 
+MAX_CORRECTIONS = 9
+
+
+def post_with_correction(
+    artifact,
+    payload,
+    *,
+    endpoint: str,
+    api_key: str,
+    membership_uids=None,
+    commentary: str | None = None,
+    already_a_correction: bool = False,
+    max_corrections: int = MAX_CORRECTIONS,
+):
+    """POST a report, re-posting as `{epoch}-COR-N` if the epoch is frozen.
+
+    IA D-13: a published epoch is frozen and the CMS answers 409. The fix is
+    not to overwrite it — the original keeps its permanent URL and gains a
+    "corrected by" banner — but to publish a successor carrying a `supersedes`
+    pointer, which the CMS then renders as canonical.
+
+    THIS LIVES HERE, AND IS CALLED FROM BOTH PLACES, ON PURPOSE
+        The flow existed only inside this file's `main()`, so it was reachable
+        by hand and not by the daily pipeline, which calls `post_payload`
+        directly. A day that needed correcting therefore could not be
+        corrected by the thing that runs every day: the pipeline posted, saw
+        409, recorded `published: false`, and left the superseded numbers on
+        the public leaderboard. Re-running the day fixed the ledger and the
+        chain vector while the dashboard kept showing the old figures.
+
+    Returns (response, epoch_id_actually_posted).
+    """
+    response = post_payload(payload, endpoint=endpoint, api_key=api_key)
+    if (
+        already_a_correction
+        or "-COR-" in artifact.epoch_id
+        or not _is_frozen_409(response)
+    ):
+        return response, artifact.epoch_id
+
+    for n in range(1, max_corrections + 1):
+        cor_id = f"{artifact.epoch_id}-COR-{n}"
+        logger.warning(
+            "epoch %s is published/frozen; re-posting as correction %s",
+            artifact.epoch_id, cor_id,
+        )
+        cor_commentary = commentary or (
+            f"Correction of {artifact.epoch_id}: this entry supersedes the "
+            f"original report."
+        )
+        payload = aggregate(
+            artifact,
+            commentary_markdown=cor_commentary,
+            supersedes=artifact.epoch_id,
+            epoch_id_override=cor_id,
+            epoch_membership_uids=membership_uids,
+        )
+        response = post_payload(payload, endpoint=endpoint, api_key=api_key)
+        if not _is_frozen_409(response):
+            return response, cor_id  # accepted, or a different outcome
+
+    return response, cor_id
+
+
 def _is_frozen_409(response: httpx.Response) -> bool:
     """True if the CMS rejected because the epoch is published/frozen (IA D-13).
 
@@ -369,38 +433,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         return EXIT_MISCONFIG
 
-    response = post_payload(payload, endpoint=endpoint, api_key=api_key)
-
-    # IA D-13 correction flow: a published epoch is frozen (409 "published
-    # and frozen"). If we weren't already posting a correction, automatically
-    # re-post under a `{epoch}-COR-N` epoch_id with a `supersedes` pointer to
-    # the original. The CMS renders the most-recent correction as canonical;
-    # the original keeps its permanent URL with a "corrected by" banner.
-    if (
-        _is_frozen_409(response)
-        and not args.supersedes
-        and "-COR-" not in artifact.epoch_id
-    ):
-        for n in range(1, 10):
-            cor_id = f"{artifact.epoch_id}-COR-{n}"
-            logger.warning(
-                "epoch %s is published/frozen; re-posting as correction %s",
-                artifact.epoch_id, cor_id,
-            )
-            cor_commentary = args.commentary or (
-                f"Correction of {artifact.epoch_id}: validator registration "
-                f"index refreshed; this entry supersedes the original report."
-            )
-            payload = aggregate(
-                artifact,
-                commentary_markdown=cor_commentary,
-                supersedes=artifact.epoch_id,
-                epoch_id_override=cor_id,
-                epoch_membership_uids=membership_uids,
-            )
-            response = post_payload(payload, endpoint=endpoint, api_key=api_key)
-            if not _is_frozen_409(response):
-                break  # accepted (or a different outcome worth surfacing)
+    response, _posted_as = post_with_correction(
+        artifact, payload,
+        endpoint=endpoint, api_key=api_key,
+        membership_uids=membership_uids,
+        commentary=args.commentary,
+        already_a_correction=bool(args.supersedes),
+    )
 
     rc = report_response(response)
     if args.skip_if_posted and rc == EXIT_OK:
