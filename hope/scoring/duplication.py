@@ -95,6 +95,72 @@ def digest_collisions(submissions: Iterable[Submission]) -> list[CopyGroup]:
     return groups
 
 
+# A point estimate is the number a model is actually asserting; the interval
+# around it is the model's stated uncertainty. Both are scored — but only the
+# point estimate has to be identical for two models to be the same model, and
+# an interval bound is the cheapest thing in the payload to jitter.
+INTERVAL_KEYS = ("p10", "p90")
+POINT_KEY = "p50"
+
+# A miner whose point estimates never vary is not evidence of copying: two
+# models that both answer "no change" everywhere agree because the question
+# was easy, not because one was pulled from the other. Below this many
+# DISTINCT point values a miner gets no point-fingerprint at all — the same
+# reasoning as refusing to fingerprint a miner with no predictions.
+MIN_DISTINCT_POINTS = 8
+
+# The point-estimate test is OFF until switched on, exactly like every other
+# control here that decides who is paid. It is not off because it is doubtful
+# — it is exact, needs no calibration, and against production receipts it
+# reproduces what the calibrated behavioural layer finds — but because
+# widening a published rule changes who earns, and that is a ruling, not a
+# deploy. Landing it dark means the code can ship, be reviewed and be tested
+# on real data before anyone's income moves.
+POINT_FINGERPRINT_FLAG_ENV = "SN21_ONE_PAYER_POINT_ESTIMATES"
+
+
+def point_fingerprints_enabled(environ) -> bool:
+    return (environ.get(POINT_FINGERPRINT_FLAG_ENV) or "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def point_estimates(prediction) -> object:
+    """One prediction reduced to what it ASSERTS, dropping the interval.
+
+    Recurses so the shape does not have to be known in advance: a metric
+    carrying {p10, p50, p90} keeps only p50, a bare scalar (goal_miss_
+    probability, instability_risk) is kept as-is, and anything unrecognised
+    is passed through rather than silently dropped — an unknown field we
+    cannot classify is safer compared than ignored.
+    """
+    if isinstance(prediction, Mapping):
+        if POINT_KEY in prediction:
+            return prediction[POINT_KEY]
+        return {k: point_estimates(v) for k, v in prediction.items()
+                if k not in INTERVAL_KEYS}
+    if isinstance(prediction, (list, tuple)):
+        return [point_estimates(v) for v in prediction]
+    return prediction
+
+
+def _distinct_point_values(reduced: Mapping) -> int:
+    """How many different numbers a miner actually asserted across the day."""
+    seen = set()
+
+    def walk(node):
+        if isinstance(node, Mapping):
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, (list, tuple)):
+            for v in node:
+                walk(v)
+        else:
+            seen.add(node)
+
+    walk(reduced)
+    return len(seen)
+
+
 def prediction_fingerprint(predictions: Mapping) -> str:
     """A stable hash of one miner's predictions for a basket.
 
@@ -124,6 +190,35 @@ def fingerprints_from_receipt(entries: Iterable[Mapping]) -> dict[str, str]:
     than a fingerprint of emptiness: two silent miners are not the same
     model.
     """
+    return _fingerprints(entries, reduce=False)
+
+
+def point_fingerprints_from_receipt(entries: Iterable[Mapping]) -> dict[str, str]:
+    """{miner: fingerprint} over POINT ESTIMATES only.
+
+    WHY A SECOND FINGERPRINT
+        The byte-identical test hashes the whole prediction object, so two
+        runs of one model are counted as separate payees the moment they
+        differ in any field — including the interval bounds, which are the
+        cheapest thing in the payload to perturb. That hole was reported on
+        2026-08-07 and left to the behavioural layer, which needs calibrated
+        thresholds and is therefore off until an operator sets them.
+
+        This closes it without thresholds. It is still an EXACT test — no
+        tolerance, no parameters, nothing to tune wrong — but it compares the
+        numbers a model asserts rather than the whole envelope around them.
+        Two models agreeing on hundreds of point estimates to full float
+        precision are one model; that is not a judgement call, and it needs
+        no calibration to say so.
+
+        Deliberately NOT a distance test: this must stay the control that
+        works with nothing configured. The behavioural layer still subsumes
+        it and remains the real answer for near-identical models.
+    """
+    return _fingerprints(entries, reduce=True)
+
+
+def _fingerprints(entries: Iterable[Mapping], reduce: bool) -> dict[str, str]:
     per_miner: dict[str, dict] = {}
     for entry in entries:
         miner = entry.get("miner")
@@ -131,9 +226,21 @@ def fingerprints_from_receipt(entries: Iterable[Mapping]) -> dict[str, str]:
         if not miner or prediction is None:
             continue
         per_miner.setdefault(miner, {}).setdefault(
-            str(entry.get("episode_id")), {})[str(entry.get("horizon_days"))] = prediction
-    return {miner: prediction_fingerprint(preds)
-            for miner, preds in per_miner.items() if preds}
+            str(entry.get("episode_id")), {})[str(entry.get("horizon_days"))] = (
+                point_estimates(prediction) if reduce else prediction)
+
+    out: dict[str, str] = {}
+    for miner, preds in per_miner.items():
+        if not preds:
+            continue
+        # A flat answer is agreement about an easy question, not evidence of
+        # a shared model, so it earns no point-fingerprint. The whole-object
+        # fingerprint keeps no such guard because matching every field of a
+        # flat prediction byte-for-byte is already conclusive.
+        if reduce and _distinct_point_values(preds) < MIN_DISTINCT_POINTS:
+            continue
+        out[miner] = prediction_fingerprint(preds)
+    return out
 
 
 def first_seen_fingerprints(

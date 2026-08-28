@@ -67,6 +67,8 @@ from hope.scoring.duplication import (
     first_seen_fingerprints,
     lineage_collisions,
     one_payer_enabled,
+    point_fingerprints_enabled,
+    point_fingerprints_from_receipt,
     prediction_collisions,
     suppressed_copies,
 )
@@ -565,7 +567,7 @@ def _fingerprint_index_dir(root: str) -> str:
     return os.path.join(root, "fingerprints")
 
 
-def _load_day_fingerprints(root: str, day_name: str) -> dict | None:
+def _load_day_fingerprints(root: str, day_name: str, kind: str = "exact") -> dict | None:
     """{hotkey: fingerprint} for one settle day — from the index if present.
 
     The index file is a few KB; the receipt it derives from can carry tens
@@ -574,8 +576,16 @@ def _load_day_fingerprints(root: str, day_name: str) -> dict | None:
     (kill loops on 26 and 27 Aug). Missing or unreadable index → derive from
     the receipt once and persist, so the heavy path runs at most once per
     day ever. None → no usable source; the caller skips the day.
+
+    `kind` selects which fingerprint: "exact" over the whole prediction, or
+    "point" over the point estimates alone. They are cached in SEPARATE index
+    files so that adding the second one neither rewrites nor invalidates the
+    indexes already on disk — an existing day keeps serving its exact
+    fingerprints from cache and pays the receipt read only for the new kind,
+    once, ever.
     """
-    ipath = os.path.join(_fingerprint_index_dir(root), f"{day_name}.json")
+    suffix = "" if kind == "exact" else f".{kind}"
+    ipath = os.path.join(_fingerprint_index_dir(root), f"{day_name}{suffix}.json")
     try:
         with open(ipath) as f:
             loaded = json.load(f)
@@ -590,7 +600,8 @@ def _load_day_fingerprints(root: str, day_name: str) -> dict | None:
     except (OSError, ValueError):
         return None
     entries = (envelope.get("document") or {}).get("metrics", {}).get("entries", [])
-    prints = fingerprints_from_receipt(entries)
+    prints = (fingerprints_from_receipt(entries) if kind == "exact"
+              else point_fingerprints_from_receipt(entries))
     try:
         os.makedirs(_fingerprint_index_dir(root), exist_ok=True)
         tmp = ipath + ".tmp"
@@ -732,27 +743,45 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ,
             name[:-5] for name in os.listdir(receipt_dir_path)
             if name.endswith(".json") and not name.startswith("_")
         )
-        history_days = []
-        today_fingerprints: dict = {}
+        # Two exact tests, run the same way over the same history.
+        #
+        #   exact  the whole prediction object, byte for byte.
+        #   point  the point estimates alone, so that jittering an interval
+        #          bound — the cheapest evasion there is, and the one seen in
+        #          production — no longer buys a second seat.
+        #
+        # Both are exact: no tolerance, no parameters. Their groups are unioned
+        # because either is sufficient evidence on its own, and a hotkey caught
+        # by both must not be counted twice.
+        kinds = ("exact", "point") if point_fingerprints_enabled(environ) else ("exact",)
+        history_days: dict[str, list] = {"exact": [], "point": []}
+        today: dict[str, dict] = {"exact": {}, "point": {}}
         for day_name in days:
             if day_name > str(day):
                 continue
-            prints = _load_day_fingerprints(root, day_name)
-            if prints is None:
-                continue
-            history_days.append((day_name, prints))
-            if day_name == str(day):
-                today_fingerprints = prints
+            for kind in kinds:
+                prints = _load_day_fingerprints(root, day_name, kind)
+                if prints is None:
+                    continue
+                history_days[kind].append((day_name, prints))
+                if day_name == str(day):
+                    today[kind] = prints
 
         if stats is not None:
-            stats["days_indexed"] = len(history_days)
-            stats["fingerprints_today"] = len(today_fingerprints)
+            stats["days_indexed"] = len(history_days["exact"])
+            stats["fingerprints_today"] = len(today["exact"])
+            stats["point_estimates_on"] = "point" in kinds
+            stats["point_fingerprints_today"] = len(today["point"])
 
-        if not today_fingerprints:
+        if not today["exact"] and not today["point"]:
             return frozenset()
 
-        history = first_seen_fingerprints(history_days)
-        groups = prediction_collisions(today_fingerprints, history=history)
+        groups = []
+        for kind in kinds:
+            if not today[kind]:
+                continue
+            history = first_seen_fingerprints(history_days[kind])
+            groups.extend(prediction_collisions(today[kind], history=history))
 
         # Behavioural grouping is NOT done here. It lives in
         # lineage_from_receipts, which uses the four-signal test and publishes
