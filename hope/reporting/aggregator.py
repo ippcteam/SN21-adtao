@@ -41,6 +41,7 @@ from hope.reporting.payload import (
     EmergencyIntervention,
     EpochReportPayload,
     MinerResult,
+    PolicyOutcome,
     ScoreDistribution,
     TierDistribution,
     TierSlice,
@@ -158,6 +159,7 @@ def aggregate(
     epoch_id_override: str | None = None,
     epoch_membership_uids: set[int] | None = None,
     accuracy_by_type: dict | None = None,
+    collapse_audit: dict | None = None,
 ) -> EpochReportPayload:
     """Aggregate a private artifact into the public payload.
 
@@ -215,7 +217,8 @@ def aggregate(
 
     miner_results = _build_miner_results(
         artifact, tier_split_active=tier_split_active,
-        epoch_membership_uids=epoch_membership_uids)
+        epoch_membership_uids=epoch_membership_uids,
+        collapse_audit=collapse_audit)
 
     # v1 routine emergency state — always false. Q19 freezes this until
     # trigger-state machines land in SN21_REWARD_MECHANISM.md.
@@ -287,11 +290,98 @@ def _hotkey_to_ss58(value: str) -> str:
     return value  # unknown shape — surface it downstream rather than mangle
 
 
+def policies_by_hotkey(collapse_audit: dict | None) -> dict:
+    """Turn the fleet-level allocation audit into per-miner reasons.
+
+    The audit publishes each control as its own list — who the coldkey cap
+    dropped, who tenure held back, who was suppressed as a copy. That is the
+    right shape for verifying the RULE, and the wrong shape for answering a
+    miner's actual question, which is "why am I not being paid today". This
+    inverts it, so the answer travels in the miner's own row.
+
+    Deliberately reads only what the audit already publishes: no new source
+    of truth, and nothing here can say a control did something the audit does
+    not already show it doing.
+    """
+    from collections import defaultdict
+
+    out = defaultdict(list)
+    audit = collapse_audit or {}
+    if not isinstance(audit, dict):
+        return {}
+
+    cap = audit.get("coldkey_cap")
+    if isinstance(cap, dict):
+        # `contested` lists a coldkey's hotkeys ALPHABETICALLY, not by rank —
+        # the ordering that decided the seat (standing, then commit block) is
+        # not published. So the holder is derived rather than assumed: it is
+        # the member of the group that was not dropped. Reading the first
+        # entry as the winner names the wrong hotkey, and can name one that
+        # was itself dropped, which is worse than naming nobody.
+        dropped = set(cap.get("dropped") or [])
+        contested = cap.get("contested") if isinstance(cap.get("contested"), dict) else {}
+        holder_of = {}
+        for _coldkey, hotkeys in contested.items():
+            if not isinstance(hotkeys, list):
+                continue
+            holders = [hk for hk in hotkeys if hk not in dropped]
+            # Exactly one seat per coldkey today. If that ever changes, or the
+            # audit is partial, say nothing rather than pick one arbitrarily.
+            if len(holders) != 1:
+                continue
+            for losing in hotkeys:
+                if losing in dropped:
+                    holder_of[losing] = holders[0]
+        for hk in cap.get("dropped") or []:
+            holder = holder_of.get(hk)
+            out[hk].append(PolicyOutcome(
+                control="coldkey_cap",
+                detail=("One coldkey holds one earning seat. Another hotkey "
+                        "with the same owner holds it today."),
+                counterparty=holder))
+
+    for hk in audit.get("suppressed") or []:
+        out[hk].append(PolicyOutcome(
+            control="one_payer",
+            detail=("This model is already earning under an earlier "
+                    "submission. Identical models pay once.")))
+
+    lineage = audit.get("lineage")
+    if isinstance(lineage, dict):
+        for group in lineage.get("groups") or []:
+            if not isinstance(group, dict):
+                continue
+            payee = group.get("payee")
+            for hk in group.get("eliminated") or []:
+                out[hk].append(PolicyOutcome(
+                    control="lineage",
+                    detail=("Same behaviour lineage as an earlier submission; "
+                            "the earliest in the group earns."),
+                    counterparty=payee))
+
+    tenure = audit.get("tenure_gated")
+    if isinstance(tenure, dict):
+        min_days = tenure.get("min_days")
+        stood_down = bool(tenure.get("stood_down"))
+        for hk in tenure.get("hotkeys") or []:
+            out[hk].append(PolicyOutcome(
+                control="tenure",
+                detail=(
+                    f"Fewer than {min_days} scored days. Scores still count "
+                    f"and the model keeps running — tenure accrues by showing "
+                    f"up." + (" The gate stood down today because applying it "
+                             "would have emptied the paid set." if stood_down else "")
+                )))
+
+    return dict(out)
+
+
 def _build_miner_results(
     artifact: EpochArtifact,
     *,
     tier_split_active: bool,
     epoch_membership_uids: set[int] | None = None,
+    collapse_audit: dict | None = None,
 ) -> list[MinerResult]:
     """Build the per-UID Cacheon-style table from artifact.per_uid_scores.
 
@@ -307,6 +397,8 @@ def _build_miner_results(
     (e.g. WR-2026-W21-RERUN-E1 → the W21-16) while still showing the others.
     Already-disqualified rows are untouched (the filter only narrows scored).
     """
+    policy_notes = policies_by_hotkey(collapse_audit)
+
     # Map hotkey → tier from the artifact's tier allocation.
     tier_by_hotkey: dict[str, str] = {}
     if tier_split_active:
@@ -390,6 +482,9 @@ def _build_miner_results(
             status=status,
             tier=tier,
             met_baseline=bool(entry.get("met_baseline", status == "scored")),
+            # Keyed on the RAW hotkey: the audit records whatever the
+            # allocation used, which is the same string the standings use.
+            policies=policy_notes.get(hotkey, []),
         ))
         emitted_hotkeys.add(hotkey)
 
@@ -412,6 +507,7 @@ def _build_miner_results(
                 status=status,
                 tier=None,
                 met_baseline=False,
+                policies=policy_notes.get(str(hotkey), []),
             ))
 
     return results

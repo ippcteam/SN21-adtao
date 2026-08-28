@@ -550,7 +550,13 @@ def stage_publish_report(ledger_root, day):
                 _acc = json.load(_f)
     except Exception as _e:  # noqa: BLE001
         log(f"[publish-report] accuracy artifact unreadable ({_e}) — publishing without it")
-    payload = aggregate(artifact, accuracy_by_type=_acc)
+    # The allocation audit travels with the report so each miner's row can
+    # carry the reason a control acted on it. Without this the audit is
+    # published only as fleet-level lists, and a miner has to search several
+    # arrays — or the leaderboard reader has to guess — to learn why somebody
+    # is not being paid.
+    payload = aggregate(artifact, accuracy_by_type=_acc,
+                        collapse_audit=intent.get("collapse_audit") or {})
     endpoint = os.environ.get("SN21_LEADERBOARD_ENDPOINT") or DEFAULT_ENDPOINT
 
     # A re-run of an already-published day gets 409: the epoch is frozen

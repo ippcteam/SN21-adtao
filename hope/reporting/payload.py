@@ -126,6 +126,33 @@ class TierDistribution(BaseModel):
     elite_floor_met: bool
 
 
+class PolicyOutcome(BaseModel):
+    """One control's verdict on one miner, in that miner's own row.
+
+    The allocation audit already publishes what each control did, but it does
+    so as fleet-level lists: a hotkey has to search several arrays to learn
+    why it was not paid, and a reader of the leaderboard cannot see any of it
+    at all. A rule enforced where nobody can see it applied is, from the
+    miner's side, indistinguishable from a rule applied arbitrarily.
+
+    `control` names the rule; `detail` is the sentence shown to the miner;
+    `counterparty` is the hotkey that holds the seat instead, where the rule
+    is about a relationship rather than a property.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    control: Literal[
+        "coldkey_cap",      # another hotkey on the same coldkey holds the seat
+        "one_payer",        # same model as an earlier submission
+        "lineage",          # same behaviour lineage as an earlier submission
+        "tenure",           # too few scored days to enter the paid set
+        "absence_penalty",  # charged for uncovered days
+    ]
+    detail: str
+    counterparty: str | None = None
+
+
 class MinerResult(BaseModel):
     """Per-miner row for the Cacheon-style leaderboard table.
 
@@ -166,6 +193,11 @@ class MinerResult(BaseModel):
     # always has met_baseline=True; below-baseline rows are
     # status="disqualified_below_threshold", tier=null, met_baseline=False.
     met_baseline: bool = False
+    # Every control that acted on THIS miner today, with its reason. Empty
+    # list and null mean different things: an empty list is "the controls ran
+    # and none of them touched you", null is "this report predates per-miner
+    # policy reporting". Neither may be read as "no rules apply".
+    policies: list[PolicyOutcome] | None = None
 
     @field_validator("hotkey")
     @classmethod
