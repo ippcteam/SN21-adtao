@@ -276,7 +276,13 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
 
 # ---- 3. settle + publish -----------------------------------------------------
 
-def _coldkey_reader():
+COLDKEY_READ_ATTEMPTS = 3
+COLDKEY_READ_BACKOFF_S = 5
+
+
+def _coldkey_reader(attempts=COLDKEY_READ_ATTEMPTS,
+                    backoff_s=COLDKEY_READ_BACKOFF_S,
+                    sleep=time.sleep):
     """hotkey_ss58 -> coldkey_ss58 from the CURRENT metagraph, so the settle's
     one-coldkey-one-seat cap (Layer 1) can group a principal's hotkeys and keep
     only its best-standing seat before the vector is published.
@@ -284,20 +290,46 @@ def _coldkey_reader():
     Metagraph reads need no wallet, so the keyless executor can do this. A read
     failure returns None: daily_loop then applies NO cap, which is the fail-OPEN
     direction — an identity we could not read must not cost anyone a seat.
+
+    RETRIED, because fail-open plus a single attempt is not a policy, it is a
+    coin toss. A websocket keepalive timeout on one call is enough to disable
+    the cap for a whole day, and the day still publishes and reports clean —
+    the cap normally removes ~85 hotkeys, so its silent absence is the largest
+    single-day change to who gets paid that this pipeline can make. One
+    transient network fault must not decide that.
+
+    An EMPTY map is treated as a failed read, not a successful one. A metagraph
+    with no hotkeys is not a subnet with no miners, it is a bad read, and
+    passing {} on would let the cap "run" over nothing and report success.
     """
-    try:
-        import bittensor as bt
-        net = (os.environ.get("SN21_REG_INDEX_ARCHIVE_URL")
-               or os.environ.get("BT_NETWORK") or "finney")
-        netuid = int(os.environ.get("SN21_NETUID", "21"))
-        mg = bt.Subtensor(network=net).metagraph(netuid)
-        cmap = {str(mg.hotkeys[i]): str(mg.coldkeys[i])
-                for i in range(len(mg.hotkeys))}
-        log(f"[settle] coldkey map: {len(cmap)} hotkeys (one-seat cap active)")
-        return cmap
-    except Exception as exc:   # noqa: BLE001 — fail OPEN, loudly
-        log(f"[settle] coldkey read failed ({exc}) — one-seat cap NOT applied today")
-        return None
+    net = (os.environ.get("SN21_REG_INDEX_ARCHIVE_URL")
+           or os.environ.get("BT_NETWORK") or "finney")
+    netuid = int(os.environ.get("SN21_NETUID", "21"))
+    delay = backoff_s
+    last = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            import bittensor as bt
+            mg = bt.Subtensor(network=net).metagraph(netuid)
+            cmap = {str(mg.hotkeys[i]): str(mg.coldkeys[i])
+                    for i in range(len(mg.hotkeys))}
+            if not cmap:
+                raise ValueError("metagraph returned no hotkeys")
+            log(f"[settle] coldkey map: {len(cmap)} hotkeys "
+                f"(one-seat cap active, attempt {attempt}/{attempts})")
+            return cmap
+        except Exception as exc:   # noqa: BLE001 — fail OPEN, loudly
+            last = exc
+            if attempt < attempts:
+                log(f"[settle] coldkey read attempt {attempt}/{attempts} "
+                    f"failed ({exc}); retrying in {delay}s")
+                sleep(delay)
+                delay *= 2
+
+    log(f"[settle] coldkey read failed after {attempts} attempts ({last}) — "
+        f"one-seat cap NOT applied today")
+    return None
 
 
 
