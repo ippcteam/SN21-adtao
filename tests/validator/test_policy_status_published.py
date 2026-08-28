@@ -97,11 +97,38 @@ class TestColdkeyCap:
 
 class TestOnePayerAndLineage:
     def test_switched_on_but_finding_nothing_is_visible(self):
-        """One payer per model has been enabled since 2026-08-26 and has never
-        published a suppression. That may be correct, but it must be legible
-        as 'on, found none' rather than inferred from an absent key."""
+        """One payer per model has been enabled since the rules were published
+        and has never recorded a suppression. That may be correct, but it must
+        be legible as 'on, found none' rather than inferred from an absent
+        key."""
         pol = _policies(one_payer_on=True, copy_suppressed=frozenset())
-        assert pol["one_payer"] == {"enabled": True, "suppressed": 0}
+        assert pol["one_payer"]["enabled"] is True
+        assert pol["one_payer"]["suppressed"] == 0
+
+    def test_no_receipts_is_not_the_same_as_no_copies(self):
+        """The detector returns an empty set both when the field is clean and
+        when it had nothing to read. Publishing only the verdict makes a
+        broken control indistinguishable from a healthy subnet, so the INPUT
+        is published beside it."""
+        clean = _policies(one_payer_on=True, copy_suppressed=frozenset(),
+                          one_payer_stats={"fingerprints_today": 117,
+                                           "days_indexed": 12, "groups": 0})
+        blind = _policies(one_payer_on=True, copy_suppressed=frozenset(),
+                          one_payer_stats={"fingerprints_today": 0,
+                                           "days_indexed": 0, "groups": 0})
+
+        assert clean["one_payer"]["suppressed"] == blind["one_payer"]["suppressed"] == 0
+        assert clean["one_payer"]["fingerprints"] == 117
+        assert blind["one_payer"]["fingerprints"] == 0
+        assert clean["one_payer"] != blind["one_payer"]
+
+    def test_a_failed_detector_publishes_its_reason(self):
+        """The subprocess fails empty by design. Empty must not read as a
+        clean day."""
+        pol = _policies(one_payer_on=True,
+                        one_payer_stats={"ran": False,
+                                         "reason": "child exited 137"})
+        assert pol["one_payer"]["reason"] == "child exited 137"
 
     def test_a_suppression_is_counted(self):
         pol = _policies(standings={"a": 0.80, "b": 0.70},

@@ -189,6 +189,7 @@ def compute_daily_allocation(
     tenure_min: int = 0,
     tenure_exempt: frozenset = frozenset(),
     one_payer_on: bool | None = None,
+    one_payer_stats: Mapping | None = None,
     lineage_on: bool | None = None,
 ) -> DailyAllocation:
     """One day's standings → weights (D7) + promotion observation (D8).
@@ -343,9 +344,16 @@ def compute_daily_allocation(
     # we do not have.
     audit["policies"] = {
         "coldkey_cap": coldkey_state,
+        # `fingerprints` is the input, `suppressed` the verdict. Publishing
+        # only the verdict makes "nobody copied anything today" and "the
+        # detector had no receipts to read" the same statement.
         "one_payer": {
             "enabled": one_payer_on,
             "suppressed": len(suppressed),
+            "fingerprints": (one_payer_stats or {}).get("fingerprints_today"),
+            "days_indexed": (one_payer_stats or {}).get("days_indexed"),
+            "groups": (one_payer_stats or {}).get("groups"),
+            "reason": (one_payer_stats or {}).get("reason"),
         },
         "lineage": {
             "configured": lineage_on,
@@ -430,8 +438,16 @@ def allocation_from_ledger(
                 standing_ledger.append_promotion_event(root, vac.event)
 
     copy_suppressed: frozenset = frozenset()
+    one_payer_stats: dict = {}
     if one_payer_enabled(environ):
-        copy_suppressed = one_payer_suppression_subprocess(root, day, environ)
+        copy_suppressed = one_payer_suppression_subprocess(
+            root, day, environ, stats=one_payer_stats)
+        logger.info(
+            "[one-payer] %d fingerprint(s) for %s across %d indexed day(s); "
+            "%d group(s), %d hotkey(s) suppressed",
+            one_payer_stats.get("fingerprints_today", 0), day,
+            one_payer_stats.get("days_indexed", 0),
+            one_payer_stats.get("groups", 0), len(copy_suppressed))
 
     tenure_min = tenure_min_days(environ) if tenure_gate_enabled(environ) else 0
     _house = chronic_failure.house_hotkey_from(environ)
@@ -475,6 +491,7 @@ def allocation_from_ledger(
         # something inferred from an empty result. "Suppressed nobody" and
         # "was switched off" are different facts and must not share a record.
         one_payer_on=one_payer_enabled(environ),
+        one_payer_stats=one_payer_stats,
         lineage_on=lineage_params_from_env(environ).configured(),
     )
 
@@ -613,6 +630,7 @@ def ensure_fingerprint_indexes(root: str, up_to_day=None) -> int:
 
 def one_payer_suppression_subprocess(
     root: str, day: date, environ, timeout_s: int = 600,
+    stats: dict | None = None,
 ) -> frozenset:
     """one_payer_suppression_from_receipts behind a process boundary.
 
@@ -633,6 +651,9 @@ def one_payer_suppression_subprocess(
         "env": {k: v for k, v in dict(environ).items()
                 if k.startswith(("SN21_", "HOPE_"))},
     })
+    # The child reports what it READ as well as what it decided, so an empty
+    # verdict can be told apart from an empty ledger on the other side of the
+    # process boundary.
     child = (
         "import json, sys, os\n"
         "from datetime import date\n"
@@ -640,10 +661,13 @@ def one_payer_suppression_subprocess(
         "os.environ.update(spec['env'])\n"
         "from hope.validator.daily_stream_weights import "
         "one_payer_suppression_from_receipts\n"
+        "st = {}\n"
         "out = one_payer_suppression_from_receipts(\n"
-        "    spec['root'], date.fromisoformat(spec['day']), os.environ)\n"
-        "print(json.dumps(sorted(out)))\n"
+        "    spec['root'], date.fromisoformat(spec['day']), os.environ, st)\n"
+        "print(json.dumps({'suppressed': sorted(out), 'stats': st}))\n"
     )
+    if stats is not None:
+        stats.update({"ran": False, "reason": None})
     try:
         proc = subprocess.run(
             [sys.executable, "-c", child], input=payload,
@@ -653,15 +677,24 @@ def one_payer_suppression_subprocess(
                 "one-payer child exited %d — suppressing NOBODY for %s "
                 "(stderr tail: %s)", proc.returncode, day,
                 (proc.stderr or "")[-200:])
+            if stats is not None:
+                stats["reason"] = f"child exited {proc.returncode}"
             return frozenset()
-        return frozenset(json.loads(proc.stdout.strip() or "[]"))
-    except Exception:
+        parsed = json.loads(proc.stdout.strip() or "{}")
+        if stats is not None:
+            stats.update(parsed.get("stats") or {})
+            stats["ran"] = True
+        return frozenset(parsed.get("suppressed") or [])
+    except Exception as exc:  # noqa: BLE001
         logger.exception(
             "one-payer subprocess failed — suppressing NOBODY for %s", day)
+        if stats is not None:
+            stats["reason"] = f"{type(exc).__name__}: {exc}"
         return frozenset()
 
 
-def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozenset:
+def one_payer_suppression_from_receipts(root: str, day: date, environ,
+                                        stats: dict | None = None) -> frozenset:
     """The one-payer exclusion set for `day`, derived from published receipts.
 
     Behaviour-only, deliberately. Same-digest copies produce identical
@@ -681,10 +714,20 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
     anybody's weight. Missing evidence is a reason to not suppress, not a
     reason to suppress.
     """
+    # Why the counts are reported and not just the verdict: every early return
+    # below is an empty set, and an empty set is also the honest answer on a
+    # day with no copies. Without the inputs, "no duplicates in the field" and
+    # "no receipts to read" are the same published record — and the second is
+    # a broken control wearing the first one's clothes.
+    if stats is not None:
+        stats.update({"receipts_dir": False, "days_indexed": 0,
+                      "fingerprints_today": 0, "groups": 0})
     try:
         receipt_dir_path = os.path.join(root, "receipts")
         if not os.path.isdir(receipt_dir_path):
             return frozenset()
+        if stats is not None:
+            stats["receipts_dir"] = True
         days = sorted(
             name[:-5] for name in os.listdir(receipt_dir_path)
             if name.endswith(".json") and not name.startswith("_")
@@ -701,6 +744,10 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
             if day_name == str(day):
                 today_fingerprints = prints
 
+        if stats is not None:
+            stats["days_indexed"] = len(history_days)
+            stats["fingerprints_today"] = len(today_fingerprints)
+
         if not today_fingerprints:
             return frozenset()
 
@@ -714,6 +761,9 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ) -> frozen
         # is, and unlike the behavioural test it needs no calibration — so it
         # is the one thing protecting the stream before parameters are set. It
         # is deliberately NOT the real control.
+        if stats is not None:
+            stats["groups"] = len(groups)
+
         if not groups:
             return frozenset()
 
