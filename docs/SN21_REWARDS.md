@@ -171,6 +171,39 @@ curve anyone would want). The gate never removes the last remaining
 eligible miners: if applying it would empty the curve entirely, it stands
 down for that day and the allocation audit records that it did.
 
+## Copy detection: point estimates and lineage (rule amendment, published 2026-08-29)
+
+Two additions to "One payer per model" below, effective **2026-08-29**,
+applied from that day's run forward, never retroactively. Standings,
+receipts and past weights are unchanged.
+
+**1. Matching point estimates count as the same model.** The rule below
+grouped hotkeys whose predictions were byte-identical. A prediction carries
+a point estimate and an interval around it, so two submissions could carry
+the same point estimate on every episode and still be counted as separate
+payees because their interval bounds differed. From the effective date the
+point estimates are also compared on their own: hotkeys whose point
+estimates match exactly across the day's shared episodes form one group and
+pay one principal.
+
+Both tests are exact. There is no tolerance and no parameter to sit outside,
+and both publish their groups in the day's allocation audit, so anyone
+holding the day's receipt can recompute the grouping and check it.
+
+**2. Behavioural lineage is in force, at parameter version `lineage-v1`.**
+The four-signal test described in [the threat
+model](./SN21_THREAT_MODEL.md#12-copy-a-model-and-perturb-the-output-slightly)
+is switched on. As published there, we give the mechanism and the parameter
+version rather than the four numbers; the version in force is recorded in
+every day's allocation audit alongside the groups it produced.
+
+The exemptions in "One payer per model" apply unchanged to both tests. In
+particular the published reference model is exempt: a group containing a
+hotkey running the reference stands down as a whole rather than paying one
+member and excluding the rest. The allocation audit records whether an
+exemption was in force on the day, so its absence is visible rather than
+assumed.
+
 ## Champion vs earner (two different seats)
 
 | | **Weights (who earns)** | **Champion (who runs live)** |
@@ -200,10 +233,13 @@ make it unprofitable rather than pretending it is impossible:
   before the model you copied existed, and you cannot appear in the
   receipts before its author did.
 - **Identical models pay once.** When several hotkeys run the same model —
-  same digest, or different digest with byte-identical predictions — only
-  the earliest submission earns. The rest are excluded from that day's
-  earning set. Standings are untouched and the container keeps running:
-  the exclusion lapses the moment the hotkey runs a model of its own.
+  same digest, or a different digest producing the same behaviour — only the
+  earliest submission earns. The rest are excluded from that day's earning
+  set. Standings are untouched and the container keeps running: the
+  exclusion lapses the moment the hotkey runs a model of its own. Same
+  behaviour means any of three tests: byte-identical predictions, matching
+  point estimates, or one lineage under the four-signal test (see the
+  amendment above for the second and third).
 - **The published reference model is exempt.** Running the reference
   unchanged is participation, not plagiarism. It is also how everyone
   starts. It cannot earn on its own, because admission requires beating the

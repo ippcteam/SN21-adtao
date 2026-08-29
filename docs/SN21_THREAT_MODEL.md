@@ -70,6 +70,16 @@ expect the boundary to be probed, which is why an adversarial test suite must
 show "one lineage, one earner" on every probe — exact copies, last-decimal
 noise, chains of small steps, and cross-coldkey farms alike.
 
+**In force from 2026-08-29 at parameter version `lineage-v1`.** The version in
+force is recorded in every day's allocation audit next to the groups it
+produced, so a grouping can always be checked against the calibration that
+made it. A parameter change takes a new version and applies forward only.
+
+The behavioural test does not run alone. An exact test on point estimates —
+no thresholds, nothing to sit outside — runs beside it, and where the two
+disagree the exact one is the one anyone can recompute from the published
+receipt without knowing any parameter at all.
+
 ### 1.4 Build a chain of near-copies so groups merge or split on demand
 
 **Control.** Group membership requires similarity to the cluster's centre, not

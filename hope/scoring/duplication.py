@@ -417,6 +417,7 @@ def find_duplicates(
 
 ONE_PAYER_FLAG_ENV = "SN21_ONE_PAYER_PER_MODEL"
 EXEMPT_DIGESTS_ENV = "SN21_COPY_EXEMPT_DIGESTS"
+EXEMPT_HOTKEYS_ENV = "SN21_COPY_EXEMPT_HOTKEYS"
 
 
 def one_payer_enabled(environ) -> bool:
@@ -434,6 +435,20 @@ def exempt_digests_from(environ) -> frozenset[str]:
     """
     raw = (environ.get(EXEMPT_DIGESTS_ENV) or "").strip()
     return frozenset(d.strip() for d in raw.split(",") if d.strip())
+
+
+def exempt_hotkeys_from(environ) -> frozenset[str]:
+    """Hotkeys whose behaviour never condemns the group it appears in.
+
+    The digest list above cannot be used everywhere. The weights path groups
+    miners from the published receipts, and a receipt entry carries a hotkey
+    and a prediction — no digest — so on that path a digest exemption can
+    never fire. Naming the hotkey is what makes the published exemption
+    ("running the reference unchanged is participation, not plagiarism")
+    enforceable where the suppression is actually decided.
+    """
+    raw = (environ.get(EXEMPT_HOTKEYS_ENV) or "").strip()
+    return frozenset(h.strip() for h in raw.split(",") if h.strip())
 
 
 def suppressed_copies(

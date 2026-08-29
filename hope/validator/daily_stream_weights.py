@@ -63,6 +63,7 @@ from hope.scoring.coldkey_cap import apply_coldkey_cap
 from hope.scoring.duplication import (
     DuplicationReport,
     LineageParams,
+    exempt_hotkeys_from,
     fingerprints_from_receipt,
     first_seen_fingerprints,
     lineage_collisions,
@@ -356,11 +357,26 @@ def compute_daily_allocation(
             "days_indexed": (one_payer_stats or {}).get("days_indexed"),
             "groups": (one_payer_stats or {}).get("groups"),
             "reason": (one_payer_stats or {}).get("reason"),
+            # The two exact tests report separately. Byte-identical predictions
+            # and identical point estimates are different claims about a miner,
+            # and a single merged count cannot be checked against either.
+            "point_estimates": {
+                "enabled": (one_payer_stats or {}).get("point_estimates_on"),
+                "fingerprints": (one_payer_stats or {}).get(
+                    "point_fingerprints_today"),
+            },
         },
         "lineage": {
             "configured": lineage_on,
             "groups": len(lineage_groups or []),
             "pairs_examined": len(lineage_audit or {}),
+            # Which calibration produced the grouping, and whether the
+            # published reference exemption was actually in force when it did.
+            "params_version": (lineage_audit or {}).get("params_version"),
+            "exemption_configured": (lineage_audit or {}).get(
+                "exemption_configured"),
+            "exempt_groups": len((lineage_audit or {}).get("exempt_groups")
+                                 or []),
         },
         "tenure": {
             "enabled": tenure_min > 0,
@@ -796,11 +812,9 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ,
         if not groups:
             return frozenset()
 
-        house = chronic_failure.house_hotkey_from(environ)
-        exempt_hotkeys = frozenset({house}) if house else frozenset()
         return frozenset(suppressed_copies(
             DuplicationReport(groups=groups),
-            exempt_hotkeys=exempt_hotkeys,
+            exempt_hotkeys=copy_exempt_hotkeys(environ),
         ))
     except Exception:
         logger.exception(
@@ -939,6 +953,24 @@ def lineage_params_from_env(environ) -> LineageParams:
     return LineageParams(**values)
 
 
+def copy_exempt_hotkeys(environ) -> frozenset:
+    """Hotkeys that never condemn a copy group, from both configured sources.
+
+    The house hotkey runs the reference model, so a group containing it IS
+    the reference behaviour that day. The explicit list covers a reference
+    run by anyone else, and is the only lever available before a house model
+    exists on chain.
+
+    Deliberately shared by the exact-fingerprint path and the lineage path.
+    They used to derive this separately — in practice only one of them did,
+    so switching the other on would have suppressed reference runners while
+    the published rules promised they were exempt.
+    """
+    house = chronic_failure.house_hotkey_from(environ)
+    return ((frozenset({house}) if house else frozenset())
+            | exempt_hotkeys_from(environ))
+
+
 def lineage_from_receipts(root: str, day: date, environ):
     """(groups, pairwise_audit) for `day`, from the published receipts.
 
@@ -986,7 +1018,28 @@ def lineage_from_receipts(root: str, day: date, environ):
 
     groups, audit = lineage_collisions(predictions, actuals, params,
                                        precedence=first_seen)
+
+    # The reference exemption, applied HERE rather than at the suppression
+    # site, because the caller updates the suppressed set straight from the
+    # groups it is handed. An exempt group is still detected and still
+    # published — "evidence, not accusation" means showing the grouping and
+    # showing that it was stood down, not hiding it.
+    exempt = copy_exempt_hotkeys(environ)
+    enforced, exempted = [], []
+    for group in groups:
+        if exempt and any(hk in exempt for hk in group.members):
+            exempted.append(group)
+        else:
+            enforced.append(group)
+
     if groups:
         audit = dict(audit)
         audit["params_version"] = params.version
-    return groups, audit
+        audit["exemption_configured"] = bool(exempt)
+        if exempted:
+            audit["exempt_groups"] = [
+                {"payee": g.original, "stood_down": list(g.copies),
+                 "reason": "contains an exempt hotkey (reference model)"}
+                for g in exempted
+            ]
+    return enforced, audit
