@@ -378,6 +378,32 @@ def policies_by_hotkey(collapse_audit: dict | None) -> dict:
     return dict(out)
 
 
+def _hotkey_aliases(hotkey: str) -> tuple[str, ...]:
+    """Both names one miner goes by, so a lookup cannot miss on spelling.
+
+    The artifact stores hotkeys as raw hex public keys; the allocation — and
+    therefore the collapse audit and the weight vector — uses SS58. Nothing
+    reconciled the two, so every per-miner lookup keyed on the artifact's
+    hotkey silently missed and returned "no policies" for a field where most
+    of it had been excluded. A miss here is invisible by construction: the
+    empty result is indistinguishable from "this miner was not acted on".
+    """
+    ss58 = _hotkey_to_ss58(hotkey)
+    return (hotkey, ss58) if ss58 != hotkey else (hotkey,)
+
+
+def _lookup(hotkey: str, table):
+    for alias in _hotkey_aliases(hotkey):
+        found = table.get(alias)
+        if found:
+            return found
+    return None
+
+
+def _matches(hotkey: str, names) -> bool:
+    return any(alias in names for alias in _hotkey_aliases(hotkey))
+
+
 def _build_miner_results(
     artifact: EpochArtifact,
     *,
@@ -495,7 +521,7 @@ def _build_miner_results(
         # The weight vector is ground truth for who is paid, so it decides the
         # tier. The score still shows; `policies` carries the reason.
         if tier is not None and earning_set is not None \
-                and hotkey not in earning_set:
+                and not _matches(hotkey, earning_set):
             tier = None
 
         results.append(MinerResult(
@@ -507,7 +533,7 @@ def _build_miner_results(
             met_baseline=bool(entry.get("met_baseline", status == "scored")),
             # Keyed on the RAW hotkey: the audit records whatever the
             # allocation used, which is the same string the standings use.
-            policies=policy_notes.get(hotkey, []),
+            policies=_lookup(hotkey, policy_notes) or [],
         ))
         emitted_hotkeys.add(hotkey)
 
@@ -530,7 +556,7 @@ def _build_miner_results(
                 status=status,
                 tier=None,
                 met_baseline=False,
-                policies=policy_notes.get(str(hotkey), []),
+                policies=_lookup(str(hotkey), policy_notes) or [],
             ))
 
     return results

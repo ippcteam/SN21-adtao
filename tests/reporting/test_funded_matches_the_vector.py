@@ -75,6 +75,46 @@ class TestTierFollowsTheVector:
         assert rows[SUPPRESSED].tier is None
 
 
+class TestTheTwoSpellingsOfOneMiner:
+    """The artifact stores hex public keys; the allocation uses SS58.
+
+    Nothing reconciled them, so every per-miner lookup keyed on the
+    artifact's hotkey missed. The failure is invisible by construction — an
+    empty policy list reads exactly like "this miner was not acted on" — so
+    a field where most miners had been excluded published as all-funded with
+    no reasons at all. These pin both directions.
+    """
+
+    HEX = "96d732727fe02b86d5d99bf9691447865baebb1176f97348b45625be53e2f55f"
+    SS58 = "5FUUy2PLgJm13XpkXwK2RWjkaijR41aTyPDhHBJz451BHaFf"
+
+    def _artifact(self):
+        return _Artifact([self.HEX], [self.HEX])
+
+    def test_a_vector_in_ss58_is_matched_against_a_hex_artifact(self):
+        rows = _build_miner_results(self._artifact(), tier_split_active=True,
+                                    earning_set={self.SS58})
+        assert rows[0].tier == "elite", (
+            "the paid miner must stay funded — an unmatched name here "
+            "unfunds the entire field")
+
+    def test_a_miner_outside_the_vector_still_loses_the_tier(self):
+        rows = _build_miner_results(self._artifact(), tier_split_active=True,
+                                    earning_set={"5Cccccccccccccccccccccccc"
+                                                 "cccccccccccccccccccccccc"})
+        assert rows[0].tier is None
+
+    def test_an_ss58_keyed_audit_reaches_a_hex_keyed_row(self):
+        audit = {"suppressed": [self.SS58],
+                 "lineage": {"groups": [{"payee": PAID,
+                                         "eliminated": [self.SS58]}]}}
+        rows = _build_miner_results(self._artifact(), tier_split_active=True,
+                                    earning_set={PAID}, collapse_audit=audit)
+        assert rows[0].policies, (
+            "the reason must survive the hex/SS58 crossing — silently losing "
+            "it publishes an exclusion with no explanation")
+
+
 class TestTheReasonTravelsWithTheRow:
     def test_the_row_carries_both_the_verdict_and_the_reason(self):
         """The two must agree: not funded, and here is which control did it.
