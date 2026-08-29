@@ -86,6 +86,22 @@ def build_mirror_items(ledger_root: str,
                 os.path.join(ledger_root, "receipts", f"{day}.json")),
         })
 
+    # The allocation audit ships with the receipt it is derived from: a
+    # grouping is only checkable next to the predictions it was computed
+    # over, so mirroring one without the other publishes an assertion
+    # instead of evidence.
+    audit_days = _feed_days(ledger_root, "allocation_audit")
+    ship_audit = set(audit_days if recent_days is None
+                     else audit_days[-recent_days:])
+    for day in audit_days:
+        if day not in ship_audit:
+            continue
+        items.append({
+            "path": f"/v1/daily/{day}/allocation-audit",
+            "body": _read_envelope(
+                os.path.join(ledger_root, "allocation_audit", f"{day}.json")),
+        })
+
     acc_days = _feed_days(ledger_root, "accuracy")
     ship_acc = set(acc_days if recent_days is None else acc_days[-recent_days:])
     index_rows = []

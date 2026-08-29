@@ -119,6 +119,29 @@ async def get_receipt(day: str, request: Request):
     return _read_envelope(path)
 
 
+@router.get("/{day}/allocation-audit")
+async def get_allocation_audit(day: str, request: Request):
+    """Which earning controls acted on the day, and on whom.
+
+    Whole groups, with the hotkey that kept the seat named alongside the ones
+    excluded. The leaderboard shows a miner the line about themselves, which
+    is enough to be told you were excluded and not enough to check it — this
+    is the document that makes a grouping contestable, including one you are
+    not in.
+
+    Everything here recomputes from the same day's receipt; the fields say
+    how.
+    """
+    root, safe = _ledger_root(request), _safe_day(day)
+    path = os.path.join(root, "allocation_audit", f"{safe}.json")
+    if not os.path.exists(path):
+        raise HTTPException(
+            status_code=404,
+            detail={"day": safe, "feed": "allocation-audit",
+                    **_absence_reason(root, "allocation_audit", safe)})
+    return _read_envelope(path)
+
+
 @router.get("/{day}/accuracy")
 async def get_accuracy(day: str, request: Request):
     """The day's anchored aggregate document. Its sha256 is what goes on

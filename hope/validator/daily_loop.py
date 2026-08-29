@@ -572,6 +572,24 @@ def run_daily_loop(
                     "collapse_audit": alloc.collapse_audit,
                 }, f, indent=1)
             os.replace(out_path + ".tmp", out_path)
+
+            # The allocation audit as a PUBLIC document. The rules promise
+            # that every detected group is published with its working, and
+            # until now the audit existed only in the operator's own store
+            # and, per miner, on the leaderboard — so a miner could see that
+            # a control had acted on them but could not see the group it
+            # acted on, or check a group they were not in. "Evidence, not
+            # accusation" needs the evidence to be fetchable.
+            try:
+                from hope.publication.allocation_audit import (
+                    write_allocation_audit,
+                )
+                summary["allocation_audit"] = write_allocation_audit(
+                    ledger_root, day, alloc.collapse_audit)
+            except Exception as e:                            # noqa: BLE001
+                # Never take the day's weights down for a published extra.
+                summary["allocation_audit"] = {"error": str(e)}
+
             summary["weights"] = {"path": out_path, "gated": alloc.gated,
                                   "earning_set_size": alloc.earning_set_size,
                                   "evicted": list(alloc.evicted),
