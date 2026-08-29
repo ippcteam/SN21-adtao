@@ -36,9 +36,26 @@ class _Artifact:
 
 
 class _Payload:
-    def __init__(self, epoch_id="BD-2026-08-28"):
+    """Stands in for the pydantic payload, including `model_copy`.
+
+    `miner_results` carries a marker so a test can tell the payload the
+    caller built apart from one rebuilt inside the correction flow — which
+    is the difference that decided what the public leaderboard showed.
+    """
+
+    def __init__(self, epoch_id="BD-2026-08-28", miner_results=None,
+                 supersedes=None, commentary_markdown=None):
         self.epoch_id = epoch_id
-        self.miner_results = []
+        self.miner_results = ([] if miner_results is None else miner_results)
+        self.supersedes = supersedes
+        self.commentary_markdown = commentary_markdown
+
+    def model_copy(self, update=None):
+        clone = _Payload(self.epoch_id, list(self.miner_results),
+                         self.supersedes, self.commentary_markdown)
+        for key, value in (update or {}).items():
+            setattr(clone, key, value)
+        return clone
 
 
 FROZEN = {"error": "Epoch BD-2026-08-28 is published and frozen (IA D-13). "
@@ -163,3 +180,73 @@ class TestTheDailyPipelineUsesIt:
         src = inspect.getsource(pipeline.stage_publish_report)
         assert '"epoch_id": posted_as' in src
         assert '"supersedes"' in src
+
+
+class TestTheCorrectionIsTheSameReport:
+    """A correction must be the payload the caller built, re-labelled.
+
+    It used to be rebuilt from the artifact alone inside this function, which
+    dropped everything the caller had enriched the payload with — the day's
+    allocation audit and its earning set. So a frozen day published a
+    correction in which every miner appeared funded and no row carried the
+    control that had acted on it, while the caller's own logs described the
+    correct payload it had built and then discarded. Nothing reported a
+    failure: the numbers checked before posting were not the numbers posted.
+    """
+
+    def _built_by_caller(self):
+        return _Payload(miner_results=[
+            {"uid": 1, "tier": None, "policies": [{"control": "one_payer"}]},
+            {"uid": 2, "tier": "elite", "policies": []},
+        ])
+
+    def test_the_correction_carries_the_callers_rows(self, posts):
+        posts.respond(httpx.Response(409, json=FROZEN),
+                      httpx.Response(201, json={"id": "x"}))
+        original = self._built_by_caller()
+        sent = []
+        import scripts.post_epoch_report as por_mod
+        real = por_mod.post_payload
+
+        def capture(payload, **kw):
+            sent.append(payload)
+            return real(payload, **kw)
+
+        por_mod.post_payload = capture
+        try:
+            _resp, posted_as = por.post_with_correction(
+                _Artifact(), original, endpoint="http://cms", api_key="k")
+        finally:
+            por_mod.post_payload = real
+
+        assert posted_as == "BD-2026-08-28-COR-1"
+        correction = sent[-1]
+        assert correction.miner_results == original.miner_results, (
+            "the correction must publish the rows that were built and "
+            "checked, not a rebuild that silently lacks them")
+        assert any(r["policies"] for r in correction.miner_results)
+
+    def test_only_the_three_labelling_fields_change(self, posts):
+        posts.respond(httpx.Response(409, json=FROZEN),
+                      httpx.Response(201, json={"id": "x"}))
+        original = self._built_by_caller()
+        _resp, _posted = por.post_with_correction(
+            _Artifact(), original, endpoint="http://cms", api_key="k")
+        # The original object is left alone; the copy is what was posted.
+        assert original.epoch_id == "BD-2026-08-28"
+        assert original.supersedes is None
+
+    def test_it_cannot_be_asked_to_rebuild_the_payload(self):
+        """No membership_uids escape hatch: re-aggregating inside here is the
+        defect, so the parameter that invited it is gone."""
+        import inspect
+        params = inspect.signature(por.post_with_correction).parameters
+        assert "membership_uids" not in params
+        # Strip comments first: the function DOCUMENTS why it no longer
+        # rebuilds, and a naive grep matches that prose instead of the code —
+        # a test that reads explanations rather than behaviour.
+        src = "\n".join(
+            line for line in
+            inspect.getsource(por.post_with_correction).splitlines()
+            if not line.strip().startswith("#"))
+        assert "aggregate(" not in src

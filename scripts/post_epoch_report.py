@@ -207,12 +207,16 @@ def post_with_correction(
     *,
     endpoint: str,
     api_key: str,
-    membership_uids=None,
     commentary: str | None = None,
     already_a_correction: bool = False,
     max_corrections: int = MAX_CORRECTIONS,
 ):
     """POST a report, re-posting as `{epoch}-COR-N` if the epoch is frozen.
+
+    `payload` is authoritative. The correction is that same payload re-labelled,
+    so whatever the caller built it with travels into the correction unchanged.
+    There is deliberately no way to ask this function to rebuild it: doing so
+    published corrections that silently lacked the caller's enrichment.
 
     IA D-13: a published epoch is frozen and the CMS answers 409. The fix is
     not to overwrite it — the original keeps its permanent URL and gains a
@@ -248,13 +252,24 @@ def post_with_correction(
             f"Correction of {artifact.epoch_id}: this entry supersedes the "
             f"original report."
         )
-        payload = aggregate(
-            artifact,
-            commentary_markdown=cor_commentary,
-            supersedes=artifact.epoch_id,
-            epoch_id_override=cor_id,
-            epoch_membership_uids=membership_uids,
-        )
+        # Re-label the payload we were given; do NOT rebuild it.
+        #
+        # This used to call aggregate() again from the artifact alone, which
+        # silently dropped everything the caller had enriched the payload
+        # with — the allocation audit and the day's earning set. A frozen day
+        # therefore published a correction in which every miner was funded
+        # and no row carried the control that had acted on it, while the
+        # caller's own logs described the correct payload it had built and
+        # then thrown away. The correction was a different report from the
+        # one that was checked.
+        #
+        # A correction differs from its original in three fields. Copying is
+        # the only way to guarantee it differs in exactly those three.
+        payload = payload.model_copy(update={
+            "epoch_id": cor_id,
+            "supersedes": artifact.epoch_id,
+            "commentary_markdown": cor_commentary,
+        })
         response = post_payload(payload, endpoint=endpoint, api_key=api_key)
         if not _is_frozen_409(response):
             return response, cor_id  # accepted, or a different outcome
@@ -436,7 +451,6 @@ def main(argv: list[str] | None = None) -> int:
     response, _posted_as = post_with_correction(
         artifact, payload,
         endpoint=endpoint, api_key=api_key,
-        membership_uids=membership_uids,
         commentary=args.commentary,
         already_a_correction=bool(args.supersedes),
     )
