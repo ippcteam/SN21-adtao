@@ -429,7 +429,34 @@ def run_daily_loop(
                                   "SN21_ED25519_KEY_FILE and pass a loader)"}
         else:
             from hope.publication.daily_accuracy_runner import publish_day
-            from hope.publication.receipt_feed import run_daily_receipt
+            from hope.publication.receipt_feed import receipt_path, run_daily_receipt
+
+            # A day whose rows were entered by a run that then died has no
+            # results in THIS process, so the receipt would be skipped for
+            # "no scored results" and the day would stay unpublishable
+            # forever — standings hold it, nobody can recompute it, and every
+            # control reading the receipts is blind for that day. Re-derive
+            # from the rows that run entered. Scoring is pure; nothing here
+            # enters anything, so no score can be counted twice.
+            if not horizon_results and not os.path.exists(
+                    receipt_path(ledger_root, day)):
+                try:
+                    from hope.scoring.settle_day_flow import score_day_for_receipt
+                    repair = score_day_for_receipt(
+                        shadow_root, ledger_root, day, outcomes_provider,
+                        environ=environ)
+                    if repair["horizon_results"]:
+                        horizon_results = repair["horizon_results"]
+                        settle_components = repair["components"]
+                        settled_outcomes = repair["settled_outcomes"]
+                        prediction_index = repair["prediction_index"]
+                        censored_counts = repair["censored_counts"]
+                        summary["receipt_repair"] = {
+                            "results_scored": repair["results_scored"],
+                            "miners": repair["miners"],
+                        }
+                except Exception as e:                       # noqa: BLE001
+                    summary["receipt_repair"] = {"error": str(e)}
 
             # RECEIPT FIRST, deliberately: the accuracy document embeds the
             # receipt's sha256 and the chain anchors the accuracy document,

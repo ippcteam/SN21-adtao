@@ -564,6 +564,30 @@ def entered_results(ledger_root: str) -> set[tuple[str, int]]:
     return out
 
 
+def entered_on_run(ledger_root: str, run_day: date) -> set[tuple[str, int]]:
+    """The (episode_id, horizon) pairs a given run day entered.
+
+    The marker file stamps the run that consumed each row, which is what
+    makes a half-finished day recoverable: the rows a crashed run took are
+    identifiable after the fact, so its unwritten receipt can be rebuilt
+    from exactly them.
+    """
+    path = _entered_path(ledger_root)
+    if not os.path.exists(path):
+        return set()
+    want = str(run_day)
+    out: set[tuple[str, int]] = set()
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            if str(rec.get("entered_on_run")) == want:
+                out.add((str(rec["episode_id"]), int(rec["horizon_days"])))
+    return out
+
+
 def _mark_entered(ledger_root: str, pairs: Iterable[tuple[str, int]],
                   run_day: date) -> None:
     os.makedirs(standing_ledger.standing_dir(ledger_root), exist_ok=True)
@@ -641,6 +665,49 @@ def run_settle_day(
         out["prediction_index"] = index
         out["censored_counts"] = last_censored_counts()
     return out
+
+
+def score_day_for_receipt(shadow_root: str, ledger_root: str, day: date,
+                          outcomes_provider, environ=None) -> dict:
+    """The day's scored results, ignoring entered-markers and writing nothing.
+
+    WHY THIS IS NOT run_settle_day
+        The markers answer "has this result already been counted into the
+        standings", which is the right question for ENTRY and the wrong one
+        for the receipt. A run that writes entries, marks them, and then dies
+        before publication leaves the day in a state no later run can
+        publish: the next run finds nothing new, scores nothing, and the
+        receipt is skipped for want of results — so the standings hold a day
+        that nobody outside can recompute, and every control that reads the
+        receipts is blind for that day.
+
+        Re-deriving here cannot double-count anything. Scoring is pure: it
+        reads the prediction index and the outcomes and returns results.
+        Only `append_entries` changes standings, and this does not call it.
+
+    Returns the same raw materials run_settle_day hands the receipt, so the
+    publication step cannot tell which of the two produced them.
+
+    Scope is taken from the markers themselves — the rows stamped with this
+    run day — not from every row the provider offers. That reproduces the
+    receipt the dead run would have written, rather than a different and
+    much larger document that happens to be publishable.
+    """
+    entered_today = entered_on_run(ledger_root, day)
+    outcomes = [o for o in outcomes_provider(day)
+                if (str(o.episode_id), int(o.horizon_days)) in entered_today]
+    index = load_prediction_index(shadow_root)
+    results, components = score_settled_with_components(index, outcomes,
+                                                        environ=environ)
+    return {
+        "horizon_results": results,
+        "components": components,
+        "settled_outcomes": outcomes,
+        "prediction_index": index,
+        "censored_counts": last_censored_counts(),
+        "results_scored": len(results),
+        "miners": len({r.miner for r in results}),
+    }
 
 
 # ---- production outcomes reader (reference implementation) -------------------
