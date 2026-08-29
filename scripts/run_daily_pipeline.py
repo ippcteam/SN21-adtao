@@ -598,11 +598,31 @@ def stage_publish_report(ledger_root, day):
     # superseded numbers — the one surface everybody actually looks at was the
     # only one that did not get the correction. The successor flow already
     # existed for hand-driven posts; the daily path now uses the same one.
+    # Report what is actually being published, not just that something was.
+    # "miners: 123" is true of a report where every row is funded with no
+    # reason on it and of a correct one, which is how a leaderboard that
+    # contradicted the weight vector passed as healthy for several runs.
+    _funded = sum(1 for m in payload.miner_results if m.tier)
+    _reasoned = sum(1 for m in payload.miner_results if m.policies)
+    _unexplained = sum(1 for m in payload.miner_results
+                       if not m.tier and not m.policies)
+    if _unexplained:
+        # Naming the two key spaces because every failure here so far has
+        # been one identity written two ways, and the counts alone cannot
+        # tell "nobody was acted on" apart from "the lookup missed".
+        _audit = (intent.get("collapse_audit") or {}).get("suppressed") or []
+        log(f"[publish-report] {_unexplained} row(s) unfunded with no reason "
+            f"— report hotkey={payload.miner_results[0].hotkey[:12]}.. "
+            f"audit hotkey={(str(_audit[0])[:12] + '..') if _audit else 'none'} "
+            f"earning hotkey={(sorted(_earning)[0][:12] + '..') if _earning else 'none'}")
+
     resp, posted_as = post_with_correction(
         artifact, payload, endpoint=endpoint, api_key=api_key)
     ok = 200 <= resp.status_code < 300
     out = {"published": ok, "epoch_id": posted_as,
-           "miners": len(payload.miner_results), "status": resp.status_code}
+           "miners": len(payload.miner_results), "funded": _funded,
+           "with_reason": _reasoned, "unexplained": _unexplained,
+           "status": resp.status_code}
     if posted_as != payload.epoch_id:
         out["supersedes"] = payload.epoch_id
     return out
