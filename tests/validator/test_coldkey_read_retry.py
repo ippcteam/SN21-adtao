@@ -129,3 +129,72 @@ class TestEmptyIsNotSuccess:
     def test_a_persistently_empty_metagraph_disables_the_cap(self, chain):
         chain(([], []), ([], []), ([], []))
         assert entry._coldkey_reader(sleep=_fresh_sleep()) is None
+
+
+class TestAHungReadIsNotAWaitForever:
+    """A hung read is not a slow read.
+
+    `bt.Subtensor().metagraph()` has no timeout of its own. When the websocket
+    stalls instead of raising, it blocks forever — and a retry loop that only
+    catches EXCEPTIONS never gets a turn. That happened in production: the
+    settle stage went silent mid-run and the day's vector could not publish at
+    all. Failing open requires the read to fail FIRST, so it is given a
+    deadline.
+    """
+
+    def test_a_read_that_never_returns_is_abandoned(self, chain, monkeypatch):
+        import threading
+
+        release = threading.Event()
+
+        class Hanging:
+            calls = 0
+
+            def __init__(self, network=None):
+                pass
+
+            def metagraph(self, netuid):
+                Hanging.calls += 1
+                release.wait(30)          # never set during the test
+                return _Metagraph(*GOOD)
+
+        import sys
+        sys.modules["bittensor"].Subtensor = Hanging
+        try:
+            out = entry._coldkey_reader(attempts=2, timeout_s=0.2,
+                                        sleep=_fresh_sleep())
+            assert out is None, "a hung chain must fail open, not block"
+            assert Hanging.calls == 2, "each attempt must get its own deadline"
+        finally:
+            release.set()
+
+    def test_a_slow_but_finishing_read_is_allowed(self, chain, monkeypatch):
+        """The deadline must not punish a chain that is merely slow."""
+        import time as _t
+
+        class Slow:
+            def __init__(self, network=None):
+                pass
+
+            def metagraph(self, netuid):
+                _t.sleep(0.05)
+                return _Metagraph(*GOOD)
+
+        import sys
+        sys.modules["bittensor"].Subtensor = Slow
+        assert entry._coldkey_reader(timeout_s=5, sleep=_fresh_sleep()) == {
+            "hk1": "ck1", "hk2": "ck1"}
+
+    def test_the_pool_is_not_shut_down_with_wait(self):
+        """`with ThreadPoolExecutor(...)` calls shutdown(wait=True) on exit,
+        which blocks until the hung worker finishes — reinstating the exact
+        hang the timeout exists to escape."""
+        import inspect
+        # Strip comments first: the function DOCUMENTS why it avoids the
+        # context manager, and a naive grep matches that prose instead of the
+        # code — a test that reads explanations rather than behaviour.
+        code = "\n".join(
+            line for line in inspect.getsource(entry._coldkey_reader).splitlines()
+            if not line.strip().startswith("#"))
+        assert "shutdown(wait=False)" in code
+        assert "with ThreadPoolExecutor" not in code

@@ -40,6 +40,7 @@ import os
 import sys
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
@@ -279,9 +280,18 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
 COLDKEY_READ_ATTEMPTS = 3
 COLDKEY_READ_BACKOFF_S = 5
 
+# A hung read is not a slow read. bt.Subtensor().metagraph() has no timeout of
+# its own, so when the websocket stalls instead of erroring it blocks forever —
+# and a retry loop that only catches EXCEPTIONS never gets a turn. That is not
+# hypothetical: the settle stage sat silent for eleven minutes mid-run, and the
+# day's vector could not publish at all. Failing open needs the read to fail
+# first, so it is given a deadline.
+COLDKEY_READ_TIMEOUT_S = 90
+
 
 def _coldkey_reader(attempts=COLDKEY_READ_ATTEMPTS,
                     backoff_s=COLDKEY_READ_BACKOFF_S,
+                    timeout_s=COLDKEY_READ_TIMEOUT_S,
                     sleep=time.sleep):
     """hotkey_ss58 -> coldkey_ss58 from the CURRENT metagraph, so the settle's
     one-coldkey-one-seat cap (Layer 1) can group a principal's hotkeys and keep
@@ -308,12 +318,26 @@ def _coldkey_reader(attempts=COLDKEY_READ_ATTEMPTS,
     delay = backoff_s
     last = None
 
+    def _read():
+        import bittensor as bt
+        mg = bt.Subtensor(network=net).metagraph(netuid)
+        return {str(mg.hotkeys[i]): str(mg.coldkeys[i])
+                for i in range(len(mg.hotkeys))}
+
     for attempt in range(1, attempts + 1):
         try:
-            import bittensor as bt
-            mg = bt.Subtensor(network=net).metagraph(netuid)
-            cmap = {str(mg.hotkeys[i]): str(mg.coldkeys[i])
-                    for i in range(len(mg.hotkeys))}
+            # Run behind a deadline. NOT via `with ThreadPoolExecutor(...)`:
+            # its __exit__ calls shutdown(wait=True), which blocks until the
+            # hung worker finishes and so reinstates exactly the hang the
+            # timeout exists to escape. The pool is shut down without waiting
+            # and the stuck thread is left to its fate — it is a daemon
+            # thread, and the process must not be held hostage by a socket
+            # that will not close.
+            pool = ThreadPoolExecutor(max_workers=1)
+            try:
+                cmap = pool.submit(_read).result(timeout=timeout_s)
+            finally:
+                pool.shutdown(wait=False)
             if not cmap:
                 raise ValueError("metagraph returned no hotkeys")
             log(f"[settle] coldkey map: {len(cmap)} hotkeys "
