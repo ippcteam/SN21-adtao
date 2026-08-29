@@ -160,6 +160,7 @@ def aggregate(
     epoch_membership_uids: set[int] | None = None,
     accuracy_by_type: dict | None = None,
     collapse_audit: dict | None = None,
+    earning_set: set[str] | None = None,
 ) -> EpochReportPayload:
     """Aggregate a private artifact into the public payload.
 
@@ -218,7 +219,8 @@ def aggregate(
     miner_results = _build_miner_results(
         artifact, tier_split_active=tier_split_active,
         epoch_membership_uids=epoch_membership_uids,
-        collapse_audit=collapse_audit)
+        collapse_audit=collapse_audit,
+        earning_set=earning_set)
 
     # v1 routine emergency state — always false. Q19 freezes this until
     # trigger-state machines land in SN21_REWARD_MECHANISM.md.
@@ -382,6 +384,7 @@ def _build_miner_results(
     tier_split_active: bool,
     epoch_membership_uids: set[int] | None = None,
     collapse_audit: dict | None = None,
+    earning_set: set[str] | None = None,
 ) -> list[MinerResult]:
     """Build the per-UID Cacheon-style table from artifact.per_uid_scores.
 
@@ -475,6 +478,26 @@ def _build_miner_results(
             # against artifact corruption.
             if tier not in ("elite", "competitive", "participating"):
                 tier = None
+
+        # A tier is what the leaderboard renders as "Funded", so it has to mean
+        # "is being paid". Tiers come from the STANDINGS, which the earning
+        # controls deliberately never touch — a suppressed miner keeps its
+        # score and therefore keeps its tier. Published as-is, a hotkey
+        # excluded for running someone else's model reads as "Funded · Elite"
+        # with a note underneath saying it was excluded, which is worse than
+        # saying nothing.
+        #
+        # Applied after the whole chain above, not inside one branch: the
+        # flat-week fallback assigns a tier by a different route, and a check
+        # that only covers the ordinary path would leave exactly the days when
+        # the field is hardest to read still contradicting themselves.
+        #
+        # The weight vector is ground truth for who is paid, so it decides the
+        # tier. The score still shows; `policies` carries the reason.
+        if tier is not None and earning_set is not None \
+                and hotkey not in earning_set:
+            tier = None
+
         results.append(MinerResult(
             uid=uid,
             hotkey=_hotkey_to_ss58(hotkey),

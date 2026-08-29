@@ -579,8 +579,17 @@ def stage_publish_report(ledger_root, day):
     # published only as fleet-level lists, and a miner has to search several
     # arrays — or the leaderboard reader has to guess — to learn why somebody
     # is not being paid.
+    # Who is actually paid today. The report's tiers come from standings, which
+    # the earning controls never touch, so without this a suppressed miner is
+    # published as funded and the policy note under it reads as a contradiction.
+    _weights = intent.get("weights") or {}
+    _earning = {str(hk) for hk, w in _weights.items() if float(w) > 0}
     payload = aggregate(artifact, accuracy_by_type=_acc,
-                        collapse_audit=intent.get("collapse_audit") or {})
+                        collapse_audit=intent.get("collapse_audit") or {},
+                        # A gated day publishes no weights at all; passing an
+                        # empty set would report the whole field unfunded, so
+                        # leave the tiers alone when there is no vector.
+                        earning_set=_earning or None)
     endpoint = os.environ.get("SN21_LEADERBOARD_ENDPOINT") or DEFAULT_ENDPOINT
 
     # A re-run of an already-published day gets 409: the epoch is frozen
