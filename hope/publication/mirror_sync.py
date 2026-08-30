@@ -44,6 +44,20 @@ _INDEX_HOW = (
 )
 
 
+def _sha256_of(body) -> str:
+    """Digest of the exact bytes that would be posted.
+
+    Canonicalised (sorted keys, no incidental whitespace) so an unchanged
+    document produces the same digest run after run — otherwise dict ordering
+    alone would make every document look modified and nothing would ever be
+    skipped.
+    """
+    import hashlib
+    return hashlib.sha256(
+        json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def _read_envelope(path: str) -> dict:
     with open(path) as fh:
         return json.load(fh)
@@ -226,14 +240,79 @@ def _post(api_url: str, api_key: str, items: list[dict],
     raise RuntimeError("unreachable: retry loop neither returned nor raised")
 
 
+def _shipped_path(ledger_root: str) -> str:
+    return os.path.join(ledger_root, "_mirror_shipped.json")
+
+
+def _load_shipped(ledger_root: str) -> dict:
+    try:
+        with open(_shipped_path(ledger_root)) as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        # No record, or an unreadable one, means ship everything. Re-sending a
+        # document the mirror already holds costs a request; skipping one it
+        # does not hold costs a day nobody can verify.
+        return {}
+
+
+def _record_shipped(ledger_root: str, confirmed: dict) -> None:
+    tmp = _shipped_path(ledger_root) + ".tmp"
+    try:
+        with open(tmp, "w") as fh:
+            json.dump(confirmed, fh)
+        os.replace(tmp, _shipped_path(ledger_root))
+    except OSError:
+        # Losing the record only costs a re-send next run.
+        pass
+
+
+def _is_immutable(path: str) -> bool:
+    """Documents that never change once published.
+
+    A receipt and an accuracy document are attested and hash-chained; the
+    rail refuses to republish them, so their bytes are fixed for ever. Proofs,
+    the root, the index and the accuracy series are NOT immutable — they are
+    re-rendered every time a day publishes, because the root rolls — and must
+    ship on every run.
+    """
+    return path.endswith("/receipt") or path.endswith("/accuracy")
+
+
 def sync_mirror(ledger_root: str, api_url: str, api_key: str,
                 timeout: int = 120,
                 recent_days: int | None = None) -> dict:
     """Render and POST everything, batched by size. An oversized single
     item still ships alone — the endpoint has no per-item cap, only the
     gateway's request limit, and one item per request is as small as a
-    request gets."""
+    request gets.
+
+    Documents that cannot change are sent once. The feed re-sent every
+    published receipt on every run — the three largest are 35MB, 29MB and
+    13MB — and those uploads timed out, so a run that had published
+    correctly reported a failed sync and turned the heartbeat red. Nothing
+    was ever missing; the same frozen bytes were being pushed daily. A
+    document is skipped only after the mirror has confirmed storing that
+    exact sha256, so a changed document always ships.
+    """
     items = build_mirror_items(ledger_root, recent_days=recent_days)
+
+    shipped = _load_shipped(ledger_root)
+    # Kept beside the items, never inside them: the ingest endpoint validates
+    # the item shape, so an extra key would travel to the mirror and could be
+    # rejected there.
+    digest_of: dict[str, str] = {}
+    skipped: list[str] = []
+    to_send = []
+    for it in items:
+        path = it.get("path") or ""
+        digest = _sha256_of(it.get("body"))
+        digest_of[path] = digest
+        if _is_immutable(path) and shipped.get(path) == digest:
+            skipped.append(path)
+            continue
+        to_send.append(it)
+    items = to_send
     batches: list[list[dict]] = []
     batch: list[dict] = []
     batch_bytes = 0
@@ -250,11 +329,21 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
     stored = 0
     rejected: list = []
     failed: list = []
+    confirmed = dict(shipped)
     for i, b in enumerate(batches):
         try:
             out = _post(api_url, api_key, b, timeout)
             stored += int(out.get("stored") or 0)
-            rejected.extend(out.get("rejected") or [])
+            batch_rejected = out.get("rejected") or []
+            rejected.extend(batch_rejected)
+            # Only what the mirror actually accepted. A rejected path must
+            # not be recorded as shipped, or it is never sent again.
+            bad = {r.get("path") if isinstance(r, dict) else r
+                   for r in batch_rejected}
+            for it in b:
+                p = it.get("path") or ""
+                if _is_immutable(p) and p not in bad and p in digest_of:
+                    confirmed[p] = digest_of[p]
         except Exception as e:  # noqa: BLE001
             # Do NOT abort the loop: index, root and the absence-penalty log
             # ride in the FINAL batches, and a stale root is worse than a
@@ -263,9 +352,10 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
             failed.append({"batch": i,
                            "paths": [it.get("path") for it in b],
                            "error": str(e)})
+    _record_shipped(ledger_root, confirmed)
     summary = {"success": not failed, "stored": stored, "rejected": rejected,
                "items_sent": len(items), "posts": len(batches),
-               "failed_posts": failed}
+               "skipped_unchanged": len(skipped), "failed_posts": failed}
     if failed:
         raise MirrorSyncError(summary)
     return summary
