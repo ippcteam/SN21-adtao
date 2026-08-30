@@ -392,7 +392,15 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    if not args.release or args.release.strip().lower() == "auto":
+    # A release is a WEEKLY-era concept, and the weekly stream has wound down.
+    # Only ask for one when the operator explicitly requested it.
+    #
+    # Omitting --release used to fall into this same branch and then refuse to
+    # start when the lookup failed, so a daily-only node could not serve the
+    # public /v1/daily feeds at all without weekly credentials it has no use
+    # for. The documented behaviour ("optional for daily receipt serving") was
+    # the intended one; the code just never did it.
+    if args.release.strip().lower() == "auto":
         # Auto-discovery: query the operator data backend for the most
         # recently created release. Mirrors what deploy/validator_scoring/
         # scoring_trigger.sh does for the scoring cron — the helper lives
@@ -400,20 +408,27 @@ def main():
         from hope.validator.data_client import HopeDataClient
         try:
             client = HopeDataClient()
-        except ValueError as exc:
-            parser.error(
-                f"--release auto requires HOPE_API_KEY and HOPE_API_URL to "
-                f"be set; {exc}"
-            )
-        try:
             args.release = asyncio.run(client.discover_latest_release())
+            logger.info("--release auto resolved to %s", args.release)
         except Exception as exc:
-            parser.error(
-                f"--release auto failed to resolve: {type(exc).__name__}: "
-                f"{exc}. Either pass --release <EPOCH_ID> explicitly or "
-                f"check the operator data backend at {client.base_url}."
-            )
-        logger.info("--release auto resolved to %s", args.release)
+            # Not fatal. `auto` cannot succeed once the weekly listing is
+            # spent, and refusing to boot over it takes the daily feeds down
+            # for a reason that has nothing to do with them.
+            logger.warning(
+                "--release auto did not resolve (%s: %s) — serving the daily "
+                "feeds only. Pass --release <EPOCH_ID> for weekly serving.",
+                type(exc).__name__, exc)
+            args.release = ""
+
+    if not args.release:
+        # Daily-only: the /v1/daily routes read the ledger on disk, so this
+        # needs no release, no data-API key, and no chain read.
+        logger.info("No release given — serving the daily feeds from %s",
+                    os.environ.get("SN21_LEDGER_ROOT") or "SN21_LEDGER_ROOT (unset)")
+        app = create_app(None)
+        logger.info("Starting daily-feed API on %s:%d", args.host, args.port)
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        return
 
     state = _build_state(
         release_key=args.release,

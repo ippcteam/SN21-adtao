@@ -475,9 +475,15 @@ hope-validator-api  (long-running HTTP daemon — daily + weekly surfaces)
   --wallet-name NAME
   --wallet-hotkey HOTKEY
   --no-chain                 Skip metagraph load (no auth — dev/local only)
-  --release KEY              Weekly-era: release key to serve (WR-…). Optional
-                             for daily receipt serving; pass 'auto' to discover
-                             the latest published weekly release from the data API.
+  --release KEY              Weekly-era: release key to serve (WR-…).
+                             OMIT IT for the daily stream: with no release the
+                             API serves the /v1/daily feeds straight from
+                             SN21_LEDGER_ROOT, and needs no data-API key, no
+                             release and no chain read.
+                             'auto' discovers the latest published WEEKLY
+                             release; it cannot resolve now that the weekly
+                             stream has wound down, and is not fatal — the API
+                             logs the failure and serves the daily feeds.
 
 scripts/run_daily_loop.py  (daily stream scorer — current)
   --shadow-root PATH         Shadow / settle state root
@@ -555,6 +561,29 @@ Every day:
 5. The feed's rolling Merkle root is committed on chain when
    `SN21_ANCHOR_COMMITS` is set, so any published day stays verifiable
 6. Standings update; the weight vector follows at the next consensus step
+
+### Serving the daily feeds
+
+No release, no data-API key, no chain read. The `/v1/daily/*` routes are read
+straight from the ledger the daily loop writes to, so the only thing this needs
+is that path:
+
+```bash
+export SN21_LEDGER_ROOT=/var/data/sn21/ledger
+hope-validator-api --port 8080
+```
+
+Passing `--release auto` here asks for a WEEKLY release. That lookup cannot
+resolve now the weekly stream has wound down; the API logs it and serves the
+daily feeds anyway, so the flag is unnecessary rather than harmful.
+
+**Verifying does not need this server at all.** The published feeds are
+mirrored and public — see [SN21_VERIFYING.md](./SN21_VERIFYING.md), which is
+authoritative for the daily stream:
+
+```bash
+python scripts/verify_day.py --url https://hope-bittensor-api.onrender.com --day 2026-08-29
+```
 
 ### Weekly-era production cron (historical — concluded 3 August 2026)
 
