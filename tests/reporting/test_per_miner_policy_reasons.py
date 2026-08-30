@@ -201,3 +201,39 @@ class TestTenureSaysHowManyDays:
         detail = notes[self.HK][0].detail
         assert "Scored on 2 of the 7 days needed" in detail
         assert "stood down" in detail
+
+
+class TestADuplicateRowNamesWhoEarns:
+    """"This model is already earning under an earlier submission" named
+    nobody. A miner could not check that and could only deny it, which is the
+    argument it produced. The row now names the hotkey holding the seat."""
+
+    COPY = "5CzE7cNrvZ6fHH4fZcNrWG5Rx7tz1xAvDzBZkYi9uxgnJkEk"
+    PAYEE = "5C5kbkWC7YmbS1Uh6FjAYtU3e8N1aHV4vK8emZt9ivNaBZGi"
+
+    def _audit(self, **over):
+        base = {"suppressed": [self.COPY],
+                "one_payer_groups": [{"payee": self.PAYEE,
+                                      "eliminated": [self.COPY],
+                                      "kind": "same_predictions",
+                                      "evidence": "identical point estimates"}]}
+        base.update(over)
+        return base
+
+    def test_the_seat_holder_is_named(self):
+        note = policies_by_hotkey(self._audit())[self.COPY][0]
+        assert note.control == "one_payer"
+        assert note.counterparty == self.PAYEE
+
+    def test_the_payee_is_not_accused_of_anything(self):
+        """The group has two members and only one of them is excluded."""
+        notes = policies_by_hotkey(self._audit())
+        assert self.PAYEE not in notes
+
+    def test_an_audit_without_groups_still_produces_the_row(self):
+        """Older days carry no group detail. The exclusion is still real, so
+        the note stands — it just cannot name the counterparty."""
+        note = policies_by_hotkey({"suppressed": [self.COPY]})[self.COPY][0]
+        assert note.control == "one_payer"
+        assert note.counterparty is None
+        assert "already earning" in note.detail

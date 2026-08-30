@@ -342,11 +342,29 @@ def policies_by_hotkey(collapse_audit: dict | None) -> dict:
                         "with the same owner holds it today."),
                 counterparty=holder))
 
+    # Which submission is earning instead. "Already earning under an earlier
+    # submission" named nobody, so a miner could neither check it nor answer
+    # it beyond denying it. The payee comes from the group the detector
+    # actually formed, not from a guess.
+    earns_instead: dict[str, str] = {}
+    for group in audit.get("one_payer_groups") or []:
+        if not isinstance(group, dict):
+            continue
+        payee = group.get("payee")
+        if not payee:
+            continue
+        for hk in group.get("eliminated") or []:
+            earns_instead.setdefault(hk, payee)
+
     for hk in audit.get("suppressed") or []:
+        payee = earns_instead.get(hk)
         out[hk].append(PolicyOutcome(
             control="one_payer",
+            counterparty=payee,
             detail=("This model is already earning under an earlier "
-                    "submission. Identical models pay once.")))
+                    "submission. Identical models pay once."
+                    + (" The seat is held by the hotkey shown."
+                       if payee else ""))))
 
     lineage = audit.get("lineage")
     if isinstance(lineage, dict):

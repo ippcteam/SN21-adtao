@@ -307,6 +307,13 @@ def compute_daily_allocation(
         placements = {hk: s for hk, s in placements.items()
                       if hk not in suppressed}
         audit["suppressed"] = sorted(suppressed)
+        # The groups behind that list, so each excluded hotkey can be told
+        # which submission is earning instead of it. A flat list of the
+        # excluded names the accused and not the beneficiary, which reads as
+        # an accusation rather than evidence.
+        detail = (one_payer_stats or {}).get("group_detail")
+        if detail:
+            audit["one_payer_groups"] = detail
 
     # Earning-set tenure (hope.scoring.tenure): the curve pays only hotkeys
     # with >= tenure_min distinct scored days. Same limits as copy
@@ -816,6 +823,16 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ,
         # is deliberately NOT the real control.
         if stats is not None:
             stats["groups"] = len(groups)
+            # WHO the model is already earning under. Without this the row
+            # said "this model is already earning under an earlier
+            # submission" and named nobody, which is an assertion a miner
+            # cannot check and can only deny. The group is already computed
+            # here; only the naming was missing.
+            stats["group_detail"] = [
+                {"payee": g.original, "eliminated": list(g.copies),
+                 "kind": g.kind, "evidence": g.evidence}
+                for g in groups
+            ]
 
         if not groups:
             return frozenset()

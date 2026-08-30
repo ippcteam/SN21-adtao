@@ -80,8 +80,14 @@ def build_document(day: date | str, collapse_audit: dict | None) -> dict:
     coldkey = audit.get("coldkey_cap") or {}
     tenure = audit.get("tenure_gated") or {}
 
+    # Both detectors' groups, in one list. They answer the same question — who
+    # else runs this model, and which of them earns — and publishing only the
+    # behavioural one left the exact-match exclusions naming nobody.
     groups = []
-    for group in lineage.get("groups") or []:
+    for group in (list(lineage.get("groups") or [])
+                  + list(audit.get("one_payer_groups") or [])):
+        if not isinstance(group, dict):
+            continue
         eliminated = list(group.get("eliminated") or [])
         groups.append({
             "kind": group.get("kind"),
