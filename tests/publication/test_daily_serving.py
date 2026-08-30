@@ -20,6 +20,7 @@ import uvicorn
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI
 
+from hope.publication.allocation_audit import write_allocation_audit
 from hope.publication.daily_accuracy_runner import publish_day
 from hope.publication.receipt_feed import receipt_path, run_daily_receipt
 from hope.scoring.daily_score_flow import HorizonResult
@@ -56,6 +57,21 @@ def _seed(root, day=DAY, n_eps=4):
                             f"{day}T00:00:00Z", environ=V2)
     publish_day(root, day, results, KEY, f"{day}T00:00:00Z",
                 receipt_sha256=rec.sha256)
+    # The allocation audit ships beside the receipt on every real day, so a
+    # ledger without one is not a ledger this server ever sees. Seeding it
+    # keeps the doc-endpoint test honest: it is meant to fail when the docs
+    # advertise something that does not exist, not when the fixture is older
+    # than the feed.
+    write_allocation_audit(root, day, {
+        "suppressed": ["bob"],
+        "lineage": {"groups": [{"kind": "same_lineage", "payee": "alice",
+                                "eliminated": ["bob"],
+                                "evidence": "2 hotkeys of one lineage"}]},
+        "coldkey_cap": {"applied": True, "dropped": []},
+        "tenure_gated": {"hotkeys": [], "stood_down": False},
+        "policies": {"lineage": {"params_version": "test-v1",
+                                 "exemption_configured": False}},
+    })
     return rec
 
 

@@ -52,7 +52,7 @@ earning set is decided after scoring, by the controls in
 as whole groups:
 
 ```bash
-curl https://hope-bittensor-api.onrender.com/v1/daily/2026-08-30/allocation-audit
+curl https://hope-bittensor-api.onrender.com/v1/daily/2026-08-18/allocation-audit
 ```
 
 Each group names the hotkey that kept the seat alongside the ones excluded,
