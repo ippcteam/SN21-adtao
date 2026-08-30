@@ -255,10 +255,16 @@ class TestTheSeatRowNamesTheOwner:
             "contested": {self.OWNER: [self.KEPT, self.DROPPED]},
         }}
 
-    def test_it_names_the_coldkey_and_how_many_hotkeys_it_runs(self):
+    def test_it_says_how_many_hotkeys_the_owner_runs(self):
         note = policies_by_hotkey(self._audit())[self.DROPPED][0]
-        assert self.OWNER in note.detail
         assert "runs 2 hotkeys" in note.detail
+
+    def test_it_does_not_print_the_owner_address(self):
+        """The group SIZE is what explains the rule; the coldkey adds no
+        meaning and would be the only owner identifier anything we publish
+        carries. A miner already knows which registrations are theirs."""
+        note = policies_by_hotkey(self._audit())[self.DROPPED][0]
+        assert self.OWNER not in note.detail
 
     def test_it_still_names_the_hotkey_holding_the_seat(self):
         note = policies_by_hotkey(self._audit())[self.DROPPED][0]

@@ -345,10 +345,16 @@ def policies_by_hotkey(collapse_audit: dict | None) -> dict:
             # already in the audit — they were simply not being surfaced.
             owner = owner_of.get(hk)
             if owner:
-                coldkey, siblings = owner
-                detail = (f"One coldkey holds one earning seat. Coldkey "
-                          f"{coldkey} runs {siblings} hotkeys on this subnet; "
-                          f"the one shown holds the seat today.")
+                _coldkey, siblings = owner
+                # The GROUP SIZE, not the owner's address. The size is the
+                # fact a miner needs — it says why the rule applied — and the
+                # hotkey holding the seat identifies the survivor. Printing
+                # the coldkey would put an identifier here that nothing else
+                # we publish carries, for no added meaning: a miner already
+                # knows which registrations are theirs.
+                detail = (f"One coldkey holds one earning seat. This owner "
+                          f"runs {siblings} hotkeys on the subnet; the one "
+                          f"shown holds the seat today.")
             else:
                 detail = ("One coldkey holds one earning seat. Another hotkey "
                           "with the same owner holds it today.")
