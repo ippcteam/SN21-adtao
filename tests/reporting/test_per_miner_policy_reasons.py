@@ -237,3 +237,40 @@ class TestADuplicateRowNamesWhoEarns:
         assert note.control == "one_payer"
         assert note.counterparty is None
         assert "already earning" in note.detail
+
+
+class TestTheSeatRowNamesTheOwner:
+    """"Another hotkey with the same owner holds it" asserts a relationship
+    and offers no evidence for it, so a miner can only take it on trust. The
+    coldkey and the number of hotkeys it runs are the evidence, and both were
+    already in the audit — they simply were not surfaced."""
+
+    OWNER = "5CVEj1BDwPqQ3qKZ9pRk9c9jV4vK8emZt9ivNaBZGiXXXXXX"
+    KEPT = "5C5kbkWC7YmbS1Uh6FjAYtU3e8N1aHV4vK8emZt9ivNaBZGi"
+    DROPPED = "5CSkpHaCJdgRL5BeSb8gpAuiJ5f9r5ZZw3Hg6jeupRo2U8yv"
+
+    def _audit(self):
+        return {"coldkey_cap": {
+            "dropped": [self.DROPPED],
+            "contested": {self.OWNER: [self.KEPT, self.DROPPED]},
+        }}
+
+    def test_it_names_the_coldkey_and_how_many_hotkeys_it_runs(self):
+        note = policies_by_hotkey(self._audit())[self.DROPPED][0]
+        assert self.OWNER in note.detail
+        assert "runs 2 hotkeys" in note.detail
+
+    def test_it_still_names_the_hotkey_holding_the_seat(self):
+        note = policies_by_hotkey(self._audit())[self.DROPPED][0]
+        assert note.counterparty == self.KEPT
+
+    def test_the_hotkey_that_kept_the_seat_is_not_flagged(self):
+        assert self.KEPT not in policies_by_hotkey(self._audit())
+
+    def test_without_a_contested_map_it_falls_back_rather_than_inventing(self):
+        """Older audits carry no owner map. The exclusion is still real; it
+        just cannot cite the coldkey."""
+        note = policies_by_hotkey(
+            {"coldkey_cap": {"dropped": [self.DROPPED]}})[self.DROPPED][0]
+        assert "same owner" in note.detail
+        assert note.counterparty is None

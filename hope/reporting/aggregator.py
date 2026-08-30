@@ -323,12 +323,15 @@ def policies_by_hotkey(collapse_audit: dict | None) -> dict:
         dropped = set(cap.get("dropped") or [])
         contested = cap.get("contested") if isinstance(cap.get("contested"), dict) else {}
         holder_of = {}
-        for _coldkey, hotkeys in contested.items():
+        owner_of: dict[str, tuple[str, int]] = {}
+        for coldkey, hotkeys in contested.items():
             if not isinstance(hotkeys, list):
                 continue
             holders = [hk for hk in hotkeys if hk not in dropped]
             # Exactly one seat per coldkey today. If that ever changes, or the
             # audit is partial, say nothing rather than pick one arbitrarily.
+            for member in hotkeys:
+                owner_of[member] = (coldkey, len(hotkeys))
             if len(holders) != 1:
                 continue
             for losing in hotkeys:
@@ -336,10 +339,22 @@ def policies_by_hotkey(collapse_audit: dict | None) -> dict:
                     holder_of[losing] = holders[0]
         for hk in cap.get("dropped") or []:
             holder = holder_of.get(hk)
+            # Name the owner and how many hotkeys it runs. "Another hotkey
+            # with the same owner" states a relationship without evidence for
+            # it; the coldkey and the count are the evidence, and both are
+            # already in the audit — they were simply not being surfaced.
+            owner = owner_of.get(hk)
+            if owner:
+                coldkey, siblings = owner
+                detail = (f"One coldkey holds one earning seat. Coldkey "
+                          f"{coldkey} runs {siblings} hotkeys on this subnet; "
+                          f"the one shown holds the seat today.")
+            else:
+                detail = ("One coldkey holds one earning seat. Another hotkey "
+                          "with the same owner holds it today.")
             out[hk].append(PolicyOutcome(
                 control="coldkey_cap",
-                detail=("One coldkey holds one earning seat. Another hotkey "
-                        "with the same owner holds it today."),
+                detail=detail,
                 counterparty=holder))
 
     # Which submission is earning instead. "Already earning under an earlier
