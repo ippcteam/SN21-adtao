@@ -267,6 +267,24 @@ def _record_shipped(ledger_root: str, confirmed: dict) -> None:
         pass
 
 
+def _mirror_has(api_url: str, path: str, timeout: int = 20) -> bool:
+    """Whether the mirror already serves `path`, without fetching the body.
+
+    Needed because the documents worth skipping are exactly the ones that
+    could never be recorded: the three biggest receipts time out on upload,
+    so a record built only from successful posts would never contain them and
+    they would be retried for ever. The mirror has held them since the day
+    they were first published — this asks, in a request that transfers no
+    body, rather than pushing 35MB to find out.
+    """
+    req = urllib.request.Request(api_url.rstrip("/") + path, method="HEAD")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return 200 <= resp.status < 300
+    except Exception:      # noqa: BLE001 — absent, unreachable, anything
+        return False       # the safe answer is "send it"
+
+
 def _is_immutable(path: str) -> bool:
     """Documents that never change once published.
 
@@ -304,11 +322,23 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
     digest_of: dict[str, str] = {}
     skipped: list[str] = []
     to_send = []
+    adopted: list[str] = []
     for it in items:
         path = it.get("path") or ""
         digest = _sha256_of(it.get("body"))
         digest_of[path] = digest
-        if _is_immutable(path) and shipped.get(path) == digest:
+        if not _is_immutable(path):
+            to_send.append(it)
+            continue
+        if shipped.get(path) == digest:
+            skipped.append(path)
+            continue
+        # No record, but the mirror may already hold it from before this
+        # bookkeeping existed — which is true of every receipt published so
+        # far, including the ones too large to re-upload. Ask before sending.
+        if _mirror_has(api_url, path):
+            shipped[path] = digest
+            adopted.append(path)
             skipped.append(path)
             continue
         to_send.append(it)
@@ -355,7 +385,8 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
     _record_shipped(ledger_root, confirmed)
     summary = {"success": not failed, "stored": stored, "rejected": rejected,
                "items_sent": len(items), "posts": len(batches),
-               "skipped_unchanged": len(skipped), "failed_posts": failed}
+               "skipped_unchanged": len(skipped),
+               "adopted_from_mirror": len(adopted), "failed_posts": failed}
     if failed:
         raise MirrorSyncError(summary)
     return summary

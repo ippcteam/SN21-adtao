@@ -161,3 +161,65 @@ class TestASkipHasToBeEarned:
             rec = json.load(fh)
         assert set(rec) == {"/v1/daily/2026-08-23/receipt",
                             "/v1/daily/2026-08-23/accuracy"}
+
+
+class TestDocumentsTheMirrorAlreadyHolds:
+    """The documents worth skipping are the ones that could never be
+    recorded: the biggest receipts time out on upload, so a record built only
+    from successful posts would never contain them and they would be retried
+    for ever. The mirror has held them since they were first published."""
+
+    ITEM = [{"path": "/v1/daily/2026-08-23/receipt", "body": {"a": 1}}]
+
+    def _run(self, tmp_path, monkeypatch, present, sent):
+        monkeypatch.setattr(mirror_sync, "build_mirror_items",
+                            lambda r, recent_days=None: list(self.ITEM))
+        monkeypatch.setattr(mirror_sync, "_mirror_has",
+                            lambda url, path, timeout=20: present)
+        monkeypatch.setattr(mirror_sync, "_post",
+                            lambda u, k, items, t: (
+                                sent.append([i["path"] for i in items]),
+                                {"stored": len(items), "rejected": []})[1])
+        return mirror_sync.sync_mirror(str(tmp_path), "http://ops", "k")
+
+    def test_a_document_already_there_is_not_uploaded_again(self, tmp_path, monkeypatch):
+        sent = []
+        out = self._run(tmp_path, monkeypatch, present=True, sent=sent)
+        assert sent == []
+        assert out["adopted_from_mirror"] == 1
+
+    def test_a_document_the_mirror_lacks_is_still_sent(self, tmp_path, monkeypatch):
+        """The failure to avoid: skipping something absent leaves a day
+        nobody can verify, and says nothing at all."""
+        sent = []
+        out = self._run(tmp_path, monkeypatch, present=False, sent=sent)
+        assert sent and "/v1/daily/2026-08-23/receipt" in sent[0]
+        assert out["adopted_from_mirror"] == 0
+
+    def test_an_unreachable_mirror_means_send(self, tmp_path, monkeypatch):
+        """_mirror_has swallows every error and answers False, so a network
+        problem during the probe can only cost an upload."""
+        sent = []
+        monkeypatch.setattr(mirror_sync, "build_mirror_items",
+                            lambda r, recent_days=None: list(self.ITEM))
+        monkeypatch.setattr(mirror_sync, "urllib", mirror_sync.urllib)
+        monkeypatch.setattr(mirror_sync.urllib.request, "urlopen",
+                            lambda *a, **k: (_ for _ in ()).throw(OSError("down")))
+        monkeypatch.setattr(mirror_sync, "_post",
+                            lambda u, k, items, t: (
+                                sent.append([i["path"] for i in items]),
+                                {"stored": 1, "rejected": []})[1])
+        mirror_sync.sync_mirror(str(tmp_path), "http://ops", "k")
+        assert sent and "/v1/daily/2026-08-23/receipt" in sent[0]
+
+    def test_adoption_is_remembered_so_it_is_asked_once(self, tmp_path, monkeypatch):
+        calls = []
+        monkeypatch.setattr(mirror_sync, "build_mirror_items",
+                            lambda r, recent_days=None: list(self.ITEM))
+        monkeypatch.setattr(mirror_sync, "_mirror_has",
+                            lambda url, path, timeout=20: calls.append(path) or True)
+        monkeypatch.setattr(mirror_sync, "_post",
+                            lambda u, k, items, t: {"stored": 0, "rejected": []})
+        mirror_sync.sync_mirror(str(tmp_path), "http://ops", "k")
+        mirror_sync.sync_mirror(str(tmp_path), "http://ops", "k")
+        assert len(calls) == 1, "the probe must not repeat once recorded"
