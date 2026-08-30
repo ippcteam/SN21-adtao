@@ -92,6 +92,12 @@ models into one group or walk copies out of one.
 standing keeps it; ties break on the earlier model commitment. Any cap above
 one would simply publish the farm size worth building.
 
+The limit is on seats, not on scores. A hotkey that does not hold its
+owner's seat still runs, still scores, and still appears on the leaderboard;
+it earns nothing that day. The same limit applies as to the copy controls —
+standings are untouched, and which hotkey holds the seat is decided again
+every day from the standings, so it moves when they do.
+
 ### 1.6 Spread the same model across many coldkeys
 
 Identity separation does not help: lineage is measured on behaviour, which does

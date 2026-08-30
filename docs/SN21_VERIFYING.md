@@ -44,6 +44,32 @@ python scripts/verify_day.py --url https://hope-bittensor-api.onrender.com \
 
 ---
 
+## Why a hotkey did not earn — the allocation audit
+
+The receipt proves your scores. It does not say who was paid: a day's
+earning set is decided after scoring, by the controls in
+[SN21_REWARDS.md](./SN21_REWARDS.md). Those decisions are published too,
+as whole groups:
+
+```bash
+curl https://hope-bittensor-api.onrender.com/v1/daily/2026-08-30/allocation-audit
+```
+
+Each group names the hotkey that kept the seat alongside the ones excluded,
+the evidence behind the grouping, and the parameter version it was made
+under. You can read a group you are not in — a suppression whose
+beneficiary is hidden is an assertion, not evidence.
+
+It is derived entirely from the same day's receipt, so nothing in it has to
+be taken on trust: take each hotkey's predictions for the day, compare
+them, and check the membership. Point-estimate groups are an exact match on
+the point estimates and need no parameters at all.
+
+The document also records whether the reference-model exemption was in
+force that day, so its absence is visible rather than assumed.
+
+---
+
 ## What gets checked, and what each one proves
 
 | Check | Proves |
