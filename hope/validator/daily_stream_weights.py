@@ -316,16 +316,24 @@ def compute_daily_allocation(
     if tenure_min > 0:
         short = short_tenure_hotkeys(
             scored_days, placements.keys(), tenure_min, tenure_exempt)
+        # The count travels with the verdict. "Fewer than 7 scored days" left
+        # a miner to work out their own total, and the obvious way to count it
+        # — receipts they appear in — gives a DIFFERENT number, because one
+        # receipt can carry entries settled on more than one date. Saying
+        # "scored on 6 of the 7 days needed" answers the question and makes
+        # the missing days obvious in the same breath.
+        scored_for = {hk: scored_days.get(hk, 0) for hk in sorted(short)}
         if short and len(short) < len(placements):
             placements = {hk: s for hk, s in placements.items()
                           if hk not in short}
             audit["tenure_gated"] = {
-                "min_days": tenure_min, "hotkeys": sorted(short)}
+                "min_days": tenure_min, "hotkeys": sorted(short),
+                "scored_days": scored_for}
         elif short:
             audit["tenure_gated"] = {
                 "min_days": tenure_min, "stood_down": True,
                 "reason": "gating would empty the curve",
-                "hotkeys": sorted(short)}
+                "hotkeys": sorted(short), "scored_days": scored_for}
 
     if lineage_audit:
         audit.setdefault("lineage", {})["pairwise"] = dict(lineage_audit)

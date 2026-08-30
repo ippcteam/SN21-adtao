@@ -365,14 +365,24 @@ def policies_by_hotkey(collapse_audit: dict | None) -> dict:
     if isinstance(tenure, dict):
         min_days = tenure.get("min_days")
         stood_down = bool(tenure.get("stood_down"))
+        counts = tenure.get("scored_days") or {}
         for hk in tenure.get("hotkeys") or []:
+            # Lead with the miner's own number. Older audits carry no counts,
+            # so those keep the original wording rather than printing a zero
+            # that would read as "you have never scored".
+            have = counts.get(hk)
+            opening = (
+                f"Scored on {have} of the {min_days} days needed."
+                if isinstance(have, int)
+                else f"Fewer than {min_days} scored days."
+            )
             out[hk].append(PolicyOutcome(
                 control="tenure",
                 detail=(
-                    f"Fewer than {min_days} scored days. Scores still count "
-                    f"and the model keeps running — tenure accrues by showing "
-                    f"up." + (" The gate stood down today because applying it "
-                             "would have emptied the paid set." if stood_down else "")
+                    f"{opening} Scores still count and the model keeps "
+                    f"running — tenure accrues by showing up."
+                    + (" The gate stood down today because applying it "
+                       "would have emptied the paid set." if stood_down else "")
                 )))
 
     return dict(out)

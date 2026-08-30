@@ -156,3 +156,48 @@ class TestItReachesTheRow:
         row = MinerResult(uid=1, hotkey="5" + "a" * 47, score=0.5,
                           status="scored")
         assert row.policies is None
+
+
+class TestTenureSaysHowManyDays:
+    """"Fewer than 7 scored days" made a miner count for themselves, and the
+    obvious way to count — receipts you appear in — gives a HIGHER number,
+    because one receipt can carry entries settled on more than one date.
+    Three miners read 7 off the feed while the gate saw 6, and asked why they
+    were being held back. The row now states the figure the gate used."""
+
+    HK = "5GTGB9P8tc3gmFrDPqLpqPPFPtCF1mVwvfPYnQE6ss3AMRRb"
+
+    def test_it_states_the_count_the_gate_used(self):
+        notes = policies_by_hotkey({
+            "tenure_gated": {"min_days": 7, "hotkeys": [self.HK],
+                             "scored_days": {self.HK: 6}},
+        })
+        detail = notes[self.HK][0].detail
+        assert "Scored on 6 of the 7 days needed" in detail
+        assert "Fewer than" not in detail
+
+    def test_scores_still_count_is_still_said(self):
+        notes = policies_by_hotkey({
+            "tenure_gated": {"min_days": 7, "hotkeys": [self.HK],
+                             "scored_days": {self.HK: 6}},
+        })
+        assert "Scores still count" in notes[self.HK][0].detail
+
+    def test_an_audit_without_counts_keeps_the_old_wording(self):
+        """Older days carry no counts. Printing 0 there would tell a miner
+        they have never scored, which is a different and untrue claim."""
+        notes = policies_by_hotkey({
+            "tenure_gated": {"min_days": 7, "hotkeys": [self.HK]},
+        })
+        detail = notes[self.HK][0].detail
+        assert "Fewer than 7 scored days" in detail
+        assert "0 of the 7" not in detail
+
+    def test_a_stood_down_gate_still_says_so(self):
+        notes = policies_by_hotkey({
+            "tenure_gated": {"min_days": 7, "hotkeys": [self.HK],
+                             "scored_days": {self.HK: 2}, "stood_down": True},
+        })
+        detail = notes[self.HK][0].detail
+        assert "Scored on 2 of the 7 days needed" in detail
+        assert "stood down" in detail

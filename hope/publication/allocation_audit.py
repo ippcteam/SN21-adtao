@@ -117,6 +117,11 @@ def build_document(day: date | str, collapse_audit: dict | None) -> dict:
             "minimum_scored_days": (policies.get("tenure") or {}).get(
                 "min_days"),
             "excluded": sorted(tenure.get("hotkeys") or []),
+            # How many days each of them actually has. Counting receipts a
+            # hotkey appears in gives a different, higher number — one receipt
+            # can carry entries settled on more than one date — so publishing
+            # the figure the gate used is what makes the verdict checkable.
+            "scored_days": dict(tenure.get("scored_days") or {}),
             "stood_down": bool(tenure.get("stood_down")),
         },
         "controls": policies,
