@@ -17,12 +17,25 @@
 
 > **Note on registration.** Validator registration on SN21 itself is open
 > by Bittensor protocol — any operator meeting the chain's permit and
-> stake requirements can register and submit weights. To run the
-> canonical scoring against published episodes and outcomes, a validator
-> additionally needs operator-issued data API credentials
-> (`HOPE_API_KEY`, `HOPE_API_URL`). Operators wishing to obtain
-> credentials at launch should contact the operator team; a formal
-> third-party validator programme is tracked at Review 4.
+> stake requirements can register and submit weights.
+>
+> **Scoring, however, is single-operator today, and credentials are not
+> what stands in the way.** In the daily stream the operator executes every
+> admitted model in a sandbox and seals the predictions into a shadow
+> ledger on that host; the scorer settles those predictions. A second
+> validator has none, so it cannot reproduce the scoring run whatever API
+> keys it holds. Asking for wider key scope will not change this, and we
+> would rather say so than have you spend a day on it.
+>
+> What a third party can do today is **serve the daily feeds** (§2,
+> Process A — no credentials at all) and **verify any published day**
+> against the signed receipts
+> ([SN21_VERIFYING.md](./SN21_VERIFYING.md)) — which is the check that
+> actually holds our numbers to account, and it needs nothing from us. If
+> a day does not reproduce, the tool names the entry that disagrees.
+>
+> A formal third-party validator programme — distributed scoring rather
+> than distributed verification — is tracked at Review 4.
 
 > **Architecture note (read this first).** For the **daily stream** you run
 > **three processes**. Missing any one either fails to score/publish or gets
@@ -368,15 +381,29 @@ threat model and what each commit binds.
 
 ---
 
-## 7. Data API
+## 7. Data API — **operator only**
 
-The validator fetches releases / packages from the operator's data API.
-Daily baskets use the same credentials; the weekly `WR-…` example below is
-historical packaging shape.
+> **You do not need this.** This is how the operator's own pipeline collects
+> the day's basket. It is not part of running a second validator, and a key
+> for it is not something to ask for: nothing a second validator does reads
+> these endpoints.
+>
+> `--release auto` is the one place this leaks. It resolves against the
+> WEEKLY release listing below, skipping `BD-YYYY-MM-DD` daily entries
+> entirely, so it cannot resolve at all now the weekly stream has wound
+> down. Omit `--release` (§2) and the daily feeds serve from the ledger with
+> no credentials.
+>
+> Everything a second validator needs is public and signed — the receipt,
+> accuracy and proof feeds under `/v1/daily/*`. See
+> [SN21_VERIFYING.md](./SN21_VERIFYING.md).
+
+The operator's pipeline fetches releases / packages from this API. The
+weekly `WR-…` example below is historical packaging shape.
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET {base}/internal/bittensor/v1/releases` | List available releases |
+| `GET {base}/internal/bittensor/v1/releases` | List available releases (weekly `WR-`; daily `BD-` entries appear here but nothing submits to them) |
 | `GET {base}/internal/bittensor/v1/releases/{key}/package` | Full challenge package (episodes + outcomes + signatures) |
 | `GET {base}/internal/bittensor/v1/governance/summary` | Governance stats |
 
@@ -543,7 +570,8 @@ hope-validator  (weekly-era one-shot scorer — historical only)
 
 - Python 3.10-3.12
 - 2GB RAM minimum (episodes are ~15KB each; daily baskets are smaller than weekly packs)
-- Stable internet for data API access
+- Stable internet. Data API access is needed only by the operator's own
+  pipeline (§7); serving the daily feeds needs no credentials
 - Open port if you expose `hope-validator-api` publicly
 - Persistent disk for `SN21_LEDGER_ROOT` (receipt feeds)
 
@@ -628,14 +656,19 @@ Reference deployment for that historical cron:
 submission, and a one-shot scoring pass produced the
 `9.C.1 → 9.C.3 → 9.C.2 → 9.C.6` artifacts on chain.
 
-### Activity-floor heartbeat (`hope-validator-heartbeat`)
+### Activity-floor heartbeat (`hope-validator-heartbeat`) — **operator only**
 
 Bittensor's per-subnet `ActivityCutoff` hyperparameter caps how long a
 validator can go without submitting `set_weights` before its weights
 drop out of consensus computation. Even with a **daily** settle loop, gaps
 between weight updates can exceed the cutoff — so a third short-lived binary
 fills the gap by **re-asserting whatever weights the latest scoring run
-already committed**:
+already committed**.
+
+It reads those weights back from the chain
+(`SubtensorModule.Weights[netuid][validator_uid]`) — the ones *this*
+validator committed. A validator that has never committed weights has
+nothing for it to re-assert, so this is only useful on a host that scores.
 
 ```bash
 hope-validator-heartbeat \
