@@ -2,13 +2,13 @@
 
 The chain's per-subnet ``activity_cutoff`` (5,000 blocks ≈ 16.7h on mainnet)
 forces validators to publish ``set_weights`` regularly or their weights
-drop out of the consensus computation. SN21's authoritative scoring
-runs only once per week — fine for producing meaningful weights, way
-too infrequent for the chain's activity floor.
+drop out of the consensus computation. SN21's authoritative scoring runs
+once per day — fine for producing meaningful weights, still too
+infrequent for the chain's activity floor.
 
 This module bridges the gap with a tiny short-lived process that does
 NO scoring of its own — it just **re-asserts whatever weights the
-latest weekly scoring run already committed**. Run from a cron at
+latest scoring run already committed**. Run from a cron at
 ~3-4h cadence; the script self-throttles so it never submits more
 often than ``threshold_blocks`` apart (defaulting to 1500 blocks,
 ≈ 5h, which gives 3.3× safety margin against the 5,000-block cutoff

@@ -28,11 +28,32 @@
 > **three processes**. Missing any one either fails to score/publish or gets
 > you pruned from Yuma consensus.
 >
-> | Process | Command | Cadence | Role |
-> |---|---|---|---|
-> | **A — HTTP API** | `hope-validator-api` | long-lived | Serves episodes and public `/v1/daily/*` receipts. Takes `--host` / `--port`. |
-> | **B — Daily loop** | `python3 scripts/run_daily_loop.py` | once per day | Settles matured (episode × horizon) rows, updates standings, publishes receipt + accuracy, writes weight intent. Not an HTTP server. |
-> | **C — Heartbeat** | `hope-validator-heartbeat` | every 3–4 hours | Re-asserts the latest weights so `ActivityCutoff` (~16h on mainnet) does not drop you between daily runs. See §10. |
+> | Process | Command | Cadence | Who runs it | Role |
+> |---|---|---|---|---|
+> | **A — HTTP API** | `hope-validator-api` | long-lived | **anyone** | Serves episodes and public `/v1/daily/*` receipts. Takes `--host` / `--port`. Omit `--release` to serve the daily feeds from the ledger with no credentials. |
+> | **B — Daily loop** | `python3 scripts/run_daily_loop.py` | once per day | **operator only** | Settles matured (episode × horizon) rows, updates standings, publishes receipt + accuracy, writes weight intent. Not an HTTP server. |
+> | **C — Heartbeat** | `hope-validator-heartbeat` | every 3–4 hours | **operator only** | Re-asserts the weights this validator already committed, so `ActivityCutoff` (~16h on mainnet) does not drop them between daily runs. See §10. |
+>
+> **B and C are operator-only, and not because of credentials.** The daily
+> loop settles the predictions produced when each admitted model is executed
+> in the operator's sandbox (`run_daily_pipeline.py`, stage 2 — "shadow"),
+> and it writes them to a shadow ledger that exists only on that host. A
+> second machine has no predictions to settle, so pointing the loop at an
+> empty ledger cannot produce a score however it is configured. It fails
+> asking for `SN21_PLATFORM_PATH` because the outcomes provider defaults to
+> a direct operator-database read; supplying that path — or the HTTP
+> outcomes API instead — still leaves nothing to settle.
+>
+> The heartbeat re-asserts weights read from the chain
+> (`SubtensorModule.Weights[netuid][validator_uid]`) — the ones this
+> validator committed itself. A validator that has never committed weights
+> has nothing for it to re-assert.
+>
+> **If you are running a validator alongside ours, A is the process you
+> want**, plus `scripts/verify_day.py` to check any published day. Scoring
+> in the daily stream is single-operator today; see
+> [SN21_VERIFYING.md](./SN21_VERIFYING.md) for what that means and how to
+> hold the numbers to account without running the scorer.
 >
 > **Do not confuse with weekly-era tools:**
 >
@@ -485,10 +506,16 @@ hope-validator-api  (long-running HTTP daemon — daily + weekly surfaces)
                              stream has wound down, and is not fatal — the API
                              logs the failure and serves the daily feeds.
 
-scripts/run_daily_loop.py  (daily stream scorer — current)
-  --shadow-root PATH         Shadow / settle state root
+scripts/run_daily_loop.py  (daily stream scorer — current, OPERATOR ONLY)
+  --shadow-root PATH         Shadow / settle state root. Holds the predictions
+                             sealed when each admitted model was executed in
+                             the operator's sandbox; only that host has one.
   --ledger-root PATH         Where receipt + accuracy feeds are written
                              (must match SN21_LEDGER_ROOT on the API)
+  Outcomes come from the operator database by default (needs
+  SN21_PLATFORM_PATH), or over HTTP with SN21_OUTCOMES_API_URL +
+  SN21_OUTCOMES_API_KEY. Neither makes this runnable elsewhere: without the
+  shadow ledger above there is nothing to settle.
 
 hope-validator  (weekly-era one-shot scorer — historical only)
   --release KEY              Epoch ID to score
