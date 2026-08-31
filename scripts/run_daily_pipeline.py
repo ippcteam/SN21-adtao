@@ -584,17 +584,48 @@ def stage_publish_report(ledger_root, day):
     # published as funded and the policy note under it reads as a contradiction.
     _weights = intent.get("weights") or {}
     _earning = {str(hk) for hk, w in _weights.items() if float(w) > 0}
+
+    # A held day publishes no NEW vector; it does not stop anyone earning.
+    # The previous vector stays on chain and the heartbeat keeps re-asserting
+    # it, so the miners paid yesterday are still being paid today. Reporting
+    # nobody as funded told them their income had stopped when it had not,
+    # which is a worse error than the one it replaced.
+    #
+    # So a held day reports the vector that is actually live: the most recent
+    # published one.
+    _held = False
+    if not _earning:
+        import glob as _glob
+        import re as _re
+        prior = sorted(_glob.glob(os.path.join(ledger_root,
+                                               "intended_weights_*.json")))
+        for path in reversed(prior):
+            m = _re.search(r"intended_weights_(\d{4}-\d{2}-\d{2})\.json$", path)
+            if not m or m.group(1) >= str(day):
+                continue
+            try:
+                with open(path) as fh:
+                    older = (json.load(fh).get("weights") or {})
+            except (OSError, ValueError):
+                continue
+            got = {str(hk) for hk, w in older.items() if float(w) > 0}
+            if got:
+                _earning, _held = got, True
+                log(f"[publish-report] day held — reporting the live vector "
+                    f"from {m.group(1)} ({len(got)} earning)")
+                break
     # A gated day pays nobody, and that is a fact about the DAY — no per-miner
     # control can express it, so without saying it here the miners who would
     # otherwise have earned show "not funded" against no reason at all. Which
     # is the one thing every other row on the page now avoids.
     _gated_note = None
-    if intent.get("gated"):
+    if intent.get("gated") or _held:
         _gated_note = (
-            "No miner earned today. The day's basket was below the minimum "
-            "number of episodes needed to pay on it, so the weights held "
-            "rather than paying on a small sample. Scores still count and "
-            "every model kept running."
+            "Today's basket was below the minimum size to score a new "
+            "allocation, so no new weights were set. The previous "
+            "allocation stays in force on chain and continues to pay — "
+            "the rows below show who it pays. Nobody's earnings stopped, "
+            "and every model kept running."
         )
     payload = aggregate(artifact, accuracy_by_type=_acc,
                         commentary_markdown=_gated_note,
