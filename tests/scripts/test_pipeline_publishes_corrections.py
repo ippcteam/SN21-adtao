@@ -250,3 +250,45 @@ class TestTheCorrectionIsTheSameReport:
             inspect.getsource(por.post_with_correction).splitlines()
             if not line.strip().startswith("#"))
         assert "aggregate(" not in src
+
+
+class TestTheCorrectionKeepsTheDaysExplanation:
+    """Correcting a day must not delete why the day looked as it did.
+
+    A held day carries a note saying no new weights were set and the
+    previous allocation still pays. Correcting that day replaced the note
+    with "this entry supersedes the original report", which tells a miner
+    nothing about why nobody's rank moved — and a held day is exactly the
+    kind that gets corrected.
+    """
+
+    def test_the_callers_commentary_survives(self, posts):
+        posts.respond(httpx.Response(409, json=FROZEN),
+                      httpx.Response(201, json={"id": "x"}))
+        original = _Payload(commentary_markdown="The day was held.")
+        sent = []
+        import scripts.post_epoch_report as m
+        real = m.post_payload
+        m.post_payload = lambda p, **kw: (sent.append(p), real(p, **kw))[1]
+        try:
+            por.post_with_correction(_Artifact(), original,
+                                     endpoint="http://cms", api_key="k")
+        finally:
+            m.post_payload = real
+        body = sent[-1].commentary_markdown
+        assert "The day was held." in body
+        assert "supersedes" in body, "the correction notice is still added"
+
+    def test_a_day_with_nothing_to_say_gets_only_the_notice(self, posts):
+        posts.respond(httpx.Response(409, json=FROZEN),
+                      httpx.Response(201, json={"id": "x"}))
+        sent = []
+        import scripts.post_epoch_report as m
+        real = m.post_payload
+        m.post_payload = lambda p, **kw: (sent.append(p), real(p, **kw))[1]
+        try:
+            por.post_with_correction(_Artifact(), _Payload(),
+                                     endpoint="http://cms", api_key="k")
+        finally:
+            m.post_payload = real
+        assert sent[-1].commentary_markdown.startswith("Correction of")

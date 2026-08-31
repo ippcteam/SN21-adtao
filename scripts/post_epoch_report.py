@@ -248,10 +248,17 @@ def post_with_correction(
             "epoch %s is published/frozen; re-posting as correction %s",
             artifact.epoch_id, cor_id,
         )
-        cor_commentary = commentary or (
-            f"Correction of {artifact.epoch_id}: this entry supersedes the "
-            f"original report."
-        )
+        # Keep whatever the caller wrote and add the correction notice to it.
+        #
+        # Replacing it lost the explanation the day actually needed: a held
+        # day carries a note saying no new weights were set and the previous
+        # allocation still pays, and correcting that day silently swapped
+        # that for "this entry supersedes the original report" — which tells
+        # a miner nothing about why nobody's rank moved.
+        notice = (f"Correction of {artifact.epoch_id}: this entry supersedes "
+                  f"the original report.")
+        existing = commentary or getattr(payload, "commentary_markdown", None)
+        cor_commentary = f"{existing}\n\n{notice}" if existing else notice
         # Re-label the payload we were given; do NOT rebuild it.
         #
         # This used to call aggregate() again from the artifact alone, which
