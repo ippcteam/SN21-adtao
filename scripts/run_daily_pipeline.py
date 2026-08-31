@@ -586,10 +586,17 @@ def stage_publish_report(ledger_root, day):
     _earning = {str(hk) for hk, w in _weights.items() if float(w) > 0}
     payload = aggregate(artifact, accuracy_by_type=_acc,
                         collapse_audit=intent.get("collapse_audit") or {},
-                        # A gated day publishes no weights at all; passing an
-                        # empty set would report the whole field unfunded, so
-                        # leave the tiers alone when there is no vector.
-                        earning_set=_earning or None)
+                        # An empty vector is passed through as an empty set,
+                        # NOT as "leave the tiers alone".
+                        #
+                        # That was the earlier behaviour and it was wrong. On
+                        # a gated day no weights publish and nobody is paid,
+                        # so preserving the standings-derived tiers reported
+                        # all 119 miners as funded while 96 of the same rows
+                        # carried a note saying they were excluded. Nobody
+                        # earning reads correctly as nobody funded; everybody
+                        # funded is a claim about payment that never happened.
+                        earning_set=_earning)
     endpoint = os.environ.get("SN21_LEADERBOARD_ENDPOINT") or DEFAULT_ENDPOINT
 
     # A re-run of an already-published day gets 409: the epoch is frozen

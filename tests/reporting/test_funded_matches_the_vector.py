@@ -61,12 +61,21 @@ class TestTierFollowsTheVector:
         assert rows[SUPPRESSED].status == "scored"
 
     def test_no_vector_leaves_every_tier_alone(self):
-        """A gated day publishes no weights. Treating that as 'nobody is
-        funded' would report the whole field unfunded on a day when the
-        weights merely held."""
+        """Passing None means the caller could not say who was paid, so the
+        tiers stand. This is NOT the gated-day case — see below."""
         rows = _rows(None)
         assert rows[PAID].tier == "elite"
         assert rows[SUPPRESSED].tier == "elite"
+
+    def test_a_gated_day_funds_nobody(self):
+        """A day that publishes no weights pays nobody, and the report has to
+        say so. Preserving the standings-derived tiers reported all 119
+        miners as funded while 96 of those same rows carried a note saying
+        they were excluded — a claim about payment that never happened."""
+        rows = _rows(set())
+        assert all(r.tier is None for r in rows.values())
+        assert all(r.status == "scored" for r in rows.values()), \
+            "scores are facts and survive a gated day"
 
     def test_an_empty_vector_is_not_confused_with_no_vector(self):
         """Passed explicitly, an empty set means nobody was paid."""
