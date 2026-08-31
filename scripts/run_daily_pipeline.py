@@ -584,7 +584,20 @@ def stage_publish_report(ledger_root, day):
     # published as funded and the policy note under it reads as a contradiction.
     _weights = intent.get("weights") or {}
     _earning = {str(hk) for hk, w in _weights.items() if float(w) > 0}
+    # A gated day pays nobody, and that is a fact about the DAY — no per-miner
+    # control can express it, so without saying it here the miners who would
+    # otherwise have earned show "not funded" against no reason at all. Which
+    # is the one thing every other row on the page now avoids.
+    _gated_note = None
+    if intent.get("gated"):
+        _gated_note = (
+            "No miner earned today. The day's basket was below the minimum "
+            "number of episodes needed to pay on it, so the weights held "
+            "rather than paying on a small sample. Scores still count and "
+            "every model kept running."
+        )
     payload = aggregate(artifact, accuracy_by_type=_acc,
+                        commentary_markdown=_gated_note,
                         collapse_audit=intent.get("collapse_audit") or {},
                         # An empty vector is passed through as an empty set,
                         # NOT as "leave the tiers alone".
