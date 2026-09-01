@@ -605,6 +605,7 @@ def run_settle_day(
     outcomes_provider: Callable[[date], list[SettledHorizon]],
     return_results: bool = False,
     environ=None,
+    type_weight_fn=None,
 ) -> dict:
     """Enter every settled-but-not-yet-entered result as of `day`.
 
@@ -634,7 +635,8 @@ def run_settle_day(
     for r in results:
         by_settle_date.setdefault(r.finalized_on, []).append(r)
     for settle_day_, day_results in sorted(by_settle_date.items()):
-        entries = day_flow(day_results, settle_day_)
+        entries = day_flow(day_results, settle_day_,
+                           type_weight_fn=type_weight_fn)
         written += standing_ledger.append_entries(ledger_root, entries)
 
     # Mark every processed (episode,horizon) — including ones with zero

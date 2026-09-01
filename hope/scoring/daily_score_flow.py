@@ -81,23 +81,42 @@ def horizon_entry_weight(horizon_days: int, resolution: str = "high") -> float:
     return table[key]
 
 
-def day_flow(results: Iterable[HorizonResult], day: date) -> list[WeightedEntry]:
+def day_flow(results: Iterable[HorizonResult], day: date,
+             type_weight_fn=None) -> list[WeightedEntry]:
     """The entries a given day contributes to standings: every (episode,
     horizon, miner) result finalised on that day, weighted by its horizon's
     blend share. Results from other days are ignored (they entered/enter on
-    their own finalisation days — nothing is ever rescored, v0.5 §4)."""
-    return [
-        WeightedEntry(
+    their own finalisation days — nothing is ever rescored, v0.5 §4).
+
+    `type_weight_fn(episode_id) -> float`, when supplied, multiplies the
+    entry weight by the episode's change-type weight (type_weights.py). The
+    multiplier is applied HERE — at entry creation — because entry weights
+    persist into the append-only standing ledger: that is what makes the
+    type weighting prospective by construction. Enabling it never re-prices
+    an entry that already exists. None (the default) is exactly weight 1.0
+    everywhere, byte-identical to the pre-type-weight behaviour.
+    """
+    out = []
+    for r in results:
+        if r.finalized_on != day:
+            continue
+        w = horizon_entry_weight(r.horizon_days, r.resolution)
+        if type_weight_fn is not None:
+            tw = float(type_weight_fn(r.episode_id))
+            # A weight fn must scale, never erase: guard against a broken fn
+            # zeroing evidence (an entry with weight 0 silently vanishes from
+            # the standing, which is a censorship primitive, not a weight).
+            if tw > 0:
+                w *= tw
+        out.append(WeightedEntry(
             miner=r.miner,
             score=r.score,
-            weight=horizon_entry_weight(r.horizon_days, r.resolution),
+            weight=w,
             entered_on=r.finalized_on,
             episode_id=r.episode_id,
             horizon_days=r.horizon_days,
-        )
-        for r in results
-        if r.finalized_on == day
-    ]
+        ))
+    return out
 
 
 def episode_total_weight(resolution: str = "high") -> float:

@@ -163,6 +163,11 @@ def run_daily_loop(
     day_volume_provider: Callable[[date], int] | None = None,
     vertical_map_provider: Callable[[list], dict] | None = None,
     transition_key_provider: Callable[[list], dict] | None = None,
+    # Change-type weight multiplier for NEW standing-ledger entries
+    # (type_weights.py). None = weight 1.0 everywhere, identical to the
+    # pre-type-weight pipeline. Only ever wired from a RATIFIED table —
+    # load_table_for_scoring enforces that; this parameter trusts its caller.
+    type_weight_fn: Callable[[str], float] | None = None,
     liveness_lookback_days: int = LIVENESS_LOOKBACK_DAYS,
     environ=os.environ,
 ) -> dict:
@@ -178,7 +183,8 @@ def run_daily_loop(
     try:
         settle = run_settle_day(shadow_root, ledger_root, day,
                                 outcomes_provider, return_results=True,
-                                environ=environ)
+                                environ=environ,
+                                type_weight_fn=type_weight_fn)
         horizon_results = settle.pop("horizon_results", [])
         settle_components = settle.pop("components", {})
         settled_outcomes = settle.pop("settled_outcomes", [])

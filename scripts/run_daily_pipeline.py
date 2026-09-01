@@ -451,6 +451,43 @@ def _transition_key_provider(ledger_root):
     return provider
 
 
+def _type_weight_fn(ledger_root):
+    """Change-type weight multiplier for new standing entries, or None.
+
+    OFF unless SN21_TYPE_WEIGHTS_FILE names a table that load_table_for_scoring
+    accepts — and that loader refuses anything not RATIFIED, so a draft table
+    in the env cannot reach scoring. Missing/invalid config downgrades to
+    None (weight 1.0 everywhere) with the reason logged: scoring must never
+    be half-configured silently.
+
+    The fn resolves episode -> transition_key through the same per-basket
+    maps the by-type page uses, so the label an entry is weighted by and the
+    label it is displayed under cannot disagree.
+    """
+    path = (os.environ.get("SN21_TYPE_WEIGHTS_FILE") or "").strip()
+    if not path:
+        return None
+    try:
+        from hope.scoring.type_weights import load_table_for_scoring
+        table = load_table_for_scoring(path)
+    except Exception as e:   # noqa: BLE001 — refuse loudly, run neutrally
+        log(f"[type-weights] DISABLED — {e}")
+        return None
+
+    tkey_provider = _transition_key_provider(ledger_root)
+    cache: dict = {}
+
+    def fn(episode_id):
+        eid = str(episode_id)
+        if eid not in cache:
+            cache[eid] = tkey_provider([eid]).get(eid)
+        return table.weight_for(cache[eid])
+
+    log(f"[type-weights] ACTIVE — {path} ({len(table.families)} families, "
+        f"window {table.window_start}..{table.window_end})")
+    return fn
+
+
 def stage_settle(ledger_root, day):
     from scripts.run_daily_loop import (
         _basket_volume,
@@ -474,6 +511,7 @@ def stage_settle(ledger_root, day):
         # it verbatim.
         coldkey_reader=_coldkey_reader,
         transition_key_provider=_transition_key_provider(ledger_root),
+        type_weight_fn=_type_weight_fn(ledger_root),
     )
     # Trim the noisy nested prediction index out of the summary. Keep
     # absence_penalty: it moves standings and, on its first live days, "who was
