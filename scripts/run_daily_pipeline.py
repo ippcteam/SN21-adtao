@@ -655,15 +655,23 @@ def stage_publish_report(ledger_root, day):
     # contradicted the weight vector passed as healthy for several runs.
     _funded = sum(1 for m in payload.miner_results if m.tier)
     _reasoned = sum(1 for m in payload.miner_results if m.policies)
-    _unexplained = sum(1 for m in payload.miner_results
-                       if not m.tier and not m.policies)
+    _unexplained_rows = [m for m in payload.miner_results
+                         if not m.tier and not m.policies]
+    _unexplained = len(_unexplained_rows)
     if _unexplained:
         # Naming the two key spaces because every failure here so far has
         # been one identity written two ways, and the counts alone cannot
         # tell "nobody was acted on" apart from "the lookup missed".
+        #
+        # The sample must come from an UNEXPLAINED row. It used to be
+        # miner_results[0] — the first row of the report, which on a healthy
+        # day is a funded miner and tells you nothing about the rows the
+        # message is complaining about. A diagnostic that names an unrelated
+        # hotkey sends the reader looking in the wrong place, which is worse
+        # than printing no hotkey at all.
         _audit = (intent.get("collapse_audit") or {}).get("suppressed") or []
         log(f"[publish-report] {_unexplained} row(s) unfunded with no reason "
-            f"— report hotkey={payload.miner_results[0].hotkey[:12]}.. "
+            f"— report hotkey={_unexplained_rows[0].hotkey[:12]}.. "
             f"audit hotkey={(str(_audit[0])[:12] + '..') if _audit else 'none'} "
             f"earning hotkey={(sorted(_earning)[0][:12] + '..') if _earning else 'none'}")
 
