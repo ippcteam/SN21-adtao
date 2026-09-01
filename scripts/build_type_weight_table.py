@@ -79,6 +79,10 @@ def main() -> int:
     p.add_argument("--out", required=True, help="path for the draft JSON table")
     p.add_argument("--markdown", action="store_true",
                    help="also print the review table")
+    p.add_argument("--focus", default=None,
+                   help="hotkey whose per-type accuracy is shown beside the "
+                        "best miner's (typically the current standings #1 — "
+                        "'the top won't always be the best')")
     args = p.parse_args()
 
     y, m, dd = (int(x) for x in args.end.split("-"))
@@ -132,17 +136,57 @@ def main() -> int:
     print(f"draft table written: {args.out}", flush=True)
 
     if args.markdown:
-        print("\n| family | share | entries | field mean | miners | "
-              "headroom | weight |")
-        print("|---|---|---|---|---|---|---|")
+        review = per_family_review(triples, focus=args.focus,
+                                   miner_min_n=table.miner_min_n)
+        print("\n| family | share | entries | field mean | best miner | "
+              "best mean | top model mean | headroom | weight |")
+        print("|---|---|---|---|---|---|---|---|---|")
         fams = sorted(table.families.items(),
                       key=lambda kv: -kv[1].n_entries)
         for fam, s in fams:
             head = f"{s.headroom:.4f}" if s.headroom is not None else "below gates"
+            r = review.get(fam) or {}
+            best = (f"{str(r.get('best_miner'))[:10]}.."
+                    if r.get("best_miner") else "-")
+            bm = (f"{r['best_mean']:.4f}" if r.get("best_mean") is not None
+                  else "-")
+            fm = (f"{r['focus_mean']:.4f} (n={r['focus_n']})"
+                  if r.get("focus_mean") is not None else "-")
             print(f"| {fam} | {100 * s.freq_share:.1f}% | {s.n_entries} | "
-                  f"{s.field_mean:.4f} | {s.miners_qualified} | {head} | "
+                  f"{s.field_mean:.4f} | {best} | {bm} | {fm} | {head} | "
                   f"{s.weight:.3f} |")
     return 0
+
+
+def per_family_review(triples, focus: str | None, miner_min_n: int) -> dict:
+    """The review columns behind the weights: per family, the best qualified
+    miner and the focus miner (the current table-topper, usually).
+
+    "The top won't always be the best" is the question this answers: the
+    focus column shows the current #1's accuracy per type NEXT TO the best
+    miner's, so a leader carried by easy types is visible at a glance.
+    """
+    from collections import defaultdict
+    from hope.reporting.type_accuracy import type_family
+
+    per: dict = defaultdict(lambda: defaultdict(list))
+    for miner, tkey, score in triples:
+        per[type_family(tkey)][str(miner)].append(float(score))
+
+    out = {}
+    for fam, miners in per.items():
+        qualified = {m: sum(v) / len(v) for m, v in miners.items()
+                     if len(v) >= miner_min_n}
+        row: dict = {}
+        if qualified:
+            best = max(qualified, key=lambda m: (qualified[m], m))
+            row["best_miner"] = best
+            row["best_mean"] = qualified[best]
+        if focus and focus in miners and miners[focus]:
+            row["focus_mean"] = sum(miners[focus]) / len(miners[focus])
+            row["focus_n"] = len(miners[focus])
+        out[fam] = row
+    return out
 
 
 if __name__ == "__main__":

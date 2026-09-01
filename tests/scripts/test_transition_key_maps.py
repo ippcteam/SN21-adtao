@@ -26,6 +26,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -143,3 +145,33 @@ class TestWiring:
         src = inspect.getsource(p)
         assert "shadow" not in src
         assert "os.walk" not in src
+
+
+class TestPerFamilyReview:
+    """The review columns Rob asked for: per type, the best miner beside the
+    current top model — 'the top won't always be the best'."""
+
+    def test_best_and_focus_are_reported_per_family(self):
+        from scripts.build_type_weight_table import per_family_review
+        triples = ([("strong", "BUDGET:x", 0.8)] * 12
+                   + [("weak", "BUDGET:x", 0.4)] * 12
+                   + [("leader", "BUDGET:x", 0.5)] * 12)
+        r = per_family_review(triples, focus="leader", miner_min_n=10)
+        assert r["BUDGET"]["best_miner"] == "strong"
+        assert r["BUDGET"]["best_mean"] == pytest.approx(0.8)
+        assert r["BUDGET"]["focus_mean"] == pytest.approx(0.5)
+        assert r["BUDGET"]["focus_n"] == 12
+
+    def test_an_unqualified_miner_cannot_be_best(self):
+        """Three lucky entries must not appear as 'the best miner'."""
+        from scripts.build_type_weight_table import per_family_review
+        triples = ([("steady", "KEYWORD:x", 0.6)] * 12
+                   + [("lucky", "KEYWORD:x", 0.99)] * 3)
+        r = per_family_review(triples, focus=None, miner_min_n=10)
+        assert r["KEYWORD"]["best_miner"] == "steady"
+
+    def test_focus_absent_from_a_family_shows_nothing_not_zero(self):
+        from scripts.build_type_weight_table import per_family_review
+        triples = [("a", "ASSET:x", 0.5)] * 12
+        r = per_family_review(triples, focus="not-there", miner_min_n=10)
+        assert "focus_mean" not in r["ASSET"]
