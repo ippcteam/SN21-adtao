@@ -474,14 +474,27 @@ def _type_weight_fn(ledger_root):
         log(f"[type-weights] DISABLED — {e}")
         return None
 
-    tkey_provider = _transition_key_provider(ledger_root)
-    cache: dict = {}
+    # Load the WHOLE label union once. The provider interface takes a wanted
+    # set and scans map files until satisfied; calling it per-episode from
+    # inside settle would re-read every file per entry — 31k entries x N
+    # files. One eager load, then every lookup is a dict hit.
+    all_labels: dict = {}
+    root = tkeys_dir(ledger_root)
+    if os.path.isdir(root):
+        for fn_ in sorted(os.listdir(root)):
+            if not fn_.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(root, fn_)) as fh:
+                    m = json.load(fh)
+            except Exception:  # noqa: BLE001 — one bad file degrades to partial
+                continue
+            if isinstance(m, dict):
+                for k, v in m.items():
+                    all_labels.setdefault(str(k), str(v))
 
     def fn(episode_id):
-        eid = str(episode_id)
-        if eid not in cache:
-            cache[eid] = tkey_provider([eid]).get(eid)
-        return table.weight_for(cache[eid])
+        return table.weight_for(all_labels.get(str(episode_id)))
 
     log(f"[type-weights] ACTIVE — {path} ({len(table.families)} families, "
         f"window {table.window_start}..{table.window_end})")

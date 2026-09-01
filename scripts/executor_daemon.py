@@ -72,10 +72,39 @@ def run_pipeline(day: str) -> int:
     return proc.returncode
 
 
+def backfill_tkey_maps_if_sparse(min_maps: int = 10) -> None:
+    """One-time self-heal: label maps for baskets that predate the maps.
+
+    The per-basket transition-key maps (tkeys/) are written at resolve time,
+    so baskets that ran before the maps existed have none — and their entries
+    label as UNKNOWN on the by-type page for up to 36 days. The backfill is
+    idempotent (existing maps are skipped), needs the ledger disk, and this
+    daemon is the only process that mounts it — one-off jobs do not — so the
+    daemon runs it at startup when the maps are sparse. On a healthy host
+    this is one log line and no work.
+    """
+    d = os.path.join(LEDGER_ROOT, "tkeys")
+    have = (len([f for f in os.listdir(d) if f.endswith(".json")])
+            if os.path.isdir(d) else 0)
+    if have >= min_maps:
+        log(f"tkey maps present ({have}) — no backfill needed")
+        return
+    log(f"tkey maps sparse ({have} < {min_maps}) — running backfill")
+    proc = subprocess.run(
+        [sys.executable, "-m", "scripts.backfill_transition_key_maps",
+         "--ledger-root", LEDGER_ROOT, "--days", "40"],
+        cwd=os.path.join(os.path.dirname(__file__), os.pardir))
+    log(f"tkey backfill exited {proc.returncode}")
+
+
 def main():
     log(f"start: trigger>={TRIGGER_HOUR_UTC}:00 UTC, check every "
         f"{CHECK_INTERVAL_S}s, ledger={LEDGER_ROOT}"
         + (f", rerun override for {RERUN_DAY}" if RERUN_DAY else ""))
+    try:
+        backfill_tkey_maps_if_sparse()
+    except Exception as e:   # noqa: BLE001 — labelling must never block the daemon
+        log(f"tkey backfill skipped ({e})")
     rerun_pending = bool(RERUN_DAY)
     while True:
         now = datetime.now(timezone.utc)

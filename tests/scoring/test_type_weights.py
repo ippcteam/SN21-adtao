@@ -111,13 +111,29 @@ class TestBounds:
         ratio = t.families["EXTREME"].weight / t.families["MILD"].weight
         assert ratio <= t.cap / t.floor + 1e-9
 
-    def test_frequency_normalisation_preserves_the_scale(self):
+    def test_frequency_normalisation_is_exact_when_no_clamp_binds(self):
+        """Bounds are the published guarantee and are applied LAST, so scale
+        preservation is exact only when no weight hits the floor or cap —
+        the amendment states it as 'approximately unchanged' for that
+        reason. This pins the exact case…"""
+        entries = (_entries("A", 10, 30, base=0.4, spread=0.02)
+                   + _entries("B", 10, 10, base=0.5, spread=0.012))
+        t = compute_table(entries, **GATES)
+        assert all(t.floor < s.weight < t.cap
+                   for s in t.families.values()), "clamp bound — bad fixture"
+        mass = sum(s.n_entries * s.weight for s in t.families.values())
+        n = sum(s.n_entries for s in t.families.values())
+        assert mass / n == pytest.approx(1.0, abs=1e-9)
+
+    def test_scale_drift_is_bounded_when_a_clamp_binds(self):
+        """…and this bounds the approximate case: even with a binding clamp
+        the frequency-weighted mean multiplier stays near 1."""
         entries = (_entries("A", 10, 30, base=0.4, spread=0.02)
                    + _entries("B", 10, 10, base=0.5, spread=0.005))
         t = compute_table(entries, **GATES)
         mass = sum(s.n_entries * s.weight for s in t.families.values())
         n = sum(s.n_entries for s in t.families.values())
-        assert mass / n == pytest.approx(1.0, abs=1e-9)
+        assert 0.8 <= mass / n <= 1.25
 
     def test_deterministic_for_identical_input(self):
         entries = _entries("A", 8, 15, spread=0.01) + _entries("B", 8, 15)
@@ -203,3 +219,54 @@ class TestDayFlowIntegration:
         out = {e.episode_id: e.weight
                for e in day_flow(self._results(), self.D, type_weight_fn=fn)}
         assert out["e1"] == pytest.approx(2 * out["e0"])
+
+
+class TestBoundsAreTheFinalOperation:
+    def test_no_weight_ever_exceeds_the_cap_after_normalisation(self):
+        """The published guarantee is the bounds. Clamping before the
+        frequency scale let the scale push a weight past the cap — the clamp
+        must be the last thing that touches a weight."""
+        # A dominant low-headroom family drives the scale above 1, which
+        # would lift an at-cap family beyond it if clamped first.
+        entries = (_entries("HUGE_FLAT", 12, 60, base=0.5, spread=0.0005)
+                   + _entries("SPIKY", 12, 15, base=0.2, spread=0.08))
+        t = compute_table(entries, **GATES)
+        for fam, s in t.families.items():
+            assert t.floor - 1e-9 <= s.weight <= t.cap + 1e-9, (fam, s.weight)
+
+
+class TestPipelineGate:
+    def test_no_env_means_off(self, monkeypatch):
+        monkeypatch.delenv("SN21_TYPE_WEIGHTS_FILE", raising=False)
+        from scripts.run_daily_pipeline import _type_weight_fn
+        assert _type_weight_fn("/nonexistent") is None
+
+    def test_a_draft_table_in_env_stays_off(self, tmp_path, monkeypatch):
+        """Setting the env var must not be able to bypass ratification."""
+        t = compute_table(_entries("A", 10, 20, spread=0.02), **GATES)
+        p = tmp_path / "draft.json"
+        t.save(str(p))
+        monkeypatch.setenv("SN21_TYPE_WEIGHTS_FILE", str(p))
+        from scripts.run_daily_pipeline import _type_weight_fn
+        assert _type_weight_fn(str(tmp_path)) is None
+
+    def test_a_ratified_table_activates_and_labels_resolve(self, tmp_path,
+                                                           monkeypatch):
+        from scripts.run_daily_pipeline import (
+            _type_weight_fn,
+            write_transition_key_map,
+        )
+        t = compute_table(_entries("BUDGET", 10, 20, spread=0.02), **GATES)
+        t.status = STATUS_RATIFIED
+        p = tmp_path / "ratified.json"
+        t.save(str(p))
+        write_transition_key_map(str(tmp_path), "BD-x", [{
+            "episode_id": "ep1",
+            "action_bundle": {"bundle_summary":
+                              {"transition_key": "BUDGET:up_large"}},
+        }])
+        monkeypatch.setenv("SN21_TYPE_WEIGHTS_FILE", str(p))
+        fn = _type_weight_fn(str(tmp_path))
+        assert fn is not None
+        assert fn("ep1") == pytest.approx(t.weight_for("BUDGET:up_large"))
+        assert fn("unlabelled-ep") == 1.0

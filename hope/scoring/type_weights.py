@@ -205,11 +205,16 @@ def compute_table(
     raw: dict[str, float] = {}
     for fam, m in measured.items():
         if fam in eligible and med > 0:
-            raw[fam] = min(cap, max(floor, m["headroom"] / med))
+            raw[fam] = m["headroom"] / med
         else:
             raw[fam] = 1.0   # neutral below the gates — never zero
 
-    # frequency normalisation over ALL entries so the standing scale holds
+    # Frequency normalisation FIRST, bounds LAST. The published guarantee is
+    # the bounds — no family below floor or above cap, ever — so the clamp
+    # must be the final operation; clamping before scaling let the scale push
+    # a weight past the cap. The cost is that the frequency-weighted mean
+    # multiplier is exactly 1.0 only when no clamp binds, and approximately
+    # 1.0 otherwise — the amendment states it that way.
     mass = sum(measured[f]["n"] * raw[f] for f in measured)
     scale = (total_n / mass) if mass > 0 else 1.0
 
@@ -220,7 +225,8 @@ def compute_table(
         miner_min_n=miner_min_n, floor=floor, cap=cap,
     )
     for fam, m in measured.items():
-        w = raw[fam] * scale if fam in eligible else 1.0
+        w = (min(cap, max(floor, raw[fam] * scale))
+             if fam in eligible else 1.0)
         table.families[fam] = FamilyStat(
             n_entries=m["n"],
             freq_share=(m["n"] / total_n) if total_n else 0.0,

@@ -72,11 +72,6 @@ def main() -> int:
     for d, entries in source:
         if not entries:
             continue
-        yy, mm, ddd = (int(x) for x in d.split("-"))
-        age = (as_of - date(yy, mm, ddd)).days
-        if age < 0 or age > DEFAULT_WINDOW_DAYS:
-            continue
-        decay = 0.5 ** (age / DEFAULT_HALF_LIFE_DAYS)
         ids = sorted({str(e.get("episode_id")) for e in entries})
         tmap = provider(ids)
         for e in entries:
@@ -85,6 +80,18 @@ def main() -> int:
             if key in seen:
                 continue
             seen.add(key)
+            # Age from the ENTRY's own finalized_on, not the receipt day: a
+            # receipt carries the settle batch, which spans more than one
+            # finalisation day, and the standing decays by entry age.
+            fo = str(e.get("finalized_on") or d)[:10]
+            try:
+                yy, mm, ddd = (int(x) for x in fo.split("-"))
+                age = (as_of - date(yy, mm, ddd)).days
+            except Exception:  # noqa: BLE001 — unparseable date -> skip entry
+                continue
+            if age < 0 or age > DEFAULT_WINDOW_DAYS:
+                continue
+            decay = 0.5 ** (age / DEFAULT_HALF_LIFE_DAYS)
             m_ = str(e.get("miner")); s = float(e.get("score"))
             hw = horizon_entry_weight(int(e.get("horizon_days", 7)))
             w = hw * decay
