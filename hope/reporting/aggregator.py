@@ -608,7 +608,49 @@ def _build_miner_results(
                 policies=_lookup(str(hotkey), policy_notes) or [],
             ))
 
-    return results
+    return _explain_below_the_cut(results, earning_set)
+
+
+def _explain_below_the_cut(results: list[MinerResult],
+                           earning_set: set[str] | None) -> list[MinerResult]:
+    """Give the honest non-earners the one reason no control provides.
+
+    Every other unfunded row carries a note because some control acted on it:
+    the coldkey cap, one-payer, lineage, tenure. A miner who scored, was not
+    suppressed by anything, and simply placed below the paid set is acted on
+    by no control at all — so its row went out blank, and the miner asking
+    "why am I not being paid" got nothing back. Blank reads as an oversight;
+    it is in fact the ordinary outcome of a fixed-size paid set.
+
+    Applied only when we know who is earning. On a held or gated day the
+    earning set is empty because NOBODY was paid from a new vector, and
+    telling a hundred miners they ranked below a cut that was never applied
+    would be a lie the commentary already contradicts.
+
+    Only `scored` rows qualify. A miner that never scored did not lose a
+    ranking contest, and saying so would paper over the real reason with a
+    plausible one — the failure mode this whole per-miner reason field
+    exists to prevent.
+    """
+    if not earning_set:
+        return results
+
+    explained: list[MinerResult] = []
+    for row in results:
+        needs_reason = (row.tier is None
+                        and not row.policies
+                        and row.status == "scored")
+        if not needs_reason:
+            explained.append(row)
+            continue
+        explained.append(row.model_copy(update={"policies": [PolicyOutcome(
+            control="earning_cut",
+            detail=("Ranked below the earning cut. The score stands and the "
+                    "model keeps running — the paid set is a fixed size, so "
+                    "placing outside it is not a penalty and carries nothing "
+                    "forward."),
+        )]}))
+    return explained
 
 
 _EXCLUSION_STATUS_MAP = {

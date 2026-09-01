@@ -63,6 +63,14 @@ Steep, but **no winner-take-all cliff**. Rank-based shares among earners; below 
 
 If fewer than the full curve of earners qualify, shares are re-normalised so weights still sum to 1.0 (ratios preserved).
 
+**If you ranked outside the cap, your row says so.** The paid set is a fixed
+size, so on any day where more than 20 miners qualify, qualifying miners will
+place outside it. That is not a penalty and nothing is held against you: your
+score stands, your model keeps being executed daily, and tenure keeps
+accruing. The daily report shows this on your own row as **"Ranked below the
+earning cut"**, so an unfunded row always carries a reason rather than being
+left blank.
+
 Ties break deterministically: higher standing first; equal standing → miner id ascending.
 
 **Published score threshold:** starts at **0.0** (review-adjustable). At threshold or above earns; strictly below does not.

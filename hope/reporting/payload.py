@@ -148,6 +148,13 @@ class PolicyOutcome(BaseModel):
         "lineage",          # same behaviour lineage as an earlier submission
         "tenure",           # too few scored days to enter the paid set
         "absence_penalty",  # charged for uncovered days
+        # Not a control: nothing acted on this miner. It scored, nothing
+        # suppressed it, and it placed outside a paid set of fixed size.
+        # It lives here because the miner's question is the same one —
+        # "why am I not being paid" — and an empty row answered it with
+        # silence, which reads as an oversight rather than as the ordinary
+        # outcome it is.
+        "earning_cut",
     ]
     detail: str
     counterparty: str | None = None
