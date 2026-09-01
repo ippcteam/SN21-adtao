@@ -175,3 +175,19 @@ class TestPerFamilyReview:
         triples = [("a", "ASSET:x", 0.5)] * 12
         r = per_family_review(triples, focus="not-there", miner_min_n=10)
         assert "focus_mean" not in r["ASSET"]
+
+    def test_focus_rank_counts_only_qualified_miners(self):
+        from scripts.build_type_weight_table import per_family_review
+        triples = ([("a", "T:x", 0.8)] * 12 + [("b", "T:x", 0.6)] * 12
+                   + [("c", "T:x", 0.4)] * 12
+                   + [("lucky", "T:x", 0.99)] * 3)      # unqualified
+        r = per_family_review(triples, focus="b", miner_min_n=10)
+        assert r["T"]["focus_rank"] == 2
+        assert r["T"]["focus_of"] == 3                  # lucky excluded
+
+    def test_an_unqualified_focus_gets_a_mean_but_no_rank(self):
+        from scripts.build_type_weight_table import per_family_review
+        triples = [("a", "T:x", 0.8)] * 12 + [("f", "T:x", 0.9)] * 3
+        r = per_family_review(triples, focus="f", miner_min_n=10)
+        assert r["T"]["focus_mean"] == pytest.approx(0.9)
+        assert "focus_rank" not in r["T"]

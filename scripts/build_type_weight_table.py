@@ -150,8 +150,12 @@ def main() -> int:
                     if r.get("best_miner") else "-")
             bm = (f"{r['best_mean']:.4f}" if r.get("best_mean") is not None
                   else "-")
-            fm = (f"{r['focus_mean']:.4f} (n={r['focus_n']})"
-                  if r.get("focus_mean") is not None else "-")
+            if r.get("focus_mean") is not None:
+                rk = (f" #{r['focus_rank']}/{r['focus_of']}"
+                      if r.get("focus_rank") else "")
+                fm = f"{r['focus_mean']:.4f} (n={r['focus_n']}){rk}"
+            else:
+                fm = "-"
             print(f"| {fam} | {100 * s.freq_share:.1f}% | {s.n_entries} | "
                   f"{s.field_mean:.4f} | {best} | {bm} | {fm} | {head} | "
                   f"{s.weight:.3f} |")
@@ -185,6 +189,15 @@ def per_family_review(triples, focus: str | None, miner_min_n: int) -> dict:
         if focus and focus in miners and miners[focus]:
             row["focus_mean"] = sum(miners[focus]) / len(miners[focus])
             row["focus_n"] = len(miners[focus])
+            # Rank among QUALIFIED miners: "best on what" needs a position,
+            # not just a mean. Unranked when the focus miner itself is below
+            # the qualification bar on this family — a rank computed from
+            # too few entries would be luck presented as skill.
+            if focus in qualified:
+                better = sum(1 for v in qualified.values()
+                             if v > qualified[focus])
+                row["focus_rank"] = better + 1
+                row["focus_of"] = len(qualified)
         out[fam] = row
     return out
 
