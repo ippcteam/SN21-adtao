@@ -357,55 +357,95 @@ def _coldkey_reader(attempts=COLDKEY_READ_ATTEMPTS,
 
 
 
-def _transition_key_provider(ledger_root):
-    """episode_id -> transition_key, from payloads already on this disk.
+def transition_key_map_from_payloads(payloads) -> dict:
+    """episode_id -> transition_key, from the payloads exactly as fetched.
 
-    The executor holds every episode payload it runs (shadow store), so the
-    accuracy-by-type stage needs no network and no credentials. Tolerant of
-    layout (json/jsonl, basket lines or payload dicts), early-exits once all
-    wanted ids are found, and fails soft to {} — daily_loop buckets missing
-    rows as UNKNOWN rather than failing the stage.
+    The id used is the top-level `episode_id` fetch_basket_payloads injects —
+    the SAME id the models echo in their predictions and the settle flow
+    scores under, so the map matches the scorer's key space by construction.
+    """
+    out = {}
+    for p in payloads:
+        if not isinstance(p, dict):
+            continue
+        eid = p.get("episode_id")
+        tkey = ((p.get("action_bundle") or {}).get("bundle_summary")
+                or {}).get("transition_key")
+        if eid is not None and tkey:
+            out[str(eid)] = str(tkey)
+    return out
+
+
+def tkeys_dir(ledger_root: str) -> str:
+    return os.path.join(ledger_root, "tkeys")
+
+
+def write_transition_key_map(ledger_root: str, basket_key: str,
+                             payloads) -> int:
+    """Persist the basket's episode->transition_key map beside the ledger.
+
+    WHY THIS EXISTS (2026-09-01). The accuracy-by-type page — promised to
+    miners in miner_quickstart.md ("win/lose by change type") — showed every
+    one of 31,073 scored entries as UNKNOWN. The old provider walked the
+    shadow store looking for payload-shaped records, but the shadow store
+    holds per-miner PREDICTION rows ({"hotkey", "predictions": {id: ...}})
+    and the payloads themselves are fetched over HTTP each morning and were
+    never written to disk. The provider scanned real files for a shape they
+    do not have, found nothing, and failed soft to {} — so every entry
+    bucketed as UNKNOWN and nothing reported a failure.
+
+    The payloads are in memory at resolve time, so the map is captured here:
+    one small JSON per basket (~1,500 ids), written before any model runs.
+    An episode settles 15-36 days after its basket, so settle reads the map
+    from the file written on the episode's OWN basket day — which is why
+    these persist per-basket instead of living in the run's memory.
+    """
+    m = transition_key_map_from_payloads(payloads)
+    if not m:
+        return 0
+    d = tkeys_dir(ledger_root)
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, f"{basket_key}.json")
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(m, fh, sort_keys=True)
+    os.replace(tmp, path)
+    return len(m)
+
+
+def _transition_key_provider(ledger_root):
+    """episode_id -> transition_key, from the per-basket maps in tkeys/.
+
+    Reads the small map files write_transition_key_map persists at resolve
+    time. Union across all baskets: an episode settling today came from a
+    basket 15-36 days ago, so no single day's map is enough. Fails soft to
+    partial/{} — daily_loop buckets missing ids as UNKNOWN rather than
+    failing the stage, which also covers episodes from baskets that ran
+    before this fix existed (backfill: scripts/backfill_transition_key_maps).
     """
     import json as _json
-
-    def _extract(d):
-        if not isinstance(d, dict):
-            return None, None
-        eid = d.get("episode_id") or d.get("episode_candidate_id")
-        inp = d.get("input") if isinstance(d.get("input"), dict) else d
-        tkey = inp.get("transition_key")
-        if tkey is None and isinstance(inp.get("payload"), dict):
-            pay = inp["payload"]
-            eid = eid or (pay.get("episode_metadata") or {}).get("episode_id")
-            tkey = ((pay.get("action_bundle") or {}).get("bundle_summary")
-                    or {}).get("transition_key")
-        return (str(eid) if eid is not None else None), tkey
 
     def provider(episode_ids):
         wanted = {str(e) for e in episode_ids}
         out = {}
-        root = os.path.join(ledger_root, "shadow")
+        root = tkeys_dir(ledger_root)
         if not os.path.isdir(root):
             return out
-        for dirpath, _dirs, files in os.walk(root):
-            for fn in files:
-                if not fn.endswith((".json", ".jsonl")):
-                    continue
-                p = os.path.join(dirpath, fn)
-                try:
-                    if os.path.getsize(p) > 64 * 1024 * 1024:
-                        continue
-                    with open(p) as fh:
-                        docs = ([_json.loads(ln) for ln in fh if ln.strip()]
-                                if fn.endswith(".jsonl") else [_json.load(fh)])
-                except Exception:  # noqa: BLE001 — unreadable file is not our stage failing
-                    continue
-                for d in docs if isinstance(docs, list) else []:
-                    eid, tkey = _extract(d)
-                    if eid in wanted and tkey and eid not in out:
-                        out[eid] = str(tkey)
-                if wanted <= set(out):
-                    return out
+        for fn in sorted(os.listdir(root)):
+            if not fn.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(root, fn)) as fh:
+                    m = _json.load(fh)
+            except Exception:  # noqa: BLE001 — one bad file must not kill the page
+                continue
+            if not isinstance(m, dict):
+                continue
+            for eid, tkey in m.items():
+                if eid in wanted and tkey and eid not in out:
+                    out[eid] = str(tkey)
+            if wanted <= set(out):
+                break
         return out
 
     return provider
@@ -732,6 +772,17 @@ def main():
         record["stages"]["resolve"] = {"basket": basket_key,
                                        "episodes": len(episodes)}
         log(f"[resolve] basket {basket_key}: {len(episodes)} full payloads")
+
+        # Persist the episode -> transition_key map NOW, while the payloads
+        # are in memory. Settle reads it 15-36 days from now to label each
+        # scored entry's change type; without it the by-type page reads
+        # UNKNOWN for everything (see write_transition_key_map).
+        try:
+            _n = write_transition_key_map(args.ledger_root, basket_key,
+                                          episodes)
+            log(f"[tkey-map] {basket_key}: {_n} transition keys persisted")
+        except Exception as e:   # noqa: BLE001 — labelling, never fatal
+            log(f"[tkey-map] skipped ({e})")
 
         # 0b. fingerprint indexes — build any missing ones NOW, while this
         # process is still light. The one-payer check at settle then reads
