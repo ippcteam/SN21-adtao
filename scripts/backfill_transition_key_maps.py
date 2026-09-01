@@ -26,7 +26,6 @@ from datetime import date, timedelta
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from scripts.run_daily_pipeline import (  # noqa: E402
-    _api_get,
     fetch_basket_payloads,
     tkeys_dir,
     write_transition_key_map,
@@ -50,13 +49,16 @@ def main() -> int:
     if args.basket:
         keys = list(args.basket)
     else:
-        listed = {r.get("release_key")
-                  for r in _api_get("releases").get("releases", [])}
+        # Do NOT filter on the releases listing: it serves only recent
+        # releases, while entries settling today come from baskets 10-36
+        # days old — exactly the ones the listing has aged out. Measured
+        # 2026-09-01: filtering left 69.9% of scored entries unlabelled.
+        # Try every candidate key directly; the package endpoint 404s for
+        # baskets that never existed and the walk records those as failed
+        # fetches (which the summary distinguishes from written maps).
         today = date.today()
-        keys = [k for k in
-                (f"BD-{today - timedelta(days=i)}"
-                 for i in range(1, args.days + 1))
-                if k in listed]
+        keys = [f"BD-{today - timedelta(days=i)}"
+                for i in range(1, args.days + 1)]
 
     done = skipped = failed = 0
     for key in keys:
@@ -70,8 +72,11 @@ def main() -> int:
             print(f"{key}: {n} keys", flush=True)
             done += 1
         except Exception as e:  # noqa: BLE001 — one basket must not stop the walk
-            print(f"{key}: FAILED {e}", flush=True)
-            failed += 1
+            if "404" in str(e):
+                skipped += 1          # basket never existed for that day
+            else:
+                print(f"{key}: FAILED {e}", flush=True)
+                failed += 1
 
     print(f"done={done} skipped={skipped} failed={failed}", flush=True)
     return 0 if failed == 0 else 1

@@ -198,7 +198,14 @@ def compute_table(
             "headroom": head,
         }
 
-    eligible = {f: m for f, m in measured.items() if m["headroom"] is not None}
+    # UNKNOWN is not a change type — it is the absence of a label. It can be
+    # the largest "family" in the input (unlabelled backlog), and on real data
+    # it measured the HIGHEST headroom, which would have handed unlabelled
+    # entries a boost. The published guarantee is that an unknown type weighs
+    # exactly 1.0, so UNKNOWN is reported in the stats but can never be
+    # eligible for a weight.
+    eligible = {f: m for f, m in measured.items()
+                if m["headroom"] is not None and f != "UNKNOWN"}
     heads = [m["headroom"] for m in eligible.values()]
     med = median(heads) if heads else 0.0
 

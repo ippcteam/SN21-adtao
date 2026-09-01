@@ -270,3 +270,22 @@ class TestPipelineGate:
         assert fn is not None
         assert fn("ep1") == pytest.approx(t.weight_for("BUDGET:up_large"))
         assert fn("unlabelled-ep") == 1.0
+
+
+class TestUnknownIsNeverAFamily:
+    def test_a_dominant_unlabelled_bucket_stays_exactly_neutral(self):
+        """Caught by REAL data on 2026-09-01: 69.9% of entries were
+        unlabelled, the UNKNOWN bucket measured the highest headroom, and
+        compute_table handed it weight 1.28 — a BOOST for having no label.
+        UNKNOWN is the absence of a type, not a type; whatever it measures,
+        its weight is exactly 1.0."""
+        entries = (
+            [(f"m{i}", None, 0.4 + i * 0.02) for i in range(12)
+             for _ in range(30)]                       # unlabelled, separable
+            + _entries("BUDGET", 12, 20, base=0.55, spread=0.002)
+            + _entries("TARGET", 12, 20, base=0.5, spread=0.02))
+        t = compute_table(entries, **GATES)
+        assert t.families["UNKNOWN"].weight == 1.0
+        assert t.weight_for(None) == 1.0
+        # the real families still weight relative to each other
+        assert t.families["TARGET"].weight > t.families["BUDGET"].weight
