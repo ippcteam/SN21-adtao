@@ -171,6 +171,22 @@ def build_mirror_items(ledger_root: str,
         # receipts from reaching miners.
         pass
 
+    # The cumulative Prediction Performance document — the latest one only,
+    # at a stable path. Like the series it is a convenience surface derived
+    # entirely from the receipts above, so a reader can recompute it.
+    try:
+        perf_dir = os.path.join(ledger_root, "prediction_performance")
+        if os.path.isdir(perf_dir):
+            perf_days = sorted(n[:-5] for n in os.listdir(perf_dir)
+                               if n.endswith(".json"))
+            if perf_days:
+                with open(os.path.join(perf_dir,
+                                       f"{perf_days[-1]}.json")) as fh:
+                    items.append({"path": "/v1/daily/prediction-performance",
+                                  "body": json.load(fh)})
+    except Exception:
+        pass
+
     # Absence penalties change standings, and standings must stay
     # reproducible from public documents alone — so the applied-penalty log
     # publishes beside the receipts. Empty log publishes as an empty list,

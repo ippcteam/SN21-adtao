@@ -778,6 +778,115 @@ def stage_publish_report(ledger_root, day):
     return out
 
 
+# ---- prediction performance (cumulative by-change-type page) -----------------
+
+def _load_receipt_entries(ledger_root):
+    """Every per-(episode,horizon,miner) entry from every published receipt.
+
+    The receipts are the page's only score source — same discipline as the
+    winner series: nothing on the page that cannot be recomputed from the
+    published per-entry documents. One unreadable receipt is skipped, not
+    fatal."""
+    directory = os.path.join(ledger_root, "receipts")
+    if not os.path.isdir(directory):
+        return
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".json") or name.startswith("_"):
+            continue
+        try:
+            with open(os.path.join(directory, name)) as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        yield from (doc.get("document") or doc).get("entries") or []
+
+
+def _load_tkey_and_basket_maps(ledger_root):
+    """episode -> (transition_key, basket day) from the per-basket maps.
+
+    The filename carries the basket day (BD-YYYY-MM-DD.json), which is what
+    decides rich-era membership — the cutoff is by the basket that carried
+    the episode, never by when it settled."""
+    key_of: dict = {}
+    basket_day_of: dict = {}
+    root = tkeys_dir(ledger_root)
+    if not os.path.isdir(root):
+        return key_of, basket_day_of
+    for fn in sorted(os.listdir(root)):
+        if not (fn.startswith("BD-") and fn.endswith(".json")):
+            continue
+        bday = fn[3:-5]
+        try:
+            with open(os.path.join(root, fn)) as fh:
+                m = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(m, dict):
+            continue
+        for eid, tkey in m.items():
+            key_of.setdefault(str(eid), str(tkey))
+            basket_day_of.setdefault(str(eid), bday)
+    return key_of, basket_day_of
+
+
+def stage_publish_performance(ledger_root, day):
+    """Build the cumulative Prediction Performance document and POST it to
+    the CMS as a draft. Same publish gate and same identity sources as the
+    daily report, so the two public surfaces cannot disagree about who the
+    winner is or whether publishing is open.
+
+    Fail-soft end to end: the document also lands on disk (and from there on
+    the public mirror) even when the CMS post fails, so a rejected POST
+    never makes the day's numbers unavailable."""
+    allowed, reason = _report_publish_gate()
+    if not allowed:
+        return {"published": False, "gated": True, "reason": reason}
+
+    from hope.reporting.prediction_performance import (
+        build_performance_document,
+    )
+
+    winner = None
+    intent_path = os.path.join(ledger_root, f"intended_weights_{day}.json")
+    if os.path.exists(intent_path):
+        with open(intent_path) as fh:
+            standings = json.load(fh).get("standings") or {}
+        if standings:
+            winner = max(standings, key=lambda hk: float(standings[hk]))
+
+    uid_by_hotkey = _uid_by_hotkey() or {}
+    key_of, basket_day_of = _load_tkey_and_basket_maps(ledger_root)
+    doc = build_performance_document(
+        _load_receipt_entries(ledger_root), key_of, basket_day_of,
+        as_of=str(day), winner=winner, uid_of=uid_by_hotkey)
+
+    out_dir = os.path.join(ledger_root, "prediction_performance")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"{day}.json")
+    tmp = out_path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(doc, fh, sort_keys=True)
+    os.replace(tmp, out_path)
+
+    api_key = os.environ.get("SN21_LEADERBOARD_API_KEY", "")
+    if not api_key:
+        return {"published": False, "written": out_path,
+                "reason": "SN21_LEADERBOARD_API_KEY unset"}
+    endpoint = (os.environ.get("SN21_PERFORMANCE_ENDPOINT")
+                or "https://cms.adtao.io/api/sn21-prediction-performance")
+    import httpx
+    resp = httpx.post(endpoint, json=doc, timeout=30.0, headers={
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    })
+    return {"published": 200 <= resp.status_code < 300,
+            "status": resp.status_code,
+            "entries": doc["totals"]["entries"],
+            "groups": doc["totals"]["groups"],
+            "winner_uid": doc["winner_uid"],
+            "written": out_path}
+
+
 # ---- run record --------------------------------------------------------------
 
 def write_run_record(ledger_root, record):
@@ -942,6 +1051,16 @@ def main():
     except Exception as e:   # noqa: BLE001
         record["stages"]["publish_report"] = {"error": str(e)}
         log(f"[publish-report] ERROR {e}")
+
+    # 5b. publish the cumulative Prediction Performance document (same gate
+    #     as the report; fail-soft — the page must never block the pipeline)
+    try:
+        s = stage_publish_performance(args.ledger_root, day)
+        record["stages"]["publish_performance"] = s
+        log(f"[publish-performance] {json.dumps(s, default=str)}")
+    except Exception as e:   # noqa: BLE001
+        record["stages"]["publish_performance"] = {"error": str(e)}
+        log(f"[publish-performance] ERROR {e}")
 
     # 6. sync the verification feeds to the operator API mirror. The public
     #    validator API serves a different host's ledger, so without this push

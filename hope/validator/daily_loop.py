@@ -254,8 +254,34 @@ def run_daily_loop(
                 aggregate_type_accuracy,
                 build_scored_entries,
             )
+            # The "winning model" column is the day's leaderboard #1 —
+            # recomputed from the ledger as of THIS day with the same
+            # half-life the live standing uses, so the accuracy table and
+            # the leaderboard cannot name different winners. Deterministic
+            # tie-break matches the winner series: standing, evidence,
+            # hotkey. Without this the table published with the winner
+            # column empty on every report.
+            _winner = None
+            try:
+                from hope.scoring.episode_average import (
+                    episode_weighted_average,
+                )
+                from hope.scoring.standing_ledger import load_entries
+                _by_miner = load_entries(ledger_root, day)
+                _standing = {
+                    hk: s for hk, eps in _by_miner.items()
+                    if (s := episode_weighted_average(eps, day)) is not None
+                }
+                if _standing:
+                    _winner = max(
+                        _standing,
+                        key=lambda hk: (_standing[hk],
+                                        len(_by_miner.get(hk) or ()), hk))
+            except Exception:                        # noqa: BLE001
+                _winner = None
             agg = aggregate_type_accuracy(
-                build_scored_entries(horizon_results, _tkey_map))
+                build_scored_entries(horizon_results, _tkey_map),
+                champion_miner=_winner)
             _ta_dir = os.path.join(ledger_root, "accuracy_by_type")
             os.makedirs(_ta_dir, exist_ok=True)
             _ta_path = os.path.join(_ta_dir, f"{day}.json")
