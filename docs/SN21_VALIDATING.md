@@ -40,6 +40,10 @@ and set it on chain. Consensus then does what consensus does.
 4. **Set the weights** from your validator loop: map hotkeys to UIDs
    through the metagraph, normalise, and call `set_weights` with the
    subnet's current `version_key` (the `weights_version` hyperparameter).
+   A complete reference loop ships in this repository —
+   `scripts/run_partner_validator.py` — configured entirely through
+   environment variables; run it as-is or use it as the starting point
+   for your own.
 
 ## The four things that look broken but are not
 
