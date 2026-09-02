@@ -171,6 +171,16 @@ def build_mirror_items(ledger_root: str,
         # receipts from reaching miners.
         pass
 
+    # Admission verdicts — so "was my model admitted?" is answerable from
+    # outside (two miners asked on the same day and the record could not
+    # answer). Everything in it is already public at source.
+    try:
+        from hope.publication.verdict_feed import build_verdicts_document
+        items.append({"path": "/v1/daily/admission-verdicts",
+                      "body": build_verdicts_document(ledger_root)})
+    except Exception:
+        pass
+
     # The cumulative Prediction Performance document — the latest one only,
     # at a stable path. Like the series it is a convenience surface derived
     # entirely from the receipts above, so a reader can recompute it.
