@@ -57,6 +57,9 @@ def record_day(root: str, day: str, model: ShadowModel, result: RunResult) -> st
             "day": day, "hotkey": model.hotkey, "image_digest": model.image_digest,
             "ok": result.ok, "error": result.error,
             "episodes_in": result.episodes_in, "predictions_out": result.predictions_out,
+            # How long the model actually took — the evidence the wall
+            # ceiling gets chosen from. None = the run never started.
+            "duration_s": getattr(result, "duration_s", None),
             "predictions": result.predictions,
         }, default=str) + "\n")
     return path

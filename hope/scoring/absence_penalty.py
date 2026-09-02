@@ -98,6 +98,13 @@ def penalty_score(environ=os.environ) -> float:
         return DEFAULT_PENALTY_SCORE
 
 
+# The run budget the CONTRACT publishes (MINER_MODEL_SPEC: 15 CPU-minutes
+# per basket). Not the enforced wall ceiling — while operations runs a
+# tighter ceiling than this, a model stopped at that ceiling was stopped
+# by us, and `operator_fault` reads a timeout against THIS number.
+PUBLISHED_RUN_BUDGET_S = 15 * 60
+
+
 def _log_path(root: str) -> str:
     return os.path.join(standing_ledger.standing_dir(root),
                         "_absence_penalties.jsonl")
@@ -145,12 +152,61 @@ def chargeable_hotkeys(root: str, day: date,
     return ranked | active
 
 
-def compute_penalties(root: str, day: date) -> list[dict]:
+def operator_fault(error: str | None, wall_budget_s: int | None = None) -> bool:
+    """Is this day-run failure OURS rather than the miner's?
+
+    WHY THIS EXISTS (2026-09-02). The rule charges a miner for what it did
+    not deliver, and until now it read coverage alone: episodes_in minus
+    predictions_out, whatever the reason. So a day when OUR side could not
+    fetch the image, or cut the run off early, was charged exactly like a
+    miner who never showed up. Four models were charged that way on
+    2026-09-01 — one of them the best budget-change model on the subnet.
+
+    The execution layer already draws this line (container_runner: "a
+    pull/verify failure is NOT a run failure ... so a registry problem
+    never strikes a miner the way a crashing container would"); the
+    penalty simply never asked. Now it asks.
+
+    OURS: the image could not be pulled, the host had no disk, the sandbox
+    was unavailable — the model never got a fair chance to run.
+
+    THEIRS: the container ran and crashed, had no entrypoint, or printed
+    nothing usable. That is what the rule is for.
+
+    A TIMEOUT IS OURS ONLY WHEN WE UNDER-BUDGETED. A model that outruns
+    the budget we publish is the miner's problem; a model stopped before
+    reaching that budget was stopped by us. `wall_budget_s` is the budget
+    in force for the day being judged (None = don't attribute timeouts to
+    us, which is the fail-safe direction for an unknown budget: it charges
+    the miner, so it must only ever be taken deliberately).
+    """
+    if not error:
+        return False
+    err = str(error)
+    for marker in ("pull_failed", "pull timeout>", "disk_low",
+                   "sandbox_not_available"):
+        if err.startswith(marker):
+            return True
+    if err.startswith("timeout>") and wall_budget_s:
+        # "timeout>120s" — the ceiling that actually stopped this run.
+        digits = "".join(c for c in err[len("timeout>"):] if c.isdigit())
+        if digits and int(digits) < wall_budget_s:
+            return True
+    return False
+
+
+def compute_penalties(root: str, day: date,
+                      published_budget_s: int | None = None) -> list[dict]:
     """What day `day` charges, as plain dicts. Pure read, no flag check.
 
     [] when the subnet did not run. Every chargeable hotkey owes one entry
     per episode of the day it did not return a scoreable prediction for —
     a fully absent hotkey owes the whole day.
+
+    A hotkey whose day failed on OUR side is not charged at all: see
+    `operator_fault`. `published_budget_s` is the run budget the contract
+    promised for that day, which is what decides whether a timeout was the
+    miner outrunning the budget or us cutting them short.
     """
     if day < EFFECTIVE_FROM:
         return []
@@ -164,9 +220,16 @@ def compute_penalties(root: str, day: date) -> list[dict]:
     if day_episodes <= 0:
         return []
     done = applied(root)
+    status = shadow.day_run_status(root, d)
     out: list[dict] = []
     for hk in sorted(chargeable_hotkeys(root, day)):
         if (d, hk) in done:
+            continue
+        ok, error = status.get(hk, (None, None))
+        if ok is False and operator_fault(error, published_budget_s):
+            # The model was scheduled and OUR side failed it — no charge.
+            # It simply adds no evidence for the day, like a censored
+            # horizon: absence of a fair chance is not absence.
             continue
         eps_in, preds_out = coverage.get(hk, (0, 0))
         missed = (day_episodes if hk not in coverage
@@ -184,7 +247,8 @@ def apply_penalties(root: str, day: date, environ=os.environ) -> dict:
     written = 0
     for n in range(CATCHUP_DAYS - 1, -1, -1):
         d = day - timedelta(days=n)
-        for p in compute_penalties(root, d):
+        for p in compute_penalties(root, d,
+                                   published_budget_s=PUBLISHED_RUN_BUDGET_S):
             entries = [WeightedEntry(miner=p["hotkey"], score=score,
                                      weight=PENALTY_ENTRY_WEIGHT,
                                      entered_on=d)

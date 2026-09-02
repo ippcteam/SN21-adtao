@@ -46,6 +46,11 @@ class RunResult:
     error: str | None = None
     episodes_in: int = 0
     predictions_out: int = 0
+    # Wall-clock seconds the model actually took, None when the run never
+    # started (pull failure, low disk). Recorded so the wall ceiling is a
+    # number chosen from measured spread, not judgement — the 2026-09-01
+    # ceiling was set blind and cut off three real models.
+    duration_s: float | None = None
 
 
 def docker_command(image_digest: str, memory: str = DEFAULT_MEMORY,

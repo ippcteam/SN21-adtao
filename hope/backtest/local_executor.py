@@ -23,6 +23,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from collections.abc import Iterable
 
 from hope.backtest.container_runner import RunResult, _parse_output
@@ -131,13 +132,17 @@ def run_basket_local(
             as_limit_bytes=_as_limit_bytes(),
             **({"wall_timeout": wall} if wall else {}),
         )
+        _t0 = time.monotonic()
         result = run_sandboxed(spec, stdin_blob)
+        _took = round(time.monotonic() - _t0, 1)
         if not result.ok:
-            return RunResult(ok=False, error=result.error, episodes_in=len(eps))
+            return RunResult(ok=False, error=result.error, episodes_in=len(eps),
+                             duration_s=_took)
 
         preds = _parse_output(result.stdout, ids)
         return RunResult(ok=True, predictions=preds,
-                         episodes_in=len(eps), predictions_out=len(preds))
+                         episodes_in=len(eps), predictions_out=len(preds),
+                         duration_s=_took)
     finally:
         cleanup_rootfs(dest)
 

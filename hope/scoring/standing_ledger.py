@@ -69,21 +69,74 @@ def append_entries(root: str, entries: Iterable[WeightedEntry]) -> int:
     return n
 
 
+def _cancellations_path(root: str) -> str:
+    return os.path.join(standing_dir(root), "_absence_cancellations.jsonl")
+
+
+def load_cancellations(root: str) -> list[dict]:
+    """Charge cancellations, oldest first — the published correction record.
+
+    WHY THIS EXISTS (2026-09-02, Rob's ruling). Four models were charged
+    absence for failures on the OPERATOR side — one image our host could
+    not pull, three runs our wall ceiling cut off below the published
+    budget. The rails are append-only by promise: a charge, once written,
+    is never deleted, or nobody could recompute our history. So a wrong
+    charge is corrected the same way everything on the rails changes — a
+    NEW record. Each cancellation names the (day, hotkey) it cancels, how
+    many entries, and why; the charge and its cancellation both stay
+    readable forever, and the log publishes beside the penalty log.
+    """
+    p = _cancellations_path(root)
+    if not os.path.exists(p):
+        return []
+    out = []
+    with open(p) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                out.append(json.loads(line))
+    return out
+
+
+def record_cancellation(root: str, day: str, hotkey: str, missed: int,
+                        score: float, weight: float, reason: str) -> None:
+    """Append one charge cancellation. The score/weight travel with the
+    record so the exclusion needs no import from the penalty module."""
+    os.makedirs(standing_dir(root), exist_ok=True)
+    with open(_cancellations_path(root), "a") as f:
+        f.write(json.dumps({"day": day, "hotkey": hotkey, "missed": int(missed),
+                            "score": float(score), "weight": float(weight),
+                            "reason": reason}) + "\n")
+
+
 def load_entries(
     root: str,
     as_of: date,
     window_days: int = DEFAULT_WINDOW_DAYS,
 ) -> dict[str, list[ScoredEpisode]]:
-    """Load every miner's in-window entries as ScoredEpisode lists."""
+    """Load every miner's in-window entries as ScoredEpisode lists.
+
+    Cancelled penalty entries are excluded HERE, at the one point every
+    standings consumer reads through — the weights step, the winner
+    column, the report — so a cancellation cannot half-apply. For each
+    cancellation record, up to `missed` entries matching its (day, score,
+    weight) are dropped from that miner's list; real scored entries never
+    match a penalty's (0.0, 1.0) signature on the charge day because
+    penalty weight 1.0 is used by no scoring path.
+    """
     d = standing_dir(root)
     if not os.path.isdir(d):
         return {}
+    cancelled: dict[str, list[dict]] = {}
+    for c in load_cancellations(root):
+        cancelled.setdefault(c["hotkey"], []).append(dict(c))
     cutoff = as_of - timedelta(days=window_days)
     out: dict[str, list[ScoredEpisode]] = {}
     for name in sorted(os.listdir(d)):
         if not name.endswith(".jsonl") or name.startswith("_"):
             continue
         hotkey = name[:-6]
+        my_cancels = cancelled.get(hotkey) or []
         eps: list[ScoredEpisode] = []
         with open(os.path.join(d, name)) as f:
             for line in f:
@@ -94,6 +147,16 @@ def load_entries(
                 scored_on = date.fromisoformat(rec["day"])
                 if scored_on < cutoff:
                     continue
+                if my_cancels:
+                    c = next((c for c in my_cancels
+                              if c["missed"] > 0
+                              and c["day"] == rec["day"]
+                              and float(rec["score"]) == c["score"]
+                              and float(rec.get("weight", 1.0)) == c["weight"]),
+                             None)
+                    if c is not None:
+                        c["missed"] -= 1
+                        continue
                 eps.append(ScoredEpisode(
                     score=float(rec["score"]),
                     scored_on=scored_on,

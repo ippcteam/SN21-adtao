@@ -193,11 +193,17 @@ def build_mirror_items(ledger_root: str,
     # which is itself the statement "no penalties have been charged".
     try:
         from hope.scoring.absence_penalty import penalty_log
+        from hope.scoring.standing_ledger import load_cancellations
         items.append({"path": "/v1/daily/absence-penalties",
                       "body": {"note": ("every applied absence penalty: one "
                                         "standing entry per missed episode "
-                                        "at the published floor score"),
-                               "penalties": penalty_log(ledger_root)}})
+                                        "at the published floor score. A "
+                                        "charge caused by an operator-side "
+                                        "failure is corrected by a record in "
+                                        "`cancellations`, never deleted — "
+                                        "standings exclude cancelled entries."),
+                               "penalties": penalty_log(ledger_root),
+                               "cancellations": load_cancellations(ledger_root)}})
     except Exception:
         pass
 

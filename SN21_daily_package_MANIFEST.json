@@ -1,0 +1,23 @@
+{
+  "package": "SN21 daily data package (PRIVATE \u2014 evaluation set, do NOT distribute to miners)",
+  "built_utc": "2026-08-17T15:55:54Z",
+  "basket_range": "2026-08-01..2026-08-17",
+  "records": 2014,
+  "horizons_settled": {
+    "7d": 2014,
+    "14d": 0,
+    "28d": 0
+  },
+  "outcome_finalized_dates": [
+    "2026-08-11",
+    "2026-08-12",
+    "2026-08-13",
+    "2026-08-14",
+    "2026-08-15",
+    "2026-08-16",
+    "2026-08-17"
+  ],
+  "most_recent_outcome": "2026-08-17",
+  "sha256": "2c07d9efebe4d3b5a0d4bb3070ffec795b88ea23332a2a02c2c237b058535ab9",
+  "size_bytes": 30005468
+}
