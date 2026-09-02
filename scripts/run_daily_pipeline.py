@@ -798,7 +798,12 @@ def _load_receipt_entries(ledger_root):
                 doc = json.load(fh)
         except (OSError, ValueError):
             continue
-        yield from (doc.get("document") or doc).get("entries") or []
+        # The receipt file is a signed envelope: entries sit at
+        # document.metrics.entries (verified against the live feed on
+        # 2 Sept — reading document.entries silently yields nothing).
+        doc = doc.get("document") or doc
+        metrics = doc.get("metrics") or doc
+        yield from metrics.get("entries") or []
 
 
 def _load_tkey_and_basket_maps(ledger_root):
