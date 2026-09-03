@@ -103,17 +103,25 @@ def _mean(values) -> float | None:
 class _Cell:
     """One (rollup row, horizon) accumulator."""
 
-    __slots__ = ("scores", "comp_sums", "comp_n", "by_miner")
+    __slots__ = ("scores", "comp_sums", "comp_n", "by_miner", "episodes")
 
     def __init__(self):
         self.scores: list[float] = []
         self.comp_sums = dict.fromkeys(COMPONENT_KEYS, 0.0)
         self.comp_n = 0
         self.by_miner: dict[str, list[float]] = defaultdict(list)
+        # Distinct account changes behind this cell. `scores` counts model
+        # PREDICTIONS (one change scored by every model), which is why a row
+        # can read "119" — one change, 119 models. Tracking episodes lets the
+        # page show changes and predictions apart (Rob, 3 Sept).
+        self.episodes: set[str] = set()
 
-    def add(self, miner: str, score: float, components: Mapping | None):
+    def add(self, miner: str, score: float, components: Mapping | None,
+            episode_id: str | None = None):
         self.scores.append(score)
         self.by_miner[miner].append(score)
+        if episode_id is not None:
+            self.episodes.add(episode_id)
         if components and all(k in components for k in COMPONENT_KEYS):
             for k in COMPONENT_KEYS:
                 self.comp_sums[k] += float(components[k])
@@ -133,6 +141,7 @@ class _Cell:
         winner_scores = self.by_miner.get(winner) if winner else None
         return {
             "n": len(self.scores),
+            "episodes": len(self.episodes),
             "field_mean": _mean(self.scores),
             "best": best,
             "winner": ({"uid": uid_of.get(winner),
@@ -202,7 +211,7 @@ def build_performance_document(
             cell = cells.get(ck)
             if cell is None:
                 cell = cells[ck] = _Cell()
-            cell.add(miner, score, comp)
+            cell.add(miner, score, comp, episode_id=eid)
 
     labels = {k: label for k, label, _ in GROUP_DEFS}
     labels["other"] = "Other changes"
