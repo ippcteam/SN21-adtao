@@ -873,6 +873,17 @@ def stage_publish_performance(ledger_root, day):
         json.dump(doc, fh, sort_keys=True)
     os.replace(tmp, out_path)
 
+    # NEVER overwrite a good page with an empty one. If this run computed no
+    # entries (a receipt-loading gap, an empty ledger, a bad day), publishing
+    # would blank the public page — the CMS upserts by as_of, so a zero-entry
+    # doc becomes the latest and the page reads empty. Hold instead: the last
+    # good document stays live and a real run repairs it. (Observed 3 Sept: a
+    # disk-path run produced 0 entries and blanked the page until republished.)
+    if doc["totals"]["entries"] == 0:
+        return {"published": False, "written": out_path,
+                "reason": "refused: 0 entries would blank the page",
+                "entries": 0}
+
     api_key = os.environ.get("SN21_LEADERBOARD_API_KEY", "")
     if not api_key:
         return {"published": False, "written": out_path,
