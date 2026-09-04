@@ -101,6 +101,23 @@ def test_failed_allocation_skips_commit_and_keeps_prior_vector(daily_env, monkey
     commit.assert_not_called()
 
 
+def test_none_subtensor_skips_commit_without_crashing(daily_env):
+    # A brief RPC outage leaves the runner's subtensor None (init_bittensor
+    # swallows the connection error and sets no_chain). The daily commit path
+    # must skip cleanly — prior on-chain vector stands — rather than raise
+    # AttributeError on subtensor.metagraph.
+    commit = mock.Mock()
+    with mock.patch(
+        "hope.validator.onchain_runner.commit_weights_layer_9c3", commit,
+    ):
+        res = run_daily_weights_only(
+            subtensor=None, validator_wallet=object(), netuid=21)
+
+    assert not res.success
+    assert "chain unreachable" in res.message
+    commit.assert_not_called()
+
+
 def test_no_placement_eligible_standings_skips_commit(daily_env, monkeypatch):
     # An empty (but successful) allocation is the "nobody placement-eligible"
     # day — also a skip, never an empty-vector wipe.

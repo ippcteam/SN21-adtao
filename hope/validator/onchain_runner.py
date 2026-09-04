@@ -905,6 +905,16 @@ def run_daily_weights_only(*, subtensor, validator_wallet, netuid):
     weights standing exactly as the epoch path would.
     """
     import os as _os
+    if subtensor is None:
+        # Chain unreachable this tick: init_bittensor swallows a connection
+        # failure and leaves the subtensor None. Skip cleanly — the prior
+        # on-chain vector stands and the daemon retries next tick — rather than
+        # raising AttributeError on subtensor.metagraph.
+        return WeightsCommitResult(
+            success=False,
+            message="chain unreachable (no subtensor); skipping weights commit",
+            block_number=None, block_hash=None, extrinsic_hash=None,
+        )
     mg = subtensor.metagraph(netuid)
     uid_by_ss58 = {str(mg.hotkeys[i]): int(mg.uids[i])
                    for i in range(len(mg.hotkeys))}
