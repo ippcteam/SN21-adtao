@@ -40,7 +40,7 @@ class TestDefaultsReproduceTheRuleInForce:
         assert prior_mass_from_env(env) == 0.0
         assert standing_method.method_params(env) == {
             "mode": "absolute", "half_life_days": 12.0, "prior_mass": 0.0, "window_days": 35,
-            "promotion_margin_abs": None}
+            "promotion_margin_abs": None, "curve_score_threshold": 0.0}
 
     def test_absolute_mode_reads_the_ledger(self, tmp_path):
         root = str(tmp_path)
@@ -149,7 +149,7 @@ class TestWindowAndPromotionMargin:
                "SN21_PROMOTION_MARGIN_ABS": "0.01"}
         assert standing_method.method_params(env) == {
             "mode": "episode_relative", "half_life_days": 7.0, "prior_mass": 250.0,
-            "window_days": 28, "promotion_margin_abs": 0.01}
+            "window_days": 28, "promotion_margin_abs": 0.01, "curve_score_threshold": -1.0}
         assert standing_method.promotion_margin_abs({}) is None
 
     def test_absolute_margin_replaces_relative_test(self):
@@ -165,3 +165,24 @@ class TestWindowAndPromotionMargin:
         assert absp.state.challenger is None          # 0.012 < 0.005 + 0.01
         absp2 = observe_day(state, date(2026, 9, 4), {"champ": 0.005, "chal": 0.02}, days, PromotionParams(margin_abs=0.01))
         assert absp2.state.challenger == "chal"
+
+
+class TestTopTwentyEarnUnderTheRelativeStanding:
+    def test_threshold_follows_the_mode(self):
+        assert standing_method.curve_score_threshold({}) == 0.0
+        assert standing_method.curve_score_threshold({"SN21_STANDING_MODE": "episode_relative"}) == -1.0
+        assert standing_method.curve_score_threshold({"SN21_STANDING_MODE": "episode_relative",
+                                                      "SN21_CURVE_SCORE_THRESHOLD": "-0.5"}) == -0.5
+        assert standing_method.method_params({"SN21_STANDING_MODE": "episode_relative"})["curve_score_threshold"] == -1.0
+
+    def test_curve_pays_twenty_by_rank_with_negative_standings(self):
+        from hope.scoring.weight_curve import CurveParams, curve_weights
+        standings = {f"m{i:02d}": 0.03 - 0.004 * i for i in range(25)}   # 8 above the field, 17 below
+        paid_default = {m for m, w in curve_weights(standings, CurveParams()).items() if w > 0}
+        paid_relative = {m for m, w in curve_weights(standings, CurveParams(score_threshold=-1.0)).items() if w > 0}
+        assert len(paid_default) == 8                 # a 0.0 threshold reads "the field" and cuts the set
+        assert len(paid_relative) == 20               # the published cap, by rank
+        w = curve_weights(standings, CurveParams(score_threshold=-1.0))
+        top = sorted(w.items(), key=lambda kv: -kv[1])
+        assert top[0][1] == pytest.approx(0.50 / sum([0.50, 0.25, 0.10] + [0.10 * 0.5 ** i for i in range(1, 18)]))
+        assert top[1][1] / top[0][1] == pytest.approx(0.5) and top[2][1] / top[1][1] == pytest.approx(0.4)

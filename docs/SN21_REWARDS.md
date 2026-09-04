@@ -75,6 +75,12 @@ Ties break deterministically: higher standing first; equal standing → miner id
 
 **Published score threshold:** starts at **0.0** (review-adjustable). At threshold or above earns; strictly below does not.
 
+> Under the relative standing method ([SN21_SCORING.md](./SN21_SCORING.md),
+> rule amendment of 2026-09-04) a standing of 0.0 means "level with the
+> field", so the threshold is **not applied** there: the top **20** by
+> standing earn the shares above, exactly as this table states. The threshold
+> in force is published in each day's allocation audit.
+
 ## Placement eligibility
 
 You need enough scored predictions in the standing window before the curve can place you:

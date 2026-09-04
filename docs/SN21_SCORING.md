@@ -175,6 +175,7 @@ every honest entry.
 | Prior mass toward the field | none | 250 |
 | Window | 35 days | 28 days |
 | Champion promotion lead | 5% relative | 0.01 absolute (see rewards doc) |
+| Weight-curve score threshold | 0.0 | not applied: the top 20 by standing earn the published shares |
 
 **What this means for a new model.** Its first entries land 15 days after
 its first basket (the 7-day horizon plus the 7-day settling window), the

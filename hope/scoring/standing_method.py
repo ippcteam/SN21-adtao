@@ -66,6 +66,28 @@ PENALTY_SCORE = 0.0             # the published floor
 PROMOTION_MARGIN_ABS_ENV = "SN21_PROMOTION_MARGIN_ABS"
 
 
+# The weight curve's score threshold. Published as 0.0 for the absolute
+# standing ("at threshold or above earns"). A RELATIVE standing sits at 0.0
+# when a miner matches the field, so reading the same 0.0 there would pay
+# only miners above the field and cut the earning set below the published
+# twenty. Under the relative mode the threshold is therefore not applied
+# (-1.0, below any achievable relative standing): the top twenty by standing
+# earn the published shares exactly as the rewards doc states. Explicit env
+# wins in either mode.
+CURVE_THRESHOLD_ENV = "SN21_CURVE_SCORE_THRESHOLD"
+RELATIVE_CURVE_THRESHOLD = -1.0
+
+
+def curve_score_threshold(environ=os.environ) -> float:
+    raw = (environ.get(CURVE_THRESHOLD_ENV) or "").strip()
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return RELATIVE_CURVE_THRESHOLD if relative_enabled(environ) else 0.0
+
+
 def promotion_margin_abs(environ=os.environ) -> float | None:
     try:
         v = float((environ.get(PROMOTION_MARGIN_ABS_ENV) or "").strip())
@@ -91,6 +113,7 @@ def method_params(environ=os.environ) -> dict:
         "prior_mass": prior_mass_from_env(environ),
         "window_days": window_from_env(environ),
         "promotion_margin_abs": promotion_margin_abs(environ),
+        "curve_score_threshold": curve_score_threshold(environ),
     }
 
 
