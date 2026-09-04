@@ -236,6 +236,10 @@ def build_performance_document(
 
     total_entries = sum(len(c.scores) for (g, rk, _h), c in cells.items()
                         if rk == "__group__")
+    # Distinct changes on the page (any horizon): the number the headline
+    # tile shows, counted once so it can be placed against the funnel.
+    settled_episodes = len(set().union(*[c.episodes for (g, rk, _h), c in cells.items()
+                                         if rk == "__group__"]) if cells else set())
     return {
         "feed": "sn21-prediction-performance",
         "as_of": as_of,
@@ -245,6 +249,7 @@ def build_performance_document(
         "groups": groups,
         "totals": {
             "entries": total_entries,
+            "settled_episodes": settled_episodes,
             "miners": len(miners_seen),
             "groups": len(groups),
             "dropped_no_basket_day": dropped_no_basket,

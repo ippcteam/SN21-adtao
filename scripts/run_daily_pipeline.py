@@ -852,6 +852,30 @@ def _load_tkey_and_basket_maps(ledger_root):
     return key_of, basket_day_of
 
 
+def _funnel_block(api: dict, doc: dict) -> dict:
+    """The five numbers the page shows, from the operator's funnel reading
+    and this document. Pure."""
+    t = api.get("totals") or {}
+    days = api.get("days") or []
+    n_days = len(days) or 1
+    return {
+        "since": api.get("since"),
+        "until": api.get("until"),
+        "days": len(days),
+        "captured_raw_rows_per_day": int(round(int(t.get("captured_raw_rows") or 0) / n_days)),
+        "candidates": int(t.get("candidates") or 0),
+        "excluded": int(t.get("excluded") or 0),
+        "excluded_by_reason": dict(t.get("excluded_by_reason") or {}),
+        "eligible": int(t.get("eligible") or 0),
+        "held_out": int(t.get("held_out") or 0),
+        "own_accounts": int(t.get("own_accounts") or 0),
+        "served": int(t.get("served") or 0),
+        "measured_outcome_rows": int(t.get("measured_outcome_rows") or 0),
+        "settled_episodes": int((doc.get("totals") or {}).get("settled_episodes") or 0),
+        "scored_predictions": int((doc.get("totals") or {}).get("entries") or 0),
+    }
+
+
 def stage_publish_performance(ledger_root, day):
     """Build the cumulative Prediction Performance document and POST it to
     the CMS as a draft. Same publish gate and same identity sources as the
@@ -882,6 +906,16 @@ def stage_publish_performance(ledger_root, day):
     doc = build_performance_document(
         _load_receipt_entries(ledger_root), key_of, basket_day_of,
         as_of=str(day), winner=winner, uid_of=uid_by_hotkey)
+    # The funnel behind the page's settled count: captured -> candidates ->
+    # eligible (minus holdout and own accounts) -> served -> settled here.
+    # Counted by the operator from its tables; fail-soft, the page renders
+    # without the strip when the reading is unavailable.
+    try:
+        funnel = _api_get(f"daily/funnel?since={doc.get('cutoff_day')}")
+        if funnel.get("success"):
+            doc["funnel"] = _funnel_block(funnel, doc)
+    except Exception as e:  # noqa: BLE001
+        log(f"[publish-performance] funnel unavailable ({e})")
 
     out_dir = os.path.join(ledger_root, "prediction_performance")
     os.makedirs(out_dir, exist_ok=True)
