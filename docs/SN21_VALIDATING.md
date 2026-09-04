@@ -32,18 +32,26 @@ and set it on chain. Consensus then does what consensus does.
      "https://hope-ads-backend.onrender.com/internal/bittensor/v1/daily/weights"
    ```
 
-   The response is `hotkey -> weight`, the same vector the operator's own
-   validator commits. Add `?day=YYYY-MM-DD` for a specific day; without
-   it you get the latest published vector. A new vector normally
-   publishes after the daily pipeline settles (late morning UTC).
+   The response is the miner vector, `hotkey -> weight`, plus a `meta`
+   block. The operator commits this vector with a **burn share** applied
+   on top — miners scaled to `1 - burn` and a burn UID carrying `burn` —
+   so to match consensus you apply the same burn (see step 4).
+   `meta.burn_uid` and `meta.burn_fraction` carry it. Add
+   `?day=YYYY-MM-DD` for a specific day; without it you get the latest
+   published vector. A new vector normally publishes after the daily
+   pipeline settles (late morning UTC).
 
 4. **Set the weights** from your validator loop: map hotkeys to UIDs
-   through the metagraph, normalise, and call `set_weights` with the
-   subnet's current `version_key` (the `weights_version` hyperparameter).
-   A complete reference loop ships in this repository —
-   `scripts/run_partner_validator.py` — configured entirely through
-   environment variables; run it as-is or use it as the starting point
-   for your own.
+   through the metagraph, then compose the on-chain vector — renormalise
+   the miner weights, scale them to `1 - meta.burn_fraction`, and add
+   `meta.burn_uid` carrying `meta.burn_fraction` — and call `set_weights`
+   with the subnet's current `version_key` (the `weights_version`
+   hyperparameter). Skipping the burn UID diverges from consensus by the
+   burn share and caps your vtrust at about `1 - burn`. A complete
+   reference loop ships in this repository —
+   `scripts/run_partner_validator.py` — which does this automatically from
+   the published `meta`; run it as-is or use it as the starting point for
+   your own.
 
 ## The four things that look broken but are not
 

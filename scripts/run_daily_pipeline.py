@@ -552,6 +552,21 @@ def stage_publish_weights(ledger_root, day):
     weights = intent.get("weights") or {}
     if not weights:
         return {"published": False, "reason": "empty vector (gated or no standings)"}
+    # Burn the operator's committer applies ON TOP of this miner vector, so a
+    # tracking validator can commit the SAME on-chain vector (miners scaled to
+    # 1-burn, the burn UID at burn) instead of the bare miner distribution — a
+    # validator that drops the burn UID diverges from consensus by the burn
+    # share and its vtrust caps at ~1-burn. Published as metadata, not applied
+    # here (the operator's committer still applies it at 9.C.3).
+    from datetime import date as _date
+    from hope.scoring.collateral_floor import resolve_burn_fraction
+    _day = day if isinstance(day, _date) else _date.fromisoformat(str(day))
+    _override = (os.environ.get("SN21_OVERRIDE_WEIGHT_UID") or "").strip()
+    _burn_uid = int(_override) if _override.lstrip("-").isdigit() else None
+    # Burn applies only when the operator sets an override UID; without it the
+    # committer commits the miner vector unscaled — publish burn_fraction 0.
+    _burn_fraction = resolve_burn_fraction(os.environ, _day)[0] if _burn_uid is not None else 0.0
+
     resp = _api_post("daily/weights", {
         "day": str(day),
         "gated": bool(intent.get("gated", False)),
@@ -563,7 +578,10 @@ def stage_publish_weights(ledger_root, day):
                  # The rule working — one-payer suppression groups and the
                  # tenure-gated list — published with the vector so the
                  # docs' "evidence, not accusation" promise holds off-disk.
-                 "collapse_audit": intent.get("collapse_audit") or {}},
+                 "collapse_audit": intent.get("collapse_audit") or {},
+                 # Burn a tracking validator must replicate to match consensus.
+                 "burn_uid": _burn_uid,
+                 "burn_fraction": _burn_fraction},
     })
     return {"published": True, "hotkeys": len(weights),
             "gated": bool(intent.get("gated", False)),
