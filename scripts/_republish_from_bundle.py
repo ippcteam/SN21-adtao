@@ -238,6 +238,17 @@ def main() -> int:
             # the accuracy doc anchors its receipt by sha — keep them married
             m = dict(adoc.get("metrics", {}))
             m["receipt_sha256"] = new_receipt_sha
+            r_entries = (renv or {}).get("document", {}).get("metrics", {}).get("entries") or []
+            if (m.get("zero_day") or not m.get("results_total")) and r_entries:
+                # The day was published as a zero day while a receipt with
+                # entries exists for it (a catch-up settle published the
+                # receipt after the accuracy document had already gone out).
+                # The accuracy document is derived from the receipt, so
+                # rebuild it from those entries rather than re-signing a
+                # zero that the receipt contradicts.
+                m = _accuracy_metrics_from_entries(r_entries, new_receipt_sha)
+                print(f"RECHAIN {d}: accuracy rebuilt from receipt entries "
+                      f"({len(r_entries)} entries replace a zero-day document)")
             adoc["metrics"] = m
         aatt = attest(adoc, key)
         a_prev = aatt.sha256

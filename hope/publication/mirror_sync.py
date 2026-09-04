@@ -312,8 +312,13 @@ def _record_shipped(ledger_root: str, confirmed: dict) -> None:
         pass
 
 
-def _mirror_has(api_url: str, path: str, timeout: int = 20) -> bool:
-    """Whether the mirror already serves `path`, without fetching the body.
+ENVELOPE_SHA_HEADER = "X-Envelope-SHA256"
+
+
+def _mirror_has(api_url: str, path: str, timeout: int = 20,
+                expected_sha: str | None = None) -> bool:
+    """Whether the mirror already serves THIS document at `path`, without
+    fetching the body.
 
     Needed because the documents worth skipping are exactly the ones that
     could never be recorded: the three biggest receipts time out on upload,
@@ -321,11 +326,24 @@ def _mirror_has(api_url: str, path: str, timeout: int = 20) -> bool:
     they would be retried for ever. The mirror has held them since the day
     they were first published — this asks, in a request that transfers no
     body, rather than pushing 35MB to find out.
+
+    Existence alone is not enough: an attested document can be re-signed
+    (a chain repair re-issues every later day at the same path), and a path
+    that merely exists would then be adopted and the corrected document
+    never shipped. The mirror reports the envelope sha256 it holds in
+    `X-Envelope-SHA256`; when `expected_sha` is given the answer is yes only
+    if they match. A mirror that does not report one is treated as not
+    holding the document — the safe direction is "send it".
     """
     req = urllib.request.Request(api_url.rstrip("/") + path, method="HEAD")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return 200 <= resp.status < 300
+            if not (200 <= resp.status < 300):
+                return False
+            if expected_sha is None:
+                return True
+            held = (resp.headers.get(ENVELOPE_SHA_HEADER) or "").strip()
+            return bool(held) and held == expected_sha
     except Exception:      # noqa: BLE001 — absent, unreachable, anything
         return False       # the safe answer is "send it"
 
@@ -381,7 +399,9 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
         # No record, but the mirror may already hold it from before this
         # bookkeeping existed — which is true of every receipt published so
         # far, including the ones too large to re-upload. Ask before sending.
-        if _mirror_has(api_url, path):
+        body = it.get("body")
+        envelope_sha = body.get("sha256") if isinstance(body, dict) else None
+        if _mirror_has(api_url, path, expected_sha=envelope_sha):
             shipped[path] = digest
             adopted.append(path)
             skipped.append(path)
