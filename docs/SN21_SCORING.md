@@ -187,9 +187,11 @@ the changes of the last four weeks. Incumbents are measured on exactly the
 same window, so a better recent model overtakes within two to three weeks
 of its first landing, and no faster than the evidence supports.
 
-Effective date: **to be announced**; the parameters in force are published in
-each day's allocation audit (`/v1/daily/{day}/allocation-audit`,
-`standing_method`). Applied forward, never retroactively.
+Effective date: **2026-09-06** (the daily run of that date and every run
+after it). The parameters in force are published in each day's allocation
+audit (`/v1/daily/{day}/allocation-audit`, `standing_method`); a run before
+the effective date reports `absolute` there. Applied forward, never
+retroactively: no published score, receipt or past weight changes.
 
 Cold-start evidence floors (used when placing you for emissions — see rewards doc):
 

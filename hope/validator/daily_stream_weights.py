@@ -470,7 +470,7 @@ def allocation_from_ledger(
     # when SN21_PROMOTION_MARGIN_ABS is set (the relative-standing rule),
     # else the 5% relative test. Only the default params are overridden;
     # an explicit caller keeps what it passed.
-    _abs = promotion_margin_abs(environ)
+    _abs = promotion_margin_abs(environ, day)
     if _abs is not None and promotion_params == PromotionParams():
         promotion_params = PromotionParams(margin_abs=_abs)
     # The curve pays the top twenty by standing with the published shares in
@@ -478,7 +478,7 @@ def allocation_from_ledger(
     # the absolute standing, not applied for the relative one). Only the
     # default params are overridden; an explicit caller keeps what it passed.
     if curve_params == CurveParams():
-        curve_params = CurveParams(score_threshold=curve_score_threshold(environ))
+        curve_params = CurveParams(score_threshold=curve_score_threshold(environ, day))
     # Standing entries by the published method (hope.scoring.standing_method):
     # the ledger's absolute scores, or receipt-derived scores relative to the
     # field on the same episode when SN21_STANDING_MODE=episode_relative.
@@ -553,7 +553,7 @@ def allocation_from_ledger(
         one_payer_on=one_payer_enabled(environ),
         one_payer_stats=one_payer_stats,
         lineage_on=lineage_params_from_env(environ).configured(),
-        standing_method=method_params(environ),
+        standing_method=method_params(environ, day),
     )
 
     # BLAST RADIUS, declared not patched: with the flag on, evicting every

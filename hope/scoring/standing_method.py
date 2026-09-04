@@ -56,6 +56,22 @@ MODE_ABSOLUTE = "absolute"
 MODE_EPISODE_RELATIVE = "episode_relative"
 MODES = (MODE_ABSOLUTE, MODE_EPISODE_RELATIVE)
 
+# The published effective date. The rule is announced first and applied
+# from this day forward; with the env set ahead of time the switch happens
+# on the date the miners were told, not on the day an operator edits a
+# variable. Unset = apply as soon as the mode is set.
+EFFECTIVE_FROM_ENV = "SN21_STANDING_EFFECTIVE_FROM"
+
+
+def effective_from(environ=os.environ) -> date | None:
+    raw = (environ.get(EFFECTIVE_FROM_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
 PENALTY_ENTRY_WEIGHT = 1.0      # mirrors absence_penalty.PENALTY_ENTRY_WEIGHT
 PENALTY_SCORE = 0.0             # the published floor
 
@@ -78,17 +94,23 @@ CURVE_THRESHOLD_ENV = "SN21_CURVE_SCORE_THRESHOLD"
 RELATIVE_CURVE_THRESHOLD = -1.0
 
 
-def curve_score_threshold(environ=os.environ) -> float:
+def curve_score_threshold(environ=os.environ, day: date | None = None) -> float:
     raw = (environ.get(CURVE_THRESHOLD_ENV) or "").strip()
     if raw:
         try:
             return float(raw)
         except ValueError:
             pass
-    return RELATIVE_CURVE_THRESHOLD if relative_enabled(environ) else 0.0
+    return RELATIVE_CURVE_THRESHOLD if relative_enabled(environ, day) else 0.0
 
 
-def promotion_margin_abs(environ=os.environ) -> float | None:
+def promotion_margin_abs(environ=os.environ, day: date | None = None) -> float | None:
+    """The absolute champion margin, in force only with the relative
+    standing (it is the relative standing that makes the 5% test
+    meaningless); before the effective date the published relative test
+    applies unchanged."""
+    if not relative_enabled(environ, day):
+        return None
     try:
         v = float((environ.get(PROMOTION_MARGIN_ABS_ENV) or "").strip())
         return v if v > 0 else None
@@ -96,24 +118,33 @@ def promotion_margin_abs(environ=os.environ) -> float | None:
         return None
 
 
-def standing_mode(environ=os.environ) -> str:
+def standing_mode(environ=os.environ, day: date | None = None) -> str:
+    """The mode IN FORCE on `day` (today when None): the configured mode,
+    unless the effective date has not arrived, in which case absolute."""
     v = (environ.get(MODE_ENV) or "").strip().lower()
-    return v if v in MODES else MODE_ABSOLUTE
+    mode = v if v in MODES else MODE_ABSOLUTE
+    if mode != MODE_ABSOLUTE:
+        start = effective_from(environ)
+        if start is not None and (day or date.today()) < start:
+            return MODE_ABSOLUTE
+    return mode
 
 
-def relative_enabled(environ=os.environ) -> bool:
-    return standing_mode(environ) == MODE_EPISODE_RELATIVE
+def relative_enabled(environ=os.environ, day: date | None = None) -> bool:
+    return standing_mode(environ, day) == MODE_EPISODE_RELATIVE
 
 
-def method_params(environ=os.environ) -> dict:
-    """The published parameters in force, for audits and reports."""
+def method_params(environ=os.environ, day: date | None = None) -> dict:
+    """The published parameters in force on `day`, for audits and reports."""
     return {
-        "mode": standing_mode(environ),
+        "mode": standing_mode(environ, day),
+        "configured_mode": (environ.get(MODE_ENV) or "").strip().lower() or MODE_ABSOLUTE,
+        "effective_from": (effective_from(environ).isoformat() if effective_from(environ) else None),
         "half_life_days": half_life_from_env(environ),
         "prior_mass": prior_mass_from_env(environ),
         "window_days": window_from_env(environ),
-        "promotion_margin_abs": promotion_margin_abs(environ),
-        "curve_score_threshold": curve_score_threshold(environ),
+        "promotion_margin_abs": promotion_margin_abs(environ, day),
+        "curve_score_threshold": curve_score_threshold(environ, day),
     }
 
 
@@ -262,6 +293,6 @@ def load_standing_entries(root: str, as_of: date, environ=os.environ,
     receipts (episode-relative), by the published mode."""
     if window_days is None:
         window_days = window_from_env(environ)
-    if relative_enabled(environ):
+    if relative_enabled(environ, as_of):
         return load_relative_entries(root, as_of, window_days)
     return standing_ledger.load_entries(root, as_of=as_of, window_days=window_days)

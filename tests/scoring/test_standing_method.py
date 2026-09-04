@@ -39,7 +39,8 @@ class TestDefaultsReproduceTheRuleInForce:
         assert half_life_from_env(env) == 12.0
         assert prior_mass_from_env(env) == 0.0
         assert standing_method.method_params(env) == {
-            "mode": "absolute", "half_life_days": 12.0, "prior_mass": 0.0, "window_days": 35,
+            "mode": "absolute", "configured_mode": "absolute", "effective_from": None,
+            "half_life_days": 12.0, "prior_mass": 0.0, "window_days": 35,
             "promotion_margin_abs": None, "curve_score_threshold": 0.0}
 
     def test_absolute_mode_reads_the_ledger(self, tmp_path):
@@ -148,7 +149,8 @@ class TestWindowAndPromotionMargin:
                "SN21_STANDING_PRIOR_MASS": "250", "SN21_STANDING_WINDOW_DAYS": "28",
                "SN21_PROMOTION_MARGIN_ABS": "0.01"}
         assert standing_method.method_params(env) == {
-            "mode": "episode_relative", "half_life_days": 7.0, "prior_mass": 250.0,
+            "mode": "episode_relative", "configured_mode": "episode_relative", "effective_from": None,
+            "half_life_days": 7.0, "prior_mass": 250.0,
             "window_days": 28, "promotion_margin_abs": 0.01, "curve_score_threshold": -1.0}
         assert standing_method.promotion_margin_abs({}) is None
 
@@ -186,3 +188,38 @@ class TestTopTwentyEarnUnderTheRelativeStanding:
         top = sorted(w.items(), key=lambda kv: -kv[1])
         assert top[0][1] == pytest.approx(0.50 / sum([0.50, 0.25, 0.10] + [0.10 * 0.5 ** i for i in range(1, 18)]))
         assert top[1][1] / top[0][1] == pytest.approx(0.5) and top[2][1] / top[1][1] == pytest.approx(0.4)
+
+
+class TestEffectiveDate:
+    ENV = {"SN21_STANDING_MODE": "episode_relative", "SN21_STANDING_EFFECTIVE_FROM": "2026-09-06",
+           "SN21_PROMOTION_MARGIN_ABS": "0.01"}
+
+    def test_before_the_date_the_absolute_rule_is_in_force(self):
+        assert standing_method.standing_mode(self.ENV, date(2026, 9, 5)) == "absolute"
+        assert standing_method.curve_score_threshold(self.ENV, date(2026, 9, 5)) == 0.0
+        assert standing_method.promotion_margin_abs(self.ENV, date(2026, 9, 5)) is None
+        p = standing_method.method_params(self.ENV, date(2026, 9, 5))
+        assert p["mode"] == "absolute" and p["configured_mode"] == "episode_relative"
+        assert p["effective_from"] == "2026-09-06"
+
+    def test_from_the_date_the_relative_rule_is_in_force(self):
+        assert standing_method.standing_mode(self.ENV, date(2026, 9, 6)) == "episode_relative"
+        assert standing_method.curve_score_threshold(self.ENV, date(2026, 9, 6)) == -1.0
+        assert standing_method.promotion_margin_abs(self.ENV, date(2026, 9, 6)) == 0.01
+
+    def test_no_date_means_immediately(self):
+        env = {"SN21_STANDING_MODE": "episode_relative"}
+        assert standing_method.standing_mode(env, date(2026, 1, 1)) == "episode_relative"
+
+    def test_bad_date_is_ignored(self):
+        env = {"SN21_STANDING_MODE": "episode_relative", "SN21_STANDING_EFFECTIVE_FROM": "soon"}
+        assert standing_method.standing_mode(env, date(2026, 1, 1)) == "episode_relative"
+
+    def test_loader_honours_the_date(self, tmp_path):
+        root = str(tmp_path)
+        standing_ledger.append_entries(root, [WeightedEntry(miner="A", score=0.6, weight=0.2, entered_on=date(2026, 9, 1))])
+        _receipt(root, "2026-09-01", [_e("A", "ep1", 7, 0.8, "2026-09-01"), _e("B", "ep1", 7, 0.6, "2026-09-01")])
+        before = standing_method.load_standing_entries(root, date(2026, 9, 5), environ=self.ENV)
+        after = standing_method.load_standing_entries(root, date(2026, 9, 6), environ=self.ENV)
+        assert before["A"][0].score == pytest.approx(0.6)        # ledger, absolute
+        assert after["A"][0].score == pytest.approx(0.1)         # receipts, relative (0.8 - 0.7)
