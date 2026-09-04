@@ -266,8 +266,8 @@ def run_daily_loop(
                 from hope.scoring.episode_average import (
                     episode_weighted_average,
                 )
-                from hope.scoring.standing_ledger import load_entries
-                _by_miner = load_entries(ledger_root, day)
+                from hope.scoring.standing_method import load_standing_entries
+                _by_miner = load_standing_entries(ledger_root, day)
                 _standing = {
                     hk: s for hk, eps in _by_miner.items()
                     if (s := episode_weighted_average(eps, day)) is not None

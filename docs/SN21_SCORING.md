@@ -141,6 +141,40 @@ Your published standing is an **episode-age-weighted** mean of scored entries �
 - Weight decays with age: half-life **12 days**, window **35 days**.
 - A thin Saturday contributes fewer entries and therefore less influence — automatically. No special weekend rule.
 
+### Standing method (rule amendment, published 2026-09-04)
+
+From the effective date below, three things change in how the entries above
+are averaged. Nothing changes in how an entry is scored, and the receipts
+stay as they are.
+
+1. **Entries are relative to the field on the same change.** Each entry
+   becomes your score **minus the mean score of every miner scored on that
+   same (episode, horizon)**, computed from the receipt of the settle day. A
+   standing of +0.03 means you were 0.03 above the field on the identical
+   changes; the mix of change types you were scored on no longer moves your
+   number. Every input is in the published receipt.
+2. **Half-life 7 days** (was 12). Window stays 35 days.
+3. **Shrinkage toward the field.** The average carries a prior of **250**
+   prediction-mass at the field level (0.0 in relative terms): a standing
+   starts at the field and moves out only as evidence accumulates. The
+   number is the placement floor; a miner at the floor has exactly half of
+   its standing decided by evidence.
+
+An uncovered episode (absence rule) enters at the published floor as
+before; in relative terms that is the floor minus the field, i.e. below
+every honest entry.
+
+| Parameter | Before | From the effective date |
+| :---- | :---- | :---- |
+| Entry value | score | score − field mean on the same (episode, horizon) |
+| Half-life | 12 days | 7 days |
+| Prior mass toward the field | none | 250 |
+| Window | 35 days | 35 days |
+
+Effective date: **to be announced**; the parameters in force are published in
+each day's allocation audit (`/v1/daily/{day}/allocation-audit`,
+`standing_method`). Applied forward, never retroactively.
+
 Cold-start evidence floors (used when placing you for emissions — see rewards doc):
 
 | Floor | Predictions in window | Meaning |

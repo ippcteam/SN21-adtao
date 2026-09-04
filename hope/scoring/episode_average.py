@@ -26,6 +26,32 @@ from datetime import date
 
 # GAP-2 v2 §7 — review-adjustable within [10, 14].
 DEFAULT_HALF_LIFE_DAYS = 12.0
+
+# Standing-method parameters (rule amendment of 2026-09-04, published before
+# enabled). Both are environment values so the published number always
+# matches what runs; the defaults reproduce the rule in force before the
+# amendment exactly.
+#   SN21_STANDING_HALF_LIFE_DAYS  age half-life of an entry (days)
+#   SN21_STANDING_PRIOR_MASS      evidence mass of the prior the average is
+#                                 shrunk toward (0 = plain weighted mean)
+HALF_LIFE_ENV = "SN21_STANDING_HALF_LIFE_DAYS"
+PRIOR_MASS_ENV = "SN21_STANDING_PRIOR_MASS"
+
+
+def half_life_from_env(environ=os.environ) -> float:
+    try:
+        v = float((environ.get(HALF_LIFE_ENV) or "").strip())
+        return v if v > 0 else DEFAULT_HALF_LIFE_DAYS
+    except (TypeError, ValueError):
+        return DEFAULT_HALF_LIFE_DAYS
+
+
+def prior_mass_from_env(environ=os.environ) -> float:
+    try:
+        v = float((environ.get(PRIOR_MASS_ENV) or "").strip())
+        return v if v > 0 else 0.0
+    except (TypeError, ValueError):
+        return 0.0
 # Episodes older than this contribute ~0.13 weight and are dropped so the
 # working set stays bounded and auditable (matches stream depth: day 35 is
 # when a basket's last horizon lands).
@@ -74,15 +100,28 @@ def episode_weight(age_days: float, half_life_days: float = DEFAULT_HALF_LIFE_DA
 def episode_weighted_average(
     episodes: Iterable[ScoredEpisode],
     as_of: date,
-    half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
+    half_life_days: float | None = None,
     window_days: int = DEFAULT_WINDOW_DAYS,
+    prior_mass: float | None = None,
+    prior_value: float = 0.0,
 ) -> float | None:
     """The D13 standing: age-weighted mean over the retained window.
 
     Returns None when no episode falls inside the window (a miner with no
     recent scored work has no standing, which is distinct from a standing
     of zero).
+
+    `prior_mass` > 0 shrinks the average toward `prior_value` with that much
+    evidence mass behind the prior (a Bayesian average): a miner with little
+    evidence sits near the prior and moves out only as evidence accumulates,
+    so thin evidence cannot produce a leader. Mass 0 is the plain weighted
+    mean. `half_life_days` and `prior_mass` default to the environment
+    values (half_life_from_env / prior_mass_from_env).
     """
+    if half_life_days is None:
+        half_life_days = half_life_from_env()
+    if prior_mass is None:
+        prior_mass = prior_mass_from_env()
     num = 0.0
     den = 0.0
     for ep in episodes:
@@ -92,7 +131,9 @@ def episode_weighted_average(
         w = episode_weight(age, half_life_days) * ep.weight
         num += w * ep.score
         den += w
-    return (num / den) if den > 0 else None
+    if den <= 0:
+        return None
+    return (num + prior_mass * prior_value) / (den + prior_mass)
 
 
 def scored_prediction_count(
@@ -111,8 +152,10 @@ def scored_prediction_count(
 def standing(
     episodes: list[ScoredEpisode],
     as_of: date,
-    half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
+    half_life_days: float | None = None,
     window_days: int = DEFAULT_WINDOW_DAYS,
+    prior_mass: float | None = None,
+    prior_value: float = 0.0,
 ) -> dict:
     """Full placement view: average + cold-start gates (GAP-2 v2 §3.4).
 
@@ -123,7 +166,8 @@ def standing(
     promotion rule, not to this average.
     """
     n = scored_prediction_count(episodes, as_of, window_days)
-    avg = episode_weighted_average(episodes, as_of, half_life_days, window_days)
+    avg = episode_weighted_average(episodes, as_of, half_life_days, window_days,
+                                   prior_mass=prior_mass, prior_value=prior_value)
     return {
         "average": avg,
         "scored_predictions": n,

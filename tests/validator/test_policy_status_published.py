@@ -50,7 +50,7 @@ class TestAlwaysPresent:
         """The failure mode this closes: nothing to suppress reads the same as
         nothing switched on."""
         pol = _policies()
-        assert set(pol) == {"coldkey_cap", "one_payer", "lineage", "tenure"}
+        assert set(pol) == {"coldkey_cap", "one_payer", "lineage", "tenure", "standing_method"}
 
     def test_it_is_present_even_when_no_control_is_configured(self):
         pol = _policies(one_payer_on=False, lineage_on=False, tenure_min=0)

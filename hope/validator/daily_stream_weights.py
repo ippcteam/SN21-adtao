@@ -43,6 +43,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 
 from hope.scoring import chronic_failure, standing_ledger
+from hope.scoring.standing_method import load_standing_entries, method_params
 from hope.scoring.tenure import (
     short_tenure_hotkeys,
     tenure_gate_enabled,
@@ -194,6 +195,7 @@ def compute_daily_allocation(
     one_payer_on: bool | None = None,
     one_payer_stats: Mapping | None = None,
     lineage_on: bool | None = None,
+    standing_method: Mapping | None = None,
 ) -> DailyAllocation:
     """One day's standings → weights (D7) + promotion observation (D8).
 
@@ -393,6 +395,10 @@ def compute_daily_allocation(
             "exempt_groups": len((lineage_audit or {}).get("exempt_groups")
                                  or []),
         },
+        # The standing method in force (rule amendment 2026-09-04): mode,
+        # half-life, prior mass, window — so a reader of the audit knows which
+        # published rule produced today's ranks.
+        "standing_method": dict(standing_method) if standing_method else method_params(),
         "tenure": {
             "enabled": tenure_min > 0,
             "min_days": tenure_min,
@@ -455,7 +461,10 @@ def allocation_from_ledger(
     """
     if min_daily_episodes is None:
         min_daily_episodes = d3_min_daily_episodes(environ)
-    entries = standing_ledger.load_entries(root, as_of=day)
+    # Standing entries by the published method (hope.scoring.standing_method):
+    # the ledger's absolute scores, or receipt-derived scores relative to the
+    # field on the same episode when SN21_STANDING_MODE=episode_relative.
+    entries = load_standing_entries(root, day, environ)
     state = standing_ledger.load_promotion_state(root)
 
     evicted: frozenset = frozenset()
@@ -526,6 +535,7 @@ def allocation_from_ledger(
         one_payer_on=one_payer_enabled(environ),
         one_payer_stats=one_payer_stats,
         lineage_on=lineage_params_from_env(environ).configured(),
+        standing_method=method_params(environ),
     )
 
     # BLAST RADIUS, declared not patched: with the flag on, evicting every
