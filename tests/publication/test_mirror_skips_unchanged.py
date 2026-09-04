@@ -175,7 +175,7 @@ class TestDocumentsTheMirrorAlreadyHolds:
         monkeypatch.setattr(mirror_sync, "build_mirror_items",
                             lambda r, recent_days=None: list(self.ITEM))
         monkeypatch.setattr(mirror_sync, "_mirror_has",
-                            lambda url, path, timeout=20: present)
+                            lambda url, path, timeout=20, expected_sha=None: present)
         monkeypatch.setattr(mirror_sync, "_post",
                             lambda u, k, items, t: (
                                 sent.append([i["path"] for i in items]),
@@ -217,9 +217,54 @@ class TestDocumentsTheMirrorAlreadyHolds:
         monkeypatch.setattr(mirror_sync, "build_mirror_items",
                             lambda r, recent_days=None: list(self.ITEM))
         monkeypatch.setattr(mirror_sync, "_mirror_has",
-                            lambda url, path, timeout=20: calls.append(path) or True)
+                            lambda url, path, timeout=20, expected_sha=None: calls.append(path) or True)
         monkeypatch.setattr(mirror_sync, "_post",
                             lambda u, k, items, t: {"stored": 0, "rejected": []})
         mirror_sync.sync_mirror(str(tmp_path), "http://ops", "k")
         mirror_sync.sync_mirror(str(tmp_path), "http://ops", "k")
         assert len(calls) == 1, "the probe must not repeat once recorded"
+
+
+class TestAdoptionComparesTheEnvelopeHash:
+    """A path that exists on the mirror is adopted only when the mirror holds
+    THIS document: a re-signed receipt at the same path must ship."""
+
+    ITEM = [{"path": "/v1/daily/2026-08-24/receipt",
+             "body": {"document": {"day": "2026-08-24"}, "sha256": "new-sha"}}]
+
+    def _run(self, tmp_path, monkeypatch, held_sha, sent):
+        monkeypatch.setattr(mirror_sync, "build_mirror_items",
+                            lambda r, recent_days=None: list(self.ITEM))
+
+        class Resp:
+            status = 200
+            headers = {mirror_sync.ENVELOPE_SHA_HEADER: held_sha} if held_sha else {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        monkeypatch.setattr(mirror_sync.urllib.request, "urlopen",
+                            lambda req, timeout=20: Resp())
+        monkeypatch.setattr(mirror_sync, "_post",
+                            lambda u, k, items, t: (
+                                sent.append([i["path"] for i in items]),
+                                {"stored": len(items), "rejected": []})[1])
+        return mirror_sync.sync_mirror(str(tmp_path), "http://ops", "k")
+
+    def test_same_hash_is_adopted_not_sent(self, tmp_path, monkeypatch):
+        sent = []
+        self._run(tmp_path, monkeypatch, held_sha="new-sha", sent=sent)
+        assert sent == []
+
+    def test_different_hash_is_sent(self, tmp_path, monkeypatch):
+        sent = []
+        self._run(tmp_path, monkeypatch, held_sha="old-sha", sent=sent)
+        assert sent == [["/v1/daily/2026-08-24/receipt"]]
+
+    def test_mirror_without_hash_header_is_sent(self, tmp_path, monkeypatch):
+        sent = []
+        self._run(tmp_path, monkeypatch, held_sha=None, sent=sent)
+        assert sent == [["/v1/daily/2026-08-24/receipt"]]
