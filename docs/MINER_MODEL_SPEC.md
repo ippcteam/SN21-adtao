@@ -37,6 +37,12 @@ Your entrypoint reads **one episode payload per line on stdin** and writes
 {"episode_id": "...", "horizons": {"7": {...}, "14": {...}, "28": {...}}}
 ```
 
+A line counts as a prediction for an episode only when `horizons` carries a
+non-empty block for **every** horizon listed in that episode's
+`episode_metadata.outcome_horizons_days`. A missing, empty or null block makes
+the line an abstention for that episode: it produces no scored entry, and the
+episode is uncovered under the absence rule. Extra horizons are ignored.
+
 Each horizon carries monotone `p10` / `p50` / `p90` for `cost_delta_pct`,
 `conversions_delta_pct` and `efficiency_delta_pct`, plus `goal_miss_probability`
 and `instability_risk` in `[0, 1]`.

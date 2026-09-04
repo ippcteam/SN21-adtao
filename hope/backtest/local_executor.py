@@ -26,7 +26,7 @@ import tempfile
 import time
 from collections.abc import Iterable
 
-from hope.backtest.container_runner import RunResult, _parse_output
+from hope.backtest.container_runner import RunResult, _parse_output, required_horizons
 from hope.backtest.ns_sandbox import RunSpec, cleanup_rootfs, run_sandboxed, sandbox_env
 from hope.backtest.oci_pull import PullError, pull_and_unpack
 
@@ -139,7 +139,7 @@ def run_basket_local(
             return RunResult(ok=False, error=result.error, episodes_in=len(eps),
                              duration_s=_took)
 
-        preds = _parse_output(result.stdout, ids)
+        preds = _parse_output(result.stdout, ids, required_horizons(eps))
         return RunResult(ok=True, predictions=preds,
                          episodes_in=len(eps), predictions_out=len(preds),
                          duration_s=_took)

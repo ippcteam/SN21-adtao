@@ -28,6 +28,10 @@ from dataclasses import dataclass, field
 
 DEFAULT_MEMORY = "1g"
 DEFAULT_CPUS = "1"
+# The horizons an episode asks for when its metadata does not say (schema
+# default in hope.protocol.episode.EpisodeMetadata).
+DEFAULT_HORIZONS = (7, 14)
+
 DEFAULT_TIMEOUT_S = 15 * 60  # 15 min per basket (M0 budget)
 
 # Error-string markers. These are the FAULT TAXONOMY the liveness policy
@@ -69,7 +73,42 @@ def docker_command(image_digest: str, memory: str = DEFAULT_MEMORY,
     ]
 
 
-def _parse_output(stdout: str, expected_ids: set[str]) -> dict:
+def required_horizons(episodes: Iterable[dict]) -> dict[str, list[str]]:
+    """episode_id -> the horizon keys that episode asks a model to predict,
+    from its own `episode_metadata.outcome_horizons_days`. Falls back to the
+    schema default when the field is absent."""
+    out: dict[str, list[str]] = {}
+    for e in episodes:
+        meta = e.get("episode_metadata") if isinstance(e, dict) else None
+        days = (meta or {}).get("outcome_horizons_days") or DEFAULT_HORIZONS
+        out[str(e["episode_id"])] = [str(int(d)) for d in days]
+    return out
+
+
+def delivered(horizons, required: list[str] | None) -> bool:
+    """Does this output count as a prediction for the episode?
+
+    A prediction is what settle can score: one non-empty block per horizon
+    the episode asks for. Anything less — an empty dict, a block for one
+    horizon only, a null block — is an abstention and counts as one. The
+    earlier test accepted any dict, so a model could return `{"horizons":
+    {}}` for the episodes it chose to skip, be counted as having delivered
+    a prediction for every episode, produce no scoreable entry for those
+    episodes, and hold a standing built only on the episodes it chose to
+    answer, with the absence rule and the coverage gate both reading full
+    delivery. `required` is per episode (required_horizons); without it,
+    at least one non-empty block is needed.
+    """
+    if not isinstance(horizons, dict):
+        return False
+    if required:
+        return all(isinstance(horizons.get(h), dict) and bool(horizons.get(h))
+                   for h in required)
+    return any(isinstance(v, dict) and bool(v) for v in horizons.values())
+
+
+def _parse_output(stdout: str, expected_ids: set[str],
+                  required: dict[str, list[str]] | None = None) -> dict:
     preds: dict = {}
     for line in stdout.splitlines():
         line = line.strip()
@@ -80,7 +119,8 @@ def _parse_output(stdout: str, expected_ids: set[str]) -> dict:
         except json.JSONDecodeError:
             continue  # non-JSON chatter is ignored, never fatal
         eid = obj.get("episode_id")
-        if eid in expected_ids and isinstance(obj.get("horizons"), dict):
+        if eid in expected_ids and delivered(
+                obj.get("horizons"), (required or {}).get(str(eid))):
             preds[eid] = obj["horizons"]
     return preds
 
@@ -115,7 +155,8 @@ def run_basket_docker(image_digest: str, episodes: Iterable[dict],
             ok=False,
             error=f"{ERR_EXIT_PREFIX}{proc.returncode}: {proc.stderr[:200]!r}",
             episodes_in=len(eps))
-    preds = _parse_output(proc.stdout.decode(errors="replace"), ids)
+    preds = _parse_output(proc.stdout.decode(errors="replace"), ids,
+                          required_horizons(eps))
     return RunResult(ok=True, predictions=preds,
                      episodes_in=len(eps), predictions_out=len(preds))
 
@@ -125,13 +166,14 @@ def run_basket_callable(model: Callable[[dict], dict | None],
     """Harness mode: same framing, python callable instead of a container.
     The callable returns the horizons dict (or None to abstain)."""
     eps = list(episodes)
+    req = required_horizons(eps)
     preds: dict = {}
     for e in eps:
         try:
             h = model(e)
         except Exception:
             h = None  # a crashing model simply doesn't predict that episode
-        if isinstance(h, dict):
+        if delivered(h, req.get(str(e["episode_id"]))):
             preds[str(e["episode_id"])] = h
     return RunResult(ok=True, predictions=preds,
                      episodes_in=len(eps), predictions_out=len(preds))

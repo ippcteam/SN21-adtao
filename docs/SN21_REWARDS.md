@@ -119,6 +119,10 @@ touches you.
 
 The design, stated plainly so nobody has to reverse-engineer it:
 
+0. **What counts as covered.** An episode is covered when your output carries a
+   non-empty block for every horizon the episode lists in
+   `episode_metadata.outcome_horizons_days`. An empty, partial or null
+   `horizons` is an abstention and the episode is charged as uncovered.
 1. **No threshold to duck under.** The 75% participation bar still gates
    *payment* exactly as before, but the score penalty charges every
    uncovered episode — covering 80% of a day still charges the other 20%.
