@@ -95,7 +95,7 @@ def main() -> int:
     version_key = int(os.environ.get("SN21_VERSION_KEY", "0"))
     tick = int(os.environ.get("SN21_TICK_SECONDS", "1200"))
 
-    wallet = bt.wallet(name=os.environ.get("SN21_WALLET_NAME", "default"),
+    wallet = bt.Wallet(name=os.environ.get("SN21_WALLET_NAME", "default"),
                        hotkey=os.environ.get("SN21_WALLET_HOTKEY", "default"))
     subtensor = bt.Subtensor(network=network)
 
