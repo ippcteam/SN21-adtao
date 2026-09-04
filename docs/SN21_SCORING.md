@@ -133,6 +133,33 @@ When a horizon finalises, it enters your standing with a **horizon blend weight*
 
 Longer horizons weigh more; noisier (lower) resolution shifts weight further toward 28-day.
 
+### Measurement resolution (rule amendment, published 2026-09-05)
+
+The table above has always been published with three rows. From the
+effective date below the row an episode uses is **derived from what the
+episode touched**, per the April 2026 design; until then every episode was
+scored as *high*.
+
+| Resolution | When | 7d / 14d / 28d blend | Episode weight |
+| :---- | :---- | :---- | :---- |
+| High | every change in the episode is campaign-level (budget, campaign pause, bid strategy, target, campaign criteria, campaign assets) | 0.20 / 0.35 / 0.45 | 1.0 |
+| Medium | any change sits below the campaign (ad group, ad, keyword, ad-group criterion or asset), measured on its parent campaign | 0.15 / 0.30 / 0.55 | 0.7 |
+| Low | a sub-campaign change whose share of the parent is below the published impact floor | 0.00 / 0.20 / 0.80 | 0.4 |
+
+A composite episode is judged on **every** constituent: all campaign-level
+is high; any sub-campaign constituent is medium. *Low* needs the impact
+ratio, which is not yet recorded per episode; until it is, no episode is
+low. The episode weight multiplies the entry's standing mass, so a medium
+entry carries 0.7 of a high entry's evidence.
+
+The resolution and the resulting entry weight are written on every receipt
+entry (`resolution`, `weight`) from the effective date, and the resolution
+you are being scored at is the `measurement_resolution` in the episode
+payload you receive.
+
+Effective date: **2026-09-06** — applied to entries finalised on or after
+that date. Entries already in the standing ledger are unchanged.
+
 ## Your standing (moving average)
 
 Your published standing is an **episode-age-weighted** mean of scored entries — **not** a per-day average.

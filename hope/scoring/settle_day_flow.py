@@ -93,7 +93,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from hope.backtest.gate import METRICS, QUANTILES, pinball
 from hope.scoring import standing_ledger
-from hope.scoring.daily_score_flow import HorizonResult, day_flow
+from hope.scoring.daily_score_flow import HorizonResult, day_flow, resolution_in_force
 
 # Floor for the per-entry pinball normalisation scale — same spirit as
 # gate_score's 1e-9 guard, but per entry a tiny |actual| would otherwise
@@ -163,6 +163,9 @@ class SettledHorizon:
     # is without re-running the resolver. Default preserves the pre-v2
     # behaviour, where efficiency was always CPA.
     goal_basis: str = "cpa"
+    # Measurement resolution from the operator (high / medium / low), the
+    # April table derived from what the episode touched. Historic rows: high.
+    resolution: str = "high"
 
 
 def settle_date(action_window_end: date, horizon_days: int) -> date:
@@ -456,13 +459,17 @@ def score_settled(
             pred = horizons.get(str(o.horizon_days))
             if not pred:
                 continue
+            _env = environ if environ is not None else os.environ
             results.append(HorizonResult(
                 episode_id=o.episode_id,
                 horizon_days=o.horizon_days,
                 miner=miner,
-                score=score_entry_active(pred, actual,
-                                         environ=(environ if environ is not None else os.environ)),
+                score=score_entry_active(pred, actual, environ=_env),
                 finalized_on=o.finalized_on,
+                # Measurement resolution (operator-derived, April table),
+                # applied from the published effective date; "high" before.
+                resolution=resolution_in_force(o.finalized_on,
+                                               getattr(o, "resolution", "high"), _env),
             ))
     return results
 
@@ -837,6 +844,7 @@ def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60):
                 efficiency_delta_pct=float(r["efficiency_delta_pct"]),
                 finalized_on=date.fromisoformat(str(r["finalized_on"])[:10]),
                 goal_basis=(r.get("goal_basis") or "cpa"),
+                resolution=str(r.get("measurement_resolution") or "high").lower(),
             ))
         return rows
 

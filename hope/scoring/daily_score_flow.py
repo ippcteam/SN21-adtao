@@ -23,6 +23,8 @@ the v2 scorer per miner) wires in with the Payload-v2 submission shapes.
 
 from __future__ import annotations
 
+import os
+
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
@@ -69,6 +71,49 @@ class WeightedEntry:
     horizon_days: int = 0
 
 
+# Episode weight by measurement resolution (April 2026 table): a
+# sub-campaign change measured on its parent campaign carries less standing
+# mass than a campaign-level change measured directly. Multiplies the
+# horizon blend weight at entry creation, so it persists into the ledger and
+# is prospective by construction.
+RESOLUTION_EPISODE_WEIGHT = {"high": 1.0, "medium": 0.7, "low": 0.4}
+
+# Rule amendment 2026-09-05: the resolution the operator derives per episode
+# is applied to entries finalised ON OR AFTER this published date; before it
+# every entry is scored as "high", exactly as it always was. Unset = off.
+RESOLUTION_GATE_FROM_ENV = "SN21_RESOLUTION_GATE_FROM"
+
+
+def resolution_gate_from(environ=os.environ):
+    raw = (environ.get(RESOLUTION_GATE_FROM_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def resolution_in_force(finalized_on: date, resolution: str | None,
+                        environ=os.environ) -> str:
+    """The resolution an entry is weighted at: the derived one when the gate
+    is on and the entry finalises on/after the effective date, else high."""
+    start = resolution_gate_from(environ)
+    if start is None or finalized_on < start:
+        return "high"
+    r = str(resolution or "high").lower()
+    return r if r in DAILY_STREAM_HORIZON_WEIGHTS else "high"
+
+
+def episode_weight(resolution: str = "high") -> float:
+    return RESOLUTION_EPISODE_WEIGHT.get(str(resolution or "high").lower(), 1.0)
+
+
+def entry_weight(horizon_days: int, resolution: str = "high") -> float:
+    """Standing-entry weight: horizon blend share × episode weight."""
+    return horizon_entry_weight(horizon_days, resolution) * episode_weight(resolution)
+
+
 def horizon_entry_weight(horizon_days: int, resolution: str = "high") -> float:
     """Blend weight for a horizon under the daily stream. Unknown resolution
     falls back to 'high'; unknown horizon is an error (guards against a
@@ -100,7 +145,7 @@ def day_flow(results: Iterable[HorizonResult], day: date,
     for r in results:
         if r.finalized_on != day:
             continue
-        w = horizon_entry_weight(r.horizon_days, r.resolution)
+        w = entry_weight(r.horizon_days, r.resolution)
         if type_weight_fn is not None:
             tw = float(type_weight_fn(r.episode_id))
             # A weight fn must scale, never erase: guard against a broken fn

@@ -42,7 +42,7 @@ from datetime import date
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from hope.publication.rail import attest, build_document
-from hope.scoring.daily_score_flow import HorizonResult
+from hope.scoring.daily_score_flow import HorizonResult, entry_weight
 from hope.scoring.settle_day_flow import (
     W_COVERAGE,
     W_DIRECTION,
@@ -120,6 +120,11 @@ def build_receipt_metrics(
             }),
             "score": r.score,
             "finalized_on": str(r.finalized_on),
+            # Measurement resolution and the standing-entry weight it gives
+            # this entry (horizon blend × episode weight), so a standing can
+            # be recomputed from the receipt alone (rule amendment 2026-09-05).
+            "resolution": r.resolution,
+            "weight": entry_weight(h, r.resolution),
             # Which change type this entry scored (Rob, 21 Aug: miners must
             # see WHERE they win and lose, and the receipt is the surface
             # they already trust). Only present when the builder was given a

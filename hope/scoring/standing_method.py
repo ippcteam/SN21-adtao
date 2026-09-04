@@ -227,9 +227,17 @@ def load_relative_entries(root: str, as_of: date,
                     pass
             if scored_on < cutoff or scored_on > as_of:
                 continue
+            # The receipt's own entry weight when it carries one (horizon
+            # blend × episode weight, from the resolution gate); the plain
+            # horizon share for receipts published before that field existed.
+            try:
+                w = float(e.get("weight"))
+            except (TypeError, ValueError):
+                w = 0.0
+            if not w > 0:
+                w = horizon_entry_weight(key[1])
             out[miner].append(ScoredEpisode(
-                score=score - means[key], scored_on=scored_on,
-                weight=horizon_entry_weight(key[1])))
+                score=score - means[key], scored_on=scored_on, weight=w))
     field_level = (sum(all_means) / len(all_means)) if all_means else 0.0
     absence_value = PENALTY_SCORE - field_level
     for hk, day, missed in _net_penalties(root, as_of, window_days):
