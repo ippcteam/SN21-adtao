@@ -181,6 +181,19 @@ def build_mirror_items(ledger_root: str,
     except Exception:
         pass
 
+    # Registration status — per hotkey, the digest CURRENTLY committed on chain,
+    # whether it is admitted/pending/rejected, and (for an admitted-but-unscored
+    # hotkey) the date its first predictions settle. Turns "admitted but the
+    # dashboard shows nothing" into a self-answering question. Opens a subtensor,
+    # so any chain hiccup just skips this convenience feed for the run.
+    try:
+        from hope.publication.registration_status_feed import (
+            build_registration_status_document)
+        items.append({"path": "/v1/daily/registration-status",
+                      "body": build_registration_status_document(ledger_root)})
+    except Exception:
+        pass
+
     # The cumulative Prediction Performance document — the latest one only,
     # at a stable path. Like the series it is a convenience surface derived
     # entirely from the receipts above, so a reader can recompute it.
