@@ -27,6 +27,11 @@ class PromotionParams:
     margin: float = 0.05          # [D8] c.1 — review-confirmed
     hold_days: int = 7            # [D8] c.2 — consecutive days
     min_scored_days: int = 14     # [D8] c.3 — also the cold-start closure
+    # Absolute lead (challenger >= champion + margin_abs) used INSTEAD of the
+    # relative test when set. A relative standing sits near zero and may be
+    # negative, where "5% of the champion's average" is meaningless (5% of
+    # 0.01 is nothing; 5% of a negative number is a bonus for trailing).
+    margin_abs: float | None = None
 
 
 @dataclass(frozen=True)
@@ -169,10 +174,14 @@ def observe_day(
         # lead ALL standings (documented rule above), no margin waiver.
         qualified = contenders
     else:
-        qualified = [
-            (m, s) for m, s in contenders
-            if s >= champ_avg * (1.0 + params.margin)
-        ]
+        if params.margin_abs is not None:
+            qualified = [(m, s) for m, s in contenders
+                         if s >= champ_avg + params.margin_abs]
+        else:
+            qualified = [
+                (m, s) for m, s in contenders
+                if s >= champ_avg * (1.0 + params.margin)
+            ]
     leader = min(qualified, key=_rank_key)[0] if qualified else None
 
     if leader is None:

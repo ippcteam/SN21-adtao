@@ -227,7 +227,11 @@ assumed.
 
 The champion changes **only** when a challenger:
 
-1. leads the incumbent’s moving average by at least **5%** (relative), **and**
+1. leads the incumbent’s moving average by at least **5%** (relative) — under
+   the relative standing method ([SN21_SCORING.md](./SN21_SCORING.md), rule
+   amendment of 2026-09-04) this becomes an **absolute** lead of at least
+   **0.01**, because a standing measured against the field sits near zero
+   and a percentage of it means nothing — **and**
 2. has held that lead for **7 consecutive days**, **and**
 3. has at least **14 scored days** of history.
 

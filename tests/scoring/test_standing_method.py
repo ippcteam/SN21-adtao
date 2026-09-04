@@ -39,7 +39,8 @@ class TestDefaultsReproduceTheRuleInForce:
         assert half_life_from_env(env) == 12.0
         assert prior_mass_from_env(env) == 0.0
         assert standing_method.method_params(env) == {
-            "mode": "absolute", "half_life_days": 12.0, "prior_mass": 0.0, "window_days": 35}
+            "mode": "absolute", "half_life_days": 12.0, "prior_mass": 0.0, "window_days": 35,
+            "promotion_margin_abs": None}
 
     def test_absolute_mode_reads_the_ledger(self, tmp_path):
         root = str(tmp_path)
@@ -127,3 +128,40 @@ class TestEpisodeRelativeFromReceipts:
     def test_field_means(self):
         m = standing_method.field_means([_e("A", "e", 7, 1.0, "d"), _e("B", "e", 7, 0.0, "d"), _e("A", "e", 14, 0.3, "d")])
         assert m == {("e", 7): 0.5, ("e", 14): 0.3}
+
+
+class TestWindowAndPromotionMargin:
+    def test_window_env(self, monkeypatch):
+        from hope.scoring.episode_average import window_from_env
+        assert window_from_env({}) == 35
+        assert window_from_env({"SN21_STANDING_WINDOW_DAYS": "28"}) == 28
+        assert window_from_env({"SN21_STANDING_WINDOW_DAYS": "x"}) == 35
+
+    def test_window_env_cuts_entries(self, monkeypatch):
+        monkeypatch.setenv("SN21_STANDING_WINDOW_DAYS", "28")
+        old = ScoredEpisode(0.9, date(2026, 8, 1), 1.0)     # 34 days old
+        new = ScoredEpisode(0.5, date(2026, 9, 1), 1.0)
+        assert episode_weighted_average([old, new], date(2026, 9, 4), half_life_days=7, prior_mass=0) == pytest.approx(0.5)
+
+    def test_method_params_publish_window_and_margin(self):
+        env = {"SN21_STANDING_MODE": "episode_relative", "SN21_STANDING_HALF_LIFE_DAYS": "7",
+               "SN21_STANDING_PRIOR_MASS": "250", "SN21_STANDING_WINDOW_DAYS": "28",
+               "SN21_PROMOTION_MARGIN_ABS": "0.01"}
+        assert standing_method.method_params(env) == {
+            "mode": "episode_relative", "half_life_days": 7.0, "prior_mass": 250.0,
+            "window_days": 28, "promotion_margin_abs": 0.01}
+        assert standing_method.promotion_margin_abs({}) is None
+
+    def test_absolute_margin_replaces_relative_test(self):
+        from hope.scoring.champion_promotion import PromotionParams, PromotionState, observe_day
+        state = PromotionState(champion="champ", last_observed=date(2026, 9, 3))
+        # relative standings near zero: champion 0.005, challenger 0.012
+        standings = {"champ": 0.005, "chal": 0.012}
+        days = {"champ": 30, "chal": 30}
+        rel = observe_day(state, date(2026, 9, 4), standings, days, PromotionParams())
+        # 0.012 >= 0.005 * 1.05 -> the relative test is trivially met near zero
+        assert rel.state.challenger == "chal"
+        absp = observe_day(state, date(2026, 9, 4), standings, days, PromotionParams(margin_abs=0.01))
+        assert absp.state.challenger is None          # 0.012 < 0.005 + 0.01
+        absp2 = observe_day(state, date(2026, 9, 4), {"champ": 0.005, "chal": 0.02}, days, PromotionParams(margin_abs=0.01))
+        assert absp2.state.challenger == "chal"

@@ -43,7 +43,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 
 from hope.scoring import chronic_failure, standing_ledger
-from hope.scoring.standing_method import load_standing_entries, method_params
+from hope.scoring.standing_method import load_standing_entries, method_params, promotion_margin_abs
 from hope.scoring.tenure import (
     short_tenure_hotkeys,
     tenure_gate_enabled,
@@ -461,6 +461,13 @@ def allocation_from_ledger(
     """
     if min_daily_episodes is None:
         min_daily_episodes = d3_min_daily_episodes(environ)
+    # Champion margin under the published standing method: an absolute lead
+    # when SN21_PROMOTION_MARGIN_ABS is set (the relative-standing rule),
+    # else the 5% relative test. Only the default params are overridden;
+    # an explicit caller keeps what it passed.
+    _abs = promotion_margin_abs(environ)
+    if _abs is not None and promotion_params == PromotionParams():
+        promotion_params = PromotionParams(margin_abs=_abs)
     # Standing entries by the published method (hope.scoring.standing_method):
     # the ledger's absolute scores, or receipt-derived scores relative to the
     # field on the same episode when SN21_STANDING_MODE=episode_relative.

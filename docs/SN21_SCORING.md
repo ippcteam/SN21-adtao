@@ -153,7 +153,11 @@ stay as they are.
    standing of +0.03 means you were 0.03 above the field on the identical
    changes; the mix of change types you were scored on no longer moves your
    number. Every input is in the published receipt.
-2. **Half-life 7 days** (was 12). Window stays 35 days.
+2. **Half-life 7 days, window 28 days** (were 12 and 35). Your standing is
+   your last four weeks, with the most recent week counting most: evidence
+   from three weeks ago carries one eighth of the weight of today's, and
+   nothing older than four weeks counts at all. No position can be held on
+   stale evidence.
 3. **Shrinkage toward the field.** The average carries a prior of **250**
    prediction-mass at the field level (0.0 in relative terms): a standing
    starts at the field and moves out only as evidence accumulates. The
@@ -169,7 +173,18 @@ every honest entry.
 | Entry value | score | score − field mean on the same (episode, horizon) |
 | Half-life | 12 days | 7 days |
 | Prior mass toward the field | none | 250 |
-| Window | 35 days | 35 days |
+| Window | 35 days | 28 days |
+| Champion promotion lead | 5% relative | 0.01 absolute (see rewards doc) |
+
+**What this means for a new model.** Its first entries land 15 days after
+its first basket (the 7-day horizon plus the 7-day settling window), the
+14-day entries a week later, the 28-day entries two weeks after that. From
+the first landing it accrues evidence every day; it clears the placement
+floor within days at full coverage, the earning-set tenure after seven
+scored days, and from then on its rank follows its edge over the field on
+the changes of the last four weeks. Incumbents are measured on exactly the
+same window, so a better recent model overtakes within two to three weeks
+of its first landing, and no faster than the evidence supports.
 
 Effective date: **to be announced**; the parameters in force are published in
 each day's allocation audit (`/v1/daily/{day}/allocation-audit`,

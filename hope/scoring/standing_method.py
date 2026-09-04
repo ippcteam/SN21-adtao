@@ -48,6 +48,7 @@ from hope.scoring.episode_average import (
     ScoredEpisode,
     half_life_from_env,
     prior_mass_from_env,
+    window_from_env,
 )
 
 MODE_ENV = "SN21_STANDING_MODE"
@@ -57,6 +58,20 @@ MODES = (MODE_ABSOLUTE, MODE_EPISODE_RELATIVE)
 
 PENALTY_ENTRY_WEIGHT = 1.0      # mirrors absence_penalty.PENALTY_ENTRY_WEIGHT
 PENALTY_SCORE = 0.0             # the published floor
+
+# Champion promotion margin under a relative standing. The published test
+# "leads by at least 5% (relative)" has no meaning for a standing that sits
+# near zero and can be negative, so the relative mode publishes an ABSOLUTE
+# lead instead (challenger >= champion + margin). Unset = the relative test.
+PROMOTION_MARGIN_ABS_ENV = "SN21_PROMOTION_MARGIN_ABS"
+
+
+def promotion_margin_abs(environ=os.environ) -> float | None:
+    try:
+        v = float((environ.get(PROMOTION_MARGIN_ABS_ENV) or "").strip())
+        return v if v > 0 else None
+    except (TypeError, ValueError):
+        return None
 
 
 def standing_mode(environ=os.environ) -> str:
@@ -74,7 +89,8 @@ def method_params(environ=os.environ) -> dict:
         "mode": standing_mode(environ),
         "half_life_days": half_life_from_env(environ),
         "prior_mass": prior_mass_from_env(environ),
-        "window_days": DEFAULT_WINDOW_DAYS,
+        "window_days": window_from_env(environ),
+        "promotion_margin_abs": promotion_margin_abs(environ),
     }
 
 
@@ -120,10 +136,12 @@ def field_means(entries: list[dict]) -> dict[tuple[str, int], float]:
 
 
 def load_relative_entries(root: str, as_of: date,
-                          window_days: int = DEFAULT_WINDOW_DAYS,
+                          window_days: int | None = None,
                           ) -> dict[str, list[ScoredEpisode]]:
     """hotkey -> relative ScoredEpisodes in the window, from receipts plus
     the absence-penalty log net of cancellations."""
+    if window_days is None:
+        window_days = window_from_env()
     files = _receipt_files(root, as_of, window_days)
     sig = (root, as_of.isoformat(), window_days,
            tuple((p, os.path.getmtime(p)) for _, p in files),
@@ -215,10 +233,12 @@ def _net_penalties(root: str, as_of: date, window_days: int):
 
 
 def load_standing_entries(root: str, as_of: date, environ=os.environ,
-                          window_days: int = DEFAULT_WINDOW_DAYS,
+                          window_days: int | None = None,
                           ) -> dict[str, list[ScoredEpisode]]:
     """The entries every ranking consumer must read: ledger (absolute) or
     receipts (episode-relative), by the published mode."""
+    if window_days is None:
+        window_days = window_from_env(environ)
     if relative_enabled(environ):
         return load_relative_entries(root, as_of, window_days)
     return standing_ledger.load_entries(root, as_of=as_of, window_days=window_days)

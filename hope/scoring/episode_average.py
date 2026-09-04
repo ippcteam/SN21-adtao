@@ -36,6 +36,15 @@ DEFAULT_HALF_LIFE_DAYS = 12.0
 #                                 shrunk toward (0 = plain weighted mean)
 HALF_LIFE_ENV = "SN21_STANDING_HALF_LIFE_DAYS"
 PRIOR_MASS_ENV = "SN21_STANDING_PRIOR_MASS"
+WINDOW_ENV = "SN21_STANDING_WINDOW_DAYS"
+
+
+def window_from_env(environ=os.environ) -> int:
+    try:
+        v = int((environ.get(WINDOW_ENV) or "").strip())
+        return v if v > 0 else DEFAULT_WINDOW_DAYS
+    except (TypeError, ValueError):
+        return DEFAULT_WINDOW_DAYS
 
 
 def half_life_from_env(environ=os.environ) -> float:
@@ -101,7 +110,7 @@ def episode_weighted_average(
     episodes: Iterable[ScoredEpisode],
     as_of: date,
     half_life_days: float | None = None,
-    window_days: int = DEFAULT_WINDOW_DAYS,
+    window_days: int | None = None,
     prior_mass: float | None = None,
     prior_value: float = 0.0,
 ) -> float | None:
@@ -122,6 +131,8 @@ def episode_weighted_average(
         half_life_days = half_life_from_env()
     if prior_mass is None:
         prior_mass = prior_mass_from_env()
+    if window_days is None:
+        window_days = window_from_env()
     num = 0.0
     den = 0.0
     for ep in episodes:
@@ -137,12 +148,14 @@ def episode_weighted_average(
 
 
 def scored_prediction_count(
-    episodes: Iterable[ScoredEpisode], as_of: date, window_days: int = DEFAULT_WINDOW_DAYS
+    episodes: Iterable[ScoredEpisode], as_of: date, window_days: int | None = None
 ) -> float:
     """Evidence MASS inside the window — drives the cold-start floors.
     Weighted entries count by weight (three horizon-entries of one episode
     sum to 1.0 prediction, not 3), so the 250/1000 floors keep their
     episode-denominated meaning under the daily stream."""
+    if window_days is None:
+        window_days = window_from_env()
     return sum(
         ep.weight for ep in episodes
         if 0 <= (as_of - ep.scored_on).days <= window_days
@@ -153,7 +166,7 @@ def standing(
     episodes: list[ScoredEpisode],
     as_of: date,
     half_life_days: float | None = None,
-    window_days: int = DEFAULT_WINDOW_DAYS,
+    window_days: int | None = None,
     prior_mass: float | None = None,
     prior_value: float = 0.0,
 ) -> dict:
@@ -165,6 +178,8 @@ def standing(
     calendar-denominated by design ([D8] condition 3) and belongs to the
     promotion rule, not to this average.
     """
+    if window_days is None:
+        window_days = window_from_env()
     n = scored_prediction_count(episodes, as_of, window_days)
     avg = episode_weighted_average(episodes, as_of, half_life_days, window_days,
                                    prior_mass=prior_mass, prior_value=prior_value)
