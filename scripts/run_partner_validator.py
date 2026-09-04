@@ -52,20 +52,30 @@ def fetch_vector(url: str, api_key: str) -> tuple[dict[str, float], int | None, 
 
 
 def compose_onchain_weights(pairs, burn_uid, burn_fraction):
-    """(uids, weights summing to 1.0) matching the operator's on-chain vector.
+    """(uids, weights) matching the operator's on-chain vector, branch for
+    branch with the committer's override block (onchain_runner):
 
-    `pairs` is [(uid, miner_weight), ...]. Miners are renormalised then scaled
-    to (1 - burn); the burn UID carries burn. With no burn UID published, the
-    miner vector is committed as-is (the pre-burn behaviour).
+      no burn UID, or burn <= 0  ->  miner vector renormalised, unchanged
+      0 < burn < 1               ->  burn UID filtered out of the miner pairs,
+                                     miners renormalised then scaled to
+                                     (1 - burn), burn UID appended at burn
+      burn >= 1                  ->  the full single-UID override: {burn_uid: 1}
+
+    `pairs` is [(uid, miner_weight), ...] from the published vector.
     """
+    if burn_uid is not None and burn_fraction >= 1.0:
+        return [burn_uid], [1.0]
+    apply_burn = burn_uid is not None and 0.0 < burn_fraction < 1.0
+    if apply_burn:
+        # committer parity: the override UID never rides in the miner share
+        pairs = [(u, w) for u, w in pairs if u != burn_uid]
     total = sum(w for _, w in pairs)
     if total <= 0:
         return [], []
-    apply_burn = burn_uid is not None and 0.0 < burn_fraction < 1.0
     scale = (1.0 - burn_fraction) if apply_burn else 1.0
     uids = [u for u, _ in pairs]
     weights = [w / total * scale for _, w in pairs]
-    if apply_burn and burn_uid not in uids:
+    if apply_burn:
         uids.append(burn_uid)
         weights.append(burn_fraction)
     return uids, weights

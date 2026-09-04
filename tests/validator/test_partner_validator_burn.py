@@ -43,9 +43,31 @@ def test_unnormalised_input_is_renormalised_then_burned():
     assert sum(weights) == pytest.approx(1.0)
 
 
-def test_zero_or_full_burn_fraction_is_ignored():
-    # A degenerate fraction (0 or >=1) is not applied — commit the miner vector.
-    for frac in (0.0, 1.0, 1.5, -0.1):
+def test_zero_or_negative_burn_commits_miner_vector_unchanged():
+    # Committer parity: burn <= 0 means the override UID gets nothing and the
+    # miner vector stands (the scheduled state from 15 Sep, or an explicit 0).
+    for frac in (0.0, -0.1):
         uids, weights = compose_onchain_weights([(7, 0.6), (9, 0.4)], 135, frac)
         assert 135 not in uids
         assert sum(weights) == pytest.approx(1.0)
+
+
+def test_full_burn_is_the_single_uid_override():
+    # Committer parity: burn >= 1 is the legacy full single-UID override —
+    # the burn UID takes the whole vector, miners get nothing.
+    for frac in (1.0, 1.5):
+        uids, weights = compose_onchain_weights([(7, 0.6), (9, 0.4)], 135, frac)
+        assert (uids, weights) == ([135], [1.0])
+
+
+def test_burn_uid_in_miner_pairs_is_filtered_like_the_committer():
+    # Committer parity: the override UID never rides in the miner share — it is
+    # filtered out before renormalising, then appended once at the burn share.
+    uids, weights = compose_onchain_weights(
+        [(135, 0.5), (7, 0.3), (9, 0.2)], 135, 0.15)
+    got = dict(zip(uids, weights))
+    assert uids.count(135) == 1
+    assert got[135] == pytest.approx(0.15)
+    assert got[7] == pytest.approx(0.3 / 0.5 * 0.85)   # renormalised over 7,9 only
+    assert got[9] == pytest.approx(0.2 / 0.5 * 0.85)
+    assert sum(weights) == pytest.approx(1.0)
