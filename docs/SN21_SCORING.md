@@ -157,7 +157,7 @@ entry (`resolution`, `weight`) from the effective date, and the resolution
 you are being scored at is the `measurement_resolution` in the episode
 payload you receive.
 
-Effective date: **2026-09-06** — applied to entries finalised on or after
+Effective date: **2026-09-05** — applied to entries finalised on or after
 that date. Entries already in the standing ledger are unchanged.
 
 ## Your standing (moving average)
@@ -204,6 +204,10 @@ every honest entry.
 | Champion promotion lead | 5% relative | 0.01 absolute (see rewards doc) |
 | Weight-curve score threshold | 0.0 | not applied: the top 20 by standing earn the published shares |
 
+The half-life, prior mass and window belong to this amendment and take effect
+with it, on its effective date; a run before that date keeps the "before"
+column whatever the operator has configured ahead of time.
+
 **What this means for a new model.** Its first entries land 15 days after
 its first basket (the 7-day horizon plus the 7-day settling window), the
 14-day entries a week later, the 28-day entries two weeks after that. From
@@ -214,7 +218,7 @@ the changes of the last four weeks. Incumbents are measured on exactly the
 same window, so a better recent model overtakes within two to three weeks
 of its first landing, and no faster than the evidence supports.
 
-Effective date: **2026-09-06** (the daily run of that date and every run
+Effective date: **2026-09-05** (the daily run of that date and every run
 after it). The parameters in force are published in each day's allocation
 audit (`/v1/daily/{day}/allocation-audit`, `standing_method`); a run before
 the effective date reports `absolute` there. Applied forward, never
