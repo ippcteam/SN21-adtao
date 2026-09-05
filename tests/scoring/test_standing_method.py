@@ -74,10 +74,18 @@ class TestShrinkage:
         assert episode_weighted_average([], date(2026, 9, 4), half_life_days=12, prior_mass=250) is None
 
     def test_standing_uses_env_prior(self, monkeypatch):
+        monkeypatch.setenv("SN21_STANDING_MODE", "episode_relative")
         monkeypatch.setenv("SN21_STANDING_PRIOR_MASS", "1")
         monkeypatch.setenv("SN21_STANDING_HALF_LIFE_DAYS", "7")
         eps = [ScoredEpisode(0.5, date(2026, 9, 4), 1.0)]
         assert standing(eps, date(2026, 9, 4))["average"] == pytest.approx(0.25)
+
+    def test_env_prior_is_inert_without_the_mode(self, monkeypatch):
+        # the parameters belong to the amendment: set alone they change nothing
+        monkeypatch.setenv("SN21_STANDING_PRIOR_MASS", "1")
+        monkeypatch.setenv("SN21_STANDING_HALF_LIFE_DAYS", "7")
+        eps = [ScoredEpisode(0.5, date(2026, 9, 4), 1.0)]
+        assert standing(eps, date(2026, 9, 4))["average"] == pytest.approx(0.5)
 
 
 class TestEpisodeRelativeFromReceipts:
@@ -139,6 +147,7 @@ class TestWindowAndPromotionMargin:
         assert window_from_env({"SN21_STANDING_WINDOW_DAYS": "x"}) == 35
 
     def test_window_env_cuts_entries(self, monkeypatch):
+        monkeypatch.setenv("SN21_STANDING_MODE", "episode_relative")
         monkeypatch.setenv("SN21_STANDING_WINDOW_DAYS", "28")
         old = ScoredEpisode(0.9, date(2026, 8, 1), 1.0)     # 34 days old
         new = ScoredEpisode(0.5, date(2026, 9, 1), 1.0)
@@ -214,6 +223,25 @@ class TestEffectiveDate:
     def test_bad_date_is_ignored(self):
         env = {"SN21_STANDING_MODE": "episode_relative", "SN21_STANDING_EFFECTIVE_FROM": "soon"}
         assert standing_method.standing_mode(env, date(2026, 1, 1)) == "episode_relative"
+
+    def test_parameters_wait_for_the_date(self, monkeypatch):
+        env = dict(self.ENV, SN21_STANDING_HALF_LIFE_DAYS="7", SN21_STANDING_WINDOW_DAYS="28",
+                   SN21_STANDING_PRIOR_MASS="250")
+        before = standing_method.method_params(env, date(2026, 9, 5))
+        assert (before["half_life_days"], before["window_days"], before["prior_mass"]) == (12.0, 35, 0.0)
+        after = standing_method.method_params(env, date(2026, 9, 6))
+        assert (after["half_life_days"], after["window_days"], after["prior_mass"]) == (7.0, 28, 250.0)
+        for k, v in env.items():
+            monkeypatch.setenv(k, v)
+        old = ScoredEpisode(0.9, date(2026, 8, 3), 1.0)      # 33 days before 9/5: inside 35, outside 28
+        new = ScoredEpisode(0.5, date(2026, 9, 5), 1.0)
+        # 9/5: rule in force = plain mean, half-life 12, window 35 -> both entries count, no shrinkage
+        w = 0.5 ** (33 / 12)
+        assert standing([old, new], date(2026, 9, 5))["average"] == pytest.approx((0.9 * w + 0.5) / (w + 1))
+        # 9/6: the amendment -> window 28 drops the old entry, half-life 7 ages the new one a day,
+        # mass 250 shrinks it toward 0
+        w6 = 0.5 ** (1 / 7)
+        assert standing([old, new], date(2026, 9, 6))["average"] == pytest.approx(0.5 * w6 / (w6 + 250))
 
     def test_loader_honours_the_date(self, tmp_path):
         root = str(tmp_path)

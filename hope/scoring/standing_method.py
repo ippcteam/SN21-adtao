@@ -46,9 +46,11 @@ from hope.scoring.daily_score_flow import horizon_entry_weight
 from hope.scoring.episode_average import (
     DEFAULT_WINDOW_DAYS,
     ScoredEpisode,
-    half_life_from_env,
-    prior_mass_from_env,
+    amendment_in_force,
+    half_life_in_force,
+    prior_mass_in_force,
     window_from_env,
+    window_in_force,
 )
 
 MODE_ENV = "SN21_STANDING_MODE"
@@ -121,13 +123,7 @@ def promotion_margin_abs(environ=os.environ, day: date | None = None) -> float |
 def standing_mode(environ=os.environ, day: date | None = None) -> str:
     """The mode IN FORCE on `day` (today when None): the configured mode,
     unless the effective date has not arrived, in which case absolute."""
-    v = (environ.get(MODE_ENV) or "").strip().lower()
-    mode = v if v in MODES else MODE_ABSOLUTE
-    if mode != MODE_ABSOLUTE:
-        start = effective_from(environ)
-        if start is not None and (day or date.today()) < start:
-            return MODE_ABSOLUTE
-    return mode
+    return MODE_EPISODE_RELATIVE if amendment_in_force(environ, day) else MODE_ABSOLUTE
 
 
 def relative_enabled(environ=os.environ, day: date | None = None) -> bool:
@@ -140,9 +136,9 @@ def method_params(environ=os.environ, day: date | None = None) -> dict:
         "mode": standing_mode(environ, day),
         "configured_mode": (environ.get(MODE_ENV) or "").strip().lower() or MODE_ABSOLUTE,
         "effective_from": (effective_from(environ).isoformat() if effective_from(environ) else None),
-        "half_life_days": half_life_from_env(environ),
-        "prior_mass": prior_mass_from_env(environ),
-        "window_days": window_from_env(environ),
+        "half_life_days": half_life_in_force(environ, day),
+        "prior_mass": prior_mass_in_force(environ, day),
+        "window_days": window_in_force(environ, day),
         "promotion_margin_abs": promotion_margin_abs(environ, day),
         "curve_score_threshold": curve_score_threshold(environ, day),
     }
@@ -300,7 +296,7 @@ def load_standing_entries(root: str, as_of: date, environ=os.environ,
     """The entries every ranking consumer must read: ledger (absolute) or
     receipts (episode-relative), by the published mode."""
     if window_days is None:
-        window_days = window_from_env(environ)
+        window_days = window_in_force(environ, as_of)
     if relative_enabled(environ, as_of):
         return load_relative_entries(root, as_of, window_days)
     return standing_ledger.load_entries(root, as_of=as_of, window_days=window_days)

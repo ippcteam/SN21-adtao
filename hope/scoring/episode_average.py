@@ -34,6 +34,11 @@ DEFAULT_HALF_LIFE_DAYS = 12.0
 #   SN21_STANDING_HALF_LIFE_DAYS  age half-life of an entry (days)
 #   SN21_STANDING_PRIOR_MASS      evidence mass of the prior the average is
 #                                 shrunk toward (0 = plain weighted mean)
+# Episodes older than this contribute ~0.13 weight and are dropped so the
+# working set stays bounded and auditable (matches stream depth: day 35 is
+# when a basket's last horizon lands).
+DEFAULT_WINDOW_DAYS = 35
+
 HALF_LIFE_ENV = "SN21_STANDING_HALF_LIFE_DAYS"
 PRIOR_MASS_ENV = "SN21_STANDING_PRIOR_MASS"
 WINDOW_ENV = "SN21_STANDING_WINDOW_DAYS"
@@ -61,10 +66,46 @@ def prior_mass_from_env(environ=os.environ) -> float:
         return v if v > 0 else 0.0
     except (TypeError, ValueError):
         return 0.0
-# Episodes older than this contribute ~0.13 weight and are dropped so the
-# working set stays bounded and auditable (matches stream depth: day 35 is
-# when a basket's last horizon lands).
-DEFAULT_WINDOW_DAYS = 35
+
+
+# The three parameters above are published together with the episode-relative
+# standing and take effect on ITS date (SN21_STANDING_EFFECTIVE_FROM). Before
+# that date the rule in force keeps its own values whatever the environment
+# holds, so the whole configuration can be set ahead of the announced day
+# without moving a single standing early. The *_in_force readers are what
+# every consumer of the average uses; the *_from_env readers above are the
+# raw configured values.
+MODE_ENV = "SN21_STANDING_MODE"
+EFFECTIVE_FROM_ENV = "SN21_STANDING_EFFECTIVE_FROM"
+MODE_EPISODE_RELATIVE = "episode_relative"
+
+
+def amendment_in_force(environ=os.environ, day: date | None = None) -> bool:
+    """True when the episode-relative standing (and its parameters) is in
+    force on `day` (today when None): the mode is configured AND the
+    effective date, if one is set, has arrived. Pure."""
+    if (environ.get(MODE_ENV) or "").strip().lower() != MODE_EPISODE_RELATIVE:
+        return False
+    raw = (environ.get(EFFECTIVE_FROM_ENV) or "").strip()
+    if not raw:
+        return True
+    try:
+        start = date.fromisoformat(raw)
+    except ValueError:
+        return True
+    return (day or date.today()) >= start
+
+
+def half_life_in_force(environ=os.environ, day: date | None = None) -> float:
+    return half_life_from_env(environ) if amendment_in_force(environ, day) else DEFAULT_HALF_LIFE_DAYS
+
+
+def window_in_force(environ=os.environ, day: date | None = None) -> int:
+    return window_from_env(environ) if amendment_in_force(environ, day) else DEFAULT_WINDOW_DAYS
+
+
+def prior_mass_in_force(environ=os.environ, day: date | None = None) -> float:
+    return prior_mass_from_env(environ) if amendment_in_force(environ, day) else 0.0
 
 
 def _floor_from_env(name: str, default: int) -> int:
@@ -124,15 +165,17 @@ def episode_weighted_average(
     evidence mass behind the prior (a Bayesian average): a miner with little
     evidence sits near the prior and moves out only as evidence accumulates,
     so thin evidence cannot produce a leader. Mass 0 is the plain weighted
-    mean. `half_life_days` and `prior_mass` default to the environment
-    values (half_life_from_env / prior_mass_from_env).
+    mean. `half_life_days`, `window_days` and `prior_mass` default to the
+    values IN FORCE on `as_of` (half_life_in_force / window_in_force /
+    prior_mass_in_force): the configured ones once the amendment's date has
+    arrived, the published defaults before it.
     """
     if half_life_days is None:
-        half_life_days = half_life_from_env()
+        half_life_days = half_life_in_force(day=as_of)
     if prior_mass is None:
-        prior_mass = prior_mass_from_env()
+        prior_mass = prior_mass_in_force(day=as_of)
     if window_days is None:
-        window_days = window_from_env()
+        window_days = window_in_force(day=as_of)
     num = 0.0
     den = 0.0
     for ep in episodes:
@@ -155,7 +198,7 @@ def scored_prediction_count(
     sum to 1.0 prediction, not 3), so the 250/1000 floors keep their
     episode-denominated meaning under the daily stream."""
     if window_days is None:
-        window_days = window_from_env()
+        window_days = window_in_force(day=as_of)
     return sum(
         ep.weight for ep in episodes
         if 0 <= (as_of - ep.scored_on).days <= window_days
@@ -179,7 +222,7 @@ def standing(
     promotion rule, not to this average.
     """
     if window_days is None:
-        window_days = window_from_env()
+        window_days = window_in_force(day=as_of)
     n = scored_prediction_count(episodes, as_of, window_days)
     avg = episode_weighted_average(episodes, as_of, half_life_days, window_days,
                                    prior_mass=prior_mass, prior_value=prior_value)
