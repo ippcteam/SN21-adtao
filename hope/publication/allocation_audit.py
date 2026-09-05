@@ -131,6 +131,11 @@ def build_document(day: date | str, collapse_audit: dict | None) -> dict:
             "stood_down": bool(tenure.get("stood_down")),
         },
         "controls": policies,
+        # Per-hotkey standings (rule amendment 2026-09-05): the relative
+        # standing that ranks and pays, the absolute accuracy over the same
+        # window (the board's headline number) and the rank. Written by the
+        # allocation; absent on days before the amendment.
+        "standings": dict(audit.get("standings") or {}),
         "how_to_verify": HOW_TO_VERIFY,
     }
 

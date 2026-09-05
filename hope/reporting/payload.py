@@ -54,7 +54,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import model_serializer, BaseModel, ConfigDict, Field, field_validator
 
 # Tier emission shares are the policy constants per
 # SN21_REWARD_MECHANISM.md §"Component 2 — Tiered emission bands".
@@ -210,6 +210,17 @@ class MinerResult(BaseModel):
     # explicitly. Only sent when the CMS accepts them (SN21_REPORT_ROW_EXTRAS).
     absolute_score: float | None = Field(default=None, ge=0.0, le=1.0)
     relative_standing: float | None = None
+
+    @model_serializer(mode="wrap")
+    def _drop_absent_extras(self, handler):
+        """The CMS row schema rejects keys it does not know: the two extras
+        leave the wire entirely unless they carry a value (5 Sept 2026, a
+        400 on the day's report from `absolute_score: null`)."""
+        data = handler(self)
+        for key in ("absolute_score", "relative_standing"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        return data
 
     @field_validator("hotkey")
     @classmethod

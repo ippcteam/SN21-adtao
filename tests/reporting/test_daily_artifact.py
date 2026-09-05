@@ -154,3 +154,30 @@ def test_without_display_scores_nothing_changes():
     art = build_daily_artifact(standings=standings, uid_by_hotkey=uid_by_hotkey,
                                total_registered_uids=256, day="2026-09-05")
     assert all("absolute_score" not in r for r in art.per_uid_scores)
+
+
+def test_wire_rows_carry_no_null_extras():
+    """5 Sept 2026: the CMS rejected the day's report because the two new
+    optional row fields serialised as null. Absent means absent."""
+    standings, uid_by_hotkey, (hk1, hk2, hk3, _) = _standings()
+    art = build_daily_artifact(standings=standings, uid_by_hotkey=uid_by_hotkey,
+                               total_registered_uids=256, day="2026-09-05",
+                               display_scores={hk1: 0.55, hk2: 0.61, hk3: 0.58})
+    body = aggregate(art).model_dump(mode="json")
+    for row in body["miner_results"]:
+        assert "absolute_score" not in row and "relative_standing" not in row
+        assert set(row) >= {"uid", "hotkey", "score", "status", "tier", "met_baseline", "policies"}
+
+
+def test_below_field_models_are_scored_rows_not_disqualified():
+    """CMS invariant: met_baseline=true requires status "scored". Under the
+    relative standing half the field sits below zero; shown with their
+    accuracy they are scored, unpaid rows — never "below threshold"."""
+    standings, uid_by_hotkey, (hk1, hk2, hk3, _) = _standings()
+    art = build_daily_artifact(
+        standings={hk1: 0.03, hk2: -0.01, hk3: -0.02}, uid_by_hotkey=uid_by_hotkey,
+        total_registered_uids=256, day="2026-09-05",
+        display_scores={hk1: 0.59, hk2: 0.55, hk3: 0.52})
+    rows = aggregate(art).miner_results
+    assert all(r.status == "scored" for r in rows if r.met_baseline)
+    assert {r.uid: r.status for r in rows}[2] == "scored" and {r.uid: r.score for r in rows}[2] == 0.55

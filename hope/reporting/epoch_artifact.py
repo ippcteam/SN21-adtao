@@ -463,4 +463,23 @@ def build_daily_artifact(
             row["raw_score"] = shown
             row["score_micro"] = int(round(shown * 1_000_000))
             row["met_baseline"] = shown > baseline_score
+        # The tier gate ran on the RELATIVE standing, where "below baseline"
+        # means below the field — a model that scored, not a disqualification.
+        # A row that now shows its accuracy is a scored row (the CMS enforces
+        # exactly that: met_baseline=true requires status "scored"), so lift
+        # the below-baseline exclusion for every row whose shown accuracy
+        # clears the baseline. Tiers, the funded set and the ranking are
+        # untouched; the miner simply appears as scored and not paid.
+        tr = artifact.tier_result if isinstance(artifact.tier_result, dict) else {}
+        excl = tr.get("excluded")
+        if isinstance(excl, dict):
+            lifted = [hk for hk, reason in excl.items()
+                      if str(reason) in ("below_baseline", "below_threshold")
+                      and hex_to_ss58.get(str(hk)) in display_scores
+                      and float(display_scores[hex_to_ss58[str(hk)]]) > baseline_score]
+            for hk in lifted:
+                del excl[hk]
+            if lifted:
+                qualifying = list(tr.get("qualifying") or [])
+                tr["qualifying"] = qualifying + [hk for hk in lifted if hk not in qualifying]
     return artifact
