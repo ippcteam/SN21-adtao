@@ -343,8 +343,15 @@ def build_daily_artifact(
     epoch_subtype: str | None = "campaign-level",
     epoch_type_multiplier: float = 1.0,
     chain_fetch_timestamp: str | None = None,
+    display_scores: dict[str, float] | None = None,
 ) -> EpochArtifact:
     """Assemble an EpochArtifact for a DAILY basket from the executor's standings.
+
+    `display_scores` (hotkey_ss58 -> absolute accuracy in [0, 1]), when given,
+    replaces each scored row's `raw_score` AFTER the tiers were computed from
+    `standings`: the board's headline number is the accuracy, while the
+    ranking, the tier bands and the funded set follow the (relative) standing.
+    The standing itself stays on the row as `relative_standing`.
 
     The daily stream scores off-chain — the validator's on-chain path filters
     BD- epochs out — so there is no `EpochScoringOutcome` to feed `build_artifact`.
@@ -427,7 +434,7 @@ def build_daily_artifact(
         block_range_end=block_range_end,
         report_only=True,
     )
-    return build_artifact(
+    artifact = build_artifact(
         outcome=outcome,
         epoch_id=f"BD-{day}",
         total_registered_uids=total_registered_uids,
@@ -439,3 +446,21 @@ def build_daily_artifact(
         baseline_score=baseline_score,
         horizons=DAILY_HORIZONS,
     )
+    if display_scores:
+        hex_to_ss58 = {}
+        for hotkey_ss58 in scored:
+            try:
+                hex_to_ss58[_ss58_to_bytes(hotkey_ss58).hex()] = hotkey_ss58
+            except Exception:  # noqa: BLE001
+                continue
+        for row in artifact.per_uid_scores:
+            ss58 = hex_to_ss58.get(str(row.get("hotkey")))
+            if ss58 is None or ss58 not in display_scores or row.get("status"):
+                continue
+            shown = max(0.0, min(1.0, float(display_scores[ss58])))
+            row["relative_standing"] = float(row["raw_score"])
+            row["absolute_score"] = shown
+            row["raw_score"] = shown
+            row["score_micro"] = int(round(shown * 1_000_000))
+            row["met_baseline"] = shown > baseline_score
+    return artifact

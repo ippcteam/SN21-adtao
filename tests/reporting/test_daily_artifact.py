@@ -110,3 +110,47 @@ def test_missing_block_range_defaults_to_zero_not_a_crash():
     payload = aggregate(art)
     assert payload.block_range_start == 0
     assert payload.block_range_end == 0
+
+
+def test_display_scores_replace_the_headline_but_not_the_tiers():
+    """Rule amendment 2026-09-05: `standings` (relative) ranks and tiers;
+    `display_scores` (absolute accuracy) is what the row shows."""
+    standings, uid_by_hotkey, (hk1, hk2, hk3, _) = _standings()
+    relative = {hk1: 0.03, hk2: 0.01, hk3: -0.02}          # ranks 1, 2, 3
+    absolute = {hk1: 0.55, hk2: 0.61, hk3: 0.58}           # a different order
+    art = build_daily_artifact(
+        standings=relative, uid_by_hotkey=uid_by_hotkey, total_registered_uids=256,
+        day="2026-09-05", display_scores=absolute)
+    rows = {r["uid"]: r for r in art.per_uid_scores}
+    assert rows[1]["raw_score"] == 0.55 and rows[1]["relative_standing"] == 0.03
+    assert rows[2]["raw_score"] == 0.61 and rows[2]["absolute_score"] == 0.61
+    assert rows[3]["raw_score"] == 0.58 and rows[3]["relative_standing"] == -0.02
+    assert all(r["met_baseline"] for r in rows.values())    # accuracy > 0 baseline
+    # tiers were computed from the RELATIVE standing: hk1 leads although hk2
+    # has the higher accuracy
+    elite = set(art.tier_result.get("elite", []) or [])
+    payload = aggregate(art)
+    by_uid = {m.uid: m for m in payload.miner_results}
+    assert by_uid[1].score == 0.55 and by_uid[2].score == 0.61
+    assert by_uid[1].absolute_score is None                 # extras off by default
+    if elite:
+        assert rows[1]["hotkey"] in elite
+
+
+def test_row_extras_ride_only_when_enabled(monkeypatch):
+    standings, uid_by_hotkey, (hk1, hk2, hk3, _) = _standings()
+    art = build_daily_artifact(
+        standings={hk1: 0.03, hk2: 0.01, hk3: -0.02}, uid_by_hotkey=uid_by_hotkey,
+        total_registered_uids=256, day="2026-09-05",
+        display_scores={hk1: 0.55, hk2: 0.61, hk3: 0.58})
+    monkeypatch.setenv("SN21_REPORT_ROW_EXTRAS", "1")
+    by_uid = {m.uid: m for m in aggregate(art).miner_results}
+    assert by_uid[1].absolute_score == 0.55 and by_uid[1].relative_standing == 0.03
+    assert by_uid[3].relative_standing == -0.02               # negative allowed
+
+
+def test_without_display_scores_nothing_changes():
+    standings, uid_by_hotkey, _ = _standings()
+    art = build_daily_artifact(standings=standings, uid_by_hotkey=uid_by_hotkey,
+                               total_registered_uids=256, day="2026-09-05")
+    assert all("absolute_score" not in r for r in art.per_uid_scores)

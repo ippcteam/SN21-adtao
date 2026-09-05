@@ -666,11 +666,15 @@ def stage_publish_report(ledger_root, day):
     from hope.reporting.epoch_artifact import build_daily_artifact
     from scripts.post_epoch_report import DEFAULT_ENDPOINT, post_with_correction
 
+    # Headline number = absolute accuracy over the same window; ranking, tiers
+    # and the funded set follow `standings` (relative from the amendment date).
+    _absolute = intent.get("standings_absolute") or {}
     artifact = build_daily_artifact(
         standings={str(k): float(v) for k, v in standings.items()},
         uid_by_hotkey=uid_by_hotkey,
         total_registered_uids=len(uid_by_hotkey),
         day=str(day),
+        display_scores=({str(k): float(v) for k, v in _absolute.items()} or None),
     )
     # Accuracy-by-type: attach the day's PUBLIC cut when the 1c stage
     # produced it (fail-soft: a missing or unreadable artifact publishes

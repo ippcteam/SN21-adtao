@@ -453,6 +453,19 @@ def _matches(hotkey: str, names) -> bool:
     return any(alias in names for alias in _hotkey_aliases(hotkey))
 
 
+ROW_EXTRAS_ENV = "SN21_REPORT_ROW_EXTRAS"
+
+
+def row_extras_enabled(environ=None) -> bool:
+    """Whether per-row `absolute_score` / `relative_standing` are sent to the
+    CMS. Off until the CMS schema carries the two fields: an unknown field
+    would fail the whole report post, and the board can read the same numbers
+    from the allocation audit meanwhile."""
+    import os as _os
+    env = environ if environ is not None else _os.environ
+    return (env.get(ROW_EXTRAS_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _build_miner_results(
     artifact: EpochArtifact,
     *,
@@ -573,6 +586,12 @@ def _build_miner_results(
                 and not _matches(hotkey, earning_set):
             tier = None
 
+        extras: dict = {}
+        if row_extras_enabled():
+            if entry.get("absolute_score") is not None:
+                extras["absolute_score"] = max(0.0, min(1.0, float(entry["absolute_score"])))
+            if entry.get("relative_standing") is not None:
+                extras["relative_standing"] = float(entry["relative_standing"])
         results.append(MinerResult(
             uid=uid,
             hotkey=_hotkey_to_ss58(hotkey),
@@ -583,6 +602,7 @@ def _build_miner_results(
             # Keyed on the RAW hotkey: the audit records whatever the
             # allocation used, which is the same string the standings use.
             policies=_lookup(hotkey, policy_notes) or [],
+            **extras,
         ))
         emitted_hotkeys.add(hotkey)
 

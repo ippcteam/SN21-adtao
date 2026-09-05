@@ -593,6 +593,9 @@ def run_daily_loop(
                     # gated weight vector: the public leaderboard shows SCORES,
                     # which are facts even on a gated day when weights hold.
                     "standings": alloc.standings,
+                    # Absolute accuracy over the same window (headline number
+                    # on the board); equals `standings` under the absolute rule.
+                    "standings_absolute": alloc.standings_absolute,
                     "earning_set_size": alloc.earning_set_size,
                     "champion": (alloc.promotion.state.champion
                                  if alloc.promotion else None),

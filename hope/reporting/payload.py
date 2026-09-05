@@ -205,6 +205,11 @@ class MinerResult(BaseModel):
     # and none of them touched you", null is "this report predates per-miner
     # policy reporting". Neither may be read as "no rules apply".
     policies: list[PolicyOutcome] | None = None
+    # Under the relative standing (rule amendment 2026-09-05) `score` is the
+    # absolute accuracy shown as the headline; these carry the two numbers
+    # explicitly. Only sent when the CMS accepts them (SN21_REPORT_ROW_EXTRAS).
+    absolute_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    relative_standing: float | None = None
 
     @field_validator("hotkey")
     @classmethod

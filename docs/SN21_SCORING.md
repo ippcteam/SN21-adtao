@@ -208,6 +208,15 @@ The half-life, prior mass and window belong to this amendment and take effect
 with it, on its effective date; a run before that date keeps the "before"
 column whatever the operator has configured ahead of time.
 
+**What the public board shows.** A relative standing sits near zero by
+construction (a field-average model reads 0.000), so the leaderboard's
+headline number is the **absolute accuracy** — the age-weighted mean of the
+absolute scores over the same window and half-life, without the prior — and the
+relative standing is shown beneath it as a signed edge over the field. Rows are
+ranked by the relative standing, which is what pays. Both numbers are published
+per hotkey in each day's allocation audit (`standings`: `relative`, `absolute`,
+`rank`).
+
 **What this means for a new model.** Its first entries land 15 days after
 its first basket (the 7-day horizon plus the 7-day settling window), the
 14-day entries a week later, the 28-day entries two weeks after that. From

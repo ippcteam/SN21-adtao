@@ -39,6 +39,7 @@ import json
 import logging
 import os
 from collections.abc import Mapping
+import dataclasses
 from dataclasses import dataclass, field, replace
 from datetime import date
 
@@ -127,6 +128,41 @@ class DailyAllocation:
     # grouping. Published in the receipt so a suppression can be recomputed
     # and argued with rather than merely announced.
     collapse_audit: dict = field(default_factory=dict)
+    # hotkey -> age-weighted mean of the ABSOLUTE scores over the window and
+    # half-life in force, no shrinkage: the accuracy number the board shows as
+    # its headline while `standings` (relative from the amendment's date) is
+    # what ranks and pays. Identical to `standings` under the absolute rule.
+    standings_absolute: dict = field(default_factory=dict)
+
+
+def absolute_standings(root: str, day: date, environ=os.environ) -> dict:
+    """hotkey -> D13 mean of the ledger's absolute scores over the window and
+    half-life in force on `day`, without the field prior. Published beside the
+    relative standing (audit `standings`, intent `standings_absolute`) so the
+    public board can show accuracy as the headline number."""
+    from hope.scoring.episode_average import (
+        episode_weighted_average, half_life_in_force, window_in_force)
+    w = window_in_force(environ, day)
+    hl = half_life_in_force(environ, day)
+    out: dict = {}
+    for hk, eps in standing_ledger.load_entries(root, as_of=day, window_days=w).items():
+        avg = episode_weighted_average(eps, day, half_life_days=hl, window_days=w, prior_mass=0.0)
+        if avg is not None:
+            out[hk] = avg
+    return out
+
+
+def standings_block(relative: Mapping[str, float], absolute: Mapping[str, float]) -> dict:
+    """The audit's per-hotkey `standings` block: relative standing (what ranks
+    and pays), absolute accuracy (the headline number) and the rank by the
+    relative standing. Pure."""
+    ranked = sorted(relative.items(), key=lambda kv: (-float(kv[1]), kv[0]))
+    return {
+        hk: {"relative": round(float(v), 6),
+             "absolute": (round(float(absolute[hk]), 6) if hk in absolute else None),
+             "rank": i}
+        for i, (hk, v) in enumerate(ranked, 1)
+    }
 
 
 def allocation_from_api(base_url: str, api_key: str, timeout_s: int = 60) -> "DailyAllocation":
@@ -565,6 +601,14 @@ def allocation_from_ledger(
     # behaviour is left alone and made LOUD instead. The counterfactual is
     # computed only on the empty-vector path, and only to prove enforcement
     # (rather than a thin field) is the cause.
+    # Absolute accuracy beside the relative standing (see DailyAllocation).
+    _absolute = absolute_standings(root, day, environ)
+    alloc = dataclasses.replace(
+        alloc,
+        standings_absolute={hk: _absolute[hk] for hk in alloc.standings if hk in _absolute},
+        collapse_audit={**alloc.collapse_audit,
+                        "standings": standings_block(alloc.standings, _absolute)},
+    )
     if evicted and not alloc.gated and alloc.earning_set_size == 0:
         counterfactual = compute_daily_allocation(
             entries, day, day_episode_volume, state,

@@ -190,3 +190,11 @@ class TestBackwardCompatibility:
                        copy_suppressed=frozenset({"farmB"}))
         assert alloc.collapse_audit["coldkey_cap"]["dropped"] == ["farmB"]
         assert alloc.collapse_audit["suppressed"] == ["farmB"]
+
+
+class TestStandingsBlock:
+    def test_ranks_by_relative_and_carries_absolute(self):
+        from hope.validator.daily_stream_weights import standings_block
+        blk = standings_block({"A": 0.01, "B": 0.03, "C": -0.02}, {"A": 0.61, "B": 0.55})
+        assert blk["B"] == {"relative": 0.03, "absolute": 0.55, "rank": 1}
+        assert blk["A"]["rank"] == 2 and blk["C"] == {"relative": -0.02, "absolute": None, "rank": 3}
