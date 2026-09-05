@@ -585,6 +585,15 @@ def _build_miner_results(
         if tier is not None and earning_set is not None \
                 and not _matches(hotkey, earning_set):
             tier = None
+        # And the converse: a hotkey the vector PAYS is funded, whatever band
+        # the tier allocator drew. The daily curve pays the top twenty of the
+        # placements left after the controls, which reaches well past the
+        # allocator's rosters once copies and second seats are removed; those
+        # tail earners were published as "not funded" (5 Sept 2026: 20 paid,
+        # 12 shown). The lowest band is the honest label for a small weight.
+        if tier is None and status == "scored" and earning_set is not None \
+                and _matches(hotkey, earning_set):
+            tier = "participating"
 
         extras: dict = {}
         if row_extras_enabled():

@@ -145,3 +145,25 @@ class TestTheReasonTravelsWithTheRow:
                                          "eliminated": [SUPPRESSED]}]}}
         rows = _rows({PAID}, collapse_audit=audit)
         assert not rows[PAID].policies
+
+
+class TestPaidImpliesFunded:
+    """5 Sept 2026: the curve paid twenty hotkeys, the board showed twelve
+    funded — the tier allocator's rosters stopped short of the tail earners.
+    A hotkey the vector pays is funded; the lowest band is its label."""
+
+    def test_a_paid_hotkey_without_a_band_is_shown_participating(self):
+        artifact = _Artifact([PAID, SUPPRESSED], tiers=[])      # allocator drew nobody
+        rows = {r.hotkey: r for r in _build_miner_results(
+            artifact, tier_split_active=True, earning_set={PAID})}
+        assert rows[PAID].tier == "participating" and rows[PAID].status == "scored"
+        assert rows[SUPPRESSED].tier is None
+
+    def test_an_existing_band_is_kept(self):
+        rows = _rows({PAID})
+        assert rows[PAID].tier == "elite"
+
+    def test_no_vector_still_leaves_tiers_alone(self):
+        artifact = _Artifact([PAID], tiers=[])
+        rows = {r.hotkey: r for r in _build_miner_results(artifact, tier_split_active=True, earning_set=None)}
+        assert rows[PAID].tier is None
