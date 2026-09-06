@@ -28,6 +28,8 @@ import time
 import urllib.error
 import urllib.request
 
+from hope.publication.rail import canonical_bytes
+
 MIRROR_POST_PATH = "/internal/bittensor/v1/daily/mirror"
 
 _PROOF_HOW = (
@@ -262,9 +264,28 @@ class MirrorSyncError(RuntimeError):
             f"failed paths: {failed_paths[:8]}")
 
 
+def wire_items(items: list[dict]) -> list[dict]:
+    """The POST form of mirror items: each document travels as `body_raw`,
+    its rail-canonical bytes as one string, instead of as a parsed `body`.
+    The mirror stores that string verbatim and lets its database parse it,
+    so a large receipt (tens of megabytes on a busy day) never has to be
+    rebuilt as objects on the receiving side. The bytes are the same ones
+    the executor signs (rail.canonical_bytes), so attestation is
+    unchanged. Pure."""
+    out = []
+    for it in items:
+        body = it.get("body")
+        if isinstance(body, (dict, list)):
+            out.append({"path": it.get("path"),
+                        "body_raw": canonical_bytes(body).decode()})
+        else:
+            out.append(dict(it))
+    return out
+
+
 def _post(api_url: str, api_key: str, items: list[dict],
           timeout: int, retries: int = 3, backoff: float = 2.0) -> dict:
-    data = json.dumps({"items": items}).encode()
+    data = json.dumps({"items": wire_items(items)}).encode()
     for attempt in range(retries + 1):
         req = urllib.request.Request(
             api_url.rstrip("/") + MIRROR_POST_PATH,

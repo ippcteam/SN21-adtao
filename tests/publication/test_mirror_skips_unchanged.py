@@ -268,3 +268,36 @@ class TestAdoptionComparesTheEnvelopeHash:
         sent = []
         self._run(tmp_path, monkeypatch, held_sha=None, sent=sent)
         assert sent == [["/v1/daily/2026-08-24/receipt"]]
+
+
+class TestWireForm:
+    """Documents travel to the mirror as their canonical bytes in one string
+    (`body_raw`), never as a parsed object the mirror must rebuild."""
+
+    def test_body_becomes_canonical_body_raw(self):
+        from hope.publication.rail import canonical_bytes
+        doc = {"metrics": {"entries": [{"score": 0.5, "miner": "A"}]}, "sha256": "x", "u": "\u00e9"}
+        out = mirror_sync.wire_items([{"path": "/v1/daily/2026-09-06/receipt", "body": doc}])
+        assert out == [{"path": "/v1/daily/2026-09-06/receipt", "body_raw": canonical_bytes(doc).decode()}]
+        assert json.loads(out[0]["body_raw"]) == doc
+
+    def test_items_already_in_wire_form_pass_through(self):
+        it = {"path": "/v1/daily/root", "body_raw": "{}"}
+        assert mirror_sync.wire_items([it]) == [it]
+
+    def test_post_sends_body_raw(self, monkeypatch):
+        import io
+        import urllib.request
+        sent = {}
+
+        class _Resp(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def fake_urlopen(req, timeout=None):
+            sent["body"] = json.loads(req.data.decode())
+            return _Resp(b'{"success": true, "stored": 1, "rejected": []}')
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        out = mirror_sync._post("https://mirror.example", "k", [{"path": "/v1/daily/index", "body": {"count": 1}}], timeout=5)
+        assert out["stored"] == 1
+        assert sent["body"] == {"items": [{"path": "/v1/daily/index", "body_raw": '{"count":1}'}]}
