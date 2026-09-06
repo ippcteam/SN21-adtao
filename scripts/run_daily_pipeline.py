@@ -695,38 +695,32 @@ def stage_publish_report(ledger_root, day):
     # Who is actually paid today. The report's tiers come from standings, which
     # the earning controls never touch, so without this a suppressed miner is
     # published as funded and the policy note under it reads as a contradiction.
-    _weights = intent.get("weights") or {}
-    _earning = {str(hk) for hk, w in _weights.items() if float(w) > 0}
-
+    # The vector this report describes, with the audit that produced it.
     # A held day publishes no NEW vector; it does not stop anyone earning.
     # The previous vector stays on chain and the heartbeat keeps re-asserting
     # it, so the miners paid yesterday are still being paid today. Reporting
     # nobody as funded told them their income had stopped when it had not,
-    # which is a worse error than the one it replaced.
-    #
-    # So a held day reports the vector that is actually live: the most recent
-    # published one.
-    _held = False
-    if not _earning:
-        import glob as _glob
-        import re as _re
-        prior = sorted(_glob.glob(os.path.join(ledger_root,
-                                               "intended_weights_*.json")))
-        for path in reversed(prior):
-            m = _re.search(r"intended_weights_(\d{4}-\d{2}-\d{2})\.json$", path)
-            if not m or m.group(1) >= str(day):
-                continue
-            try:
-                with open(path) as fh:
-                    older = (json.load(fh).get("weights") or {})
-            except (OSError, ValueError):
-                continue
-            got = {str(hk) for hk, w in older.items() if float(w) > 0}
-            if got:
-                _earning, _held = got, True
-                log(f"[publish-report] day held — reporting the live vector "
-                    f"from {m.group(1)} ({len(got)} earning)")
-                break
+    # which is a worse error than the one it replaced. So a held day reports
+    # the vector that is actually live — the most recent published one —
+    # together with THAT day's control decisions, never today's
+    # (hope.reporting.held_day).
+    from hope.reporting.held_day import live_allocation
+    import glob as _glob
+    import re as _re
+    _older = []
+    for path in sorted(_glob.glob(os.path.join(ledger_root, "intended_weights_*.json")), reverse=True):
+        m = _re.search(r"intended_weights_(\d{4}-\d{2}-\d{2})\.json$", path)
+        if not m or m.group(1) >= str(day):
+            continue
+        try:
+            with open(path) as fh:
+                _older.append((m.group(1), json.load(fh)))
+        except (OSError, ValueError):
+            continue
+    _live = live_allocation(str(day), intent, _older)
+    _earning, _held = set(_live.earning_set), _live.held
+    for _note in _live.notes:
+        log(f"[publish-report] {_note}")
     # A gated day pays nobody, and that is a fact about the DAY — no per-miner
     # control can express it, so without saying it here the miners who would
     # otherwise have earned show "not funded" against no reason at all. Which
@@ -742,7 +736,7 @@ def stage_publish_report(ledger_root, day):
         )
     payload = aggregate(artifact, accuracy_by_type=_acc,
                         commentary_markdown=_gated_note,
-                        collapse_audit=intent.get("collapse_audit") or {},
+                        collapse_audit=_live.collapse_audit,
                         # An empty vector is passed through as an empty set,
                         # NOT as "leave the tiers alone".
                         #
