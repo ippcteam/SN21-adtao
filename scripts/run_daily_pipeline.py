@@ -669,12 +669,17 @@ def stage_publish_report(ledger_root, day):
     # Headline number = absolute accuracy over the same window; ranking, tiers
     # and the funded set follow `standings` (relative from the amendment date).
     _absolute = intent.get("standings_absolute") or {}
+    # Scored hotkeys still under the placement floor, from today's audit: they
+    # hold no standing, so without this they were in the receipts and absent
+    # from the board. Today's evidence is the fact, whichever vector is shown.
+    _below_floor = ((intent.get("collapse_audit") or {}).get("placement") or {}).get("below") or {}
     artifact = build_daily_artifact(
         standings={str(k): float(v) for k, v in standings.items()},
         uid_by_hotkey=uid_by_hotkey,
         total_registered_uids=len(uid_by_hotkey),
         day=str(day),
         display_scores=({str(k): float(v) for k, v in _absolute.items()} or None),
+        below_floor={str(k): dict(v or {}) for k, v in _below_floor.items()},
     )
     # Accuracy-by-type: attach the day's PUBLIC cut when the 1c stage
     # produced it (fail-soft: a missing or unreadable artifact publishes

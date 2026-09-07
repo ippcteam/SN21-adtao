@@ -112,6 +112,8 @@ def build_document(day: date | str, collapse_audit: dict | None) -> dict:
             "hotkeys_excluded_as_copies": len(audit.get("suppressed") or []),
             "hotkeys_excluded_by_coldkey_cap": _count(coldkey.get("dropped")),
             "hotkeys_below_tenure": len(tenure.get("hotkeys") or []),
+            "hotkeys_below_placement_floor": len(
+                (audit.get("placement") or {}).get("below") or {}),
         },
         "groups": groups,
         "one_coldkey_one_seat": {
@@ -136,6 +138,15 @@ def build_document(day: date | str, collapse_audit: dict | None) -> dict:
         # window (the board's headline number) and the rank. Written by the
         # allocation; absent on days before the amendment.
         "standings": dict(audit.get("standings") or {}),
+        # Scored hotkeys still under the placement floor, each with the
+        # evidence it has (prediction mass inside the window) and its accuracy
+        # so far. They hold no standing yet, so they appear nowhere else in
+        # this document; without this block a miner present in the receipts
+        # and absent from the board could not tell a floor from a gap.
+        "placement": {
+            "floor": (audit.get("placement") or {}).get("floor"),
+            "below": dict((audit.get("placement") or {}).get("below") or {}),
+        },
         "how_to_verify": HOW_TO_VERIFY,
     }
 

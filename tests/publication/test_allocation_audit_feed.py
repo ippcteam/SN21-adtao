@@ -150,3 +150,18 @@ class TestWriting:
         leftovers = [f for f in os.listdir(os.path.join(root, "allocation_audit"))
                      if f.endswith(".tmp")]
         assert leftovers == []
+
+
+class TestPlacementFloorTravels:
+    def test_the_document_carries_the_pending_hotkeys_and_their_evidence(self):
+        audit = {**AUDIT, "placement": {"floor": 50, "below": {
+            "hk-new": {"scored_predictions": 48.33, "absolute": 0.57}}}}
+        doc = build_document(DAY, audit)
+        assert doc["placement"] == {"floor": 50, "below": {
+            "hk-new": {"scored_predictions": 48.33, "absolute": 0.57}}}
+        assert doc["summary"]["hotkeys_below_placement_floor"] == 1
+
+    def test_an_older_audit_without_the_block_still_builds(self):
+        doc = build_document(DAY, AUDIT)
+        assert doc["placement"] == {"floor": None, "below": {}}
+        assert doc["summary"]["hotkeys_below_placement_floor"] == 0

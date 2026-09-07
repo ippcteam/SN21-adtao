@@ -215,7 +215,10 @@ absolute scores over the same window and half-life, without the prior — and th
 relative standing is shown beneath it as a signed edge over the field. Rows are
 ranked by the relative standing, which is what pays. Both numbers are published
 per hotkey in each day's allocation audit (`standings`: `relative`, `absolute`,
-`rank`).
+`rank`). A hotkey whose evidence is still under the placement floor has no
+standing and no rank yet; it is listed all the same, with its accuracy so far
+and its evidence against the floor, and the audit's `placement` block carries
+the same numbers.
 
 **What this means for a new model.** Its first entries land 15 days after
 its first basket (the 7-day horizon plus the 7-day settling window), the

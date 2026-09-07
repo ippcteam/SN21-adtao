@@ -280,3 +280,21 @@ class TestTheSeatRowNamesTheOwner:
             {"coldkey_cap": {"dropped": [self.DROPPED]}})[self.DROPPED][0]
         assert "same owner" in note.detail
         assert note.counterparty is None
+
+
+class TestPlacementFloorExplainsItself:
+    def test_the_pending_miner_is_told_its_number_and_the_bar(self):
+        notes = policies_by_hotkey({
+            "placement": {"floor": 50, "below": {"young": {"scored_predictions": 48.33,
+                                                          "absolute": 0.57}}}})
+        [note] = notes["young"]
+        assert note.control == "placement_floor"
+        assert "48.3 of the 50" in note.detail
+        assert "earns nothing" in note.detail
+
+    def test_a_floor_without_a_count_still_names_the_floor(self):
+        notes = policies_by_hotkey({"placement": {"floor": 250.0, "below": {"y": {}}}})
+        assert "floor of 250" in notes["y"][0].detail
+
+    def test_nobody_below_means_no_notes(self):
+        assert policies_by_hotkey({"placement": {"floor": 50, "below": {}}}) == {}

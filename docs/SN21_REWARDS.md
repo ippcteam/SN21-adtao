@@ -87,6 +87,9 @@ You need enough scored predictions in the standing window before the curve can p
 
 - **250** scored predictions → eligible for placement
 - **1000** → full standing confidence
+- under the floor you are still listed on the leaderboard, with your accuracy
+  so far and your evidence against the floor; the curve cannot place you
+  until you reach it
 
 > **First-cycle bootstrap.** During the weekly→daily transition the settled
 > evidence is thin by construction — the earliest daily baskets are still

@@ -155,6 +155,9 @@ class PolicyOutcome(BaseModel):
         # silence, which reads as an oversight rather than as the ordinary
         # outcome it is.
         "earning_cut",
+        # Scored, but the evidence inside the window is still under the
+        # placement floor: no standing, no rank, nothing earned yet.
+        "placement_floor",
     ]
     detail: str
     counterparty: str | None = None
@@ -192,6 +195,9 @@ class MinerResult(BaseModel):
         "disqualified_late_submission",     # bundle landed after the close-window cutoff
         "disqualified_not_in_epoch",        # submitted, but not part of this epoch's eligible cohort (e.g. a re-run scoped to the original participants)
         "disqualified_other",
+        # Scored entries, evidence still under the placement floor: listed
+        # with the accuracy so far, no standing and no rank yet.
+        "below_placement_floor",
     ]
     tier: Literal["elite", "competitive", "participating"] | None = None
     # Did this miner clear the epoch's predict-zero baseline? Drives the

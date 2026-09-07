@@ -181,3 +181,62 @@ def test_below_field_models_are_scored_rows_not_disqualified():
     rows = aggregate(art).miner_results
     assert all(r.status == "scored" for r in rows if r.met_baseline)
     assert {r.uid: r.status for r in rows}[2] == "scored" and {r.uid: r.score for r in rows}[2] == 0.55
+
+
+class TestBelowFloorRows:
+    """A hotkey scored but under the placement floor gets a row of its own."""
+
+    def _art(self, **kw):
+        standings, uid_by_hotkey, (hk1, hk2, hk3, hk4) = _standings()
+        return build_daily_artifact(
+            standings=standings,
+            uid_by_hotkey=uid_by_hotkey,
+            total_registered_uids=256,
+            day="2026-09-07",
+            below_floor={hk4: {"scored_predictions": 48.33, "absolute": 0.57}},
+            **kw,
+        ), (hk1, hk2, hk3, hk4)
+
+    def test_the_row_shows_its_accuracy_and_the_pending_status(self):
+        art, (_, _, _, hk4) = self._art()
+        rows = {r["uid"]: r for r in art.per_uid_scores}
+        row = rows[4]
+        assert row["status"] == "below_placement_floor"
+        assert row["raw_score"] == 0.57
+        assert row["absolute_score"] == 0.57
+        assert row["score_micro"] == 570_000
+        assert row["met_baseline"] is False
+
+    def test_it_holds_no_tier_and_does_not_disturb_the_placed(self):
+        art, _ = self._art()
+        tiers = art.tier_result
+        rostered = set(tiers.get("elite", [])) | set(tiers.get("competitive", [])) \
+            | set(tiers.get("participating", []))
+        pending = [r["hotkey"] for r in art.per_uid_scores if r.get("status") == "below_placement_floor"]
+        assert pending and not (set(pending) & rostered)
+        scored = {r["uid"]: r for r in art.per_uid_scores if "status" not in r}
+        assert scored[1]["score_micro"] == 800_000
+
+    def test_a_registered_list_does_not_duplicate_the_pending_row(self):
+        standings, uid_by_hotkey, (hk1, hk2, hk3, hk4) = _standings()
+        art = build_daily_artifact(
+            standings=standings, uid_by_hotkey=uid_by_hotkey, total_registered_uids=256,
+            day="2026-09-07", registered_hotkeys=[hk1, hk2, hk3, hk4],
+            below_floor={hk4: {"scored_predictions": 10.0, "absolute": 0.5}})
+        assert [r["status"] for r in art.per_uid_scores if r["uid"] == 4] == ["below_placement_floor"]
+
+    def test_a_deregistered_pending_hotkey_is_skipped(self):
+        standings, uid_by_hotkey, (hk1, hk2, hk3, hk4) = _standings()
+        gone = {k: v for k, v in uid_by_hotkey.items() if k != hk4}
+        art = build_daily_artifact(
+            standings=standings, uid_by_hotkey=gone, total_registered_uids=256,
+            day="2026-09-07", below_floor={hk4: {"scored_predictions": 10.0, "absolute": 0.5}})
+        assert all(r["uid"] != 4 for r in art.per_uid_scores)
+
+    def test_missing_accuracy_leaves_the_row_at_zero_but_present(self):
+        standings, uid_by_hotkey, (hk1, hk2, hk3, hk4) = _standings()
+        art = build_daily_artifact(
+            standings=standings, uid_by_hotkey=uid_by_hotkey, total_registered_uids=256,
+            day="2026-09-07", below_floor={hk4: {"scored_predictions": 10.0}})
+        row = [r for r in art.per_uid_scores if r["uid"] == 4][0]
+        assert row["status"] == "below_placement_floor" and row["raw_score"] == 0.0

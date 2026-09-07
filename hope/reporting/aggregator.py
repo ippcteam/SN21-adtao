@@ -424,6 +424,27 @@ def policies_by_hotkey(collapse_audit: dict | None) -> dict:
                        "would have emptied the paid set." if stood_down else "")
                 )))
 
+    placement = audit.get("placement")
+    if isinstance(placement, dict):
+        floor = placement.get("floor")
+        floor_txt = (str(int(floor))
+                     if isinstance(floor, (int, float)) and float(floor).is_integer()
+                     else str(floor))
+        for hk, info in (placement.get("below") or {}).items():
+            have = info.get("scored_predictions") if isinstance(info, dict) else None
+            opening = (
+                f"Evidence {float(have):.1f} of the {floor_txt} needed for placement."
+                if isinstance(have, (int, float))
+                else f"Evidence still under the placement floor of {floor_txt}."
+            )
+            out[hk].append(PolicyOutcome(
+                control="placement_floor",
+                detail=(
+                    f"{opening} Every settled entry adds to it; the row gets "
+                    f"a standing and a rank once the floor is reached, and "
+                    f"earns nothing before that."
+                )))
+
     return dict(out)
 
 
@@ -710,6 +731,10 @@ _EXCLUSION_STATUS_MAP = {
     "disqualified_not_registered": "disqualified_not_registered",
     "disqualified_late_submission": "disqualified_late_submission",
     "disqualified_other": "disqualified_other",
+    # Scored inside the window, evidence still under the placement floor:
+    # no standing and no rank yet. Not a disqualification — listed so a
+    # miner present in the receipts is present on the board.
+    "below_placement_floor": "below_placement_floor",
 }
 
 

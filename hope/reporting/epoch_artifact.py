@@ -344,8 +344,15 @@ def build_daily_artifact(
     epoch_type_multiplier: float = 1.0,
     chain_fetch_timestamp: str | None = None,
     display_scores: dict[str, float] | None = None,
+    below_floor: dict[str, dict] | None = None,
 ) -> EpochArtifact:
     """Assemble an EpochArtifact for a DAILY basket from the executor's standings.
+
+    `below_floor` (hotkey_ss58 -> {"scored_predictions", "absolute"}) lists
+    the hotkeys that scored inside the window but have not reached the
+    placement floor. Each becomes a row with status `below_placement_floor`,
+    no tier, and its accuracy so far as the shown number, so a miner present
+    in the receipts is present on the board.
 
     `display_scores` (hotkey_ss58 -> absolute accuracy in [0, 1]), when given,
     replaces each scored row's `raw_score` AFTER the tiers were computed from
@@ -410,8 +417,27 @@ def build_daily_artifact(
             ok=True,
             excluded_reason=None,
         ))
-    for hotkey_ss58 in (registered_hotkeys or []):
+    # Scored, not yet placed: listed with what it has, never as "not scored".
+    pending: dict[str, dict] = {}
+    for hotkey_ss58, info in (below_floor or {}).items():
         if hotkey_ss58 in scored:
+            continue
+        try:
+            hk_bytes = _ss58_to_bytes(hotkey_ss58)
+        except Exception:  # noqa: BLE001
+            continue
+        _uid = uid_by_hotkey.get(hotkey_ss58)
+        if _uid is None:            # same deregistration guard as above
+            continue
+        pending[hotkey_ss58] = dict(info or {})
+        reads.append(_DailyRead(
+            miner_hotkey=hk_bytes,
+            miner_uid=int(_uid),
+            ok=False,
+            excluded_reason="below_placement_floor",
+        ))
+    for hotkey_ss58 in (registered_hotkeys or []):
+        if hotkey_ss58 in scored or hotkey_ss58 in pending:
             continue
         try:
             hk_bytes = _ss58_to_bytes(hotkey_ss58)
@@ -446,6 +472,27 @@ def build_daily_artifact(
         baseline_score=baseline_score,
         horizons=DAILY_HORIZONS,
     )
+    if pending:
+        hex_to_pending = {}
+        for hotkey_ss58 in pending:
+            try:
+                hex_to_pending[_ss58_to_bytes(hotkey_ss58).hex()] = hotkey_ss58
+            except Exception:  # noqa: BLE001
+                continue
+        for row in artifact.per_uid_scores:
+            if row.get("status") != "below_placement_floor":
+                continue
+            ss58 = hex_to_pending.get(str(row.get("hotkey")))
+            acc = (pending.get(ss58) or {}).get("absolute") if ss58 else None
+            if acc is None:
+                continue
+            shown = max(0.0, min(1.0, float(acc)))
+            row["absolute_score"] = shown
+            row["raw_score"] = shown
+            row["score_micro"] = int(round(shown * 1_000_000))
+            # Not a baseline verdict: an unplaced row is measured against
+            # nothing yet (the CMS holds met_baseline=true to scored rows).
+            row["met_baseline"] = False
     if display_scores:
         hex_to_ss58 = {}
         for hotkey_ss58 in scored:

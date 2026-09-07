@@ -80,7 +80,8 @@ from hope.scoring.duplication import (
     prediction_collisions,
     suppressed_copies,
 )
-from hope.scoring.episode_average import ScoredEpisode, standing
+from hope.scoring.episode_average import (
+    PLACEMENT_FLOOR_PREDICTIONS, ScoredEpisode, standing)
 from hope.scoring.weight_curve import CurveParams, curve_weights
 
 logger = logging.getLogger(__name__)
@@ -286,14 +287,27 @@ def compute_daily_allocation(
         one miner covers less than another, which is the case that matters.
     """
     placements: dict[str, float] = {}
+    # Scored but not yet placeable: a hotkey whose evidence inside the window
+    # is still under the placement floor. It has scores, it has no standing,
+    # and until now it had no row anywhere public — the receipts showed it and
+    # the board did not, which reads as a gap rather than as a floor. It is
+    # published with the evidence it has, so the floor is visible as a floor.
+    below_floor: dict[str, dict] = {}
     for hotkey, eps in entries.items():
         if hotkey in evicted:
             continue
         st = standing(eps, as_of=day)
-        if st["average"] is not None and st["placement_eligible"]:
+        if st["average"] is None:
+            continue
+        if st["placement_eligible"]:
             placements[hotkey] = st["average"]
+        else:
+            below_floor[hotkey] = {
+                "scored_predictions": round(float(st["scored_predictions"]), 2)}
 
-    audit: dict = {}
+    audit: dict = {
+        "placement": {"floor": PLACEMENT_FLOOR_PREDICTIONS, "below": below_floor},
+    }
     # Everything removed below still belongs on the leaderboard: scores are
     # facts and a hotkey that is not paid is not a hotkey that did not score.
     all_standings = dict(placements)
@@ -445,6 +459,13 @@ def compute_daily_allocation(
             "min_days": tenure_min,
             "gated": len(audit.get("tenure_gated", {}).get("hotkeys", [])),
             "stood_down": bool(audit.get("tenure_gated", {}).get("stood_down")),
+        },
+        # The placement floor is a control like the others: it decides who
+        # can hold a standing at all, so its bar and how many it held out
+        # are stated every day, not only when somebody asks.
+        "placement_floor": {
+            "floor": PLACEMENT_FLOOR_PREDICTIONS,
+            "below": len(below_floor),
         },
     }
 
@@ -603,11 +624,18 @@ def allocation_from_ledger(
     # (rather than a thin field) is the cause.
     # Absolute accuracy beside the relative standing (see DailyAllocation).
     _absolute = absolute_standings(root, day, environ)
+    # Below-floor rows carry their accuracy so far beside the evidence count,
+    # so the board shows a number the miner recognises rather than a zero.
+    _placement = dict(alloc.collapse_audit.get("placement") or {})
+    _placement["below"] = {
+        hk: {**dict(info or {}), "absolute": _absolute.get(hk)}
+        for hk, info in (_placement.get("below") or {}).items()}
     alloc = dataclasses.replace(
         alloc,
         standings_absolute={hk: _absolute[hk] for hk in alloc.standings if hk in _absolute},
         collapse_audit={**alloc.collapse_audit,
-                        "standings": standings_block(alloc.standings, _absolute)},
+                        "standings": standings_block(alloc.standings, _absolute),
+                        "placement": _placement},
     )
     if evicted and not alloc.gated and alloc.earning_set_size == 0:
         counterfactual = compute_daily_allocation(
