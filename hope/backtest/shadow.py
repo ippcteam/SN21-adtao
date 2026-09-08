@@ -80,6 +80,72 @@ def record_run_marker(root: str, day: str, episodes: int, models: int,
     return path
 
 
+def last_record(root: str, day: str, hotkey: str) -> dict | None:
+    """The operative (last) ledger line for one model on one day, or None."""
+    path = os.path.join(shadow_dir(root, day), f"{hotkey}.jsonl")
+    if not os.path.exists(path):
+        return None
+    last = None
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                last = json.loads(line)
+    return last
+
+
+def merged_supplement(previous: dict | None, result: RunResult,
+                      added_ids: list[str], basket_key: str) -> dict:
+    """Pure: the ledger line that follows a supplement run.
+
+    Every reader of this ledger takes the LAST line per model
+    (day_run_status, day_coverage, finalize_day; load_prediction_index
+    unions per episode across lines). A line that carried only the added
+    episodes would therefore erase the day's coverage facts, so the merged
+    line carries the whole picture: the original predictions kept verbatim,
+    the added ones joined, episodes_in and predictions_out over the union,
+    `ok` true only when both runs were, and a `supplement` block naming what
+    was added so the line explains itself.
+    """
+    prev = previous or {}
+    predictions = dict(prev.get("predictions") or {})
+    predictions.update(result.predictions or {})
+    prev_in = int(prev.get("episodes_in") or 0)
+    prev_ok = prev.get("ok")
+    return {
+        "day": prev.get("day"),
+        "hotkey": prev.get("hotkey"),
+        "image_digest": prev.get("image_digest"),
+        "ok": bool(result.ok) and (prev_ok is not False),
+        "error": result.error or prev.get("error"),
+        "episodes_in": prev_in + len(added_ids),
+        "predictions_out": len(predictions),
+        "duration_s": getattr(result, "duration_s", None),
+        "predictions": predictions,
+        "supplement": {"basket": basket_key, "added": len(added_ids),
+                       "added_predicted": sum(1 for e in added_ids
+                                              if e in (result.predictions or {})),
+                       "previous_ok": prev_ok, "previous_episodes_in": prev_in,
+                       "previous_duration_s": prev.get("duration_s")},
+    }
+
+
+def record_supplement(root: str, day: str, model: ShadowModel, result: RunResult,
+                      added_ids: list[str], basket_key: str) -> str:
+    """Append the merged line for a supplement run (see merged_supplement)."""
+    prev = last_record(root, day, model.hotkey)
+    line = merged_supplement(prev, result, added_ids, basket_key)
+    line["day"] = day
+    line["hotkey"] = model.hotkey
+    line["image_digest"] = line.get("image_digest") or model.image_digest
+    d = shadow_dir(root, day)
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, f"{model.hotkey}.jsonl")
+    with open(path, "a") as f:
+        f.write(json.dumps(line, default=str) + "\n")
+    return path
+
+
 def subnet_ran(root: str, day: str) -> bool:
     """Did WE execute this shadow day at all?
 
