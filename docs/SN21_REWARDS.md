@@ -57,7 +57,7 @@ Steep, but **no winner-take-all cliff**. Rank-based shares among earners; below 
 | 1st | **50%** |
 | 2nd | **25%** |
 | 3rd | **10%** |
-| 4th+ | Geometric tail: each next rank gets **50%** of the previous share |
+| 4th+ | Geometric tail: each next rank gets **80%** of the previous share (50% before 11 September 2026; see Parameter reviews) |
 | Cap | At most **20** earners |
 | Floor | Standing **below** the published score threshold → **0** weight |
 
@@ -317,12 +317,38 @@ There is no cliff: if Bob’s standing rises toward Alice’s, ranks can swap an
 | 1 | Alice | 0.84 | 0.50 |
 | 2 | Bob | 0.78 | 0.25 |
 | 3 | Carol | 0.72 | 0.10 |
-| 4 | Dave | 0.68 | 0.10 × 0.5 = **0.05** |
-| 5 | Eve | 0.65 | 0.05 × 0.5 = **0.025** |
+| 4 | Dave | 0.68 | 0.10 × 0.8 = **0.08** |
+| 5 | Eve | 0.65 | 0.08 × 0.8 = **0.064** |
 
-Raw sum = **0.925**. After re-norm: Alice ≈ 54.1%, Bob ≈ 27.0%, Carol ≈ 10.8%, Dave ≈ 5.4%, Eve ≈ 2.7%.
+Raw sum = **0.994**. After re-norm: Alice ≈ 50.3%, Bob ≈ 25.2%, Carol ≈ 10.1%, Dave ≈ 8.0%, Eve ≈ 6.4%.
 
 Miners outside the top 20, or below the score threshold, get **0**.
+
+### Example D — a full field of twenty (effective shares and the on-chain floor)
+
+With twenty earners the tail is long enough to matter, and the shares you
+actually receive are the re-normalised ones. Chain weights are 16-bit
+integers (a share is multiplied by 65,535 and rounded), so a share below
+about 0.0008% pays nothing on chain however it appears on a board.
+
+| Rank | Share of miner emissions | On-chain weight (of 65,535) |
+| ---: | ---: | ---: |
+| 1 | 40.3% | 26,404 |
+| 2 | 20.1% | 13,202 |
+| 3 | 8.1% | 5,281 |
+| 4 | 6.4% | 4,225 |
+| 5 | 5.2% | 3,380 |
+| 10 | 1.7% | 1,107 |
+| 15 | 0.55% | 363 |
+| 20 | 0.18% | 119 |
+| **Top 3** | **68.5%** | |
+| **Ranks 4–10** | **25.5%** | |
+| **Ranks 11–20** | **6.0%** | |
+
+Every listed earner is paid on chain. Below about rank 15 the share is
+small; it is no longer zero. Under the previous 50% tail the same field paid
+rank 1 52.6%, ranks 11–20 shared 0.08%, and ranks 17–20 rounded to zero on
+chain.
 
 ### Example C — burn during cutover (does not change the curve)
 
@@ -356,7 +382,15 @@ Neither changes how an individual prediction is scored.
 
 ## Parameter reviews
 
-Numeric curve parameters (threshold, shares, cap) are restated at **four-weekly** published reviews. Changes are announced in advance; nothing silent between reviews.
+Numeric curve parameters (threshold, shares, cap, tail) are restated at **four-weekly** published reviews. Changes are announced in advance; nothing silent between reviews.
+
+| Date | Change | Applies from |
+| :---- | :---- | :---- |
+| 10 September 2026 | Tail decay **0.5 → 0.8** (each rank after third gets 80% of the previous share). Top-three raw shares and the cap are unchanged. Reason: with a rising alpha hold, a seat that rounds to zero on chain cannot fund it; under 0.8 all twenty listed earners are paid on chain. | 11 September 2026, from that day's run forward; never retroactively |
+
+The tail in force on any day is recorded in that day's allocation audit
+(`controls.standing_method.curve_tail_decay`), so a vector can be recomputed
+across the change.
 
 ## Related
 
