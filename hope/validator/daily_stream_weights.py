@@ -45,7 +45,7 @@ from datetime import date
 
 from hope.scoring import chronic_failure, standing_ledger
 from hope.scoring.standing_method import (
-    curve_score_threshold,
+    curve_params_in_force,
     load_standing_entries,
     method_params,
     promotion_margin_abs,
@@ -532,10 +532,12 @@ def allocation_from_ledger(
         promotion_params = PromotionParams(margin_abs=_abs)
     # The curve pays the top twenty by standing with the published shares in
     # every mode: the score threshold follows the standing method (0.0 for
-    # the absolute standing, not applied for the relative one). Only the
-    # default params are overridden; an explicit caller keeps what it passed.
+    # the absolute standing, not applied for the relative one) and the tail
+    # is the one in force on `day` (SN21_CURVE_TAIL_DECAY from its effective
+    # date; the published 0.5 before it). Only the default params are
+    # overridden; an explicit caller keeps what it passed.
     if curve_params == CurveParams():
-        curve_params = CurveParams(score_threshold=curve_score_threshold(environ, day))
+        curve_params = curve_params_in_force(environ, day)
     # Standing entries by the published method (hope.scoring.standing_method):
     # the ledger's absolute scores, or receipt-derived scores relative to the
     # field on the same episode when SN21_STANDING_MODE=episode_relative.

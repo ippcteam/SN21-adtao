@@ -96,6 +96,70 @@ CURVE_THRESHOLD_ENV = "SN21_CURVE_SCORE_THRESHOLD"
 RELATIVE_CURVE_THRESHOLD = -1.0
 
 
+# The weight curve's tail. Review finding of 7 Sept 2026 (SN21_CURVE_TAIL_REVIEW):
+# under the published half-tail rank 1 takes 52.6% of a 20-miner field, ranks
+# 11-20 share 0.08%, and ranks 17-20 round to ZERO on the chain's 16-bit
+# weights — a seat that pays nothing while the alpha hold it requires steps to
+# 1,000. Governance decision (9 Sept 2026): move the tail to 0.8. Same top
+# three raw shares, same cap; every listed earner then pays on chain.
+#
+# Wired like the standing method: the value is announced first and applied
+# from a published date forward. Unset = the published 0.5, so deploying this
+# code changes nothing until the operator sets the variable; with the date set
+# ahead of time the switch lands on the day miners were told, not on the day
+# someone edits an environment variable. Out-of-range or unparseable values
+# fall back to the published tail rather than paying an accidental curve.
+CURVE_TAIL_DECAY_ENV = "SN21_CURVE_TAIL_DECAY"
+CURVE_TAIL_EFFECTIVE_FROM_ENV = "SN21_CURVE_TAIL_EFFECTIVE_FROM"
+PUBLISHED_TAIL_DECAY = 0.5
+
+
+def curve_tail_effective_from(environ=os.environ) -> date | None:
+    raw = (environ.get(CURVE_TAIL_EFFECTIVE_FROM_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def curve_tail_configured(environ=os.environ) -> float | None:
+    """The tail the operator set, if it is a usable one; None otherwise."""
+    raw = (environ.get(CURVE_TAIL_DECAY_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    if not (0.0 < value <= 1.0):
+        return None
+    return value
+
+
+def curve_tail_decay(environ=os.environ, day: date | None = None) -> float:
+    """The tail IN FORCE on `day` (today when None): the configured value once
+    its effective date has arrived, else the published 0.5. Pure."""
+    configured = curve_tail_configured(environ)
+    if configured is None:
+        return PUBLISHED_TAIL_DECAY
+    start = curve_tail_effective_from(environ)
+    if start is not None and (day or date.today()) < start:
+        return PUBLISHED_TAIL_DECAY
+    return configured
+
+
+def curve_params_in_force(environ=os.environ, day: date | None = None):
+    """The CurveParams the allocation pays with on `day`: published shares
+    and cap, the threshold that follows the standing method, and the tail in
+    force. The one place the curve is assembled from the environment."""
+    from hope.scoring.weight_curve import CurveParams
+
+    return CurveParams(score_threshold=curve_score_threshold(environ, day),
+                       tail_decay=curve_tail_decay(environ, day))
+
+
 def curve_score_threshold(environ=os.environ, day: date | None = None) -> float:
     raw = (environ.get(CURVE_THRESHOLD_ENV) or "").strip()
     if raw:
@@ -141,6 +205,12 @@ def method_params(environ=os.environ, day: date | None = None) -> dict:
         "window_days": window_in_force(environ, day),
         "promotion_margin_abs": promotion_margin_abs(environ, day),
         "curve_score_threshold": curve_score_threshold(environ, day),
+        # The curve that paid this day, so the vector is recomputable from
+        # the audit alone across a tail change.
+        "curve_tail_decay": curve_tail_decay(environ, day),
+        "curve_tail_configured": curve_tail_configured(environ),
+        "curve_tail_effective_from": (curve_tail_effective_from(environ).isoformat()
+                                      if curve_tail_effective_from(environ) else None),
     }
 
 
