@@ -22,15 +22,20 @@ sync re-renders and re-POSTs them all on every run.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
 
+from hope.publication.miner_day import miner_day_documents
 from hope.publication.rail import canonical_bytes
 
 MIRROR_POST_PATH = "/internal/bittensor/v1/daily/mirror"
+MIRROR_OBJECT_UPLOAD_PATH = "/internal/bittensor/v1/daily/mirror/object-upload"
+MIRROR_OBJECT_COMMIT_PATH = "/internal/bittensor/v1/daily/mirror/object-commit"
 
 _PROOF_HOW = (
     "leaf = sha256(0x00 || document_sha256); walk `proof` hashing "
@@ -241,6 +246,19 @@ def build_mirror_items(ledger_root: str,
 # number earned its existence.
 MAX_POST_BYTES = 4_000_000
 
+# Documents over this size never travel in a batch: they are published to
+# object storage through a presigned upload (_ship_object). A receipt grows
+# with every horizon that matures, and a large one pushed through the operator
+# API in a batch exhausted the receiving process, taking the rest of that
+# day's documents down with it.
+LARGE_OBJECT_BYTES = 4_000_000
+
+# Committing has the operator read the whole object back to check it.
+OBJECT_COMMIT_TIMEOUT = 900
+
+_HOTKEY_RE = re.compile(r"^[A-Za-z0-9]{40,64}$")
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+
 
 # Gateway statuses worth a retry: the operator backend can 502/503/504 on cold
 # start or under load, and one blip must not leave the public mirror stale until
@@ -283,18 +301,14 @@ def wire_items(items: list[dict]) -> list[dict]:
     return out
 
 
-def _post(api_url: str, api_key: str, items: list[dict],
-          timeout: int, retries: int = 3, backoff: float = 2.0) -> dict:
-    data = json.dumps({"items": wire_items(items)}).encode()
+def _request(build, timeout: int, retries: int = 3,
+             backoff: float = 2.0) -> bytes:
+    """Send `build()` with the mirror's retry policy: gateway statuses and
+    transport errors retry with backoff; any other HTTP error raises at once."""
     for attempt in range(retries + 1):
-        req = urllib.request.Request(
-            api_url.rstrip("/") + MIRROR_POST_PATH,
-            data=data,
-            method="POST",
-            headers={"X-API-Key": api_key, "Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read().decode())
+            with urllib.request.urlopen(build(), timeout=timeout) as resp:
+                return resp.read()
         except urllib.error.HTTPError as e:
             if e.code not in _RETRY_STATUSES or attempt == retries:
                 raise
@@ -304,6 +318,72 @@ def _post(api_url: str, api_key: str, items: list[dict],
                 raise
         time.sleep(backoff * (2 ** attempt))   # 2s, 4s, 8s
     raise RuntimeError("unreachable: retry loop neither returned nor raised")
+
+
+def _api_json(api_url: str, api_key: str, route: str, payload: dict,
+              timeout: int, retries: int = 3, backoff: float = 2.0) -> dict:
+    data = json.dumps(payload).encode()
+
+    def build():
+        return urllib.request.Request(
+            api_url.rstrip("/") + route,
+            data=data,
+            method="POST",
+            headers={"X-API-Key": api_key, "Content-Type": "application/json"})
+
+    return json.loads(_request(build, timeout, retries, backoff).decode())
+
+
+def _post(api_url: str, api_key: str, items: list[dict],
+          timeout: int, retries: int = 3, backoff: float = 2.0) -> dict:
+    return _api_json(api_url, api_key, MIRROR_POST_PATH,
+                     {"items": wire_items(items)}, timeout, retries, backoff)
+
+
+def _put_object(upload_url: str, data: bytes, timeout: int) -> None:
+    """PUT the exact bytes to a presigned URL. The signature covers the
+    content type, so it must be the one the URL was issued for."""
+    def build():
+        return urllib.request.Request(
+            upload_url, data=data, method="PUT",
+            headers={"Content-Type": "application/json"})
+
+    _request(build, timeout)
+
+
+def receipt_summary(envelope: dict) -> dict:
+    """What the mirror needs to answer a per-miner request for a hotkey that
+    has no slice: how many miners scored, and which hotkeys have entries.
+    "No entries" is only a true answer for a hotkey not on the list. Pure."""
+    metrics = envelope.get("document", {}).get("metrics", {})
+    hotkeys = sorted({e.get("miner") for e in metrics.get("entries", [])
+                      if isinstance(e.get("miner"), str)
+                      and _HOTKEY_RE.match(e["miner"])})
+    return {"miners": metrics.get("miners"), "hotkeys": hotkeys}
+
+
+def _ship_object(api_url: str, api_key: str, path: str, raw: bytes,
+                 body, timeout: int) -> dict:
+    """Publish one large document through object storage: ask for an upload
+    URL, PUT the exact bytes, then commit. The operator reads the object back
+    and refuses the commit unless size and sha256 match, so a path can never
+    point at bytes other than the ones signed here."""
+    envelope_sha = body.get("sha256") if isinstance(body, dict) else None
+    if not (isinstance(envelope_sha, str) and _HEX64_RE.match(envelope_sha)):
+        envelope_sha = None
+    spec = {
+        "path": path,
+        "size_bytes": len(raw),
+        "content_sha256": hashlib.sha256(raw).hexdigest(),
+        "envelope_sha256": envelope_sha,
+        "summary": (receipt_summary(body)
+                    if path.endswith("/receipt") and isinstance(body, dict)
+                    else None),
+    }
+    grant = _api_json(api_url, api_key, MIRROR_OBJECT_UPLOAD_PATH, spec, timeout)
+    _put_object(grant["upload_url"], raw, timeout)
+    return _api_json(api_url, api_key, MIRROR_OBJECT_COMMIT_PATH, spec,
+                     OBJECT_COMMIT_TIMEOUT)
 
 
 def _shipped_path(ledger_root: str) -> str:
@@ -378,7 +458,9 @@ def _is_immutable(path: str) -> bool:
     re-rendered every time a day publishes, because the root rolls — and must
     ship on every run.
     """
-    return path.endswith("/receipt") or path.endswith("/accuracy")
+    return (path.endswith("/receipt") or path.endswith("/accuracy")
+            # a miner's slice is derived from an immutable receipt
+            or "/miner/" in path)
 
 
 def sync_mirror(ledger_root: str, api_url: str, api_key: str,
@@ -428,7 +510,36 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
             skipped.append(path)
             continue
         to_send.append(it)
-    items = to_send
+    # Large documents are published to object storage, not batched, and only
+    # after every small document has shipped: the index, root and allocation
+    # audit must never wait on a receipt. A receipt published that way has no
+    # parsed copy on the mirror to filter per miner, so its per-miner route
+    # bodies are rendered here, with the validator route's own function.
+    small: list[dict] = []
+    large: list[tuple[dict, bytes]] = []
+    for it in to_send:
+        body = it.get("body")
+        raw = canonical_bytes(body) if isinstance(body, (dict, list)) else None
+        if raw is not None and len(raw) > LARGE_OBJECT_BYTES:
+            large.append((it, raw))
+        else:
+            small.append(it)
+    for it, _raw in large:
+        path = it.get("path") or ""
+        if not (path.endswith("/receipt") and isinstance(it.get("body"), dict)):
+            continue
+        day = path.split("/")[3]
+        for hotkey, doc in miner_day_documents(it["body"], day).items():
+            if not _HOTKEY_RE.match(hotkey):
+                continue
+            slice_path = f"/v1/daily/{day}/miner/{hotkey}"
+            digest = _sha256_of(doc)
+            digest_of[slice_path] = digest
+            if shipped.get(slice_path) == digest:
+                skipped.append(slice_path)
+                continue
+            small.append({"path": slice_path, "body": doc})
+    items = small
     batches: list[list[dict]] = []
     batch: list[dict] = []
     batch_bytes = 0
@@ -468,9 +579,33 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
             failed.append({"batch": i,
                            "paths": [it.get("path") for it in b],
                            "error": str(e)})
+    failed_paths = {p for f in failed for p in f["paths"]}
+    rejected_paths = {r.get("path") if isinstance(r, dict) else r
+                      for r in rejected}
+    for it, raw in large:
+        path = it.get("path") or ""
+        try:
+            _ship_object(api_url, api_key, path, raw, it.get("body"), timeout)
+        except Exception as e:  # noqa: BLE001
+            failed.append({"batch": f"object:{path}", "paths": [path],
+                           "error": str(e)})
+            continue
+        stored += 1
+        # A receipt counts as shipped only together with its miner slices.
+        # Slices are rendered only for receipts a run sends, so recording the
+        # receipt while one of its slices failed would leave that slice
+        # missing for good.
+        slice_prefix = (path[: -len("receipt")] + "miner/"
+                        if path.endswith("/receipt") else None)
+        slices_ok = slice_prefix is None or not any(
+            p and p.startswith(slice_prefix)
+            for p in failed_paths | rejected_paths)
+        if _is_immutable(path) and path in digest_of and slices_ok:
+            confirmed[path] = digest_of[path]
     _record_shipped(ledger_root, confirmed)
     summary = {"success": not failed, "stored": stored, "rejected": rejected,
                "items_sent": len(items), "posts": len(batches),
+               "objects": len(large),
                "skipped_unchanged": len(skipped),
                "adopted_from_mirror": len(adopted), "failed_posts": failed}
     if failed:

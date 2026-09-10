@@ -35,6 +35,8 @@ from datetime import date
 
 from fastapi import APIRouter, HTTPException, Request
 
+from hope.publication.miner_day import miner_day_document
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -176,31 +178,9 @@ async def get_miner_day(day: str, hotkey: str, request: Request):
         raise HTTPException(status_code=404,
                             detail={"day": safe, "feed": "receipt",
                                     **_absence_reason(root, "receipts", safe)})
-    env = _read_envelope(path)
-    metrics = env.get("document", {}).get("metrics", {})
-    mine = [e for e in metrics.get("entries", []) if e.get("miner") == hotkey]
-    if not mine:
-        # Present-but-empty is a REAL answer, and a different one from 404:
-        # the day exists and this hotkey scored nothing in it (delivered no
-        # predictions, or everything it predicted was censored).
-        return {"day": safe, "miner": hotkey, "entries": [], "entries_total": 0,
-                "receipt_sha256": env.get("sha256"),
-                "note": "no scored entries for this hotkey on this day — the "
-                        "day WAS scored, this miner has no entries in it",
-                "miners_scored_that_day": metrics.get("miners")}
-    scores = [e["score"] for e in mine]
-    return {
-        "day": safe, "miner": hotkey,
-        "entries": mine,
-        "entries_total": len(mine),
-        "mean_score": round(sum(scores) / len(scores), 6),
-        "receipt_sha256": env.get("sha256"),
-        "formula": metrics.get("formula"),
-        "how_to_verify": (
-            f"python scripts/verify_day.py --url <this validator> "
-            f"--day {safe} --miner {hotkey}"
-        ),
-    }
+    # Shared with the mirror sync, which renders this body for days whose
+    # receipt is published to object storage — both hosts answer alike.
+    return miner_day_document(_read_envelope(path), safe, hotkey)
 
 
 @router.get("/{day}/scores")
