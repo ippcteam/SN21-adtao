@@ -163,8 +163,16 @@ def _resolve_entrypoint(image, override):
     # sandbox execve needs an absolute path, so only rewrite the obvious cases.
     if argv[0].startswith("/"):
         return argv
+    # Looked up INSIDE the image: links are resolved as the chrooted model
+    # resolves them, so an image whose `usr` is an absolute link can never
+    # borrow this host's binaries.
+    from hope.backtest.oci_pull import PullError, resolve_in_rootfs
+
     for prefix in ("/usr/local/bin/", "/usr/bin/", "/bin/"):
-        candidate = os.path.join(image.rootfs, prefix.lstrip("/"), argv[0])
+        try:
+            candidate = resolve_in_rootfs(image.rootfs, prefix + argv[0])
+        except PullError:
+            continue
         if os.path.exists(candidate):
             return [prefix + argv[0]] + argv[1:]
     # Fall back to the shell form the OCI config implies; if it is wrong the

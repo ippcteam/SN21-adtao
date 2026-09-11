@@ -23,6 +23,7 @@ from hope.backtest.image_intake import (
 )
 from hope.backtest.intake_runner import (
     commitments_from_chain,
+    is_final_verdict,
     load_admitted,
     run_intake,
     verdict_dir,
@@ -296,3 +297,80 @@ def test_a_verdict_with_no_status_stays_final(tmp_path):
     root = str(tmp_path)
     _write_verdict(root, "legacy", DIGEST_A)   # envelope shape, no status
     assert DIGEST_A in verdicted_digests(root)
+
+
+# ---- a fetch that failed inside the gate is not a verdict on the model -----
+
+def _write_gate_rejection(root, name, digest, detail, envelope=False):
+    d = verdict_dir(root)
+    os.makedirs(d, exist_ok=True)
+    body = {"digest": digest, "status": STATUS_REJECTED_GATE, "detail": detail}
+    with open(os.path.join(d, f"{name}.json"), "w") as f:
+        json.dump({"document": {"metrics": body}} if envelope else body, f)
+
+
+@pytest.mark.parametrize("detail", [
+    "run_failed: pull_failed: layer member escapes rootfs: 'bin/tar'",
+    "run_failed: pull_failed: blob sha256 mismatch",
+    "run_failed: pull timeout>600s",
+    "run_failed: disk_low: 120 MB free < 4096 MB required",
+    "run_failed: sandbox_not_available",
+])
+def test_a_failure_on_our_side_inside_the_gate_stays_eligible(tmp_path, detail):
+    """In sandbox mode the image is pulled inside the gate run, so our own
+    fetch failures arrive as gate rejections. 11 Sept 2026: two digests were
+    refused by a defect in our layer unpacking and would never have been
+    re-checked."""
+    root = str(tmp_path)
+    _write_gate_rejection(root, "ours", DIGEST_A, detail)
+    assert DIGEST_A not in verdicted_digests(root)
+
+
+def test_the_envelope_shape_is_read_the_same_way(tmp_path):
+    root = str(tmp_path)
+    _write_gate_rejection(root, "ours", DIGEST_A,
+                          "run_failed: pull_failed: layer member escapes rootfs: 'bin/tar'",
+                          envelope=True)
+    assert DIGEST_A not in verdicted_digests(root)
+
+
+@pytest.mark.parametrize("detail", [
+    "run_failed: exit=1: Traceback (most recent call last)",
+    "run_failed: timeout>900s",
+    "run_failed: no runnable entrypoint in image",
+    "below_baseline_or_coverage",
+    "no_scoreable_predictions",
+    None,
+])
+def test_a_verdict_on_the_model_itself_stays_final(tmp_path, detail):
+    """A container that ran and crashed, outran the published budget, or lost
+    to the baseline was judged. Re-running it burns the same minutes for the
+    same answer."""
+    root = str(tmp_path)
+    _write_gate_rejection(root, "theirs", DIGEST_A, detail)
+    assert DIGEST_A in verdicted_digests(root)
+
+
+def test_the_wrongly_rejected_digest_is_gated_again_on_the_next_sweep(tmp_path):
+    root = str(tmp_path)
+    _write_gate_rejection(root, "ours", DIGEST_A,
+                          "run_failed: pull_failed: layer member escapes rootfs: 'bin/tar'")
+    ran = []
+    result = run_intake(
+        ledger_root=root,
+        hotkeys=["hk1"],
+        read_commitment=lambda hk: _commit(DIGEST_A),
+        gate_runner=lambda ref: ran.append(ref) or {"verdict": {"admitted": True}},
+        puller=_ok_pull,
+        inspector=_inspector_for(DIGEST_A),
+    )
+    assert len(ran) == 1
+    assert result.gated == 1 and result.admitted == 1
+
+
+def test_final_verdict_rule_in_isolation():
+    assert is_final_verdict(None) is True
+    assert is_final_verdict(STATUS_ADMITTED) is True
+    assert is_final_verdict(STATUS_PULL_FAILED) is False
+    assert is_final_verdict(STATUS_REJECTED_GATE, "run_failed: pull_failed: x") is False
+    assert is_final_verdict(STATUS_REJECTED_GATE, "run_failed: exit=137: killed") is True

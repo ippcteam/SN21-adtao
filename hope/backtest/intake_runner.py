@@ -116,6 +116,37 @@ def load_admitted(ledger_root: str) -> set[str]:
 # self-inflicted rejection.
 FINAL_STATUSES = frozenset({STATUS_ADMITTED, STATUS_REJECTED_GATE})
 
+_GATE_RUN_FAILED = "run_failed: "
+
+
+def is_final_verdict(status, detail=None) -> bool:
+    """Whether a verdict record settles its digest for good. Pure.
+
+    A gate verdict is final — except when the gate never got to judge the
+    model. In sandbox mode the image is fetched INSIDE the gate run, so a
+    failure on our side (the registry fetch, our disk, our unpacking of the
+    layers, the sandbox itself) arrives as a gate rejection whose detail reads
+    `run_failed: pull_failed: ...`. Recording that as final damned digests the
+    gate never ran: two images were refused by a defect in our own layer
+    unpacking and would never have been looked at again. Such a rejection
+    stays eligible, exactly as a pull failure outside the gate always has.
+
+    Which failures are ours is decided by the same rule that keeps them from
+    being charged as absences (`absence_penalty.operator_fault`), so the two
+    can never disagree. A record with no readable status stays final.
+    """
+    if status is None:
+        return True
+    if status not in FINAL_STATUSES:
+        return False
+    if status == STATUS_REJECTED_GATE and isinstance(detail, str) \
+            and detail.startswith(_GATE_RUN_FAILED):
+        from hope.scoring.absence_penalty import operator_fault
+
+        if operator_fault(detail[len(_GATE_RUN_FAILED):]):
+            return False
+    return True
+
 
 def verdicted_digests(ledger_root: str) -> set[str]:
     """Digests with a FINAL verdict — gated and judged, either way.
@@ -152,7 +183,7 @@ def verdicted_digests(ledger_root: str) -> set[str]:
         status = body.get("status")
         if not digest:
             continue
-        if status is None or status in FINAL_STATUSES:
+        if is_final_verdict(status, body.get("detail")):
             out.add(digest)
     return out
 

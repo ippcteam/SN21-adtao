@@ -244,12 +244,70 @@ def _image_config(manifest: dict, registry: _Registry, work: str) -> ImageConfig
     )
 
 
+_MAX_LINK_HOPS = 40
+
+
 def _safe_within(root: str, target: str) -> bool:
-    """True only if `target` resolves inside `root` — the containment check a
-    hostile tar tries to defeat with `..` and absolute symlinks."""
-    root_abs = os.path.realpath(root)
-    target_abs = os.path.realpath(target)
+    """True only if `target`, taken literally, stays inside `root`.
+
+    Judged on the path itself — `..` and absolute components — never by
+    following links on this host. Links inside an image are resolved the way
+    the sandbox will see them, by `resolve_in_rootfs`."""
+    root_abs = os.path.abspath(root)
+    target_abs = os.path.normpath(os.path.join(root_abs, target))
     return target_abs == root_abs or target_abs.startswith(root_abs + os.sep)
+
+
+def resolve_in_rootfs(rootfs: str, path: str, follow_last: bool = True) -> str:
+    """The host path that `path` names inside the image, resolved exactly as a
+    process chrooted into the rootfs will resolve it.
+
+    Every symlink met on the way is followed WITHIN the rootfs: an absolute
+    target starts again from the rootfs, and `..` stops at its top. Nothing on
+    this host outside the rootfs is consulted. Resolving through the host was
+    both wrong and unsafe: an image whose `bin` is an absolute link to
+    `/usr/bin` had its `bin/tar` refused as an escape, and a write through that
+    link would have landed in this host's own /usr/bin.
+
+    The result contains no symlinks, except the final component itself when
+    `follow_last` is False. A chain of more than 40 links is a loop and fails
+    the pull.
+    """
+    root = os.path.abspath(rootfs)
+    pending = [p for p in path.split("/") if p not in ("", ".")]
+    resolved: list[str] = []
+    hops = 0
+    while pending:
+        part = pending.pop(0)
+        if part == "..":
+            if resolved:
+                resolved.pop()
+            continue
+        candidate = os.path.join(root, *resolved, part)
+        if os.path.islink(candidate) and (pending or follow_last):
+            hops += 1
+            if hops > _MAX_LINK_HOPS:
+                raise PullError(f"too many levels of symbolic links: {path!r}")
+            target = os.readlink(candidate)
+            if target.startswith("/"):
+                resolved = []
+            pending = [p for p in target.split("/") if p not in ("", ".")] + pending
+            continue
+        resolved.append(part)
+    return os.path.join(root, *resolved)
+
+
+def _climbs_out(parts_before: int, path: str) -> bool:
+    """True when `path`, read from a directory `parts_before` levels deep,
+    climbs above the root. Lexical: no link is followed."""
+    depth = parts_before
+    for part in path.split("/"):
+        if part in ("", "."):
+            continue
+        depth = depth - 1 if part == ".." else depth + 1
+        if depth < 0:
+            return True
+    return False
 
 
 def _remove(path: str) -> None:
@@ -259,55 +317,88 @@ def _remove(path: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
+def _write_member(tar, member, root: str, dest: str) -> None:
+    """Create one member at `dest`, a path already resolved inside the rootfs.
+
+    The final component is never followed: whatever sits there from a lower
+    layer (a file, a link, a directory of the wrong kind) is replaced, as an
+    image layer replaces it."""
+    if member.isdir():
+        if os.path.lexists(dest) and (os.path.islink(dest) or not os.path.isdir(dest)):
+            _remove(dest)
+        os.makedirs(dest, exist_ok=True)
+        os.chmod(dest, member.mode & 0o777)
+    elif member.isfile():
+        if os.path.lexists(dest):
+            _remove(dest)
+        source = tar.extractfile(member)
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                     | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "wb") as out, source:
+            shutil.copyfileobj(source, out, 1 << 20)
+        # Permission bits only: keep execute (the image's own interpreter must
+        # run), drop setuid/setgid/sticky; ownership is never set, we unpack
+        # unprivileged.
+        os.chmod(dest, member.mode & 0o777)
+    elif member.issym():
+        if os.path.lexists(dest):
+            _remove(dest)
+        os.symlink(member.linkname, dest)
+    elif member.islnk():
+        source_path = resolve_in_rootfs(root, member.linkname, follow_last=False)
+        if os.path.lexists(dest):
+            _remove(dest)
+        try:
+            os.link(source_path, dest, follow_symlinks=False)
+        except (OSError, NotImplementedError):
+            shutil.copy2(source_path, dest, follow_symlinks=False)
+    # Devices and FIFOs cannot be created unprivileged, and a model has no use
+    # for them; they are skipped.
+
+
 def _apply_layer(tar_path: str, rootfs: str) -> None:
-    """Unpack one gzipped layer tar onto the rootfs, honouring whiteouts and
-    refusing any member that would escape the rootfs."""
+    """Unpack one gzipped layer tar onto the rootfs, honouring whiteouts.
+
+    Every member is placed where the chrooted model will find it: its parent
+    path is resolved inside the rootfs (`resolve_in_rootfs`), so a lower
+    layer's links are honoured and nothing is ever written outside the rootfs.
+    A member NAME that is absolute or climbs above the root is refused and
+    fails the pull — no real image layer carries one, a hostile one does."""
+    root = os.path.abspath(rootfs)
     with gzip.open(tar_path, "rb") as gz, \
             tarfile.open(fileobj=gz, mode="r|") as tar:
         for member in tar:
-            base = os.path.basename(member.name)
-            target = os.path.join(rootfs, member.name)
+            name = member.name
+            if name.startswith("/") or _climbs_out(0, name):
+                raise PullError(f"layer member escapes rootfs: {name!r}")
+            parts = [p for p in name.split("/") if p not in ("", ".")]
+            if not parts:
+                continue
+            base = parts[-1]
+            parent = resolve_in_rootfs(root, "/".join(parts[:-1]))
 
             # Whiteout: `.wh.<x>` deletes x; `.wh..wh..opq` clears a dir.
             if base == ".wh..wh..opq":
-                parent = os.path.dirname(target)
-                if os.path.isdir(parent) and _safe_within(rootfs, parent):
+                if os.path.isdir(parent) and not os.path.islink(parent):
                     for child in os.listdir(parent):
                         _remove(os.path.join(parent, child))
                 continue
             if base.startswith(".wh."):
-                victim = os.path.join(os.path.dirname(target), base[len(".wh."):])
-                if _safe_within(rootfs, victim):
-                    _remove(victim)
+                _remove(os.path.join(parent, base[len(".wh."):]))
                 continue
 
-            if not _safe_within(rootfs, target):
-                raise PullError(f"layer member escapes rootfs: {member.name!r}")
-            # Symlink/hardlink targets must also stay contained.
-            if member.issym() or member.islnk():
-                if member.linkname.startswith("/"):
-                    link_target = os.path.join(rootfs, member.linkname.lstrip("/"))
-                else:
-                    link_target = os.path.join(os.path.dirname(target),
-                                               member.linkname)
-                if not _safe_within(rootfs, link_target):
-                    # Skip a dangerous link rather than abort the whole image;
-                    # a model that depends on escaping links will simply fail
-                    # to run, which is the right outcome.
-                    continue
+            # A relative link climbing above the root is skipped rather than
+            # created: a model that depends on one will simply fail to run,
+            # which is the right outcome. Absolute targets are contained by
+            # the chroot and by resolve_in_rootfs.
+            if member.issym() and _climbs_out(len(parts) - 1, member.linkname):
+                continue
+            if member.islnk() and (member.linkname.startswith("/")
+                                   or _climbs_out(0, member.linkname)):
+                continue
             try:
-                tar.extract(member, rootfs, set_attrs=False)
-                # set_attrs=False avoids chown-to-root (we unpack unprivileged)
-                # and setuid/setgid bits — but it also strips the EXECUTE bit,
-                # which makes the image's own python3 non-runnable (exit 126,
-                # observed 2026-08-11). Restore the permission bits explicitly,
-                # masked to rwx only: keep execute, drop setuid/setgid/sticky.
-                if (member.isfile() or member.isdir()) \
-                        and not os.path.islink(target):
-                    try:
-                        os.chmod(target, member.mode & 0o777)
-                    except OSError:
-                        pass
+                os.makedirs(parent, exist_ok=True)
+                _write_member(tar, member, root, os.path.join(parent, base))
             except (OSError, tarfile.TarError):
                 # A single bad member is not fatal; the sandbox surfaces a
                 # genuinely broken image when it fails to execute.

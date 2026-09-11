@@ -16,6 +16,7 @@ from hope.backtest.oci_pull import (
     _safe_within,
     _select_platform,
     parse_ref,
+    resolve_in_rootfs,
 )
 
 
@@ -120,6 +121,11 @@ def _layer(members):
                 tar.addfile(info)
             elif kind == "dir":
                 info.type = tarfile.DIRTYPE
+                info.mode = 0o755
+                tar.addfile(info)
+            elif kind == "hardlink":
+                info.type = tarfile.LNKTYPE
+                info.linkname = data
                 tar.addfile(info)
     gz = io.BytesIO()
     with gzip.GzipFile(fileobj=gz, mode="wb") as g:
@@ -184,3 +190,146 @@ def test_apply_layer_whiteout_deletes_prior_file(tmp_path):
                   _layer([("app/.wh.old.txt", b"", "file")]))
     _apply_layer(blob, str(rootfs))
     assert not (rootfs / "app" / "old.txt").exists()
+
+
+# ---- links resolved as the chrooted model sees them ------------------------
+
+def test_resolve_in_rootfs_restarts_absolute_links_at_the_rootfs(tmp_path):
+    root = tmp_path / "rootfs"
+    (root / "usr" / "bin").mkdir(parents=True)
+    os.symlink("/usr/bin", root / "bin")
+    assert resolve_in_rootfs(str(root), "bin/tar") == str(root / "usr" / "bin" / "tar")
+
+
+def test_resolve_in_rootfs_never_climbs_above_the_root(tmp_path):
+    root = tmp_path / "rootfs"
+    root.mkdir()
+    assert resolve_in_rootfs(str(root), "../../etc/passwd") == str(root / "etc" / "passwd")
+
+
+def test_resolve_in_rootfs_refuses_a_link_loop(tmp_path):
+    root = tmp_path / "rootfs"
+    root.mkdir()
+    os.symlink("b", root / "a")
+    os.symlink("a", root / "b")
+    with pytest.raises(PullError, match="symbolic links"):
+        resolve_in_rootfs(str(root), "a/x")
+
+
+def test_a_merged_usr_image_with_an_absolute_bin_link_unpacks(tmp_path):
+    """11 Sept 2026: two digests from one miner were rejected with
+    `layer member escapes rootfs: 'bin/tar'`. A lower layer made `bin` an
+    absolute link to /usr/bin; a later layer wrote bin/tar through it. In the
+    chroot that is usr/bin/tar — it must unpack there, not be refused."""
+    rootfs = tmp_path / "rootfs"
+    rootfs.mkdir()
+    base = _write(tmp_path, "base.tgz", _layer([
+        ("usr", None, "dir"), ("usr/bin", None, "dir"), ("bin", "/usr/bin", "symlink")]))
+    upper = _write(tmp_path, "upper.tgz", _layer([("bin/tar", b"tar!", "file")]))
+    _apply_layer(base, str(rootfs))
+    _apply_layer(upper, str(rootfs))
+    assert (rootfs / "usr" / "bin" / "tar").read_bytes() == b"tar!"
+    assert os.path.islink(rootfs / "bin")
+
+
+def test_a_write_through_an_absolute_link_never_reaches_the_host(tmp_path):
+    """The link target is an absolute path that EXISTS on this host. Resolved
+    through the host, the file would be written there."""
+    host_dir = tmp_path / "host_bin"
+    host_dir.mkdir()
+    rootfs = tmp_path / "rootfs"
+    rootfs.mkdir()
+    base = _write(tmp_path, "base.tgz", _layer([("bin", str(host_dir), "symlink")]))
+    upper = _write(tmp_path, "upper.tgz", _layer([("bin/payload", b"x", "file")]))
+    _apply_layer(base, str(rootfs))
+    _apply_layer(upper, str(rootfs))
+    assert not (host_dir / "payload").exists()
+    assert (rootfs / str(host_dir).lstrip("/") / "payload").read_bytes() == b"x"
+
+
+def test_a_relative_link_in_a_lower_layer_is_honoured(tmp_path):
+    rootfs = tmp_path / "rootfs"
+    rootfs.mkdir()
+    base = _write(tmp_path, "base.tgz", _layer([
+        ("usr", None, "dir"), ("usr/lib", None, "dir"), ("lib", "usr/lib", "symlink")]))
+    upper = _write(tmp_path, "upper.tgz", _layer([("lib/libm.so", b"elf", "file")]))
+    _apply_layer(base, str(rootfs))
+    _apply_layer(upper, str(rootfs))
+    assert (rootfs / "usr" / "lib" / "libm.so").read_bytes() == b"elf"
+
+
+def test_a_file_replaces_a_lower_link_instead_of_writing_through_it(tmp_path):
+    rootfs = tmp_path / "rootfs"
+    rootfs.mkdir()
+    (rootfs / "etc").mkdir()
+    (rootfs / "etc" / "passwd").write_text("root")
+    base = _write(tmp_path, "base.tgz", _layer([
+        ("app", None, "dir"), ("app/config", "/etc/passwd", "symlink")]))
+    upper = _write(tmp_path, "upper.tgz", _layer([("app/config", b"mine", "file")]))
+    _apply_layer(base, str(rootfs))
+    _apply_layer(upper, str(rootfs))
+    assert not os.path.islink(rootfs / "app" / "config")
+    assert (rootfs / "app" / "config").read_bytes() == b"mine"
+    assert (rootfs / "etc" / "passwd").read_text() == "root"
+
+
+def test_a_whiteout_through_an_absolute_link_deletes_inside_the_rootfs(tmp_path):
+    rootfs = tmp_path / "rootfs"
+    rootfs.mkdir()
+    base = _write(tmp_path, "base.tgz", _layer([
+        ("usr", None, "dir"), ("usr/bin", None, "dir"),
+        ("usr/bin/old", b"old", "file"), ("bin", "/usr/bin", "symlink")]))
+    upper = _write(tmp_path, "upper.tgz", _layer([("bin/.wh.old", b"", "file")]))
+    _apply_layer(base, str(rootfs))
+    _apply_layer(upper, str(rootfs))
+    assert not (rootfs / "usr" / "bin" / "old").exists()
+
+
+def test_a_hardlink_is_created_inside_the_rootfs(tmp_path):
+    rootfs = tmp_path / "rootfs"
+    rootfs.mkdir()
+    blob = _write(tmp_path, "l.tgz", _layer([
+        ("usr", None, "dir"), ("usr/bin", None, "dir"),
+        ("usr/bin/python3.11", b"py", "file"),
+        ("usr/bin/python3", "usr/bin/python3.11", "hardlink")]))
+    _apply_layer(blob, str(rootfs))
+    assert (rootfs / "usr" / "bin" / "python3").read_bytes() == b"py"
+
+
+def test_an_absolute_member_name_is_refused(tmp_path):
+    rootfs = tmp_path / "rootfs"
+    rootfs.mkdir()
+    blob = _write(tmp_path, "l.tgz", _layer([("/etc/evil", b"x", "file")]))
+    with pytest.raises(PullError, match="escapes rootfs"):
+        _apply_layer(blob, str(rootfs))
+
+
+def test_a_link_loop_in_an_image_fails_the_pull(tmp_path):
+    rootfs = tmp_path / "rootfs"
+    rootfs.mkdir()
+    blob = _write(tmp_path, "l.tgz", _layer([
+        ("a", "b", "symlink"), ("b", "a", "symlink"), ("a/x", b"x", "file")]))
+    with pytest.raises(PullError, match="symbolic links"):
+        _apply_layer(blob, str(rootfs))
+
+
+def test_the_entrypoint_is_found_inside_the_image_not_on_the_host(tmp_path):
+    """An image whose `usr` is an absolute link and which ships no python3 must
+    not borrow this host's /usr/bin/python3 when its command is resolved."""
+    if not os.path.exists("/usr/bin/python3"):
+        pytest.skip("host has no /usr/bin/python3 to be confused by")
+    from types import SimpleNamespace
+
+    from hope.backtest.local_executor import _resolve_entrypoint
+
+    rootfs = tmp_path / "rootfs"
+    rootfs.mkdir()
+    os.symlink("/usr", rootfs / "usr")
+    image = SimpleNamespace(rootfs=str(rootfs), config=ImageConfig(cmd=["python3"]))
+    assert _resolve_entrypoint(image, None) == ["python3"]
+
+    (rootfs / "opt").mkdir()
+    os.unlink(rootfs / "usr")
+    (rootfs / "usr" / "bin").mkdir(parents=True)
+    (rootfs / "usr" / "bin" / "python3").write_bytes(b"py")
+    assert _resolve_entrypoint(image, None) == ["/usr/bin/python3"]
