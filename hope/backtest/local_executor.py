@@ -41,6 +41,17 @@ MEM_MB_ENV = "SN21_SANDBOX_MEM_MB"
 WALL_S_ENV = "SN21_SANDBOX_WALL_S"
 
 
+# Resident-memory enforcement mode: "enforce" (default) kills a model whose
+# resident set exceeds the published budget; "observe" only records each
+# model's peak — for the first day the watchdog runs, so the field's actual
+# footprints are known before anyone is charged for one.
+RSS_MODE_ENV = "SN21_SANDBOX_RSS_MODE"
+
+
+def _memory_enforce(environ=os.environ) -> bool:
+    return (environ.get(RSS_MODE_ENV) or "enforce").strip().lower() != "observe"
+
+
 def _wall_timeout(environ=os.environ) -> int:
     raw = (environ.get(WALL_S_ENV) or "").strip()
     if not raw:
@@ -130,19 +141,22 @@ def run_basket_local(
             env=sandbox_env(image.config.env),
             working_dir=image.config.working_dir,
             as_limit_bytes=_as_limit_bytes(),
+            memory_enforce=_memory_enforce(),
             **({"wall_timeout": wall} if wall else {}),
         )
         _t0 = time.monotonic()
         result = run_sandboxed(spec, stdin_blob)
         _took = round(time.monotonic() - _t0, 1)
+        _peak = (round(result.peak_rss_bytes / (1 << 20), 1)
+                 if getattr(result, "peak_rss_bytes", 0) else None)
         if not result.ok:
             return RunResult(ok=False, error=result.error, episodes_in=len(eps),
-                             duration_s=_took)
+                             duration_s=_took, peak_rss_mb=_peak)
 
         preds = _parse_output(result.stdout, ids, required_horizons(eps))
         return RunResult(ok=True, predictions=preds,
                          episodes_in=len(eps), predictions_out=len(preds),
-                         duration_s=_took)
+                         duration_s=_took, peak_rss_mb=_peak)
     finally:
         cleanup_rootfs(dest)
 

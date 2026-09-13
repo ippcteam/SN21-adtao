@@ -57,10 +57,19 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass, field
 
 # Published budget (MINER_MODEL_SPEC §2): 1 GB memory, 15 min CPU per basket.
 DEFAULT_MEMORY_BYTES = 1 << 30
+
+# How often the resident-memory watchdog samples the model's process tree.
+RSS_POLL_S = 0.25
+# 128 + SIGKILL: the exit code the docker runner surfaces for a --memory
+# breach, so the liveness policy reads a resident-memory kill from either
+# executor as the same fault (hope.scoring.chronic_failure.OOM_EXIT_CODE).
+OOM_EXIT_CODE = 137
 DEFAULT_CPU_SECONDS = 15 * 60
 DEFAULT_NPROC = 256
 DEFAULT_FSIZE_BYTES = 512 << 20     # a model that writes half a GB is broken
@@ -80,6 +89,9 @@ class SandboxResult:
     stdout: str = ""
     error: str | None = None
     exit_code: int | None = None
+    # Highest resident set the watchdog saw for the model's session (0 when
+    # nothing was observed — no /proc, or the run ended within one poll).
+    peak_rss_bytes: int = 0
 
 
 @dataclass
@@ -94,6 +106,11 @@ class RunSpec:
     nproc: int = DEFAULT_NPROC
     fsize_bytes: int = DEFAULT_FSIZE_BYTES
     wall_timeout: int = DEFAULT_WALL_TIMEOUT
+    # Whether a resident set above memory_bytes kills the model (True) or is
+    # only observed and reported (False). Observe-only is for the day the
+    # enforcement first goes live: every model's peak is recorded before any
+    # is charged for one.
+    memory_enforce: bool = True
     # Opt-in virtual-address-space cap (0 = off). On a host whose OWN memory is
     # smaller than a model might want, this makes an over-hungry model fail
     # cleanly (its allocation returns ENOMEM, the run errors) instead of the
@@ -216,11 +233,59 @@ def _apply_rlimits(spec: RunSpec):
     return preexec
 
 
+def session_rss_bytes(sid: int, proc_root: str = "/proc") -> int:
+    """Resident memory of every process in session `sid`, summed.
+
+    The sandbox starts the model in its own session (start_new_session), so
+    the session id is the tree: unshare, the entrypoint and anything it
+    forks. Read from /proc: field 6 of <pid>/stat is the session id (parsed
+    after the last ')' so a command name with spaces cannot shift it) and
+    VmRSS in <pid>/status is resident memory in kB. Processes that vanish
+    between the listing and the read are skipped.
+    """
+    total = 0
+    for name in os.listdir(proc_root):
+        if not name.isdigit():
+            continue
+        try:
+            with open(os.path.join(proc_root, name, "stat")) as fh:
+                stat = fh.read()
+            fields = stat[stat.rindex(")") + 2:].split()
+            if int(fields[3]) != sid:
+                continue
+            with open(os.path.join(proc_root, name, "status")) as fh:
+                for line in fh:
+                    if line.startswith("VmRSS:"):
+                        total += int(line.split()[1]) * 1024
+                        break
+        except (OSError, ValueError, IndexError):
+            continue
+    return total
+
+
+def oom_result(spec: RunSpec, observed_bytes: int) -> SandboxResult:
+    """The result for a model killed at the resident-memory budget — the
+    docker runner's shape (exit 137), so it classifies as a memory breach."""
+    return SandboxResult(
+        ok=False, exit_code=OOM_EXIT_CODE,
+        error=(f"{ERR_EXIT_PREFIX}{OOM_EXIT_CODE}: memory>"
+               f"{spec.memory_bytes >> 20}MB resident "
+               f"(observed {observed_bytes >> 20}MB; killed)"))
+
+
 def run_sandboxed(spec: RunSpec, stdin_blob: bytes) -> SandboxResult:
     """Execute the spec against stdin_blob under `unshare`; capture stdout.
 
     Returns a SandboxResult with the same shape of information the docker
     runner surfaces, so callers do not care which executor ran.
+
+    Resident memory is enforced here, not by an rlimit: RLIMIT_AS caps
+    virtual address space (see _rlimits), which is the wrong quantity, and
+    the host does not delegate a cgroup. A watchdog thread samples the
+    session's resident set every RSS_POLL_S and kills the whole group when
+    it exceeds spec.memory_bytes — the published budget — reporting exit
+    137 like a docker --memory kill. On a host without /proc the watchdog
+    observes nothing and enforces nothing.
     """
     unshare_bin = shutil.which("unshare")
     if unshare_bin is None:
@@ -238,28 +303,64 @@ def run_sandboxed(spec: RunSpec, stdin_blob: bytes) -> SandboxResult:
     except OSError as exc:
         return SandboxResult(ok=False, error=f"{ERR_SANDBOX_UNAVAILABLE}: {exc}")
 
+    def _kill_group():
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+
+    stop = threading.Event()
+    breached = {"bytes": 0, "peak": 0}
+
+    def _watch_rss():
+        while not stop.wait(RSS_POLL_S):
+            try:
+                rss = session_rss_bytes(proc.pid)
+            except OSError:
+                return                      # no /proc here: nothing to enforce
+            if rss > breached["peak"]:
+                breached["peak"] = rss
+            if rss > spec.memory_bytes and spec.memory_enforce:
+                breached["bytes"] = rss
+                _kill_group()
+                return
+
+    watchdog = None
+    if spec.memory_bytes and spec.memory_bytes > 0:
+        watchdog = threading.Thread(target=_watch_rss, daemon=True,
+                                    name="sandbox-rss-watchdog")
+        watchdog.start()
+
     killed = False
     try:
         out, err = proc.communicate(input=stdin_blob, timeout=spec.wall_timeout)
     except subprocess.TimeoutExpired:
         killed = True
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            proc.kill()
+        _kill_group()
         out, err = proc.communicate()
+    finally:
+        stop.set()
+        if watchdog is not None:
+            watchdog.join(timeout=2)
 
     stdout = (out or b"").decode("utf-8", "replace")
     stderr = (err or b"").decode("utf-8", "replace")
 
+    peak = breached["peak"]
+    if breached["bytes"]:
+        r = oom_result(spec, breached["bytes"])
+        r.peak_rss_bytes = peak
+        return r
     if killed:
         return SandboxResult(
-            ok=False, error=f"{ERR_TIMEOUT_PREFIX}{spec.wall_timeout}s")
+            ok=False, error=f"{ERR_TIMEOUT_PREFIX}{spec.wall_timeout}s",
+            peak_rss_bytes=peak)
     if proc.returncode != 0:
         detail = stderr.strip()[:200] or stdout.strip()[:200]
         return SandboxResult(ok=False, exit_code=proc.returncode, stdout=stdout,
-                             error=f"{ERR_EXIT_PREFIX}{proc.returncode}: {detail}")
-    return SandboxResult(ok=True, stdout=stdout, exit_code=0)
+                             error=f"{ERR_EXIT_PREFIX}{proc.returncode}: {detail}",
+                             peak_rss_bytes=peak)
+    return SandboxResult(ok=True, stdout=stdout, exit_code=0, peak_rss_bytes=peak)
 
 
 def cleanup_rootfs(dest_dir: str) -> None:

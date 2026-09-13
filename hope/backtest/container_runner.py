@@ -55,6 +55,11 @@ class RunResult:
     # number chosen from measured spread, not judgement — the 2026-09-01
     # ceiling was set blind and cut off three real models.
     duration_s: float | None = None
+    # Highest resident memory (MB) observed for the model, None when the
+    # executor could not observe it. Recorded so the published 1 GB budget
+    # is enforced against a number that was measured, and so the day the
+    # enforcement first runs can be observed before anyone is charged.
+    peak_rss_mb: float | None = None
 
 
 def docker_command(image_digest: str, memory: str = DEFAULT_MEMORY,

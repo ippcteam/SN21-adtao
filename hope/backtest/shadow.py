@@ -60,6 +60,9 @@ def record_day(root: str, day: str, model: ShadowModel, result: RunResult) -> st
             # How long the model actually took — the evidence the wall
             # ceiling gets chosen from. None = the run never started.
             "duration_s": getattr(result, "duration_s", None),
+            # Highest resident memory seen — the evidence the published
+            # 1 GB budget is enforced against.
+            "peak_rss_mb": getattr(result, "peak_rss_mb", None),
             "predictions": result.predictions,
         }, default=str) + "\n")
     return path
@@ -121,6 +124,7 @@ def merged_supplement(previous: dict | None, result: RunResult,
         "episodes_in": prev_in + len(added_ids),
         "predictions_out": len(predictions),
         "duration_s": getattr(result, "duration_s", None),
+        "peak_rss_mb": getattr(result, "peak_rss_mb", None),
         "predictions": predictions,
         "supplement": {"basket": basket_key, "added": len(added_ids),
                        "added_predicted": sum(1 for e in added_ids

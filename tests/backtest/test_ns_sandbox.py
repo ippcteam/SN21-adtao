@@ -87,3 +87,64 @@ def test_unshare_command_defaults_workdir_to_root():
     spec = RunSpec(rootfs="/r", argv=["/x"], working_dir="")
     cmd = ns_sandbox.unshare_command(spec, "unshare")
     assert "--wd=/" in cmd
+
+
+# ---- resident memory is enforced at the published budget --------------------
+
+def _fake_proc(root, procs):
+    """procs: {pid: (session_id, rss_kb, comm)} written in /proc's shape."""
+    for pid, (sid, rss_kb, comm) in procs.items():
+        d = root / str(pid)
+        d.mkdir()
+        # pid (comm) state ppid pgrp session tty ...
+        (d / "stat").write_text(f"{pid} ({comm}) S 1 {pid} {sid} 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n")
+        (d / "status").write_text(f"Name:\t{comm}\nVmPeak:\t 999999 kB\nVmRSS:\t {rss_kb} kB\n")
+    (root / "self").mkdir()          # non-numeric entries are ignored
+    (root / "meminfo").write_text("MemTotal: 1 kB\n")
+
+
+def test_session_rss_sums_the_whole_session_and_nothing_else(tmp_path):
+    _fake_proc(tmp_path, {
+        4242: (4242, 300 * 1024, "unshare"),
+        4243: (4242, 200 * 1024, "python3 my model.py"),   # spaces in comm
+        4244: (4242, 50 * 1024, "worker (thread)"),         # parens in comm
+        9999: (9999, 800 * 1024, "other job"),
+    })
+    assert ns_sandbox.session_rss_bytes(4242, proc_root=str(tmp_path)) == 550 * (1 << 20)
+    assert ns_sandbox.session_rss_bytes(9999, proc_root=str(tmp_path)) == 800 * (1 << 20)
+    assert ns_sandbox.session_rss_bytes(1, proc_root=str(tmp_path)) == 0
+
+
+def test_session_rss_skips_processes_that_vanish(tmp_path):
+    _fake_proc(tmp_path, {7: (7, 100 * 1024, "a")})
+    (tmp_path / "8").mkdir()                        # exists, but no stat/status
+    assert ns_sandbox.session_rss_bytes(7, proc_root=str(tmp_path)) == 100 * (1 << 20)
+
+
+def test_the_budget_defaults_to_the_published_gigabyte():
+    spec = RunSpec(rootfs="/x", argv=["/y"])
+    assert spec.memory_bytes == 1 << 30
+
+
+def test_a_memory_kill_reads_like_a_docker_memory_kill():
+    """chronic_failure classifies exit 137 as REASON_MEMORY: the two
+    executors must report the same breach the same way."""
+    from hope.scoring.chronic_failure import (
+        OOM_EXIT_CODE, REASON_MEMORY, classify_failure, failure_reason, FAULT_MINER,
+    )
+    spec = RunSpec(rootfs="/x", argv=["/y"])
+    r = ns_sandbox.oom_result(spec, observed_bytes=1300 << 20)
+    assert not r.ok and r.exit_code == OOM_EXIT_CODE == ns_sandbox.OOM_EXIT_CODE
+    assert r.error.startswith(f"exit={OOM_EXIT_CODE}")
+    assert "1024MB" in r.error and "1300MB" in r.error
+    assert classify_failure(False, r.error) == FAULT_MINER
+    assert failure_reason(False, r.error) == REASON_MEMORY
+
+
+def test_observe_mode_records_the_peak_without_killing():
+    from hope.backtest import local_executor as le
+    assert le._memory_enforce({}) is True
+    assert le._memory_enforce({"SN21_SANDBOX_RSS_MODE": "observe"}) is False
+    assert le._memory_enforce({"SN21_SANDBOX_RSS_MODE": "ENFORCE"}) is True
+    spec = RunSpec(rootfs="/x", argv=["/y"], memory_enforce=False)
+    assert spec.memory_enforce is False and spec.memory_bytes == 1 << 30
