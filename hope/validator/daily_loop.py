@@ -511,6 +511,11 @@ def run_daily_loop(
             summary["receipt"] = {"published": receipt.published,
                                   "sha256": receipt.sha256,
                                   "skipped_reason": receipt.skipped_reason}
+            # The receipt carried the predictions and the settled rows
+            # verbatim; nothing after this point reads them. Drop them so
+            # the publish steps do not run on top of the settle peak.
+            prediction_index = {}
+            settled_outcomes = []
 
             published = publish_day(
                 ledger_root, day, horizon_results, key_loader(),

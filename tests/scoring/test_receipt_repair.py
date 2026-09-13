@@ -87,7 +87,7 @@ class TestScopeAndSafety:
             return [], {}
 
         monkeypatch.setattr("hope.scoring.settle_day_flow.load_prediction_index",
-                            lambda _root: {})
+                            lambda _root, **_kw: {})
         monkeypatch.setattr(
             "hope.scoring.settle_day_flow.score_settled_with_components",
             fake_score)
@@ -112,7 +112,7 @@ class TestScopeAndSafety:
         monkeypatch.setattr(
             "hope.scoring.standing_ledger.append_entries", explode)
         monkeypatch.setattr("hope.scoring.settle_day_flow.load_prediction_index",
-                            lambda _root: {})
+                            lambda _root, **_kw: {})
         monkeypatch.setattr(
             "hope.scoring.settle_day_flow.score_settled_with_components",
             lambda i, o, environ=None: ([], {}))
@@ -128,7 +128,7 @@ class TestScopeAndSafety:
                                    "_entered_results.jsonl")).read()
 
         monkeypatch.setattr("hope.scoring.settle_day_flow.load_prediction_index",
-                            lambda _root: {})
+                            lambda _root, **_kw: {})
         monkeypatch.setattr(
             "hope.scoring.settle_day_flow.score_settled_with_components",
             lambda i, o, environ=None: ([], {}))
@@ -143,7 +143,7 @@ class TestScopeAndSafety:
         root = str(tmp_path)
         _markers(root, [("e1", 7, DAY)])
         monkeypatch.setattr("hope.scoring.settle_day_flow.load_prediction_index",
-                            lambda _root: {"idx": 1})
+                            lambda _root, **_kw: {"idx": 1})
         monkeypatch.setattr(
             "hope.scoring.settle_day_flow.score_settled_with_components",
             lambda i, o, environ=None: ([], {}))

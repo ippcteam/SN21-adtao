@@ -93,6 +93,37 @@ class BasketNotReady(RuntimeError):
     day self-heals when the basket lands)."""
 
 
+def process_memory_mb() -> tuple[float, float]:
+    """(resident now, resident peak) of THIS process in MiB.
+
+    Peak from rusage (kilobytes on Linux, bytes on macOS); current from
+    /proc when it exists, else 0. Children (the sandboxed models) are not
+    included — they have their own published budget; this is the executor's
+    own footprint, which is what decides the plan it runs on.
+    """
+    import resource
+    raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    peak = raw / 1024 if sys.platform.startswith("linux") else raw / (1024 * 1024)
+    now = 0.0
+    try:
+        with open("/proc/self/status") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    now = float(line.split()[1]) / 1024
+                    break
+    except OSError:
+        pass
+    return now, peak
+
+
+def note_memory(stage: str, record: dict) -> None:
+    """One line per stage boundary, and the numbers into the run record (and
+    so the heartbeat), so growth is seen weeks before it becomes a kill."""
+    now, peak = process_memory_mb()
+    record.setdefault("memory_mb", {})[stage] = {"rss": round(now), "peak": round(peak)}
+    log(f"[mem] after {stage}: rss={now:.0f} MiB peak={peak:.0f} MiB")
+
+
 def resolve_basket(explicit: str | None, day: date) -> str:
     """The basket release key. Explicit wins; else BD-<yesterday> (a basket is
     named for the day whose changes it holds and delivered the next morning),
@@ -1048,6 +1079,8 @@ def main():
         log("===PIPELINE-END===")
         return 0
 
+    note_memory("resolve", record)
+
     # corpus for admission
     from scripts.run_daily_loop import _key_loader
     key = _key_loader()
@@ -1074,6 +1107,7 @@ def main():
         except Exception as e:   # noqa: BLE001
             record["stages"]["intake"] = {"error": str(e)}
             log(f"[intake] ERROR {e}")
+    note_memory("intake", record)
 
     # 2. shadow day
     try:
@@ -1090,6 +1124,7 @@ def main():
     except Exception as e:   # noqa: BLE001
         record["stages"]["shadow"] = {"error": str(e)}
         log(f"[shadow] ERROR {e}")
+    note_memory("shadow", record)
 
     # 3. settle + publish
     try:
@@ -1103,6 +1138,7 @@ def main():
     except Exception as e:   # noqa: BLE001
         record["stages"]["settle"] = {"error": str(e)}
         log(f"[settle] ERROR {e}")
+    note_memory("settle", record)
 
     # 4. publish the intended weight vector for the on-chain committer
     try:
@@ -1132,6 +1168,7 @@ def main():
     except Exception as e:   # noqa: BLE001
         record["stages"]["publish_performance"] = {"error": str(e)}
         log(f"[publish-performance] ERROR {e}")
+    note_memory("publish", record)
 
     # 6. sync the verification feeds to the operator API mirror. The public
     #    validator API serves a different host's ledger, so without this push
@@ -1163,6 +1200,7 @@ def main():
     except Exception as e:   # noqa: BLE001
         record["stages"]["mirror_sync"] = {"error": str(e)}
         log(f"[mirror-sync] ERROR (non-fatal) {e}")
+    note_memory("mirror", record)
 
     record["elapsed_s"] = round(time.time() - started, 1)
     path = write_run_record(args.ledger_root, record)
@@ -1192,6 +1230,11 @@ def publish_pipeline_heartbeat(day, record):
         "mode": record.get("mode"),
         "elapsed_s": record.get("elapsed_s"),
         "failed_stages": failed,
+        # Resident memory per stage boundary (MiB) and the run's peak, so a
+        # watcher sees the footprint grow long before the host's limit does.
+        "memory_mb": record.get("memory_mb") or {},
+        "peak_rss_mb": max((v.get("peak", 0) for v in
+                            (record.get("memory_mb") or {}).values()), default=None),
         # keep the summary compact but diagnostic: per-stage keys, errors verbatim
         "stages": {name: (s if isinstance(s, dict) else {"value": s})
                    for name, s in stages.items()},

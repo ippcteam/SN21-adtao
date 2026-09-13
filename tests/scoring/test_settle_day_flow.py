@@ -13,8 +13,10 @@ import pytest
 from hope.scoring import standing_ledger as sl
 from hope.scoring.episode_average import standing
 from hope.scoring.settle_day_flow import (
+    INDEX_LOOKBACK_DAYS,
     SettledHorizon,
     entered_results,
+    index_window_start,
     load_prediction_index,
     run_settle_day,
     score_entry,
@@ -220,3 +222,75 @@ def test_backfill_enters_on_true_settle_date(tmp_path):
     assert out["settle_dates"] == [str(settle)]
     entries = sl.load_entries(ledger_root, as_of=DAY)
     assert entries["alpha"][0].scored_on == settle
+
+
+# ---- the index is the size of the day, not of history -----------------------
+
+def test_index_keeps_only_the_named_episodes(tmp_path):
+    root = str(tmp_path)
+    _write_shadow(root, "2026-07-27", "alpha",
+                  {"ep1": {"7": _pred(0.1)}, "ep2": {"7": _pred(0.2)}})
+    _write_shadow(root, "2026-07-28", "beta", {"ep3": {"7": _pred(0.3)}})
+    idx = load_prediction_index(root, episode_ids={"ep2"})
+    assert set(idx) == {"ep2"}
+    assert set(idx["ep2"]) == {"alpha"}
+
+
+def test_index_skips_shadow_days_before_the_window(tmp_path):
+    root = str(tmp_path)
+    _write_shadow(root, "2026-06-01", "alpha", {"old": {"7": _pred(0.1)}})
+    _write_shadow(root, "2026-07-28", "alpha", {"new": {"7": _pred(0.2)}})
+    _write_shadow(root, "not-a-date", "alpha", {"odd": {"7": _pred(0.3)}})
+    idx = load_prediction_index(root, not_before=date(2026, 7, 1))
+    # the dated directory before the window is skipped; an undated one is
+    # kept rather than silently dropped
+    assert set(idx) == {"new", "odd"}
+
+
+def test_index_window_starts_before_the_earliest_possible_shadow_day():
+    outcomes = [SettledHorizon("e", 28, 0, 0, 0, date(2026, 9, 12)),
+                SettledHorizon("f", 7, 0, 0, 0, date(2026, 9, 1))]
+    start = index_window_start(outcomes)
+    # a row finalized on F was predicted on a shadow day >= F - 36; the
+    # window must open at or before that for the EARLIEST row
+    assert start <= date(2026, 9, 1) - timedelta(days=36)
+    assert index_window_start([]) is None
+
+
+def test_settle_with_nothing_new_reads_no_shadow_file(tmp_path, monkeypatch):
+    """A day whose rows are all entered already must not pay for the index:
+    that read was the whole of the settle step's memory on such a day."""
+    shadow_root = str(tmp_path / "s")
+    ledger_root = str(tmp_path / "l")
+    _write_shadow(shadow_root, "2026-07-27", "alpha", {"ep1": {"7": _pred(0.4)}})
+    provider = lambda d: [SettledHorizon("ep1", 7, 0.4, 0.2, -0.1, d)]
+    run_settle_day(shadow_root, ledger_root, DAY, provider)
+
+    def _must_not_load(*_a, **_k):
+        raise AssertionError("index read on a day with nothing to enter")
+
+    monkeypatch.setattr("hope.scoring.settle_day_flow.load_prediction_index",
+                        _must_not_load)
+    out = run_settle_day(shadow_root, ledger_root, DAY, provider)
+    assert out["new_outcomes"] == 0 and out["results_scored"] == 0
+
+
+def test_settle_reads_only_the_episodes_it_enters(tmp_path, monkeypatch):
+    shadow_root = str(tmp_path / "s")
+    ledger_root = str(tmp_path / "l")
+    _write_shadow(shadow_root, "2026-07-27", "alpha",
+                  {"ep1": {"7": _pred(0.4)}, "other": {"7": _pred(0.4)}})
+    seen = {}
+    real = load_prediction_index
+
+    def spy(root, episode_ids=None, not_before=None):
+        seen["episode_ids"] = episode_ids
+        seen["not_before"] = not_before
+        return real(root, episode_ids=episode_ids, not_before=not_before)
+
+    monkeypatch.setattr("hope.scoring.settle_day_flow.load_prediction_index", spy)
+    provider = lambda d: [SettledHorizon("ep1", 7, 0.4, 0.2, -0.1, d)]
+    out = run_settle_day(shadow_root, ledger_root, DAY, provider)
+    assert out["results_scored"] == 1
+    assert seen["episode_ids"] == {"ep1"}
+    assert seen["not_before"] == DAY - timedelta(days=INDEX_LOOKBACK_DAYS)

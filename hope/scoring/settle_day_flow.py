@@ -517,13 +517,54 @@ def score_settled_with_components(
 
 # ---- shadow-ledger prediction lookup ----------------------------------------
 
-def load_prediction_index(shadow_root: str) -> dict[str, dict[str, dict]]:
-    """episode_id -> miner -> horizons, across ALL shadow days.
+# How far back a settle run has to read shadow days. A row finalized on F
+# was predicted for an episode whose window closed on F - 1 - h - settle
+# (h <= 28), and the shadow day is the run day after the window closed, so
+# its predictions live in a day directory dated F - 36 or later. Five days'
+# margin on top; anything older can never be the prediction for a row that
+# is settling now.
+INDEX_LOOKBACK_DAYS = 1 + 28 + SETTLING_WINDOW_DAYS + 5
+
+
+def index_window_start(outcomes: Iterable[SettledHorizon]) -> date | None:
+    """Earliest shadow day that can hold a prediction for these outcomes,
+    or None when there are no outcomes (nothing to read at all)."""
+    days = [o.finalized_on for o in outcomes
+            if getattr(o, "finalized_on", None) is not None]
+    if not days:
+        return None
+    return min(days) - timedelta(days=INDEX_LOOKBACK_DAYS)
+
+
+def _shadow_day_before(day_dir: str, not_before: date) -> bool:
+    """True when a shadow day directory is dated before `not_before`.
+    A directory whose name is not a date is kept (never silently skipped)."""
+    try:
+        return date.fromisoformat(day_dir[:10]) < not_before
+    except ValueError:
+        return False
+
+
+def load_prediction_index(
+    shadow_root: str,
+    episode_ids: set[str] | None = None,
+    not_before: date | None = None,
+) -> dict[str, dict[str, dict]]:
+    """episode_id -> miner -> horizons, across the shadow days that matter.
 
     An episode predicted on day X settles on days X+15/X+22/X+36, so the
     lookup must span day directories. Later records win per (episode,
     miner) — a re-run day supersedes (record_day appends; last line is
     the operative run, matching finalize_day's `lines[-1]` discipline).
+
+    Bounded to the work in hand: `episode_ids` keeps only the episodes the
+    caller is about to score, and `not_before` skips day directories that
+    predate the earliest possible shadow day for them (see
+    INDEX_LOOKBACK_DAYS). Without both, the index held every prediction ever
+    made — a set that grows by every day's models × episodes and never
+    shrinks — and the settle step's memory was the size of the subnet's
+    history rather than of the day. Both default to None (read everything)
+    so a caller with no bound gets the old behaviour explicitly.
     """
     index: dict[str, dict[str, dict]] = {}
     base = os.path.join(shadow_root, "shadow")
@@ -532,6 +573,8 @@ def load_prediction_index(shadow_root: str) -> dict[str, dict[str, dict]]:
     for day_dir in sorted(os.listdir(base)):
         d = os.path.join(base, day_dir)
         if not os.path.isdir(d):
+            continue
+        if not_before is not None and _shadow_day_before(day_dir, not_before):
             continue
         for fn in sorted(os.listdir(d)):
             if not fn.endswith(".jsonl"):
@@ -544,8 +587,23 @@ def load_prediction_index(shadow_root: str) -> dict[str, dict[str, dict]]:
                     rec = json.loads(line)
                     miner = rec.get("hotkey")
                     for ep_id, horizons in (rec.get("predictions") or {}).items():
+                        if episode_ids is not None and ep_id not in episode_ids:
+                            continue
                         index.setdefault(ep_id, {})[miner] = horizons
     return index
+
+
+def index_for_outcomes(shadow_root: str,
+                       outcomes: list[SettledHorizon]) -> dict[str, dict[str, dict]]:
+    """The prediction index for exactly these outcomes — empty when there
+    are none, so a day with nothing to settle reads no shadow file at all."""
+    if not outcomes:
+        return {}
+    return load_prediction_index(
+        shadow_root,
+        episode_ids={str(o.episode_id) for o in outcomes},
+        not_before=index_window_start(outcomes),
+    )
 
 
 # ---- entered-result markers (idempotency) ------------------------------------
@@ -628,7 +686,9 @@ def run_settle_day(
         o for o in outcomes_provider(day)
         if (str(o.episode_id), int(o.horizon_days)) not in already
     ]
-    index = load_prediction_index(shadow_root)
+    # Only the predictions these rows can match, from the shadow days that
+    # can hold them. Nothing to enter means nothing to read.
+    index = index_for_outcomes(shadow_root, outcomes)
     # environ THREADED, not defaulted. score_entry_active's os.environ
     # default meant an injected flag set scored with whatever the process env
     # said — the rehearsal ran v1 while every flag said v2, and only the
@@ -705,7 +765,7 @@ def score_day_for_receipt(shadow_root: str, ledger_root: str, day: date,
     entered_today = entered_on_run(ledger_root, day)
     outcomes = [o for o in outcomes_provider(day)
                 if (str(o.episode_id), int(o.horizon_days)) in entered_today]
-    index = load_prediction_index(shadow_root)
+    index = index_for_outcomes(shadow_root, outcomes)
     results, components = score_settled_with_components(index, outcomes,
                                                         environ=environ)
     return {
