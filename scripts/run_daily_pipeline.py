@@ -67,12 +67,18 @@ def _api_base_and_key():
     return url, key
 
 
-def _api_get(path: str):
+def _api_get(path: str, timeout_s: int = 120):
     url, key = _api_base_and_key()
     req = urllib.request.Request(f"{url}/internal/bittensor/v1/{path.lstrip('/')}",
                                  headers={"X-API-Key": key})
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
         return json.loads(resp.read().decode())
+
+
+# The package endpoint builds every episode payload on the request (480 of
+# them took 36 s on a quiet database and over two minutes under load); the
+# listing is a small query. Give the package its own, longer patience.
+PACKAGE_TIMEOUT_S = 600
 
 
 def _api_post(path: str, body: dict):
@@ -161,7 +167,7 @@ def fetch_basket_payloads(release_key: str) -> list:
     models were built against. Getting this wrong drops every episode silently
     (observed 2026-08-12: 328 payloads → 0).
     """
-    pkg = _api_get(f"releases/{release_key}/package")
+    pkg = _api_get(f"releases/{release_key}/package", timeout_s=PACKAGE_TIMEOUT_S)
     payloads = []
     for ep in pkg.get("episodes", []):
         payload = ep.get("payload")

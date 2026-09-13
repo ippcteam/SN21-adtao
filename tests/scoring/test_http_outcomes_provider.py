@@ -90,3 +90,33 @@ def test_a_failing_endpoint_raises_rather_than_scoring_a_partial_day():
     err = urllib.error.HTTPError("u", 503, "down", None, None)
     with patch("urllib.request.urlopen", side_effect=err), pytest.raises(RuntimeError, match="cannot score"):
         http_outcomes_provider("https://api.example", "k")(date(2026, 8, 18))
+
+
+def test_the_request_is_bounded_to_the_lookback_window():
+    """Every settled row ever was 140k rows / 35 MB and ~85% of it discarded
+    by the entered markers. The default asks only for rows finalized in the
+    last OUTCOMES_LOOKBACK_DAYS; None keeps the unbounded request."""
+    from hope.scoring.settle_day_flow import OUTCOMES_LOOKBACK_DAYS
+    from datetime import timedelta
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        return _Resp(PAYLOAD)
+
+    with patch("urllib.request.urlopen", fake_urlopen):
+        http_outcomes_provider("https://api.example", "k")(date(2026, 9, 13))
+    after = date(2026, 9, 13) - timedelta(days=OUTCOMES_LOOKBACK_DAYS)
+    assert f"finalized_after={after.isoformat()}" in captured["url"]
+    assert "settled_on_or_before=2026-09-13" in captured["url"]
+
+    with patch("urllib.request.urlopen", fake_urlopen):
+        http_outcomes_provider("https://api.example", "k", lookback_days=None)(date(2026, 9, 13))
+    assert "finalized_after" not in captured["url"]
+
+
+def test_the_lookback_is_wider_than_the_index_window():
+    """A row measured late must still find its predictions: the outcomes
+    window has to reach at least as far back as the shadow-day window."""
+    from hope.scoring.settle_day_flow import INDEX_LOOKBACK_DAYS, OUTCOMES_LOOKBACK_DAYS
+    assert OUTCOMES_LOOKBACK_DAYS >= INDEX_LOOKBACK_DAYS

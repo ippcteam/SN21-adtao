@@ -858,9 +858,24 @@ def _has_censoring_column(session) -> bool:
         return False
 
 
-def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60):
+# How far back the HTTP provider asks for settled rows. A settle run can only
+# ENTER rows it has not entered before, and an episode's last horizon settles
+# 36 days after its window closes, so rows finalized long ago are either
+# already entered or unreachable. Wider than INDEX_LOOKBACK_DAYS on purpose:
+# a row measured late still enters on its true settle date as long as it is
+# inside this window, and the entered-markers make a window that is too
+# wide cost bandwidth, never correctness. Without a window the download was
+# every settled row ever (140,443 rows, 35 MB) of which ~85% were discarded.
+OUTCOMES_LOOKBACK_DAYS = 60
+
+
+def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60,
+                           lookback_days: int | None = OUTCOMES_LOOKBACK_DAYS):
     """Settled outcomes over HTTP, so the host running the loop needs no
     database credentials at all.
+
+    `lookback_days` bounds the request to rows finalized after
+    `day - lookback_days` (None asks for everything, the pre-window shape).
 
     WHY THIS EXISTS. The daily loop has to know what actually happened to each
     advertising account before it can score anything, and that lives in the
@@ -884,6 +899,9 @@ def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60):
     def provider(day: date) -> list[SettledHorizon]:
         url = (f"{base_url.rstrip('/')}/internal/bittensor/v1/daily/outcomes"
                f"?settled_on_or_before={day.isoformat()}")
+        if lookback_days is not None:
+            after = day - timedelta(days=int(lookback_days))
+            url += f"&finalized_after={after.isoformat()}"
         req = urllib.request.Request(url, headers={"X-API-Key": api_key})
         try:
             with urllib.request.urlopen(req, timeout=timeout_s) as resp:

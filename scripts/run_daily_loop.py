@@ -34,6 +34,7 @@ from datetime import date, datetime, timedelta, timezone
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from hope.scoring.settle_day_flow import (
+    OUTCOMES_LOOKBACK_DAYS,
     http_outcomes_provider,
     operator_outcomes_provider,
 )
@@ -96,9 +97,11 @@ def _outcomes_provider(environ=None):
     url = (env.get("SN21_OUTCOMES_API_URL") or "").strip()
     key = (env.get("SN21_OUTCOMES_API_KEY") or "").strip()
     if url and key:
-        print(f"[outcomes] over HTTP from {url} — no database login on this host",
-              flush=True)
-        return http_outcomes_provider(url, key)
+        lookback_raw = (env.get("SN21_OUTCOMES_LOOKBACK_DAYS") or "").strip()
+        lookback = int(lookback_raw) if lookback_raw else OUTCOMES_LOOKBACK_DAYS
+        print(f"[outcomes] over HTTP from {url} — no database login on this "
+              f"host (rows finalized in the last {lookback} days)", flush=True)
+        return http_outcomes_provider(url, key, lookback_days=lookback)
     if url or key:
         # Half-configured means somebody intended HTTP. Falling back to a
         # database read would silently need credentials this host should not
