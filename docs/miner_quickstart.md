@@ -473,9 +473,10 @@ miner and be delivering daily predictions via your admitted container. The
 hold steps to **1,000 alpha on 15 September 2026**. The full ramp schedule is
 in [SN21_STAKING.md](./SN21_STAKING.md); scoring does not require the hold —
 payment does. From the 14 September 2026 run the hold is enforced on the
-weight vector: an earning hotkey below the day's hold gets zero weight that
-day, and the allocation audit's `alpha_hold` block shows the floor and the
-alpha read for every hotkey found below it.
+weight vector: a hotkey below the day's hold is not seated in the paid set
+that day and the next-ranked miner who meets the hold takes the seat, so the
+paid set keeps its published size. The allocation audit's `alpha_hold` block
+shows the floor and the alpha read for every hotkey found below it.
 
 **Earning rules active since 26 August 2026** (details and reasoning in
 [SN21_REWARDS.md](./SN21_REWARDS.md), "Earning-set activation"):

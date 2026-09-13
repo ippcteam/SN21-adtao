@@ -67,6 +67,7 @@ from hope.scoring.chronic_failure import (
     evicted_hotkeys,
 )
 from hope.scoring.coldkey_cap import apply_coldkey_cap
+from hope.scoring.collateral_gate import enforcement_enabled as _alpha_hold_enforced
 from hope.scoring.duplication import (
     DuplicationReport,
     LineageParams,
@@ -238,6 +239,9 @@ def compute_daily_allocation(
     one_payer_stats: Mapping | None = None,
     lineage_on: bool | None = None,
     standing_method: Mapping | None = None,
+    alpha_of: Mapping[str, float] | None = None,
+    alpha_floor: float = 0.0,
+    alpha_hold_enforced: bool = False,
 ) -> DailyAllocation:
     """One day's standings → weights (D7) + promotion observation (D8).
 
@@ -399,6 +403,60 @@ def compute_daily_allocation(
                 "reason": "gating would empty the curve",
                 "hotkeys": sorted(short), "scored_days": scored_for}
 
+    # ---- Layer 4: the alpha hold (SN21_STAKING.md) ------------------------
+    # An eligibility rule on PAYMENT, applied like tenure: before the curve,
+    # so a hotkey under the day's hold is not seated and the next-ranked
+    # eligible miner takes the seat — the paid set keeps its published size.
+    # Standings and promotion untouched. `alpha_of` is the alpha held per
+    # hotkey as read off the metagraph; None means the chain was not read and
+    # the hold cannot be judged, which is recorded, never guessed. A hotkey
+    # the map does not carry is kept (our silence, not their failure) and
+    # named. The gate is computed even when not enforced, so the audit shows
+    # who WOULD lose a seat before the switch is thrown; only when enforced
+    # does anybody leave the curve. Stand-down guard as tenure: never empty
+    # the curve.
+    hold_state: dict = {"enforced": bool(alpha_hold_enforced),
+                        "floor_alpha": float(alpha_floor),
+                        "identities": len(alpha_of or {}), "applied": False,
+                        "below_floor": 0, "excluded": 0, "unreadable_kept": 0,
+                        "reason": None}
+    if alpha_of is None:
+        hold_state["reason"] = "no alpha identities read — hold not applied"
+    elif alpha_floor <= 0:
+        hold_state["reason"] = "floor is zero — nothing to enforce"
+    else:
+        below: dict[str, float] = {}
+        unreadable: list[str] = []
+        for hk in placements:
+            raw = alpha_of.get(hk)
+            try:
+                held = None if raw is None else float(raw)
+            except (TypeError, ValueError):
+                held = None
+            if held is None:
+                unreadable.append(hk)
+            elif held < alpha_floor:
+                below[hk] = round(held, 4)
+        excluded: list[str] = []
+        if alpha_hold_enforced and below:
+            if len(below) < len(placements):
+                placements = {hk: s for hk, s in placements.items()
+                              if hk not in below}
+                excluded = sorted(below)
+                hold_state["applied"] = True
+            else:
+                hold_state["reason"] = "gating would empty the curve"
+        hold_state.update({"below_floor": len(below), "excluded": len(excluded),
+                           "unreadable_kept": len(unreadable)})
+        audit["alpha_hold"] = {
+            "floor_alpha": float(alpha_floor),
+            "enforced": bool(alpha_hold_enforced),
+            "below_floor": below,
+            "excluded": excluded,
+            "unreadable_kept": sorted(unreadable),
+            **({"stood_down": True} if hold_state["reason"] else {}),
+        }
+
     if lineage_audit:
         audit.setdefault("lineage", {})["pairwise"] = dict(lineage_audit)
 
@@ -467,6 +525,7 @@ def compute_daily_allocation(
             "floor": PLACEMENT_FLOOR_PREDICTIONS,
             "below": len(below_floor),
         },
+        "alpha_hold": hold_state,
     }
 
     gated = bool(min_daily_episodes) and day_episode_volume < min_daily_episodes
@@ -506,6 +565,8 @@ def allocation_from_ledger(
     environ=os.environ,
     coldkey_of: Mapping[str, str] | None = None,
     commit_block: Mapping[str, int] | None = None,
+    alpha_of: Mapping[str, float] | None = None,
+    alpha_floor: float = 0.0,
 ) -> DailyAllocation:
     """Load ledger + promotion state, compute, persist state + log events.
 
@@ -605,6 +666,9 @@ def allocation_from_ledger(
         lineage_audit=lineage_audit,
         tenure_min=tenure_min,
         tenure_exempt=tenure_exempt,
+        alpha_of=alpha_of,
+        alpha_floor=alpha_floor,
+        alpha_hold_enforced=_alpha_hold_enforced(environ),
         # Read from the environment HERE, where the switches actually live, so
         # the published status is what the run was configured with rather than
         # something inferred from an empty result. "Suppressed nobody" and

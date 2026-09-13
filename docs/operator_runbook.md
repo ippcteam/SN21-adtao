@@ -538,8 +538,11 @@ and 13:00 UTC, when the day's run is in progress; a deploy kills the run
 and the next tick starts it again from resolve.
 
 **Alpha hold.** `SN21_COLLATERAL_ENFORCE=1` on the executor applies the
-published hold (SN21_STAKING.md) to the vector the settle stage publishes;
-the same flag on the validator daemon applies it again at commit time. The
+published hold (SN21_STAKING.md) inside the allocation, before the curve,
+so an unseated hotkey's place goes to the next-ranked eligible miner; the
+same flag on the validator daemon applies it again at commit time as a
+backstop (that one can only drop, never reseat, so it should find nothing
+to do on a vector the executor already gated). The
 floor follows the published ladder by date; `SN21_ALPHA_FLOOR` overrides it
 for a review restatement or a dry run. With the flag unset the gate still
 runs in observing mode and the allocation audit's `alpha_hold` block names
