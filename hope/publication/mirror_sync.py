@@ -79,7 +79,8 @@ def _feed_days(root: str, feed_dir: str) -> list[str]:
 
 
 def build_mirror_items(ledger_root: str,
-                       recent_days: int | None = None) -> list[dict]:
+                       recent_days: int | None = None,
+                       lazy: bool = False) -> list[dict]:
     """Every mirrored path and its exact response body, current as of now.
 
     recent_days limits which RECEIPT and ACCURACY bodies are included (the
@@ -87,6 +88,13 @@ def build_mirror_items(ledger_root: str,
     has no reason to re-ship history it already shipped. Proofs, index,
     root, and the series are always rendered in full: they legitimately
     change whenever a new day publishes. None = everything (backfill).
+
+    lazy=True emits the receipt and allocation-audit items with a `file`
+    (the envelope's path) instead of a `body`. A receipt is tens of
+    megabytes of JSON and several times that as objects; ten of them at
+    once was the executor's memory peak (4.5 GB on 13 Sept 2026, on a run
+    that skipped nine of them as already shipped). The sync reads a file
+    only when it is about to send it. Default False keeps the eager shape.
     """
     from hope.publication.feed_root import (
         day_proof,
@@ -96,16 +104,17 @@ def build_mirror_items(ledger_root: str,
 
     items: list[dict] = []
 
+    def _doc(path: str, file: str) -> dict:
+        return ({"path": path, "file": file} if lazy
+                else {"path": path, "body": _read_envelope(file)})
+
     rec_days = _feed_days(ledger_root, "receipts")
     ship_rec = set(rec_days if recent_days is None else rec_days[-recent_days:])
     for day in rec_days:
         if day not in ship_rec:
             continue
-        items.append({
-            "path": f"/v1/daily/{day}/receipt",
-            "body": _read_envelope(
-                os.path.join(ledger_root, "receipts", f"{day}.json")),
-        })
+        items.append(_doc(f"/v1/daily/{day}/receipt",
+                          os.path.join(ledger_root, "receipts", f"{day}.json")))
 
     # The allocation audit ships with the receipt it is derived from: a
     # grouping is only checkable next to the predictions it was computed
@@ -117,11 +126,8 @@ def build_mirror_items(ledger_root: str,
     for day in audit_days:
         if day not in ship_audit:
             continue
-        items.append({
-            "path": f"/v1/daily/{day}/allocation-audit",
-            "body": _read_envelope(
-                os.path.join(ledger_root, "allocation_audit", f"{day}.json")),
-        })
+        items.append(_doc(f"/v1/daily/{day}/allocation-audit",
+                          os.path.join(ledger_root, "allocation_audit", f"{day}.json")))
 
     acc_days = _feed_days(ledger_root, "accuracy")
     ship_acc = set(acc_days if recent_days is None else acc_days[-recent_days:])
@@ -386,6 +392,11 @@ def _ship_object(api_url: str, api_key: str, path: str, raw: bytes,
                      OBJECT_COMMIT_TIMEOUT)
 
 
+# Key in the shipped record for file-backed documents: path -> [size, mtime,
+# digest]. Not a mirrored path, so it can never collide with one.
+_FILES_KEY = "_files"
+
+
 def _shipped_path(ledger_root: str) -> str:
     return os.path.join(ledger_root, "_mirror_shipped.json")
 
@@ -479,9 +490,15 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
     document is skipped only after the mirror has confirmed storing that
     exact sha256, so a changed document always ships.
     """
-    items = build_mirror_items(ledger_root, recent_days=recent_days)
+    items = build_mirror_items(ledger_root, recent_days=recent_days, lazy=True)
 
     shipped = _load_shipped(ledger_root)
+    # The record also remembers, per file-backed document, the file's size
+    # and mtime next to the digest it produced (under `_files`, never a
+    # mirrored path). An unchanged immutable file with a shipped digest is
+    # then skipped WITHOUT being read: the only receipts that are parsed on
+    # a normal day are the ones that are new.
+    files: dict = dict(shipped.get(_FILES_KEY) or {})
     # Kept beside the items, never inside them: the ingest endpoint validates
     # the item shape, so an extra key would travel to the mirror and could be
     # rejected there.
@@ -491,7 +508,25 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
     adopted: list[str] = []
     for it in items:
         path = it.get("path") or ""
-        digest = _sha256_of(it.get("body"))
+        if "file" in it:
+            file = it["file"]
+            try:
+                st = os.stat(file)
+                stamp = [st.st_size, int(st.st_mtime)]
+            except OSError:
+                stamp = None
+            cached = files.get(path)
+            if (stamp is not None and cached and list(cached[:2]) == stamp
+                    and _is_immutable(path) and shipped.get(path) == cached[2]):
+                digest_of[path] = cached[2]
+                skipped.append(path)
+                continue
+            it = {"path": path, "body": _read_envelope(file)}
+            digest = _sha256_of(it["body"])
+            if stamp is not None:
+                files[path] = [stamp[0], stamp[1], digest]
+        else:
+            digest = _sha256_of(it.get("body"))
         digest_of[path] = digest
         if not _is_immutable(path):
             to_send.append(it)
@@ -602,6 +637,8 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
             for p in failed_paths | rejected_paths)
         if _is_immutable(path) and path in digest_of and slices_ok:
             confirmed[path] = digest_of[path]
+    if files:
+        confirmed[_FILES_KEY] = files
     _record_shipped(ledger_root, confirmed)
     summary = {"success": not failed, "stored": stored, "rejected": rejected,
                "items_sent": len(items), "posts": len(batches),

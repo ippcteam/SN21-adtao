@@ -90,7 +90,7 @@ def mirror(monkeypatch, tmp_path):
     monkeypatch.setattr(mirror_sync, "_put_object", fake.put)
     monkeypatch.setattr(mirror_sync, "_mirror_has", lambda *a, **k: False)
     monkeypatch.setattr(mirror_sync, "build_mirror_items",
-                        lambda root, recent_days=None: _items(fake.receipt))
+                        lambda root, recent_days=None, **_k: _items(fake.receipt))
     fake.run = lambda: mirror_sync.sync_mirror(str(tmp_path), "http://ops", "k")
     return fake
 

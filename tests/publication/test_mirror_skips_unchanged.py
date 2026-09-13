@@ -45,7 +45,7 @@ def synced(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mirror_sync, "_post", fake_post)
     monkeypatch.setattr(mirror_sync, "build_mirror_items",
-                        lambda root, recent_days=None: _items())
+                        lambda root, recent_days=None, **_k: _items())
 
     def run():
         sent.clear()
@@ -93,10 +93,10 @@ class TestASkipHasToBeEarned:
         first = [{"path": "/v1/daily/2026-08-23/receipt", "body": {"a": 1}}]
         second = [{"path": "/v1/daily/2026-08-23/receipt", "body": {"a": 999}}]
         monkeypatch.setattr(mirror_sync, "build_mirror_items",
-                            lambda r, recent_days=None: first)
+                            lambda r, recent_days=None, **_k: first)
         mirror_sync.sync_mirror(str(tmp_path), "http://ops", "k")
         monkeypatch.setattr(mirror_sync, "build_mirror_items",
-                            lambda r, recent_days=None: second)
+                            lambda r, recent_days=None, **_k: second)
         sent.clear()
         mirror_sync.sync_mirror(str(tmp_path), "http://ops", "k")
         assert sent and "/v1/daily/2026-08-23/receipt" in sent[0]
@@ -105,7 +105,7 @@ class TestASkipHasToBeEarned:
         """Recording a rejection as success would mean the mirror never
         receives that day again — a silent hole."""
         monkeypatch.setattr(mirror_sync, "build_mirror_items",
-                            lambda r, recent_days=None: [
+                            lambda r, recent_days=None, **_k: [
                                 {"path": "/v1/daily/2026-08-23/receipt",
                                  "body": {"a": 1}}])
         monkeypatch.setattr(mirror_sync, "_post", lambda u, k, items, t: {
@@ -124,7 +124,7 @@ class TestASkipHasToBeEarned:
 
     def test_a_failed_post_is_never_recorded_as_shipped(self, tmp_path, monkeypatch):
         monkeypatch.setattr(mirror_sync, "build_mirror_items",
-                            lambda r, recent_days=None: [
+                            lambda r, recent_days=None, **_k: [
                                 {"path": "/v1/daily/2026-08-23/receipt",
                                  "body": {"a": 1}}])
 
@@ -173,7 +173,7 @@ class TestDocumentsTheMirrorAlreadyHolds:
 
     def _run(self, tmp_path, monkeypatch, present, sent):
         monkeypatch.setattr(mirror_sync, "build_mirror_items",
-                            lambda r, recent_days=None: list(self.ITEM))
+                            lambda r, recent_days=None, **_k: list(self.ITEM))
         monkeypatch.setattr(mirror_sync, "_mirror_has",
                             lambda url, path, timeout=20, expected_sha=None: present)
         monkeypatch.setattr(mirror_sync, "_post",
@@ -201,7 +201,7 @@ class TestDocumentsTheMirrorAlreadyHolds:
         problem during the probe can only cost an upload."""
         sent = []
         monkeypatch.setattr(mirror_sync, "build_mirror_items",
-                            lambda r, recent_days=None: list(self.ITEM))
+                            lambda r, recent_days=None, **_k: list(self.ITEM))
         monkeypatch.setattr(mirror_sync, "urllib", mirror_sync.urllib)
         monkeypatch.setattr(mirror_sync.urllib.request, "urlopen",
                             lambda *a, **k: (_ for _ in ()).throw(OSError("down")))
@@ -215,7 +215,7 @@ class TestDocumentsTheMirrorAlreadyHolds:
     def test_adoption_is_remembered_so_it_is_asked_once(self, tmp_path, monkeypatch):
         calls = []
         monkeypatch.setattr(mirror_sync, "build_mirror_items",
-                            lambda r, recent_days=None: list(self.ITEM))
+                            lambda r, recent_days=None, **_k: list(self.ITEM))
         monkeypatch.setattr(mirror_sync, "_mirror_has",
                             lambda url, path, timeout=20, expected_sha=None: calls.append(path) or True)
         monkeypatch.setattr(mirror_sync, "_post",
@@ -234,7 +234,7 @@ class TestAdoptionComparesTheEnvelopeHash:
 
     def _run(self, tmp_path, monkeypatch, held_sha, sent):
         monkeypatch.setattr(mirror_sync, "build_mirror_items",
-                            lambda r, recent_days=None: list(self.ITEM))
+                            lambda r, recent_days=None, **_k: list(self.ITEM))
 
         class Resp:
             status = 200
