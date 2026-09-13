@@ -306,16 +306,48 @@ def finalize_day(root: str, day: str, generated_at: str,
     return out
 
 
+def shadow_workers(environ=None) -> int:
+    """How many models run at once (SN21_SHADOW_WORKERS, default 2).
+
+    Each model is its own sandboxed process with its own memory and CPU
+    budget, so two in flight cost two budgets and halve the stage's wall
+    time — 103 models took 30 minutes single-file on 12 Sept 2026. 1
+    restores the single-file run."""
+    raw = ((environ or os.environ).get("SN21_SHADOW_WORKERS") or "2").strip()
+    try:
+        return max(1, min(4, int(raw)))
+    except ValueError:
+        return 2
+
+
 def run_shadow_day(day: str, episodes: list[dict], models: Iterable[ShadowModel],
                    runner: Callable[[ShadowModel, list[dict]], RunResult],
-                   root: str) -> dict:
-    """Execute every admitted model against the day's basket; ledger each."""
+                   root: str, workers: int | None = None) -> dict:
+    """Execute every admitted model against the day's basket; ledger each.
+
+    Models run `workers` at a time (see shadow_workers). The ledger is
+    written from this thread, in submission order, as each result lands —
+    record_day appends one file per model, so the order only decides which
+    line is written first, never what it says."""
+    models = list(models)
+    workers = shadow_workers() if workers is None else max(1, int(workers))
     summary = {}
-    for m in models:
-        res = runner(m, episodes)
+
+    def _note(m, res):
         record_day(root, day, m, res)
         summary[m.hotkey] = {"ok": res.ok, "predictions": res.predictions_out,
                              "error": res.error}
+
+    if workers > 1 and len(models) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=workers,
+                                thread_name_prefix="sn21-shadow") as pool:
+            futures = [(m, pool.submit(runner, m, episodes)) for m in models]
+            for m, fut in futures:
+                _note(m, fut.result())
+    else:
+        for m in models:
+            _note(m, runner(m, episodes))
     # Marker last: the day is "run" once every admitted model has been
     # attempted. A zero-model day still marks, so liveness can tell it
     # apart from a day nobody ever launched.
