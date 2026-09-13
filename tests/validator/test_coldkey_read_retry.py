@@ -193,8 +193,37 @@ class TestAHungReadIsNotAWaitForever:
         # Strip comments first: the function DOCUMENTS why it avoids the
         # context manager, and a naive grep matches that prose instead of the
         # code — a test that reads explanations rather than behaviour.
+        # The read itself lives in _metagraph_maps now (one read serves both
+        # the coldkey cap and the alpha hold); the reader is a view onto it.
         code = "\n".join(
-            line for line in inspect.getsource(entry._coldkey_reader).splitlines()
+            line for line in inspect.getsource(entry._metagraph_maps).splitlines()
             if not line.strip().startswith("#"))
         assert "shutdown(wait=False)" in code
         assert "with ThreadPoolExecutor" not in code
+
+    def test_the_alpha_map_comes_from_the_same_read(self, chain):
+        """The alpha hold must judge the snapshot the coldkey cap judged, and
+        a metagraph without the alpha column must not read as 'everyone holds
+        zero'."""
+        class _WithAlpha(_Metagraph):
+            def __init__(self, hotkeys, coldkeys):
+                super().__init__(hotkeys, coldkeys)
+                self.alpha_stake = [700.0, 12.5]
+
+        chain((["hk1", "hk2"], ["ck1", "ck1"]))
+        _Subtensor.script = [None]
+
+        def metagraph(self, netuid):
+            _Subtensor.calls += 1
+            return _WithAlpha(["hk1", "hk2"], ["ck1", "ck1"])
+        _Subtensor.metagraph = metagraph
+        try:
+            coldkey, alpha = entry._shared_metagraph_readers()
+            assert coldkey() == {"hk1": "ck1", "hk2": "ck1"}
+            assert alpha() == {"hk1": 700.0, "hk2": 12.5}
+            assert _Subtensor.calls == 1, "one read serves both maps"
+            # No alpha column at all: an empty map, never zeros.
+            _Subtensor.metagraph = lambda self, netuid: _Metagraph(["hk1"], ["ck1"])
+            assert entry._alpha_reader(sleep=_fresh_sleep()) == {}
+        finally:
+            del _Subtensor.metagraph

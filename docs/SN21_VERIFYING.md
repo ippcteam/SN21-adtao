@@ -68,6 +68,13 @@ the point estimates and need no parameters at all.
 The document also records whether the reference-model exemption was in
 force that day, so its absence is visible rather than assumed.
 
+The alpha hold ([SN21_STAKING.md](./SN21_STAKING.md)) is published in the
+same document under `alpha_hold`: the floor in force, whether it was
+enforced on that vector, every earning hotkey found below the floor with the
+alpha the gate read for it, and the hotkeys actually excluded. Check it
+against the metagraph for the day: a hotkey listed under `below_floor` held
+less than `floor_alpha` when the vector was built.
+
 ---
 
 ## What gets checked, and what each one proves

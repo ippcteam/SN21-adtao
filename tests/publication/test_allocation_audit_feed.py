@@ -165,3 +165,28 @@ class TestPlacementFloorTravels:
         doc = build_document(DAY, AUDIT)
         assert doc["placement"] == {"floor": None, "below": {}}
         assert doc["summary"]["hotkeys_below_placement_floor"] == 0
+
+
+class TestTheAlphaHoldIsPublished:
+    """A miner told 'fail the hold, not paid' must be able to see the floor,
+    whether it was enforced, and the alpha the gate read for them."""
+
+    def test_the_block_carries_floor_status_and_holds(self):
+        audit = dict(AUDIT)
+        audit["alpha_hold"] = {"floor_alpha": 700.0, "enforced": True,
+                               "below_floor": {"hk-low": 242.2},
+                               "excluded": ["hk-low"],
+                               "unreadable_kept": ["hk-silent"]}
+        doc = build_document(DAY, audit)
+        assert doc["alpha_hold"] == {"floor_alpha": 700.0, "enforced": True,
+                                     "below_floor": {"hk-low": 242.2},
+                                     "excluded": ["hk-low"],
+                                     "unreadable_kept": ["hk-silent"]}
+        assert doc["summary"]["hotkeys_below_alpha_hold"] == 1
+
+    def test_a_day_before_the_control_reads_as_nothing_recorded(self):
+        doc = build_document(DAY, AUDIT)
+        assert doc["alpha_hold"] == {"floor_alpha": None, "enforced": None,
+                                     "below_floor": {}, "excluded": [],
+                                     "unreadable_kept": []}
+        assert doc["summary"]["hotkeys_below_alpha_hold"] == 0

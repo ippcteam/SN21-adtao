@@ -468,10 +468,14 @@ exports; the **execution contract** is NDJSON in → NDJSON out as in §4.
 | Alpha hold ramp | [SN21_STAKING.md](./SN21_STAKING.md) |
 | Cutover dates, bridge, indicative burn | [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md) |
 
-**Current requirement (since 18 August 2026):** hold **≥300 alpha** on your
+**Current requirement (since 8 September 2026):** hold **≥700 alpha** on your
 miner and be delivering daily predictions via your admitted container. The
-full ramp schedule is in [SN21_STAKING.md](./SN21_STAKING.md); scoring does
-not require the hold — payment does.
+hold steps to **1,000 alpha on 15 September 2026**. The full ramp schedule is
+in [SN21_STAKING.md](./SN21_STAKING.md); scoring does not require the hold —
+payment does. From the 14 September 2026 run the hold is enforced on the
+weight vector: an earning hotkey below the day's hold gets zero weight that
+day, and the allocation audit's `alpha_hold` block shows the floor and the
+alpha read for every hotkey found below it.
 
 **Earning rules active since 26 August 2026** (details and reasoning in
 [SN21_REWARDS.md](./SN21_REWARDS.md), "Earning-set activation"):

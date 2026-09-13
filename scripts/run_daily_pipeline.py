@@ -349,6 +349,56 @@ def _coldkey_reader(attempts=COLDKEY_READ_ATTEMPTS,
     with no hotkeys is not a subnet with no miners, it is a bad read, and
     passing {} on would let the cap "run" over nothing and report success.
     """
+    maps = _metagraph_maps(attempts=attempts, backoff_s=backoff_s,
+                           timeout_s=timeout_s, sleep=sleep)
+    return None if maps is None else maps["coldkey"]
+
+
+def _alpha_reader(attempts=COLDKEY_READ_ATTEMPTS,
+                  backoff_s=COLDKEY_READ_BACKOFF_S,
+                  timeout_s=COLDKEY_READ_TIMEOUT_S,
+                  sleep=time.sleep):
+    """hotkey_ss58 -> alpha held, from the CURRENT metagraph, for the alpha
+    hold on the published vector (SN21_STAKING.md). Same read, same retry,
+    same fail-OPEN contract as the coldkey map: None means the hold is not
+    applied today, and the audit records that it was not."""
+    maps = _metagraph_maps(attempts=attempts, backoff_s=backoff_s,
+                           timeout_s=timeout_s, sleep=sleep)
+    return None if maps is None else maps["alpha"]
+
+
+def _shared_metagraph_readers():
+    """One guarded metagraph read for the settle stage, handed to the loop as
+    the two readers it takes. The coldkey cap and the alpha hold must judge
+    the SAME snapshot — and a metagraph read costs ~20 s, so it is not
+    repeated for a second column of the same table."""
+    holder: dict = {}
+
+    def once():
+        if "maps" not in holder:
+            holder["maps"] = _metagraph_maps()
+        return holder["maps"]
+
+    def coldkey():
+        maps = once()
+        return None if maps is None else maps["coldkey"]
+
+    def alpha():
+        maps = once()
+        return None if maps is None else maps["alpha"]
+
+    return coldkey, alpha
+
+
+def _metagraph_maps(attempts=COLDKEY_READ_ATTEMPTS,
+                    backoff_s=COLDKEY_READ_BACKOFF_S,
+                    timeout_s=COLDKEY_READ_TIMEOUT_S,
+                    sleep=time.sleep):
+    """{"coldkey": {hotkey: coldkey}, "alpha": {hotkey: alpha held}} from one
+    metagraph read behind a deadline, retried; None when the chain could not
+    be read. `alpha` is the subnet-alpha column when the SDK exposes it
+    (`alpha_stake`), else total stake, else empty — a missing column must not
+    read as "everyone holds zero"."""
     net = (os.environ.get("SN21_REG_INDEX_ARCHIVE_URL")
            or os.environ.get("BT_NETWORK") or "finney")
     netuid = int(os.environ.get("SN21_NETUID", "21"))
@@ -358,8 +408,21 @@ def _coldkey_reader(attempts=COLDKEY_READ_ATTEMPTS,
     def _read():
         import bittensor as bt
         mg = bt.Subtensor(network=net).metagraph(netuid)
-        return {str(mg.hotkeys[i]): str(mg.coldkeys[i])
-                for i in range(len(mg.hotkeys))}
+        hotkeys = [str(h) for h in mg.hotkeys]
+        coldkey = {hotkeys[i]: str(mg.coldkeys[i]) for i in range(len(hotkeys))}
+        alpha: dict = {}
+        column = None
+        for name in ("alpha_stake", "S", "total_stake", "stake"):
+            column = getattr(mg, name, None)
+            if column is not None:
+                break
+        if column is not None:
+            for i in range(len(hotkeys)):
+                try:
+                    alpha[hotkeys[i]] = float(column[i])
+                except (IndexError, TypeError, ValueError):
+                    continue
+        return {"coldkey": coldkey, "alpha": alpha}
 
     for attempt in range(1, attempts + 1):
         try:
@@ -372,14 +435,15 @@ def _coldkey_reader(attempts=COLDKEY_READ_ATTEMPTS,
             # that will not close.
             pool = ThreadPoolExecutor(max_workers=1)
             try:
-                cmap = pool.submit(_read).result(timeout=timeout_s)
+                maps = pool.submit(_read).result(timeout=timeout_s)
             finally:
                 pool.shutdown(wait=False)
-            if not cmap:
+            if not maps["coldkey"]:
                 raise ValueError("metagraph returned no hotkeys")
-            log(f"[settle] coldkey map: {len(cmap)} hotkeys "
-                f"(one-seat cap active, attempt {attempt}/{attempts})")
-            return cmap
+            log(f"[settle] coldkey map: {len(maps['coldkey'])} hotkeys "
+                f"(one-seat cap active, attempt {attempt}/{attempts}); "
+                f"alpha held for {len(maps['alpha'])}")
+            return maps
         except Exception as exc:   # noqa: BLE001 — fail OPEN, loudly
             last = exc
             if attempt < attempts:
@@ -388,8 +452,8 @@ def _coldkey_reader(attempts=COLDKEY_READ_ATTEMPTS,
                 sleep(delay)
                 delay *= 2
 
-    log(f"[settle] coldkey read failed after {attempts} attempts ({last}) — "
-        f"one-seat cap NOT applied today")
+    log(f"[settle] metagraph read failed after {attempts} attempts ({last}) — "
+        f"one-seat cap and alpha hold NOT applied today")
     return None
 
 
@@ -547,6 +611,7 @@ def stage_settle(ledger_root, day):
     from hope.validator.daily_loop import run_daily_loop
 
     key = _key_loader()
+    coldkey_reader, alpha_reader = _shared_metagraph_readers()
     summary = run_daily_loop(
         shadow_root=ledger_root,
         ledger_root=ledger_root,
@@ -556,10 +621,11 @@ def stage_settle(ledger_root, day):
         day_volume_provider=_basket_volume,
         chain_committer=None,     # NEVER anchor from this pipeline
         # The executor now computes the intended weight vector (daily-stream flag
-        # on), so it is the weight path — apply the one-coldkey-one-seat cap here
-        # so the PUBLISHED vector is already fully gated and the committer commits
-        # it verbatim.
-        coldkey_reader=_coldkey_reader,
+        # on), so it is the weight path — apply the one-coldkey-one-seat cap and
+        # the alpha hold here so the PUBLISHED vector is already fully gated and
+        # the committer commits it verbatim.
+        coldkey_reader=coldkey_reader,
+        alpha_reader=alpha_reader,
         transition_key_provider=_transition_key_provider(ledger_root),
         type_weight_fn=_type_weight_fn(ledger_root),
     )

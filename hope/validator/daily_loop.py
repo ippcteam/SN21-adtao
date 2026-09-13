@@ -160,6 +160,10 @@ def run_daily_loop(
     chain_committer: Callable[[bytes], object] | None = None,
     coldkey_reader: Callable[[], object] | None = None,
     chain_reader: Callable[[str], float | None] | None = None,
+    # {hotkey: alpha held on chain}, read once per run. Feeds the alpha-hold
+    # gate on the PUBLISHED vector (SN21_STAKING.md: fail the hold -> not
+    # paid). None or a failed read: nothing is gated and the audit says so.
+    alpha_reader: Callable[[], object] | None = None,
     day_volume_provider: Callable[[date], int] | None = None,
     vertical_map_provider: Callable[[list], dict] | None = None,
     transition_key_provider: Callable[[list], dict] | None = None,
@@ -588,6 +592,21 @@ def run_daily_loop(
             alloc = allocation_from_ledger(ledger_root, day, vol or 0,
                                            environ=environ,
                                            coldkey_of=coldkey_of)
+
+            # The alpha hold, on the vector that is actually published. The
+            # committer's gate on the chain path is the backstop; applying
+            # it here first is what makes the audit, the report and the
+            # chain agree on who was paid and why.
+            alpha_of = None
+            if alpha_reader is not None:
+                try:
+                    alpha_of = alpha_reader()
+                except Exception as exc:                      # noqa: BLE001
+                    print(f"[alpha-hold] metagraph read failed ({exc}) — "
+                          f"the hold is NOT applied today", flush=True)
+                    alpha_of = None
+            alloc = apply_alpha_hold(alloc, effective_floor, alpha_of,
+                                     environ=environ)
             out_path = os.path.join(ledger_root, f"intended_weights_{day}.json")
             with open(out_path + ".tmp", "w") as f:
                 json.dump({
@@ -633,6 +652,8 @@ def run_daily_loop(
             summary["weights"] = {"path": out_path, "gated": alloc.gated,
                                   "earning_set_size": alloc.earning_set_size,
                                   "evicted": list(alloc.evicted),
+                                  "alpha_hold": (alloc.collapse_audit.get(
+                                      "policies") or {}).get("alpha_hold"),
                     # The anti-clone working: who lost a seat, to whom, under
                     # which parameter version, with the pairwise numbers. It
                     # was being computed and discarded, which left
@@ -646,6 +667,81 @@ def run_daily_loop(
         summary["weights"] = {"error": str(e)}
 
     return summary
+
+
+def apply_alpha_hold(alloc, floor_alpha: float, alpha_of, environ=os.environ):
+    """The published alpha hold, applied to one day's allocation.
+
+    SN21_STAKING.md: a miner below the day's hold "does not receive emissions"
+    — an eligibility rule on payment, never on scoring. So standings are
+    untouched, only `weights` and `earning_set_size` move, and the working
+    goes into the collapse audit twice: `policies.alpha_hold` states the
+    control's status every day (like every other control), `alpha_hold`
+    names each earner under the floor with the alpha the gate read.
+
+    The gate is computed even while SN21_COLLATERAL_ENFORCE is off, so the
+    audit shows who WOULD lose their seat before the switch is thrown; the
+    vector changes only when it is on. Fail-OPEN throughout: no identities,
+    an unreadable hotkey, or a result that would empty the vector all leave
+    the weights exactly as the curve produced them, and say so.
+    """
+    from dataclasses import replace
+
+    from hope.scoring.collateral_gate import (
+        apply_hold,
+        enforcement_enabled,
+        mapping_alpha_reader,
+    )
+
+    enforced = enforcement_enabled(environ)
+    audit = dict(alloc.collapse_audit or {})
+    policies = dict(audit.get("policies") or {})
+    status = {"enforced": enforced, "floor_alpha": float(floor_alpha),
+              "identities": len(alpha_of or {}), "applied": False,
+              "below_floor": 0, "excluded": 0, "unreadable_kept": 0,
+              "reason": None}
+    weights = dict(alloc.weights or {})
+    earning = alloc.earning_set_size
+
+    if not alpha_of:
+        status["reason"] = "no alpha identities read — hold not applied"
+    elif not weights:
+        status["reason"] = "no earners"
+    else:
+        res = apply_hold(weights, float(floor_alpha),
+                         mapping_alpha_reader(alpha_of), environ=environ,
+                         force=True)
+        below = {hk: round(float(res.holds[hk]), 4) for hk in res.excluded
+                 if hk in res.holds}
+        status.update({"applied": bool(res.applied and enforced),
+                       "below_floor": len(res.excluded),
+                       "excluded": len(res.excluded) if (res.applied and enforced) else 0,
+                       "unreadable_kept": len(res.unreadable),
+                       "reason": res.refused_reason})
+        audit["alpha_hold"] = {
+            "floor_alpha": float(floor_alpha),
+            "enforced": enforced,
+            "below_floor": below,
+            "excluded": sorted(res.excluded) if (res.applied and enforced) else [],
+            "unreadable_kept": sorted(res.unreadable),
+        }
+        if res.applied and enforced:
+            weights = dict(res.weights)
+            earning = len([w for w in weights.values() if w > 0])
+            print(f"[alpha-hold] floor {float(floor_alpha):.0f} ENFORCED — "
+                  f"{len(res.excluded)} below the hold lose their seat, "
+                  f"{earning} earn; unreadable kept {len(res.unreadable)}",
+                  flush=True)
+        else:
+            print(f"[alpha-hold] floor {float(floor_alpha):.0f} "
+                  f"{'enforced' if enforced else 'observing'}: "
+                  f"{len(res.excluded)} below the hold"
+                  f"{'' if res.applied else f' — not applied ({res.refused_reason})'}",
+                  flush=True)
+    policies["alpha_hold"] = status
+    audit["policies"] = policies
+    return replace(alloc, weights=weights, earning_set_size=earning,
+                   collapse_audit=audit)
 
 
 def read_day_volume(ledger_root: str, day: date) -> int | None:

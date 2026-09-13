@@ -162,3 +162,34 @@ def test_gate_vector_preserves_survivor_order():
         [12, 10], [0.5, 0.5], _reader({10: 200.0, 12: 300.0}), 150.0,
         environ={}, force=True)
     assert uids == [12, 10]
+
+
+# ---- the floor the gate enforces ------------------------------------------
+
+from datetime import date as _date  # noqa: E402
+
+from hope.scoring.collateral_gate import FLOOR_ENV, floor_in_force  # noqa: E402
+
+
+def test_the_floor_follows_the_published_ladder_by_default():
+    """The old fixed default (150) was the first rung frozen in place."""
+    assert floor_in_force({}, _date(2026, 9, 13)) == (700.0, "ladder")
+    assert floor_in_force({}, _date(2026, 9, 15)) == (1000.0, "ladder")
+    assert floor_in_force({}, _date(2026, 8, 20)) == (300.0, "ladder")
+
+
+def test_an_explicit_floor_wins():
+    assert floor_in_force({FLOOR_ENV: "150"}, _date(2026, 9, 13)) == (150.0, "env")
+
+
+def test_a_malformed_floor_falls_through_to_the_ladder():
+    assert floor_in_force({FLOOR_ENV: "seven hundred"}, _date(2026, 9, 13)) == (
+        700.0, "ladder")
+
+
+def test_the_gate_reports_the_hold_it_read():
+    """The reason string is for a log line; the audit needs the number."""
+    table = {"a": 950.0, "b": 242.2}
+    out = apply_hold({"a": 0.6, "b": 0.4}, 700.0, table.get, environ=ON)
+    assert out.holds == {"a": 950.0, "b": 242.2}
+    assert out.as_dict()["excluded_holds"] == {"b": 242.2}

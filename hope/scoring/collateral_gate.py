@@ -45,10 +45,19 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 # Default OFF. The floor is miner-facing and switching it on stops payments,
 # so activation is a deliberate operator act, never a deploy side effect.
 ENFORCE_ENV = "SN21_COLLATERAL_ENFORCE"
+
+# An explicit floor for the gate. Unset means the published ladder
+# (collateral_floor.ALPHA_SCHEDULE) decides, stepping on its own dates.
+FLOOR_ENV = "SN21_ALPHA_FLOOR"
+
+# The published day boundary (SN21_TRANSITION_PLAN: midnight EST).
+DAY_CLOCK = ZoneInfo("America/New_York")
 
 # Below this many survivors the gate refuses to act at all.
 MIN_SURVIVORS = 1
@@ -59,6 +68,52 @@ def enforcement_enabled(environ=os.environ) -> bool:
         "1", "true", "yes", "on")
 
 
+def floor_in_force(environ=os.environ, day: date | None = None) -> tuple[float, str]:
+    """The floor the gate enforces today, and where it came from.
+
+    An explicit SN21_ALPHA_FLOOR wins (a review restatement, or a dry run at
+    a hypothetical rung). Otherwise the PUBLISHED ladder decides for `day`
+    (default: today on the midnight-EST clock miners are told to use), so the
+    gate steps on the dates SN21_STAKING.md names without a deploy. The old
+    fixed default of 150 was the first rung frozen in place: it would have
+    kept enforcing a floor the docs had left behind weeks earlier.
+
+    A malformed value falls through to the ladder, loudly — a typo in a deploy
+    variable must never silently move a miner's obligation.
+    """
+    raw = (environ.get(FLOOR_ENV) or "").strip()
+    if raw:
+        try:
+            return float(raw), "env"
+        except ValueError:
+            print(f"[alpha-gate] {FLOOR_ENV}={raw!r} is not a number — "
+                  f"using the published ladder", flush=True)
+    from hope.scoring.collateral_floor import active_floor
+    if day is None:
+        day = datetime.now(DAY_CLOCK).date()
+    return float(active_floor(day, environ)), "ladder"
+
+
+def mapping_alpha_reader(alpha_of: Mapping | None):
+    """alpha held per hotkey, from a map read off the metagraph elsewhere.
+
+    A hotkey the map does not carry reads as None — unknown, kept — the same
+    contract as metagraph_alpha_reader. Used on the executor, where the
+    metagraph is read once, behind a deadline, and shared with the coldkey cap.
+    """
+    table = dict(alpha_of or {})
+
+    def read(key):
+        value = table.get(key)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+    return read
+
+
 @dataclass(frozen=True)
 class GateResult:
     weights: dict            # post-gate, re-normalised over the same total
@@ -67,6 +122,10 @@ class GateResult:
     applied: bool = False
     refused_reason: str | None = None
     floor_alpha: float = 0.0
+    # hotkey/uid -> the hold the gate read (chain alpha or captured lock,
+    # whichever is greater), for every key it could read. The reason string
+    # in `excluded` is for a log line; this is the number an audit publishes.
+    holds: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -74,6 +133,8 @@ class GateResult:
             "floor_alpha": self.floor_alpha,
             "excluded_count": len(self.excluded),
             "excluded": self.excluded,
+            "excluded_holds": {k: self.holds[k] for k in self.excluded
+                               if k in self.holds},
             "unreadable_kept": self.unreadable,
             "refused_reason": self.refused_reason,
             "earning_set_size": len([w for w in self.weights.values() if w > 0]),
@@ -137,7 +198,7 @@ def apply_hold(weights: Mapping, floor_alpha: float,
                           refused_reason="empty input vector",
                           floor_alpha=floor_alpha)
 
-    kept, excluded, unreadable = {}, {}, []
+    kept, excluded, unreadable, holds = {}, {}, [], {}
     for key, weight in weights.items():
         if weight <= 0 or key in protected:
             kept[key] = weight
@@ -148,6 +209,7 @@ def apply_hold(weights: Mapping, floor_alpha: float,
             unreadable.append(key)
             kept[key] = weight
             continue
+        holds[key] = hold
         if hold < floor_alpha:
             excluded[key] = f"alpha_hold {hold:.4f} < {floor_alpha:.4f}"
             continue
@@ -162,7 +224,7 @@ def apply_hold(weights: Mapping, floor_alpha: float,
 
     if len(survivors) < MIN_SURVIVORS:
         return GateResult(weights=dict(weights), applied=False,
-                          excluded=excluded,
+                          excluded=excluded, holds=holds,
                           refused_reason=(
                               f"would leave {len(survivors)} earner(s); "
                               f"refusing to empty the vector"),
@@ -171,7 +233,7 @@ def apply_hold(weights: Mapping, floor_alpha: float,
     kept_total = float(sum(survivors)) or 0.0
     if kept_total <= 0 or miner_pool <= 0:
         return GateResult(weights=dict(weights), applied=False,
-                          excluded=excluded,
+                          excluded=excluded, holds=holds,
                           refused_reason="survivors carry no weight",
                           floor_alpha=floor_alpha)
 
@@ -182,7 +244,7 @@ def apply_hold(weights: Mapping, floor_alpha: float,
     }
     return GateResult(weights=renormalised, excluded=excluded,
                       unreadable=unreadable, applied=True,
-                      floor_alpha=floor_alpha)
+                      floor_alpha=floor_alpha, holds=holds)
 
 
 def gate_uid_weight_vector(uids, weights, alpha_reader, floor_alpha,

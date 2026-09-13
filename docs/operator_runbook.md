@@ -536,3 +536,13 @@ confirm the daemon's start line shows the expected settings.
 **Deploy window.** Do not deploy or restart the executor between 11:00
 and 13:00 UTC, when the day's run is in progress; a deploy kills the run
 and the next tick starts it again from resolve.
+
+**Alpha hold.** `SN21_COLLATERAL_ENFORCE=1` on the executor applies the
+published hold (SN21_STAKING.md) to the vector the settle stage publishes;
+the same flag on the validator daemon applies it again at commit time. The
+floor follows the published ladder by date; `SN21_ALPHA_FLOOR` overrides it
+for a review restatement or a dry run. With the flag unset the gate still
+runs in observing mode and the allocation audit's `alpha_hold` block names
+who would lose a seat, so read that block for a day before switching it on.
+The settle log line `[alpha-hold]` and the daemon's `[alpha-gate]` line
+report the floor, its source and the hotkeys or uids below it.

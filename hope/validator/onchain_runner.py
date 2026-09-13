@@ -732,18 +732,24 @@ def compose_and_commit_weights(*, subtensor, validator_wallet, netuid,
             print(f"[daily-stream] failed ({_e}); epoch vector retained", flush=True)
 
     # --- Alpha-hold gate (published stake floor) in the SHARED weight path ---
-    # Enforcing the 150-alpha floor HERE, inside the code every validator runs,
+    # Enforcing the published floor HERE, inside the code every validator runs,
     # applies the hold on every commit — not a one-shot on our own vector. It
     # runs on the pure miner vector BEFORE the burn/override split, so nothing
     # needs protecting. Gated on SN21_COLLATERAL_ENFORCE (default OFF -> no-op
     # until deliberately flipped); with SN21_ALPHA_GATE_DRYRUN it LOGS what it
     # would drop without touching weights. Fail-OPEN: any error, an unreadable
     # stake, or a would-be-empty result keeps the vector unchanged.
+    #
+    # The floor follows the published ladder (collateral_gate.floor_in_force):
+    # it steps on the dates SN21_STAKING.md names, with SN21_ALPHA_FLOOR as an
+    # explicit override. It used to default to a fixed 150 — the first rung,
+    # frozen — which would have enforced a floor the docs had left behind.
     try:
         import os as _os_ag
 
         from hope.scoring.collateral_gate import (
             enforcement_enabled,
+            floor_in_force,
             gate_uid_weight_vector,
             metagraph_alpha_reader,
         )
@@ -751,19 +757,24 @@ def compose_and_commit_weights(*, subtensor, validator_wallet, netuid,
         _ag_dry = _os_ag.environ.get("SN21_ALPHA_GATE_DRYRUN", "").strip().lower() \
             in ("1", "true", "yes", "on")
         if (_ag_enforce or _ag_dry) and uids and weights:
-            _ag_floor = float(_os_ag.environ.get("SN21_ALPHA_FLOOR", "150"))
+            _ag_floor, _ag_floor_src = floor_in_force(_os_ag.environ)
             _ag_reader = metagraph_alpha_reader(subtensor.metagraph(netuid))
             _ag_uids, _ag_weights, _ag_res = gate_uid_weight_vector(
                 uids, weights, _ag_reader, _ag_floor, force=True)
             if _ag_res.applied:
-                print(f"[alpha-gate] floor {_ag_floor:.0f}: "
+                _ag_dropped = ", ".join(
+                    f"uid {k} ({_ag_res.holds.get(k, 0.0):.1f})"
+                    for k in sorted(_ag_res.excluded)) or "none"
+                print(f"[alpha-gate] floor {_ag_floor:.0f} ({_ag_floor_src}): "
                       f"{'ENFORCED' if _ag_enforce else 'DRY-RUN'} — would drop "
                       f"{len(_ag_res.excluded)}, keep {len(_ag_uids)} "
-                      f"(unreadable kept {len(_ag_res.unreadable)})", flush=True)
+                      f"(unreadable kept {len(_ag_res.unreadable)}); "
+                      f"below floor: {_ag_dropped}", flush=True)
                 if _ag_enforce:
                     uids, weights = _ag_uids, _ag_weights
             else:
-                print(f"[alpha-gate] not applied: {_ag_res.refused_reason}", flush=True)
+                print(f"[alpha-gate] floor {_ag_floor:.0f} ({_ag_floor_src}) "
+                      f"not applied: {_ag_res.refused_reason}", flush=True)
     except Exception as _ag_e:   # noqa: BLE001 — fail OPEN
         print(f"[alpha-gate] skipped ({_ag_e}); vector unchanged", flush=True)
 

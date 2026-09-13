@@ -79,6 +79,7 @@ def build_document(day: date | str, collapse_audit: dict | None) -> dict:
     lineage = audit.get("lineage") or {}
     coldkey = audit.get("coldkey_cap") or {}
     tenure = audit.get("tenure_gated") or {}
+    alpha_hold = audit.get("alpha_hold") or {}
 
     # Both detectors' groups, in one list. They answer the same question — who
     # else runs this model, and which of them earns — and publishing only the
@@ -114,6 +115,20 @@ def build_document(day: date | str, collapse_audit: dict | None) -> dict:
             "hotkeys_below_tenure": len(tenure.get("hotkeys") or []),
             "hotkeys_below_placement_floor": len(
                 (audit.get("placement") or {}).get("below") or {}),
+            "hotkeys_below_alpha_hold": len(alpha_hold.get("below_floor") or {}),
+        },
+        # The alpha hold (SN21_STAKING.md): the floor in force, whether it was
+        # enforced on this vector, and every earner whose hold was under it
+        # with the alpha the gate read. `below_floor` is the finding;
+        # `excluded` is who actually lost weight for it (empty while the gate
+        # is observing). A hotkey the chain did not answer for is kept and
+        # named, so an outage on our side reads as an outage, not a pass.
+        "alpha_hold": {
+            "floor_alpha": alpha_hold.get("floor_alpha"),
+            "enforced": alpha_hold.get("enforced"),
+            "below_floor": dict(alpha_hold.get("below_floor") or {}),
+            "excluded": _names(alpha_hold.get("excluded")),
+            "unreadable_kept": _names(alpha_hold.get("unreadable_kept")),
         },
         "groups": groups,
         "one_coldkey_one_seat": {
