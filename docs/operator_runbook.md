@@ -498,3 +498,41 @@ Before flipping `--network test` → `--network finney`:
   verify. NO LIVE EMISSIONS until this returns `ok: true`.
 - [ ] Operator runbook reviewed by the on-call team.
 - [ ] Dispute path tested end-to-end.
+
+---
+
+## 13. Executor host — daily pipeline supervisor
+
+The daily pipeline (`scripts/run_daily_pipeline.py`) runs under
+`scripts/executor_daemon.py` on the host that holds the ledger disk. The
+daemon wakes hourly and runs the pipeline once per UTC day, after the
+trigger hour (`SN21_PIPELINE_TRIGGER_HOUR_UTC`, default 11), when no run
+record exists for the day. A restart neither skips nor repeats a day.
+
+**What a run needs.** The day's basket in the operator listing (resolve
+retries next tick until it is there — no run record is written for a
+failed resolve), the sandbox, and the disk. Each stage logs its resident and
+peak memory (`[mem] after <stage>`), and the heartbeat carries the run's
+peak; watch that number, not the host's limit.
+
+**Re-running a day.** Set `SN21_RERUN_DAY=YYYY-MM-DD` and deploy; the
+daemon reruns that day on its next check and clears the override once a
+run exits 0. Unset it afterwards. To run a past day by hand, from the
+host's shell:
+
+```bash
+python3 -m scripts.run_daily_pipeline --day YYYY-MM-DD --no-reference \
+    --intake-limit 40 --corpus-size 250
+```
+
+Shadow execution for a day that already ran is skipped (predictions are
+locked); settle and the publish stages are idempotent.
+
+**Plan and environment changes apply on a deploy, not on a restart.** A
+restarted instance keeps the plan and the environment it was deployed
+with. After changing either, trigger a deploy (same commit is fine) and
+confirm the daemon's start line shows the expected settings.
+
+**Deploy window.** Do not deploy or restart the executor between 11:00
+and 13:00 UTC, when the day's run is in progress; a deploy kills the run
+and the next tick starts it again from resolve.
