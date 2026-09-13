@@ -445,6 +445,32 @@ def policies_by_hotkey(collapse_audit: dict | None) -> dict:
                     f"earns nothing before that."
                 )))
 
+    # The alpha hold: only the hotkeys the gate actually EXCLUDED carry a
+    # note. `below_floor` also lists earners found under the hold on a day
+    # the gate was observing rather than enforcing; those were paid, and a
+    # note on a funded row would read as a contradiction.
+    hold = audit.get("alpha_hold")
+    if isinstance(hold, dict):
+        floor = hold.get("floor_alpha")
+        floor_txt = (f"{float(floor):,.0f}"
+                     if isinstance(floor, (int, float)) else str(floor))
+        held = hold.get("below_floor") if isinstance(hold.get("below_floor"), dict) else {}
+        for hk in hold.get("excluded") or []:
+            have = held.get(hk)
+            opening = (
+                f"Held {float(have):,.1f} alpha against the {floor_txt} "
+                f"required today."
+                if isinstance(have, (int, float))
+                else f"Held less than the {floor_txt} alpha required today."
+            )
+            out[hk].append(PolicyOutcome(
+                control="alpha_hold",
+                detail=(
+                    f"{opening} Zero weight for the day; the standing and "
+                    f"every score stand, and the seat pays again from the "
+                    f"next run on which the hold is met."
+                )))
+
     return dict(out)
 
 

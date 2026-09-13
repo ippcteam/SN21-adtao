@@ -158,6 +158,9 @@ class PolicyOutcome(BaseModel):
         # Scored, but the evidence inside the window is still under the
         # placement floor: no standing, no rank, nothing earned yet.
         "placement_floor",
+        # In the paid set by standing, but holding less subnet alpha than
+        # the day's published hold (SN21_STAKING.md): zero weight that day.
+        "alpha_hold",
     ]
     detail: str
     counterparty: str | None = None

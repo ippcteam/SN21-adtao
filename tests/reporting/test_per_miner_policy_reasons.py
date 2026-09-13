@@ -298,3 +298,29 @@ class TestPlacementFloorExplainsItself:
 
     def test_nobody_below_means_no_notes(self):
         assert policies_by_hotkey({"placement": {"floor": 50, "below": {}}}) == {}
+
+
+class TestTheAlphaHoldExplainsItself:
+    HOLD = {"alpha_hold": {"floor_alpha": 700.0, "enforced": True,
+                           "below_floor": {"light": 242.2, "lucky": 90.0},
+                           "excluded": ["light"],
+                           "unreadable_kept": []}}
+
+    def test_an_excluded_hotkey_is_told_its_hold_and_the_floor(self):
+        notes = policies_by_hotkey(self.HOLD)
+        [note] = notes["light"]
+        assert note.control == "alpha_hold"
+        assert "242.2 alpha" in note.detail and "700" in note.detail
+        assert "stand" in note.detail
+
+    def test_a_hotkey_under_the_floor_but_still_paid_gets_no_note(self):
+        """Observing mode, or the gate refused: the row is funded, and a
+        note saying it lost its seat would contradict the tier beside it."""
+        notes = policies_by_hotkey(self.HOLD)
+        assert "lucky" not in notes
+
+    def test_a_missing_hold_reading_keeps_the_generic_wording(self):
+        notes = policies_by_hotkey({"alpha_hold": {"floor_alpha": 1000,
+                                                    "excluded": ["x"]}})
+        [note] = notes["x"]
+        assert "less than the 1,000 alpha" in note.detail
