@@ -104,14 +104,32 @@ def test_the_request_is_bounded_to_the_lookback_window():
         captured["url"] = req.full_url
         return _Resp(PAYLOAD)
 
+    monday = date(2026, 9, 14)
     with patch("urllib.request.urlopen", fake_urlopen):
-        http_outcomes_provider("https://api.example", "k")(date(2026, 9, 13))
-    after = date(2026, 9, 13) - timedelta(days=OUTCOMES_LOOKBACK_DAYS)
+        http_outcomes_provider("https://api.example", "k")(monday)
+    after = monday - timedelta(days=OUTCOMES_LOOKBACK_DAYS)
     assert f"finalized_after={after.isoformat()}" in captured["url"]
-    assert "settled_on_or_before=2026-09-13" in captured["url"]
+    assert "settled_on_or_before=2026-09-14" in captured["url"]
 
     with patch("urllib.request.urlopen", fake_urlopen):
-        http_outcomes_provider("https://api.example", "k", lookback_days=None)(date(2026, 9, 13))
+        http_outcomes_provider("https://api.example", "k", lookback_days=None)(monday)
+    assert "finalized_after" not in captured["url"]
+
+
+def test_sunday_is_the_weekly_unbounded_fetch():
+    """A row never entered for longer than the window (an outage) must still
+    enter late rather than never; the markers make the extra rows a no-op."""
+    from hope.scoring.settle_day_flow import full_fetch_day
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        return _Resp(PAYLOAD)
+
+    sunday = date(2026, 9, 13)
+    assert full_fetch_day(sunday) and not full_fetch_day(date(2026, 9, 14))
+    with patch("urllib.request.urlopen", fake_urlopen):
+        http_outcomes_provider("https://api.example", "k")(sunday)
     assert "finalized_after" not in captured["url"]
 
 

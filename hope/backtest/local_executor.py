@@ -65,6 +65,11 @@ def _wall_timeout(environ=os.environ) -> int:
 # on a small ephemeral volume evicted the whole service (observed 2026-08-11).
 MIN_FREE_DISK_BYTES = 2 << 30    # 2 GB headroom
 
+# One unpack at a time (see run_basket_local): the disk check is only true
+# for the unpack that follows it if nothing else is unpacking meanwhile.
+import threading  # noqa: E402
+_UNPACK_LOCK = threading.Lock()
+
 
 def _as_limit_bytes(environ=os.environ) -> int:
     raw = (environ.get(MEM_MB_ENV) or "").strip()
@@ -112,22 +117,27 @@ def run_basket_local(
 
     dest = tempfile.mkdtemp(prefix="sn21-img-", dir=workdir_root)
     try:
-        free = _free_disk_bytes(dest)
-        if free < MIN_FREE_DISK_BYTES:
-            # Better to skip than to evict the whole service unpacking a huge
-            # image onto a nearly-full volume.
-            return RunResult(
-                ok=False, episodes_in=len(eps),
-                error=f"disk_low: {free >> 20} MB free < "
-                      f"{MIN_FREE_DISK_BYTES >> 20} MB required")
-        try:
-            image = pull_and_unpack(image_ref, digest, dest)
-        except PullError as exc:
-            # A pull/verify failure is NOT a run failure: the fault taxonomy
-            # keeps them distinct so a registry problem never strikes a miner
-            # the way a crashing container would.
-            return RunResult(ok=False, error=f"pull_failed: {exc}",
-                             episodes_in=len(eps))
+        # The free-disk check and the unpack are ONE step under a lock: with
+        # models running a few at a time, two unpacks that both passed the
+        # check a moment apart could together fill the volume the check was
+        # protecting. Unpacks are serialised; the runs themselves are not.
+        with _UNPACK_LOCK:
+            free = _free_disk_bytes(dest)
+            if free < MIN_FREE_DISK_BYTES:
+                # Better to skip than to evict the whole service unpacking a huge
+                # image onto a nearly-full volume.
+                return RunResult(
+                    ok=False, episodes_in=len(eps),
+                    error=f"disk_low: {free >> 20} MB free < "
+                          f"{MIN_FREE_DISK_BYTES >> 20} MB required")
+            try:
+                image = pull_and_unpack(image_ref, digest, dest)
+            except PullError as exc:
+                # A pull/verify failure is NOT a run failure: the fault taxonomy
+                # keeps them distinct so a registry problem never strikes a miner
+                # the way a crashing container would.
+                return RunResult(ok=False, error=f"pull_failed: {exc}",
+                                 episodes_in=len(eps))
 
         argv = _resolve_entrypoint(image, entrypoint_override)
         if argv is None:

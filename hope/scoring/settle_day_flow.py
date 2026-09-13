@@ -869,6 +869,11 @@ def _has_censoring_column(session) -> bool:
 OUTCOMES_LOOKBACK_DAYS = 60
 
 
+def full_fetch_day(day: date) -> bool:
+    """Sunday: the one day a week the outcomes request has no lower bound."""
+    return day.weekday() == 6
+
+
 def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60,
                            lookback_days: int | None = OUTCOMES_LOOKBACK_DAYS):
     """Settled outcomes over HTTP, so the host running the loop needs no
@@ -899,7 +904,12 @@ def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60,
     def provider(day: date) -> list[SettledHorizon]:
         url = (f"{base_url.rstrip('/')}/internal/bittensor/v1/daily/outcomes"
                f"?settled_on_or_before={day.isoformat()}")
-        if lookback_days is not None:
+        # Once a week the request is unbounded: a row that was never entered
+        # for longer than the window (an outage, a repair) must still enter,
+        # late, rather than never. The entered markers make the extra rows a
+        # no-op, and the prediction index is sized to the rows that are new,
+        # so the weekly full fetch costs a download, not memory.
+        if lookback_days is not None and not full_fetch_day(day):
             after = day - timedelta(days=int(lookback_days))
             url += f"&finalized_after={after.isoformat()}"
         req = urllib.request.Request(url, headers={"X-API-Key": api_key})
