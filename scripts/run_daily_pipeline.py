@@ -1066,10 +1066,15 @@ def main():
         log("===PIPELINE-END=== (will retry next tick)")
         return 1
     except Exception as e:   # noqa: BLE001
-        record["stages"]["resolve"] = {"error": str(e)}
-        log(f"[resolve] ERROR {e}")
-        write_run_record(args.ledger_root, record)
-        log("===PIPELINE-END=== (resolve failed)")
+        # Also no run record. Nothing has been executed or written yet, so
+        # retrying next tick costs one listing call and one package fetch
+        # and can only help; a record here would mark the day done with
+        # nothing published and stop the daemon from ever trying again.
+        # (A read timeout on the package endpoint did exactly that once —
+        # the day then needed a hand-run.)
+        log(f"[resolve] ERROR {type(e).__name__}: {e} — no run record; "
+            "will retry next tick")
+        log("===PIPELINE-END=== (resolve failed; will retry next tick)")
         return 1
 
     if not episodes:
