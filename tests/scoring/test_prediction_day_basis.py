@@ -98,7 +98,26 @@ class TestAgingFromThePredictionDay:
         ])
         got = standing_method.load_relative_entries(root, DAY, environ=V2)
         [a] = got["a"]
-        assert a.aged_from == date(2026, 9, 18) - timedelta(days=28 + 8)
+        assert a.aged_from == date(2026, 9, 18) - timedelta(days=28 + 3)
+
+    def test_the_executors_basket_map_gives_the_exact_day(self, tmp_path):
+        root = str(tmp_path)
+        _receipt(root, "2026-09-18", [
+            _e("a", "ep1", 28, 0.6, "2026-09-18"),
+            _e("b", "ep1", 28, 0.4, "2026-09-18"),
+        ])
+        d = os.path.join(root, "tkeys")
+        os.makedirs(d)
+        with open(os.path.join(d, "BD-2026-08-20.json"), "w") as f:
+            json.dump({"ep1": "BUDGET_CHANGE"}, f)
+        [a] = standing_method.load_relative_entries(root, DAY, environ=V2)["a"]
+        assert a.aged_from == date(2026, 8, 20)
+
+    def test_the_settling_window_is_the_platforms_two_days_unless_told_otherwise(self):
+        from hope.scoring.episode_average import settle_lag_days
+        assert settle_lag_days({}) == 3
+        assert settle_lag_days({"SN21_OUTCOME_SETTLING_WINDOW_DAYS": "7"}) == 8
+        assert settle_lag_days({"SN21_OUTCOME_SETTLING_WINDOW_DAYS": "x"}) == 3
 
     def test_the_window_is_applied_to_the_prediction_day(self, tmp_path):
         root = str(tmp_path)

@@ -29,20 +29,27 @@ Each day a basket of real account changes is revealed; you predict outcomes; lat
 | When | What happens |
 | :---- | :---- |
 | **Each day (midnight EST cut-off)** | A fresh basket ships. Your predictions for that basket are locked **before** any outcome exists. |
-| **Horizon + settle** | Outcomes are measured at **7 / 14 / 28 days**, then held for a **7-day settling window** so late conversions are included. |
+| **Horizon + settle** | Outcomes are measured at **7 / 14 / 28 days**, then held for a **2-day settling window** so late-reported conversions are included. |
 | **Settle day** | That (episode, horizon) is scored once. The score enters your standing. It is never re-scored. |
 
 Settle date for a horizon:
 
-`action_window_end + 1 day + horizon days + 7-day settling window`
+`action_window_end + 1 day + horizon days + 2-day settling window`
+
+> **Corrected 2026-09-14.** This document said "7-day settling window" and
+> "~day 15 / 22 / 36" from launch. The platform has always run a **2-day**
+> settling window, and every published receipt shows it: `finalized_on` is
+> **10 / 17 / 31** days after the basket day for the 7 / 14 / 28-day horizons
+> (the basket day is the action-window end). Nothing in scoring changed; the
+> text now matches what runs. Found by a miner from the receipts.
 
 Examples (from action-window end):
 
 | Horizon | First scoreable (approx.) |
 | :---- | :---- |
-| 7-day | ~day 15 |
-| 14-day | ~day 22 |
-| 28-day | ~day 36 |
+| 7-day | day 10 |
+| 14-day | day 17 |
+| 28-day | day 31 |
 
 ## What you predict
 
@@ -109,13 +116,13 @@ Some accounts stop spending or disconnect after a change is already in a basket.
 | Longer horizons after a censor | Also dropped. Censoring a horizon implies censoring all later unsettled horizons on that episode. |
 | Horizon blend weights | Already-scored horizons keep their published blend weight. Dropped horizons contribute no standing entry and are **not** renormalised onto the survivors. |
 
-**Example.** Action-window ends day 0. Horizons first score around day 15 / 22 / 36. The account leaves the network on **day 18**:
+**Example.** Action-window ends day 0. Horizons first score on day 10 / 17 / 31. The account leaves the network on **day 12**:
 
 | Horizon | Settle (approx.) | What happens |
 | :---- | :---- | :---- |
-| 7-day | ~day 15 | Already settled → **scored and kept** |
-| 14-day | ~day 22 | Not yet settled → **dropped** (`left_system`) |
-| 28-day | ~day 36 | Not yet settled → **dropped** (`left_system`) |
+| 7-day | day 10 | Already settled → **scored and kept** |
+| 14-day | day 17 | Not yet settled → **dropped** (`left_system`) |
+| 28-day | day 31 | Not yet settled → **dropped** (`left_system`) |
 
 Your standing keeps the 7-day entry only. That is absent evidence for 14- and 28-day — the same shape as a missing prediction, except the reason is account attrition, not a miner miss.
 
@@ -220,8 +227,8 @@ standing and no rank yet; it is listed all the same, with its accuracy so far
 and its evidence against the floor, and the audit's `placement` block carries
 the same numbers.
 
-**What this means for a new model.** Its first entries land 15 days after
-its first basket (the 7-day horizon plus the 7-day settling window), the
+**What this means for a new model.** Its first entries land 10 days after
+its first basket (the 7-day horizon plus the 2-day settling window), the
 14-day entries a week later, the 28-day entries two weeks after that. From
 the first landing it accrues evidence every day; it clears the placement
 floor within days at full coverage, the earning-set tenure after seven
@@ -239,8 +246,8 @@ retroactively: no published score, receipt or past weight changes.
 ### Current model, current form (rule amendment, announced 2026-09-14 — effective date to follow)
 
 Under the settle-day rule above, a replaced model kept deciding a miner's
-rank for weeks: nothing the new model predicts settles for 15 days, the old
-model's 14- and 28-day results keep landing at full weight for 36 days, and a
+rank for weeks: nothing the new model predicts settles for 10 days, the old
+model's 14- and 28-day results keep landing at full weight for 31 days, and a
 bad settle day then takes a week to lose half its weight. A miner who fixed
 their model saw accuracy rise and rank stay flat. From the effective date
 below, two things change in how entries are aged and weighted. Nothing
@@ -250,10 +257,12 @@ everything below is recomputable from published documents.
 1. **Entries age from the day the prediction was made.** An entry's age is
    the number of days since its **basket day**, not since its settle day.
    Receipts from this date carry the basket day as `predicted_on`; for
-   older receipts it is derived as `finalized_on − horizon − 8` (the settle
-   schedule: action-window end + 1 day + horizon + 7-day settling window).
+   older receipts the operator uses the basket the episode was released in
+   (the daily basket feed names it), and where that is unavailable derives it
+   as `finalized_on − horizon − 3` (the settle schedule: action-window end +
+   1 day + horizon + 2-day settling window).
    The half-life stays **7 days**. The window becomes **42 days** of
-   prediction age, so the 28-day horizon, which lands at age 36, still
+   prediction age, so the 28-day horizon, which lands at age 31, still
    counts. The prior toward the field becomes **100** prediction-mass: with
    entries entering already aged, the effective evidence behind a standing
    is smaller, and 250 would over-shrink a model that is new but good.
@@ -279,7 +288,7 @@ everything below is recomputable from published documents.
 | Prior mass toward the field | 250 | 100 |
 | Previous model's entries | full weight | × 0.25 once the current model carries 250 mass in the window |
 
-**What this means for a new model.** Its first entries still land 15 days
+**What this means for a new model.** Its first entries still land 10 days
 after its first basket; outcomes must mature and no rule changes that. From
 that day, each entry enters at the age of its prediction, so the new model's
 first landing already carries its own weight against the old model's late

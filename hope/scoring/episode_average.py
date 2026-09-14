@@ -105,7 +105,7 @@ def half_life_in_force(environ=os.environ, day: date | None = None) -> float:
 # Entries age from the day the PREDICTION was made, not the day its outcome
 # settled, so a replaced model's late-settling results do not enter a standing
 # as fresh evidence. The window widens so the 28-day horizon (which lands at
-# age 36) still counts, and the prior toward the field is lowered because the
+# age 31) still counts, and the prior toward the field is lowered because the
 # effective evidence mass under prediction-day ages is smaller. Entries from
 # a hotkey's previous model count at a fraction once its current model has
 # the placement floor's worth of evidence (hope.scoring.model_epoch).
@@ -124,9 +124,25 @@ PREVIOUS_MODEL_WEIGHT = 0.25
 PREVIOUS_MODEL_THRESHOLD_MASS = 250.0
 PREVIOUS_MODEL_WEIGHT_ENV = "SN21_PREVIOUS_MODEL_WEIGHT"
 PREVIOUS_MODEL_THRESHOLD_ENV = "SN21_PREVIOUS_MODEL_THRESHOLD"
-# Older receipts carry no prediction day; it is derived from the settle
-# schedule (action-window end + 1 + horizon + 7-day settling window).
-SETTLE_LAG_DAYS = 8
+# Older receipts carry no prediction day. Where the executor holds the basket
+# map for the episode the day is exact; otherwise it is derived from the
+# settle schedule: finalized_on = basket day + 1 + horizon + settling window.
+# The settling window is what the operator platform RUNS (two days, checked
+# against the receipts on 2026-09-14: 10 / 17 / 31 days after the basket for
+# the 7 / 14 / 28-day horizons), not the seven the scoring doc carried until
+# then; a wrong lag dated every pre-amendment entry five days too early.
+OUTCOME_SETTLING_WINDOW_ENV = "SN21_OUTCOME_SETTLING_WINDOW_DAYS"
+DEFAULT_OUTCOME_SETTLING_WINDOW_DAYS = 2
+
+
+def settle_lag_days(environ=os.environ) -> int:
+    """Days from the basket day to finalized_on, beyond the horizon."""
+    try:
+        v = int((environ.get(OUTCOME_SETTLING_WINDOW_ENV) or "").strip())
+        settle = v if v >= 0 else DEFAULT_OUTCOME_SETTLING_WINDOW_DAYS
+    except (TypeError, ValueError):
+        settle = DEFAULT_OUTCOME_SETTLING_WINDOW_DAYS
+    return 1 + settle
 
 
 def age_basis_effective_from(environ=os.environ) -> date | None:

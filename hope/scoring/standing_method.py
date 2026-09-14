@@ -39,13 +39,14 @@ from __future__ import annotations
 import json
 import os
 from collections import defaultdict
+from collections.abc import Mapping
 from datetime import date, timedelta
 
 from hope.scoring import standing_ledger
 from hope.scoring.daily_score_flow import horizon_entry_weight
 from hope.scoring.episode_average import (
     DEFAULT_WINDOW_DAYS,
-    SETTLE_LAG_DAYS,
+    settle_lag_days,
     ScoredEpisode,
     age_basis_effective_from,
     age_basis_in_force,
@@ -272,24 +273,62 @@ def field_means(entries: list[dict]) -> dict[tuple[str, int], float]:
     return {k: sum(v) / len(v) for k, v in acc.items() if v}
 
 
-def predicted_on_of(entry: dict, scored_on: date) -> date:
-    """The day the entry's prediction was made: the receipt's `predicted_on`
-    when it carries one (receipts from the 2026-09-14 amendment on), else
-    derived from the settle schedule — settle = action-window end + 1 +
-    horizon + 7, so prediction day = settle day − horizon − 8. A late-measured
-    outcome derives an earlier (older) day than the truth, which only ever
-    weighs such an entry less, never more."""
+def basket_days_from_tkeys(root: str) -> dict[str, date]:
+    """episode_id -> basket day, from the per-basket map files the executor
+    writes at resolve time (<root>/tkeys/BD-<day>.json). Exact where present;
+    empty when the directory is missing, in which case the settle schedule
+    derives the day."""
+    d = os.path.join(root, "tkeys")
+    out: dict[str, date] = {}
+    if not os.path.isdir(d):
+        return out
+    for fn in sorted(os.listdir(d)):
+        if not (fn.startswith("BD-") and fn.endswith(".json")):
+            continue
+        try:
+            day = date.fromisoformat(fn[3:-5])
+            with open(os.path.join(d, fn)) as f:
+                m = json.load(f)
+        except (ValueError, OSError):
+            continue
+        if isinstance(m, dict):
+            for eid in m:
+                out[str(eid)] = day
+    return out
+
+
+def _tkeys_signature(root: str):
+    d = os.path.join(root, "tkeys")
+    try:
+        return (d, os.path.getmtime(d), len(os.listdir(d)))
+    except OSError:
+        return (d, None, 0)
+
+
+def predicted_on_of(entry: dict, scored_on: date,
+                    basket_days: Mapping | None = None,
+                    environ=os.environ) -> date:
+    """The day the entry's prediction was made. In order: the receipt's own
+    `predicted_on` (receipts from the 2026-09-14 amendment on); the basket
+    the episode was released in, where the reader holds that map; else the
+    settle schedule — finalized_on = basket day + 1 + horizon + settling
+    window — so prediction day = finalized_on − horizon − (1 + settling
+    window), three days with the two-day window the platform runs."""
     raw = entry.get("predicted_on")
     if raw:
         try:
             return date.fromisoformat(str(raw)[:10])
         except ValueError:
             pass
+    if basket_days:
+        day = basket_days.get(str(entry.get("episode_id")))
+        if isinstance(day, date):
+            return day
     try:
         horizon = int(entry.get("horizon_days") or 0)
     except (TypeError, ValueError):
         horizon = 0
-    return scored_on - timedelta(days=horizon + SETTLE_LAG_DAYS)
+    return scored_on - timedelta(days=horizon + settle_lag_days(environ))
 
 
 def load_relative_entries(root: str, as_of: date,
@@ -298,6 +337,7 @@ def load_relative_entries(root: str, as_of: date,
                           model_since: dict | None = None,
                           relative: bool = True,
                           stats: dict | None = None,
+                          basket_days: Mapping | None = None,
                           ) -> dict[str, list[ScoredEpisode]]:
     """hotkey -> ScoredEpisodes in the window, from receipts plus the
     absence-penalty log net of cancellations. Relative to the field on the
@@ -314,11 +354,15 @@ def load_relative_entries(root: str, as_of: date,
     if window_days is None:
         window_days = window_in_force(environ, as_of)
     by_prediction_day = prediction_basis_in_force(environ, as_of)
+    if by_prediction_day and basket_days is None:
+        basket_days = basket_days_from_tkeys(root)
     files = _receipt_files(root, as_of, window_days)
     since_key = tuple(sorted((hk, d.isoformat()) for hk, d in (model_since or {}).items()))
     sig = (root, as_of.isoformat(), window_days, by_prediction_day, relative,
            tuple((p, os.path.getmtime(p)) for _, p in files),
-           _penalty_signature(root), since_key)
+           _penalty_signature(root), since_key,
+           _tkeys_signature(root) if by_prediction_day else None,
+           settle_lag_days(environ))
     hit = _CACHE.get("k")
     if hit and hit[0] == sig:
         if stats is not None:
@@ -346,7 +390,8 @@ def load_relative_entries(root: str, as_of: date,
                     scored_on = date.fromisoformat(str(fo)[:10])
                 except ValueError:
                     pass
-            aged_from = predicted_on_of(e, scored_on) if by_prediction_day else None
+            aged_from = (predicted_on_of(e, scored_on, basket_days, environ)
+                         if by_prediction_day else None)
             age_day = aged_from or scored_on
             if age_day < cutoff or age_day > as_of:
                 continue
