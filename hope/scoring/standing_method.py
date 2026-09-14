@@ -551,8 +551,14 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
 
     def ranked_alloc(env, alloc):
         from hope.validator.daily_stream_weights import allocation_from_ledger
-        if alloc is None:
-            alloc = allocation_from_ledger(root, as_of, day_episode_volume, environ=env,
+        # The day-volume hold ([D3]) withholds the vector on a thin day under
+        # BOTH rules, which would make the paid comparison empty exactly when
+        # it is wanted. The preview asks who would be paid if a vector were
+        # set today, so the hold is not applied here; a held allocation the
+        # caller passes in is recomputed the same way.
+        if alloc is None or getattr(alloc, "gated", False):
+            alloc = allocation_from_ledger(root, as_of, day_episode_volume,
+                                           min_daily_episodes=0, environ=env,
                                            coldkey_of=coldkey_of, alpha_of=alpha_of,
                                            alpha_floor=alpha_floor, persist=False)
         stats = (alloc.collapse_audit.get("policies") or {}).get("standing_method") or {}
@@ -602,7 +608,8 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
     return {
         "as_of": as_of.isoformat(),
         "note": ("dry run: the prediction-day basis computed beside the rule in force; "
-                 + ("standings and the paid set with every earning control applied; "
+                 + ("standings and the paid set with every earning control applied, "
+                    "ignoring the day-volume hold; "
                     if with_controls else "standings before earning controls; ")
                  + "nothing applied"),
         "with_controls": bool(with_controls),

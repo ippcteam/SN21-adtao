@@ -392,10 +392,13 @@ class TestTheDryRunWithControls:
         env = {**RELATIVE, "SN21_DAILY_STREAM_WEIGHTS": "1",
                "SN21_PLACEMENT_FLOOR_PREDICTIONS": "50"}
         before = sorted(os.listdir(root))
+        # a thin day: the hold would withhold the vector under both rules, and
+        # the preview ignores it so the paid comparison is not empty
+        env["SN21_D3_MIN_DAILY_EPISODES"] = "150"
         out = standing_method.standing_preview(root, DAY, env, with_controls=True,
                                                coldkey_of={"a": "ck1", "b": "ck2", "c": "ck3"},
                                                alpha_of={"a": 900.0, "b": 900.0, "c": 900.0},
-                                               alpha_floor=700.0, day_episode_volume=300)
+                                               alpha_floor=700.0, day_episode_volume=20)
         assert out["with_controls"] is True
         s = out["summary"]
         assert set(s["paid_now"]) == {"a", "b", "c"} and set(s["paid_preview"]) == {"a", "b", "c"}
