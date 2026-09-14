@@ -267,7 +267,7 @@ everything below is recomputable from published documents.
    entries entering already aged, the effective evidence behind a standing
    is smaller, and 250 would over-shrink a model that is new but good.
 2. **A replaced model fades faster.** Each hotkey's **current model** is the
-   digest it runs, dated from the day that digest was admitted (published
+   digest it runs, dated from the first basket day that digest ran (published
    per hotkey in the allocation audit, `standing_method.model_since`).
    Entries predicted **before** that day count at **one quarter** of their
    weight — but only once the current model's own entries inside the window

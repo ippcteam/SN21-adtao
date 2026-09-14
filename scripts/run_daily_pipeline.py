@@ -270,6 +270,25 @@ def _digest_of(raw):
 
 # ---- 2. shadow day -----------------------------------------------------------
 
+def _write_model_since(ledger_root) -> None:
+    """Which model each hotkey runs and the first basket day it ran — the
+    boundary the standing's previous-model discount reads (rule amendment
+    2026-09-14). Read from the shadow ledger after today's records exist (or
+    on a locked day, from the records already there), cached day to day so
+    an unchanged digest costs one record read. The settle stage and the
+    audit read the file. Fail-open: a day without the file discounts nobody."""
+    try:
+        from hope.scoring.model_epoch import (
+            load_model_since_raw, model_since_from_shadow, write_model_since)
+        mapping = model_since_from_shadow(ledger_root, load_model_since_raw(ledger_root))
+        changed = sum(1 for hk, rec in mapping.items()
+                      if rec.get("since") == max((r.get("since") or "") for r in mapping.values()))
+        log(f"[shadow] model_since: {write_model_since(ledger_root, mapping)} hotkeys "
+            f"({changed} whose current digest first ran on the latest day)")
+    except Exception as exc:                                   # noqa: BLE001
+        log(f"[shadow] model_since not written ({exc}) — no previous-model discount today")
+
+
 def stage_shadow(ledger_root, basket_key, episodes, include_reference):
     from scripts.run_shadow_day_bd import (
         REFERENCE_HOTKEY,
@@ -292,19 +311,8 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
     models, stats = admitted_models(
         ledger_root, os.environ.get("SN21_NETWORK", "finney"),
         int(os.environ.get("SN21_NETUID", "21")), as_of)
-    # Which model each hotkey runs today and since when — the boundary the
-    # standing's previous-model discount reads (rule amendment 2026-09-14).
-    # Written from the registry the models are run from, so the two cannot
-    # disagree; the settle stage and the audit read the file. Written even
-    # on a day whose predictions are already locked, so a re-run settles
-    # with the same boundaries a first run would.
-    try:
-        from hope.scoring.model_epoch import write_model_since
-        log(f"[shadow] model_since: {write_model_since(ledger_root, models)} hotkeys")
-    except Exception as exc:                                   # noqa: BLE001
-        log(f"[shadow] model_since not written ({exc}) — no previous-model discount today")
-
     if already_ran:
+        _write_model_since(ledger_root)
         return {"registry": stats, "models_run": 0,
                 "skipped": (f"shadow day {_guard_day} already ran — "
                             f"predictions are locked; refusing to re-run")}
@@ -321,6 +329,7 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
         return run_basket(m.image_digest, eps)
 
     summary = run_shadow_day(day, episodes, models, runner, ledger_root)
+    _write_model_since(ledger_root)
     return {"registry": stats, "models_run": summary.get("models_run"),
             "results": {hk: r.get("predictions")
                         for hk, r in summary.get("results", {}).items()}}

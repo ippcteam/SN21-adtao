@@ -11,8 +11,9 @@ no settle, no vector, no report, no mirror. The file it writes is mirrored
 only by a later pipeline run, and only while SN21_STANDING_PREVIEW_PUBLISH is
 set.
 
-If the model-boundary file is missing, --model-since builds it from the
-registry (one chain read, ~30 s) exactly as the shadow stage does.
+If the model-boundary file is missing it is built from the shadow ledger
+(the first basket day each hotkey's current digest ran); --model-since forces
+a full rebuild without the day-to-day cache.
 """
 
 from __future__ import annotations
@@ -25,7 +26,10 @@ from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.scoring.model_epoch import load_model_since, model_since_path, write_model_since  # noqa: E402
+from hope.scoring.model_epoch import (  # noqa: E402
+    load_model_since, load_model_since_raw, model_since_from_shadow, model_since_path,
+    write_model_since,
+)
 from hope.scoring.standing_method import standing_preview  # noqa: E402
 
 
@@ -41,19 +45,16 @@ def main(argv=None) -> int:
     p.add_argument("--top", type=int, default=25, help="rows to print")
     p.add_argument("--hotkeys", default="", help="comma-separated hotkeys to print in full")
     p.add_argument("--model-since", action="store_true",
-                   help="(re)build model_since.json from the registry first (chain read)")
+                   help="rebuild model_since.json from the shadow ledger first (full walk, no cache)")
     p.add_argument("--no-write", action="store_true", help="print only; do not write the file")
     args = p.parse_args(argv)
     day = date.fromisoformat(args.day)
     root = args.ledger_root
 
     if args.model_since or not os.path.exists(model_since_path(root)):
-        from scripts.run_shadow_day_bd import admitted_models
-        models, _ = admitted_models(root, os.environ.get("SN21_NETWORK", "finney"),
-                                    int(os.environ.get("SN21_NETUID", "21")),
-                                    day.isoformat())
-        print(f"[preview] model_since.json written for {write_model_since(root, models)} hotkeys",
-              flush=True)
+        mapping = model_since_from_shadow(root, None if args.model_since else load_model_since_raw(root))
+        print(f"[preview] model_since.json written for {write_model_since(root, mapping)} hotkeys "
+              f"from the shadow ledger", flush=True)
     since = load_model_since(root)
     print(f"[preview] model boundaries on file: {len(since)} hotkeys", flush=True)
 

@@ -216,17 +216,61 @@ class TestThePreviousModelDiscount:
         assert stats["age_basis"] == "prediction_day"
 
 
+def _shadow(root, day, hotkey, digest):
+    d = os.path.join(root, "shadow", day)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "_run.json"), "w") as f:
+        json.dump({"day": day}, f)
+    with open(os.path.join(d, f"{hotkey}.jsonl"), "a") as f:
+        f.write(json.dumps({"day": day, "hotkey": hotkey, "image_digest": digest,
+                            "ok": True, "predictions": {}}) + "\n")
+
+
 class TestModelSinceFile:
-    def test_round_trip_from_the_models_the_executor_runs(self, tmp_path):
-        class M:
-            def __init__(self, hk, digest, since):
-                self.hotkey, self.image_digest, self.admitted_at = hk, digest, since
+    def test_round_trip(self, tmp_path):
         root = str(tmp_path)
-        n = write_model_since(root, [M("a", "sha256:1", "2026-09-07"),
-                                     M("b", "sha256:2", "2026-08-20T10:00:00"),
-                                     M("c", "sha256:3", None)])
+        n = write_model_since(root, {"a": {"digest": "sha256:1", "since": "2026-09-07"},
+                                     "b": {"digest": "sha256:2", "since": "2026-08-20T10:00:00"},
+                                     "c": {"digest": "sha256:3", "since": None}})
         assert n == 2
         assert load_model_since(root) == {"a": date(2026, 9, 7), "b": date(2026, 8, 20)}
+
+    def test_the_boundary_is_the_first_basket_day_the_current_digest_ran(self, tmp_path):
+        from hope.scoring.model_epoch import model_since_from_shadow
+        root = str(tmp_path)
+        for day in ("2026-09-01", "2026-09-02", "2026-09-03"):
+            _shadow(root, day, "a", "sha256:old")
+        for day in ("2026-09-04", "2026-09-05"):
+            _shadow(root, day, "a", "sha256:new")
+        _shadow(root, "2026-09-05", "b", "sha256:b")
+        out = model_since_from_shadow(root)
+        assert out["a"] == {"digest": "sha256:new", "since": "2026-09-04"}
+        assert out["b"] == {"digest": "sha256:b", "since": "2026-09-05"}
+
+    def test_an_unchanged_digest_keeps_its_boundary_from_the_cache(self, tmp_path):
+        from hope.scoring.model_epoch import model_since_from_shadow
+        root = str(tmp_path)
+        _shadow(root, "2026-09-05", "a", "sha256:new")
+        previous = {"a": {"digest": "sha256:new", "since": "2026-08-20"},
+                    "gone": {"digest": "sha256:g", "since": "2026-08-01"}}
+        out = model_since_from_shadow(root, previous)
+        assert out["a"]["since"] == "2026-08-20"
+        # a hotkey that did not run today keeps its entry
+        assert out["gone"]["since"] == "2026-08-01"
+
+    def test_a_new_digest_ignores_the_cache_and_walks_back(self, tmp_path):
+        from hope.scoring.model_epoch import model_since_from_shadow
+        root = str(tmp_path)
+        _shadow(root, "2026-09-04", "a", "sha256:new")
+        _shadow(root, "2026-09-05", "a", "sha256:new")
+        out = model_since_from_shadow(root, {"a": {"digest": "sha256:old", "since": "2026-08-01"}})
+        assert out["a"] == {"digest": "sha256:new", "since": "2026-09-04"}
+
+    def test_no_shadow_ledger_keeps_whatever_was_known(self, tmp_path):
+        from hope.scoring.model_epoch import model_since_from_shadow
+        assert model_since_from_shadow(str(tmp_path), {"a": {"digest": "x", "since": "2026-09-01"}}) == \
+            {"a": {"digest": "x", "since": "2026-09-01"}}
+        assert model_since_from_shadow(str(tmp_path)) == {}
 
     def test_missing_file_means_no_boundary(self, tmp_path):
         assert load_model_since(str(tmp_path)) == {}
@@ -237,9 +281,7 @@ class TestModelSinceFile:
             _e("a", "ep1", 7, 0.6, "2026-09-18", predicted_on="2026-09-10"),
             _e("b", "ep1", 7, 0.4, "2026-09-18", predicted_on="2026-09-10"),
         ])
-        class M:
-            hotkey, image_digest, admitted_at = "a", "sha256:1", "2026-09-05"
-        write_model_since(root, [M()])
+        write_model_since(root, {"a": {"digest": "sha256:1", "since": "2026-09-05"}})
         stats: dict = {}
         standing_method.load_standing_entries(root, DAY, environ=V2, stats=stats)
         assert stats["age_basis"] == "prediction_day"
@@ -294,9 +336,7 @@ class TestTheDryRun:
             entries.append(_e("a", f"o{i}", 28, 0.6, "2026-09-19", predicted_on="2026-08-15", weight=1.0))
             entries.append(_e("b", f"o{i}", 28, 0.2, "2026-09-19", predicted_on="2026-08-15", weight=1.0))
         _receipt(root, "2026-09-19", entries)
-        class M:
-            hotkey, image_digest, admitted_at = "b", "sha256:new", "2026-09-10"
-        write_model_since(root, [M()])
+        write_model_since(root, {"b": {"digest": "sha256:new", "since": "2026-09-10"}})
         env = {**RELATIVE, "SN21_STANDING_AGE_BASIS_PREVIEW": "1"}
         assert standing_method.preview_enabled(env)
         out = standing_method.standing_preview(root, DAY, env, placement_floor=50)

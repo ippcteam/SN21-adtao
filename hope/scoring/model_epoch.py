@@ -6,20 +6,25 @@ by the PREVIOUS model count at a fraction of their weight once the current
 model carries enough scored evidence of its own; before that they count in
 full, so a fresh commit cannot shed a bad month before it has shown anything.
 
-The boundary is the day the current digest was admitted (the intake gate's
-verdict date): no prediction made on or after it can have come from the
-model it replaced. The map is written by the executor each shadow day from
-the registry it runs the models from, and published in the allocation audit
+The boundary is the FIRST BASKET DAY on which the hotkey's current digest
+ran, read from the shadow ledger (the record of which image produced which
+day's predictions): every prediction from that day on came from the current
+model, every earlier one from a model it replaced. The map is written by the
+executor each shadow day and published in the allocation audit
 (`standing_method.model_since`) so the discount is recomputable from public
 documents: the receipts give every entry's prediction day, the audit gives
 every hotkey's boundary.
+
+Not the intake gate's verdict date: the registry stamps every active model
+with the day it is being run (found in the first dry run, 14 September 2026,
+when every boundary read "today" and nothing was discounted).
 """
 
 from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from datetime import date
 
 from hope.scoring.episode_average import ScoredEpisode
@@ -31,18 +36,76 @@ def model_since_path(root: str) -> str:
     return os.path.join(root, MODEL_SINCE_FILE)
 
 
-def write_model_since(root: str, models: Iterable) -> int:
-    """Persist {hotkey: {"digest", "since"}} from the models the executor
-    runs today (anything with `hotkey`, `image_digest`, `admitted_at`).
-    Atomic; returns how many hotkeys were written."""
-    out: dict = {}
-    for m in models:
-        hk = getattr(m, "hotkey", None)
-        since = getattr(m, "admitted_at", None)
-        if not hk or not since:
+# How far back the shadow ledger is walked for a digest's first day when the
+# cache does not already know it. Longer than any standing window.
+MODEL_SINCE_MAX_DAYS = 90
+
+
+def _digest_on(root: str, day: str, hotkey: str) -> str | None:
+    """The image digest that produced `hotkey`'s predictions on shadow day
+    `day` (the operative, last record), or None if it did not run."""
+    from hope.backtest.shadow import last_record
+    rec = last_record(root, day, hotkey)
+    if not rec:
+        return None
+    digest = rec.get("image_digest")
+    return str(digest) if digest else None
+
+
+def model_since_from_shadow(root: str, previous: Mapping | None = None,
+                            max_days: int = MODEL_SINCE_MAX_DAYS) -> dict:
+    """{hotkey: {"digest", "since"}} from the shadow ledger: for every hotkey
+    that ran on the latest shadow day, the digest it ran and the first day
+    of the unbroken run of days on which that same digest ran.
+
+    `previous` is yesterday's map: a hotkey whose digest is unchanged keeps
+    its boundary without re-reading history, so the daily cost is one record
+    per hotkey. A hotkey with a new digest is walked back until the digest
+    differs or the ledger runs out (bounded by `max_days`). A hotkey that did
+    not run on the latest day keeps its previous entry, if any: a day's
+    absence does not change which model it runs.
+    """
+    from hope.backtest.shadow import shadow_days
+    days = shadow_days(root)
+    if not days:
+        return dict(previous or {})
+    latest = days[-1]
+    latest_dir = os.path.join(root, "shadow", latest)
+    hotkeys = sorted(fn[:-6] for fn in os.listdir(latest_dir) if fn.endswith(".jsonl"))
+    out: dict = dict(previous or {})
+    for hk in hotkeys:
+        digest = _digest_on(root, latest, hk)
+        if not digest:
             continue
-        out[str(hk)] = {"digest": str(getattr(m, "image_digest", "") or ""),
-                        "since": str(since)[:10]}
+        prev = (previous or {}).get(hk)
+        if isinstance(prev, dict) and prev.get("digest") == digest and prev.get("since"):
+            out[hk] = {"digest": digest, "since": str(prev["since"])[:10]}
+            continue
+        since = latest
+        for day in reversed(days[-max_days:-1]):
+            if _digest_on(root, day, hk) == digest:
+                since = day
+            else:
+                break
+        out[hk] = {"digest": digest, "since": since}
+    return out
+
+
+def load_model_since_raw(root: str) -> dict:
+    try:
+        with open(model_since_path(root)) as f:
+            raw = json.load(f)
+        return raw if isinstance(raw, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_model_since(root: str, mapping: Mapping) -> int:
+    """Persist {hotkey: {"digest", "since"}}. Atomic; returns how many
+    hotkeys were written."""
+    out = {str(hk): {"digest": str((rec or {}).get("digest") or ""),
+                     "since": str((rec or {}).get("since"))[:10]}
+           for hk, rec in mapping.items() if isinstance(rec, dict) and rec.get("since")}
     os.makedirs(root, exist_ok=True)
     tmp = model_since_path(root) + ".tmp"
     with open(tmp, "w") as f:
