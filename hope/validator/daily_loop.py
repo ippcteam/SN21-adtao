@@ -682,6 +682,33 @@ def run_daily_loop(
                 # Never take the day's weights down for a published extra.
                 summary["allocation_audit"] = {"error": str(e)}
 
+            # Dry run of the prediction-day standing (SN21_STANDING_AGE_BASIS_
+            # PREVIEW): what the amendment would rank today, written to the
+            # operator's store and summarised here. Never reaches the vector,
+            # the audit or the report.
+            try:
+                from hope.scoring.standing_method import (
+                    preview_enabled, standing_preview)
+                if preview_enabled(environ):
+                    _preview = standing_preview(ledger_root, day, environ)
+                    _pdir = os.path.join(ledger_root, "standing_preview")
+                    os.makedirs(_pdir, exist_ok=True)
+                    _ppath = os.path.join(_pdir, f"{day}.json")
+                    with open(_ppath + ".tmp", "w") as f:
+                        json.dump(_preview, f, indent=1, sort_keys=True)
+                    os.replace(_ppath + ".tmp", _ppath)
+                    _ps = _preview["summary"]
+                    print(f"[standing-preview] prediction-day basis (dry run): "
+                          f"{_ps['hotkeys_ranked_preview']} ranked vs "
+                          f"{_ps['hotkeys_ranked_current']} today; top-20 seats "
+                          f"changed {_ps['top20_seats_changed']}; previous-model "
+                          f"discount on {len(((_preview['preview'].get('previous_model') or {}).get('hotkeys_discounted') or []))} "
+                          f"hotkey(s); written {_ppath}", flush=True)
+                    summary["standing_preview"] = {"path": _ppath, **_ps,
+                                                   "preview": _preview["preview"]}
+            except Exception as e:                            # noqa: BLE001
+                summary["standing_preview"] = {"error": str(e)}
+
             summary["weights"] = {"path": out_path, "gated": alloc.gated,
                                   "earning_set_size": alloc.earning_set_size,
                                   "evicted": list(alloc.evicted),

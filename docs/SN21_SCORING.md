@@ -164,7 +164,7 @@ that date. Entries already in the standing ledger are unchanged.
 
 Your published standing is an **episode-age-weighted** mean of scored entries — **not** a per-day average.
 
-- Each scored (episode, horizon) enters at its settle day (from 2026-09-15: aged from its **prediction day** — see the second amendment below).
+- Each scored (episode, horizon) enters at its settle day (a second amendment, announced below with its effective date to follow, will age it from its **prediction day**).
 - Weight decays with age: half-life **12 days**, window **35 days** (amended below).
 - A thin Saturday contributes fewer entries and therefore less influence — automatically. No special weekend rule.
 
@@ -236,7 +236,7 @@ audit (`/v1/daily/{day}/allocation-audit`, `standing_method`); a run before
 the effective date reports `absolute` there. Applied forward, never
 retroactively: no published score, receipt or past weight changes.
 
-### Current model, current form (rule amendment, published 2026-09-14)
+### Current model, current form (rule amendment, announced 2026-09-14 — effective date to follow)
 
 Under the settle-day rule above, a replaced model kept deciding a miner's
 rank for weeks: nothing the new model predicts settles for 15 days, the old
@@ -291,12 +291,14 @@ earlier than under the settle-day rule. The leaderboard's headline accuracy
 uses the same dating and weights, so the number a miner watches and the
 number that ranks them move together.
 
-Effective date: **2026-09-15** (the daily run of that date and every run
-after it). Applied forward, never retroactively: no published score, receipt
-or past weight changes. The parameters in force are published in each day's
-allocation audit (`standing_method`: `age_basis`, `window_days`,
-`prior_mass`, `previous_model_weight`, `previous_model_threshold`,
-`model_since`, and `previous_model` naming the hotkeys discounted that day).
+Effective date: **to be announced**, with notice, in the miner channels and
+here. Until that date the settle-day rule above ranks every day, and each
+day's allocation audit reports `standing_method.age_basis: settle_day`.
+From the effective date it reports `prediction_day` together with
+`window_days`, `prior_mass`, `previous_model_weight`,
+`previous_model_threshold`, `model_since`, and `previous_model` naming the
+hotkeys discounted that day. Applied forward, never retroactively: no
+published score, receipt or past weight changes.
 
 Cold-start evidence floors (used when placing you for emissions — see rewards doc):
 

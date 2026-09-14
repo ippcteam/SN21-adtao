@@ -248,3 +248,38 @@ def _e(miner, ep, h, score, fo, predicted_on=None, weight=None):
     if weight is not None:
         out["weight"] = weight
     return out
+
+
+class TestTheDryRun:
+    """The amendment computes beside the rule in force before its date is
+    announced, so the switch changes nothing that has not been seen."""
+
+    def test_preview_ranks_under_both_rules_without_touching_either(self, tmp_path):
+        root = str(tmp_path)
+        entries = []
+        # a and b share 300 fresh episodes; b also has an old bad month
+        for i in range(300):
+            entries.append(_e("a", f"n{i}", 7, 0.6, "2026-09-19", predicted_on="2026-09-12", weight=1.0))
+            entries.append(_e("b", f"n{i}", 7, 0.6, "2026-09-19", predicted_on="2026-09-12", weight=1.0))
+        for i in range(300):
+            entries.append(_e("a", f"o{i}", 28, 0.6, "2026-09-19", predicted_on="2026-08-15", weight=1.0))
+            entries.append(_e("b", f"o{i}", 28, 0.2, "2026-09-19", predicted_on="2026-08-15", weight=1.0))
+        _receipt(root, "2026-09-19", entries)
+        class M:
+            hotkey, image_digest, admitted_at = "b", "sha256:new", "2026-09-10"
+        write_model_since(root, [M()])
+        env = {**RELATIVE, "SN21_STANDING_AGE_BASIS_PREVIEW": "1"}
+        assert standing_method.preview_enabled(env)
+        out = standing_method.standing_preview(root, DAY, env, placement_floor=50)
+        assert out["current"]["window_days"] == 28 and out["preview"]["window_days"] == 42
+        assert out["preview"]["age_basis"] == "prediction_day"
+        # under the rule in force b's bad month lands fresh: b below a
+        assert out["hotkeys"]["b"]["current_rank"] == 2
+        # under the preview b's old entries are aged and discounted: closer to a
+        assert out["hotkeys"]["b"]["preview_relative"] > out["hotkeys"]["b"]["current_relative"]
+        assert out["preview"]["previous_model"]["hotkeys_discounted"] == ["b"]
+        # and nothing about the rule in force moved
+        assert age_basis_in_force(env, DAY) == "settle_day"
+
+    def test_off_by_default(self):
+        assert standing_method.preview_enabled({}) is False

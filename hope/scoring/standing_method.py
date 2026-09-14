@@ -430,6 +430,93 @@ def _net_penalties(root: str, as_of: date, window_days: int):
     return out
 
 
+# Dry run of the prediction-day basis: compute what it WOULD rank, beside the
+# rule in force, without applying it. Same pattern as the curve-tail review —
+# the implementation runs on real days before its date is announced, so the
+# switch, when it comes, changes nothing that has not already been seen.
+PREVIEW_ENV = "SN21_STANDING_AGE_BASIS_PREVIEW"
+
+
+def preview_enabled(environ=os.environ) -> bool:
+    return (environ.get(PREVIEW_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def standing_preview(root: str, as_of: date, environ=os.environ,
+                     model_since: dict | None = None,
+                     placement_floor: float | None = None) -> dict:
+    """The prediction-day standing computed as if in force today, beside the
+    standing actually in force, per hotkey with a rank under each. Pure
+    apart from reading receipts and the model_since file. Not a control:
+    nothing here reaches weights, the audit or the report — it is written to
+    the operator's own store and summarised in the run log."""
+    from hope.scoring.episode_average import (
+        AGE_BASIS_EFFECTIVE_FROM_ENV, AGE_BASIS_ENV, AGE_BASIS_PREDICTION,
+        PLACEMENT_FLOOR_PREDICTIONS, episode_weighted_average,
+        half_life_in_force, scored_prediction_count,
+    )
+    if placement_floor is None:
+        placement_floor = PLACEMENT_FLOOR_PREDICTIONS
+    forced = {k: v for k, v in dict(environ).items()
+              if k != AGE_BASIS_EFFECTIVE_FROM_ENV}
+    forced[AGE_BASIS_ENV] = AGE_BASIS_PREDICTION
+    if model_since is None:
+        from hope.scoring.model_epoch import load_model_since
+        model_since = load_model_since(root)
+
+    def ranked(env, since):
+        w = window_in_force(env, as_of)
+        hl = half_life_in_force(env, as_of)
+        prior = prior_mass_in_force(env, as_of)
+        stats: dict = {}
+        entries = load_relative_entries(root, as_of, w, environ=env,
+                                        model_since=since, stats=stats)
+        vals = {}
+        for hk, eps in entries.items():
+            if scored_prediction_count(eps, as_of, w) < placement_floor:
+                continue
+            v = episode_weighted_average(eps, as_of, half_life_days=hl,
+                                         window_days=w, prior_mass=prior)
+            if v is not None:
+                vals[hk] = v
+        order = sorted(vals.items(), key=lambda kv: (-kv[1], kv[0]))
+        return ({hk: {"relative": round(v, 6), "rank": i}
+                 for i, (hk, v) in enumerate(order, 1)},
+                {"window_days": w, "half_life_days": hl, "prior_mass": prior}, stats)
+
+    current, current_params, _ = ranked(environ, None)
+    preview, preview_params, preview_stats = ranked(forced, model_since or None)
+    top_now = {hk for hk, r in current.items() if r["rank"] <= 20}
+    top_new = {hk for hk, r in preview.items() if r["rank"] <= 20}
+    rows = {}
+    for hk in set(current) | set(preview):
+        rows[hk] = {
+            "current_rank": (current.get(hk) or {}).get("rank"),
+            "current_relative": (current.get(hk) or {}).get("relative"),
+            "preview_rank": (preview.get(hk) or {}).get("rank"),
+            "preview_relative": (preview.get(hk) or {}).get("relative"),
+        }
+    return {
+        "as_of": as_of.isoformat(),
+        "note": ("dry run: the prediction-day basis computed beside the rule in "
+                 "force; standings before earning controls; nothing applied"),
+        "current": current_params,
+        "preview": {**preview_params,
+                    "age_basis": "prediction_day",
+                    "previous_model_weight": previous_model_weight(forced),
+                    "previous_model_threshold": previous_model_threshold(forced),
+                    "model_since_hotkeys": len(model_since or {}),
+                    "previous_model": preview_stats.get("previous_model")},
+        "summary": {
+            "hotkeys_ranked_current": len(current),
+            "hotkeys_ranked_preview": len(preview),
+            "top20_seats_changed": len(top_new - top_now),
+            "enter_top20": sorted(top_new - top_now),
+            "leave_top20": sorted(top_now - top_new),
+        },
+        "hotkeys": rows,
+    }
+
+
 def load_standing_entries(root: str, as_of: date, environ=os.environ,
                           window_days: int | None = None,
                           model_since: dict | None = None,

@@ -680,7 +680,8 @@ def stage_settle(ledger_root, day):
     # being knowable only from the published penalty file.
     return {k: v for k, v in summary.items()
             if k in ("day", "settle", "receipt", "publish", "weights",
-                     "collateral_floor_alpha", "absence_penalty")}
+                     "collateral_floor_alpha", "absence_penalty",
+                     "standing_preview")}
 
 
 def stage_publish_weights(ledger_root, day):

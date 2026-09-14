@@ -543,7 +543,12 @@ switches the standing to prediction-day ages on that date (window 42, prior
 100, previous-model entries × 0.25 above 250 mass; overrides
 `SN21_STANDING_WINDOW_DAYS_V2`, `SN21_STANDING_PRIOR_MASS_V2`,
 `SN21_PREVIOUS_MODEL_WEIGHT`, `SN21_PREVIOUS_MODEL_THRESHOLD`). Unset =
-the settle-day rule. The shadow stage writes `model_since.json` (which
+the settle-day rule. `SN21_STANDING_AGE_BASIS_PREVIEW=1` (with the basis
+variables unset) runs a dry run each settle: the prediction-day standing is
+computed beside the rule in force and written to
+`<ledger>/standing_preview/<day>.json`, with a `[standing-preview]` log line
+and a `standing_preview` block in the heartbeat; nothing reaches the vector,
+the audit or the report. The shadow stage writes `model_since.json` (which
 digest each hotkey runs, since when) beside the ledger; the settle log's
 `[settle]` summary and the audit's `standing_method.previous_model` say who
 was discounted. Receipts gain `predicted_on` per entry from the same date.
