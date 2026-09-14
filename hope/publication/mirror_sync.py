@@ -70,6 +70,11 @@ def _read_envelope(path: str) -> dict:
         return json.load(fh)
 
 
+# Publish the standing dry run as a feed (see build_mirror_items). Off by
+# default: the operator decides when miners see it.
+PREVIEW_PUBLISH_ENV = "SN21_STANDING_PREVIEW_PUBLISH"
+
+
 def _feed_days(root: str, feed_dir: str) -> list[str]:
     d = os.path.join(root, feed_dir)
     if not os.path.isdir(d):
@@ -128,6 +133,19 @@ def build_mirror_items(ledger_root: str,
             continue
         items.append(_doc(f"/v1/daily/{day}/allocation-audit",
                           os.path.join(ledger_root, "allocation_audit", f"{day}.json")))
+
+    # The standing dry run (rule amendment 2026-09-14) is published only when
+    # the operator says so: it is what the amended rule WOULD rank, beside the
+    # rule in force, so miners can see how the switch would move them before
+    # it applies. Off by default — the file stays in the operator's store.
+    if (os.environ.get(PREVIEW_PUBLISH_ENV) or "").strip().lower() in ("1", "true", "yes", "on"):
+        prev_days = _feed_days(ledger_root, "standing_preview")
+        ship_prev = set(prev_days if recent_days is None else prev_days[-recent_days:])
+        for day in prev_days:
+            if day not in ship_prev:
+                continue
+            items.append(_doc(f"/v1/daily/{day}/standing-preview",
+                              os.path.join(ledger_root, "standing_preview", f"{day}.json")))
 
     acc_days = _feed_days(ledger_root, "accuracy")
     ship_acc = set(acc_days if recent_days is None else acc_days[-recent_days:])

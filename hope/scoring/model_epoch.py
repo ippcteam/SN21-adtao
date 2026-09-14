@@ -79,17 +79,24 @@ def apply_previous_model_discount(
     weight: float,
     threshold_mass: float,
 ) -> tuple[dict[str, list[ScoredEpisode]], dict]:
-    """Scale the weight of entries predicted before a hotkey's current model
-    by `weight`, once the current model's entries inside the window carry at
-    least `threshold_mass` of prediction mass. Pure.
+    """Scale the weight of entries predicted before a hotkey's current model,
+    in proportion to how much evidence the current model has shown. Pure.
+
+    The factor falls linearly from 1.0 at zero current-model mass to `weight`
+    at `threshold_mass` (and stays there above it): a commit that has shown
+    nothing sheds nothing, a model with half the floor's evidence is half-way
+    there, and there is no day on which a standing jumps. Miner feedback of
+    14 September 2026 on the first cut, which held the old entries at full
+    weight until the threshold and then cut them in one step.
 
     An entry's prediction day is `aged_from` (set by the receipt loader under
     the prediction-day basis); an entry without one is left alone. Hotkeys
     absent from `model_since` are left alone. Returns the new mapping and a
-    stats block for the audit.
+    stats block for the audit, with the factor applied per discounted hotkey.
     """
     out: dict[str, list[ScoredEpisode]] = {}
     discounted_hotkeys: list[str] = []
+    factors: dict[str, float] = {}
     discounted_entries = 0
     for hk, eps in entries.items():
         since = model_since.get(hk)
@@ -107,18 +114,25 @@ def apply_previous_model_discount(
                 current_mass += ep.weight
             else:
                 previous.append(i)
-        if not previous or current_mass < threshold_mass:
+        progress = (min(1.0, current_mass / threshold_mass)
+                    if threshold_mass > 0 else 1.0)
+        factor = 1.0 - (1.0 - weight) * progress
+        if not previous or factor >= 1.0:
             out[hk] = list(eps)
             continue
         scaled = list(eps)
         for i in previous:
             ep = eps[i]
             scaled[i] = ScoredEpisode(score=ep.score, scored_on=ep.scored_on,
-                                      weight=ep.weight * weight,
+                                      weight=ep.weight * factor,
                                       aged_from=ep.aged_from)
         out[hk] = scaled
         discounted_hotkeys.append(hk)
+        factors[hk] = round(factor, 4)
         discounted_entries += len(previous)
     return out, {"weight": weight, "threshold_mass": threshold_mass,
+                 "shape": "linear from 1.0 at zero current-model mass to "
+                          "`weight` at `threshold_mass`",
                  "hotkeys_discounted": sorted(discounted_hotkeys),
+                 "factor": {hk: factors[hk] for hk in sorted(factors)},
                  "entries_discounted": discounted_entries}

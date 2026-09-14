@@ -548,7 +548,9 @@ variables unset) runs a dry run each settle: the prediction-day standing is
 computed beside the rule in force and written to
 `<ledger>/standing_preview/<day>.json`, with a `[standing-preview]` log line
 and a `standing_preview` block in the heartbeat; nothing reaches the vector,
-the audit or the report. The shadow stage writes `model_since.json` (which
+the audit or the report. `SN21_STANDING_PREVIEW_PUBLISH=1` additionally
+mirrors those files as `/v1/daily/<day>/standing-preview` so miners can see
+the dry run; leave it unset until the announcement says the preview is public. The shadow stage writes `model_since.json` (which
 digest each hotkey runs, since when) beside the ledger; the settle log's
 `[settle]` summary and the audit's `standing_method.previous_model` say who
 was discounted. Receipts gain `predicted_on` per entry from the same date.

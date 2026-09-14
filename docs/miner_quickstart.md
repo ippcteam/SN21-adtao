@@ -495,9 +495,9 @@ Neither rule ever changes past days, scores, or receipts.
 **Standing rule change, announced 14 September 2026, effective date to follow** (details in
 [SN21_SCORING.md](./SN21_SCORING.md), "Current model, current form"): entries
 age from the day the prediction was made rather than the day it settled
-(half-life 7 days, window 42 days, prior 100), and once your current model
-carries 250 prediction-mass of its own evidence, entries from the model it
-replaced count at a quarter. The model you are running is what ranks you. Nothing changes until the effective date is announced.
+(half-life 7 days, window 42 days, prior 100), and entries from the model
+you replaced are weighted down in proportion to the evidence your current
+model has shown, reaching a quarter once it carries 250 prediction-mass. The model you are running is what ranks you. Nothing changes until the effective date is announced.
 
 Burn rates in the transition plan are **planned and indicative only** and may
 change to protect alpha for holders.

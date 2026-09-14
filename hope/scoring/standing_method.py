@@ -550,6 +550,10 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
                     "previous_model_weight": previous_model_weight(forced),
                     "previous_model_threshold": previous_model_threshold(forced),
                     "model_since_hotkeys": len(model_since or {}),
+                    # Each hotkey's boundary, so a miner can confirm theirs
+                    # before it counts (miner request, 14 September 2026).
+                    "model_since": {hk: d.isoformat()
+                                    for hk, d in sorted((model_since or {}).items())},
                     "previous_model": preview_stats.get("previous_model")},
         "summary": {
             "hotkeys_ranked_current": len(current),

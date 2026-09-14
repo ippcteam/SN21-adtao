@@ -68,6 +68,14 @@ the point estimates and need no parameters at all.
 The document also records whether the reference-model exemption was in
 force that day, so its absence is visible rather than assumed.
 
+While a standing rule change is announced but not yet in force, the
+operator may publish a daily dry run of it at
+`/v1/daily/{day}/standing-preview`: for every hotkey, the rank and relative
+standing under the rule in force and under the announced rule, the seats of
+the paid set that would change, each hotkey's model boundary
+(`preview.model_since`) and the previous-model factor applied. It is a
+preview only; the day's audit and vector come from the rule in force.
+
 A day can have no receipt of its own: when every outcome that settled on
 it was scored by a later run, the rows travel in that run's receipt. The
 duplicate-model and lineage controls then read the most recent receipt

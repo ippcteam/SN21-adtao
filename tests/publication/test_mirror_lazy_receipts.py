@@ -104,3 +104,22 @@ def test_the_file_record_never_travels_as_a_mirrored_path(tmp_path, mirror):
         rec = json.load(fh)
     assert mirror_sync._FILES_KEY in rec
     assert f"/v1/daily/{DAY}/receipt" in rec[mirror_sync._FILES_KEY]
+
+
+def test_the_standing_preview_is_mirrored_only_when_the_operator_says_so(tmp_path, monkeypatch):
+    import json as _json
+    import os as _os
+    from hope.publication.mirror_sync import build_mirror_items
+    root = str(tmp_path)
+    d = _os.path.join(root, "standing_preview"); _os.makedirs(d)
+    with open(_os.path.join(d, "2026-09-15.json"), "w") as f:
+        _json.dump({"as_of": "2026-09-15"}, f)
+    from hope.publication import registration_status_feed
+    monkeypatch.setattr(registration_status_feed, "build_registration_status_document",
+                        lambda *_a, **_k: {"feed": "stub"})
+    monkeypatch.delenv("SN21_STANDING_PREVIEW_PUBLISH", raising=False)
+    paths = {it["path"] for it in build_mirror_items(root, lazy=True)}
+    assert "/v1/daily/2026-09-15/standing-preview" not in paths
+    monkeypatch.setenv("SN21_STANDING_PREVIEW_PUBLISH", "1")
+    items = {it["path"]: it for it in build_mirror_items(root, lazy=True)}
+    assert items["/v1/daily/2026-09-15/standing-preview"]["file"].endswith("standing_preview/2026-09-15.json")

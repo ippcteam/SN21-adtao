@@ -161,19 +161,29 @@ class TestThePreviousModelDiscount:
                 for _ in range(int(current_mass))]
         return {"m": eps}
 
-    def test_below_the_threshold_the_old_entries_count_in_full(self):
+    def test_a_model_that_has_shown_nothing_sheds_nothing(self):
         out, stats = apply_previous_model_discount(
-            self._entries(current_mass=10), self.SINCE, DAY, 42, 0.25, 250)
+            self._entries(current_mass=0), self.SINCE, DAY, 42, 0.25, 250)
         assert all(e.weight == 1.0 for e in out["m"])
         assert stats["hotkeys_discounted"] == []
 
-    def test_at_the_threshold_the_old_entries_count_at_the_fraction(self):
+    def test_the_discount_ramps_linearly_with_the_current_models_mass(self):
+        # half the floor's evidence: half-way from 1.0 to 0.25
         out, stats = apply_previous_model_discount(
-            self._entries(current_mass=250), self.SINCE, DAY, 42, 0.25, 250)
-        weights = sorted(e.weight for e in out["m"])
-        assert weights[:3] == [0.25, 0.25, 0.25] and set(weights[3:]) == {1.0}
-        assert stats == {"weight": 0.25, "threshold_mass": 250,
-                         "hotkeys_discounted": ["m"], "entries_discounted": 3}
+            self._entries(current_mass=125), self.SINCE, DAY, 42, 0.25, 250)
+        old = sorted(e.weight for e in out["m"])[:3]
+        assert old == pytest.approx([0.625, 0.625, 0.625])
+        assert stats["factor"] == {"m": 0.625}
+
+    def test_at_and_above_the_threshold_the_old_entries_count_at_the_fraction(self):
+        for mass in (250, 400):
+            out, stats = apply_previous_model_discount(
+                self._entries(current_mass=mass), self.SINCE, DAY, 42, 0.25, 250)
+            weights = sorted(e.weight for e in out["m"])
+            assert weights[:3] == [0.25, 0.25, 0.25] and set(weights[3:]) == {1.0}
+            assert stats["hotkeys_discounted"] == ["m"]
+            assert stats["factor"] == {"m": 0.25}
+            assert stats["entries_discounted"] == 3
 
     def test_a_hotkey_with_no_known_model_is_left_alone(self):
         out, stats = apply_previous_model_discount(
