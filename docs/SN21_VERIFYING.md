@@ -68,6 +68,13 @@ the point estimates and need no parameters at all.
 The document also records whether the reference-model exemption was in
 force that day, so its absence is visible rather than assumed.
 
+A day can have no receipt of its own: when every outcome that settled on
+it was scored by a later run, the rows travel in that run's receipt. The
+duplicate-model and lineage controls then read the most recent receipt
+before the day (at most three days back), and `controls.one_payer.receipt_day`
+and `controls.lineage.receipt_day` name the day they read, so a grouping can
+still be recomputed from a published document.
+
 The alpha hold ([SN21_STAKING.md](./SN21_STAKING.md)) is published in the
 same document under `alpha_hold`: the floor in force, whether it was
 enforced on that vector, every earning hotkey found below the floor with the

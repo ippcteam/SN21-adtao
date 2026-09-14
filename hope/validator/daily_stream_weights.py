@@ -487,6 +487,9 @@ def compute_daily_allocation(
             "days_indexed": (one_payer_stats or {}).get("days_indexed"),
             "groups": (one_payer_stats or {}).get("groups"),
             "reason": (one_payer_stats or {}).get("reason"),
+            # Which day's receipt the verdict was read from: the day's own,
+            # or the most recent one before it when the day has none.
+            "receipt_day": (one_payer_stats or {}).get("receipt_day"),
             # The two exact tests report separately. Byte-identical predictions
             # and identical point estimates are different claims about a miner,
             # and a single merged count cannot be checked against either.
@@ -505,6 +508,7 @@ def compute_daily_allocation(
             "params_version": (lineage_audit or {}).get("params_version"),
             "exemption_configured": (lineage_audit or {}).get(
                 "exemption_configured"),
+            "receipt_day": (lineage_audit or {}).get("receipt_day"),
             "exempt_groups": len((lineage_audit or {}).get("exempt_groups")
                                  or []),
         },
@@ -901,6 +905,32 @@ def one_payer_suppression_subprocess(
         return frozenset()
 
 
+# How far back a receipt may stand in for a day that has none of its own.
+# A day gets no receipt when every outcome that settled on it was scored by
+# a later run (the rows travel in that run's receipt). The copy verdicts are
+# about the models, which do not change because a receipt is dated a day
+# later — but a week-old receipt would be describing models that may have
+# been replaced since, so the stand-in is bounded.
+RECEIPT_STAND_IN_MAX_DAYS = 3
+
+
+def receipt_stand_in_day(history, day: date) -> str | None:
+    """The most recent receipt day before `day`, within the bound, or None.
+
+    `history` is a sequence of (day_name, ...) pairs in ascending day order,
+    as the receipt readers already hold it.
+    """
+    candidates = [d for d, *_ in history if d < str(day)]
+    if not candidates:
+        return None
+    latest = max(candidates)
+    try:
+        age = (day - date.fromisoformat(latest)).days
+    except ValueError:
+        return None
+    return latest if age <= RECEIPT_STAND_IN_MAX_DAYS else None
+
+
 def one_payer_suppression_from_receipts(root: str, day: date, environ,
                                         stats: dict | None = None) -> frozenset:
     """The one-payer exclusion set for `day`, derived from published receipts.
@@ -964,11 +994,27 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ,
                 if day_name == str(day):
                     today[kind] = prints
 
+        # A day with no receipt of its own — every outcome that settled on it
+        # was scored by a later run and travels in that run's receipt — has
+        # no fingerprints "today", and this used to suppress nobody: a vector
+        # published on such a day paid every copy the day before had
+        # excluded. The verdict is about the MODELS, which did not change
+        # overnight, so the most recent receipt before the day stands in,
+        # and the audit names which day's receipt the verdict came from.
+        receipt_day = str(day)
+        if not today["exact"] and not today["point"]:
+            fallback = receipt_stand_in_day(history_days["exact"], day)
+            if fallback is not None:
+                receipt_day = fallback
+                for kind in kinds:
+                    today[kind] = dict(next(
+                        (p for d_, p in history_days[kind] if d_ == fallback), {}))
         if stats is not None:
             stats["days_indexed"] = len(history_days["exact"])
             stats["fingerprints_today"] = len(today["exact"])
             stats["point_estimates_on"] = "point" in kinds
             stats["point_fingerprints_today"] = len(today["point"])
+            stats["receipt_day"] = receipt_day
 
         if not today["exact"] and not today["point"]:
             return frozenset()
@@ -1188,7 +1234,13 @@ def lineage_from_receipts(root: str, day: date, environ):
     first_seen: dict = {}
     predictions: dict = {}
     actuals: dict = {}
-    for rank, day_name in enumerate(d for d in days if d <= str(day)):
+    on_or_before = [d for d in days if d <= str(day)]
+    # No receipt for the day itself (see one_payer_suppression_from_receipts):
+    # the most recent receipt before it carries the behaviour the grouping is
+    # judged on, and the audit names it.
+    receipt_day = str(day) if str(day) in on_or_before else \
+        receipt_stand_in_day([(d, None) for d in on_or_before], day)
+    for rank, day_name in enumerate(on_or_before):
         try:
             with open(os.path.join(receipt_dir_path, f"{day_name}.json")) as fh:
                 envelope = json.load(fh)
@@ -1200,7 +1252,7 @@ def lineage_from_receipts(root: str, day: date, environ):
             hotkey = entry.get("miner")
             if hotkey and hotkey not in first_seen:
                 first_seen[hotkey] = rank
-        if day_name == str(day):
+        if day_name == receipt_day:
             predictions = predictions_from_receipt(entries)
             actuals = actuals_from_receipt(metrics.get("outcomes", []))
 
@@ -1227,6 +1279,7 @@ def lineage_from_receipts(root: str, day: date, environ):
         audit = dict(audit)
         audit["params_version"] = params.version
         audit["exemption_configured"] = bool(exempt)
+        audit["receipt_day"] = receipt_day
         if exempted:
             audit["exempt_groups"] = [
                 {"payee": g.original, "stood_down": list(g.copies),
