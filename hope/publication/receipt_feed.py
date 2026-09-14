@@ -76,6 +76,7 @@ def build_receipt_metrics(
     environ=None,
     censored: dict | None = None,
     transition_map: dict | None = None,
+    predicted_on_map: dict | None = None,
 ) -> dict:
     """The receipt payload. Deterministic: every list sorted on a total key,
     every float already rounded upstream — two validators building from the
@@ -125,6 +126,12 @@ def build_receipt_metrics(
             # be recomputed from the receipt alone (rule amendment 2026-09-05).
             "resolution": r.resolution,
             "weight": entry_weight(h, r.resolution),
+            # The basket day the prediction was made on (rule amendment
+            # 2026-09-14: standings age entries from this day, not the settle
+            # day). Only present when the builder was given a map; a reader
+            # of an older receipt derives it as finalized_on − horizon − 8.
+            **({"predicted_on": str(predicted_on_map[eid])}
+               if predicted_on_map is not None and eid in predicted_on_map else {}),
             # Which change type this entry scored (Rob, 21 Aug: miners must
             # see WHERE they win and lose, and the receipt is the surface
             # they already trust). Only present when the builder was given a
@@ -206,6 +213,7 @@ def run_daily_receipt(
     environ=None,
     censored: dict | None = None,
     transition_map: dict | None = None,
+    predicted_on_map: dict | None = None,
 ) -> ReceiptPublish:
     """Publish the day's receipt. Append-only; a republished day raises.
 
@@ -229,7 +237,8 @@ def run_daily_receipt(
     metrics = build_receipt_metrics(outcomes, prediction_index, results,
                                     components, environ=environ,
                                     censored=censored,
-                                    transition_map=transition_map)
+                                    transition_map=transition_map,
+                                    predicted_on_map=predicted_on_map)
     doc = build_document(RECEIPT_FEED_NAME, day_s, metrics, generated_at,
                          prev_sha256=(head or {}).get("sha256"))
     att = attest(doc, signing_key)

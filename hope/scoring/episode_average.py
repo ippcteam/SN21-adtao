@@ -100,11 +100,93 @@ def half_life_in_force(environ=os.environ, day: date | None = None) -> float:
     return half_life_from_env(environ) if amendment_in_force(environ, day) else DEFAULT_HALF_LIFE_DAYS
 
 
+# ---- rule amendment 2026-09-14: "current model, current form" --------------
+#
+# Entries age from the day the PREDICTION was made, not the day its outcome
+# settled, so a replaced model's late-settling results do not enter a standing
+# as fresh evidence. The window widens so the 28-day horizon (which lands at
+# age 36) still counts, and the prior toward the field is lowered because the
+# effective evidence mass under prediction-day ages is smaller. Entries from
+# a hotkey's previous model count at a fraction once its current model has
+# the placement floor's worth of evidence (hope.scoring.model_epoch).
+#
+# Wired like every other published change: announced first, applied from a
+# date. Unset = the settle-day rule exactly as before this code existed.
+AGE_BASIS_ENV = "SN21_STANDING_AGE_BASIS"
+AGE_BASIS_EFFECTIVE_FROM_ENV = "SN21_STANDING_AGE_BASIS_EFFECTIVE_FROM"
+AGE_BASIS_SETTLE = "settle_day"
+AGE_BASIS_PREDICTION = "prediction_day"
+PREDICTION_BASIS_WINDOW_DAYS = 42
+PREDICTION_BASIS_PRIOR_MASS = 100.0
+PREDICTION_BASIS_WINDOW_ENV = "SN21_STANDING_WINDOW_DAYS_V2"
+PREDICTION_BASIS_PRIOR_ENV = "SN21_STANDING_PRIOR_MASS_V2"
+PREVIOUS_MODEL_WEIGHT = 0.25
+PREVIOUS_MODEL_THRESHOLD_MASS = 250.0
+PREVIOUS_MODEL_WEIGHT_ENV = "SN21_PREVIOUS_MODEL_WEIGHT"
+PREVIOUS_MODEL_THRESHOLD_ENV = "SN21_PREVIOUS_MODEL_THRESHOLD"
+# Older receipts carry no prediction day; it is derived from the settle
+# schedule (action-window end + 1 + horizon + 7-day settling window).
+SETTLE_LAG_DAYS = 8
+
+
+def age_basis_effective_from(environ=os.environ) -> date | None:
+    raw = (environ.get(AGE_BASIS_EFFECTIVE_FROM_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def prediction_basis_in_force(environ=os.environ, day: date | None = None) -> bool:
+    """True when entries age from their prediction day on `day`: the
+    relative amendment is in force, the basis is configured, and its
+    effective date (if any) has arrived. Pure."""
+    if not amendment_in_force(environ, day):
+        return False
+    if (environ.get(AGE_BASIS_ENV) or "").strip().lower() != AGE_BASIS_PREDICTION:
+        return False
+    start = age_basis_effective_from(environ)
+    if start is None:
+        return True
+    return (day or date.today()) >= start
+
+
+def age_basis_in_force(environ=os.environ, day: date | None = None) -> str:
+    return AGE_BASIS_PREDICTION if prediction_basis_in_force(environ, day) else AGE_BASIS_SETTLE
+
+
+def _float_env(environ, name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        v = float((environ.get(name) or "").strip())
+        return v if v >= minimum else default
+    except (TypeError, ValueError):
+        return default
+
+
+def previous_model_weight(environ=os.environ) -> float:
+    v = _float_env(environ, PREVIOUS_MODEL_WEIGHT_ENV, PREVIOUS_MODEL_WEIGHT)
+    return v if 0.0 <= v <= 1.0 else PREVIOUS_MODEL_WEIGHT
+
+
+def previous_model_threshold(environ=os.environ) -> float:
+    return _float_env(environ, PREVIOUS_MODEL_THRESHOLD_ENV, PREVIOUS_MODEL_THRESHOLD_MASS)
+
+
 def window_in_force(environ=os.environ, day: date | None = None) -> int:
+    if prediction_basis_in_force(environ, day):
+        try:
+            v = int((environ.get(PREDICTION_BASIS_WINDOW_ENV) or "").strip())
+            return v if v > 0 else PREDICTION_BASIS_WINDOW_DAYS
+        except (TypeError, ValueError):
+            return PREDICTION_BASIS_WINDOW_DAYS
     return window_from_env(environ) if amendment_in_force(environ, day) else DEFAULT_WINDOW_DAYS
 
 
 def prior_mass_in_force(environ=os.environ, day: date | None = None) -> float:
+    if prediction_basis_in_force(environ, day):
+        return _float_env(environ, PREDICTION_BASIS_PRIOR_ENV, PREDICTION_BASIS_PRIOR_MASS)
     return prior_mass_from_env(environ) if amendment_in_force(environ, day) else 0.0
 
 
@@ -138,6 +220,16 @@ class ScoredEpisode:
     score: float
     scored_on: date
     weight: float = 1.0
+    # The day the entry's age is measured from when it differs from the day
+    # it was scored: the PREDICTION day under the prediction-day basis (rule
+    # amendment 2026-09-14). None = age from scored_on, the settle-day rule.
+    # scored_on itself keeps its meaning everywhere else (tenure counts
+    # distinct settle days; the receipt is dated by it).
+    aged_from: date | None = None
+
+    @property
+    def age_day(self) -> date:
+        return self.aged_from or self.scored_on
 
 
 def episode_weight(age_days: float, half_life_days: float = DEFAULT_HALF_LIFE_DAYS) -> float:
@@ -179,7 +271,7 @@ def episode_weighted_average(
     num = 0.0
     den = 0.0
     for ep in episodes:
-        age = (as_of - ep.scored_on).days
+        age = (as_of - ep.age_day).days
         if age < 0 or age > window_days:
             continue
         w = episode_weight(age, half_life_days) * ep.weight
@@ -201,7 +293,7 @@ def scored_prediction_count(
         window_days = window_in_force(day=as_of)
     return sum(
         ep.weight for ep in episodes
-        if 0 <= (as_of - ep.scored_on).days <= window_days
+        if 0 <= (as_of - ep.age_day).days <= window_days
     )
 
 

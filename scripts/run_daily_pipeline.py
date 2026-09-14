@@ -295,6 +295,15 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
     models, stats = admitted_models(
         ledger_root, os.environ.get("SN21_NETWORK", "finney"),
         int(os.environ.get("SN21_NETUID", "21")), as_of)
+    # Which model each hotkey runs today and since when — the boundary the
+    # standing's previous-model discount reads (rule amendment 2026-09-14).
+    # Written from the registry the models are run from, so the two cannot
+    # disagree; the settle stage and the audit read the file.
+    try:
+        from hope.scoring.model_epoch import write_model_since
+        log(f"[shadow] model_since: {write_model_since(ledger_root, models)} hotkeys")
+    except Exception as exc:                                   # noqa: BLE001
+        log(f"[shadow] model_since not written ({exc}) — no previous-model discount today")
     if include_reference:
         models.append(ShadowModel(hotkey=REFERENCE_HOTKEY,
                                   image_digest=REFERENCE_IMAGE,
@@ -514,6 +523,41 @@ def write_transition_key_map(ledger_root: str, basket_key: str,
     return len(m)
 
 
+def _basket_day_provider(ledger_root):
+    """episode_id -> basket day (YYYY-MM-DD), from the same per-basket map
+    files the transition-key provider reads: each file is named for its
+    basket, and every episode in it was predicted on that basket's day. Fails
+    soft to a partial map — an episode with no known day is published
+    without `predicted_on` and a reader derives it from the settle schedule."""
+    import json as _json
+
+    def provider(episode_ids):
+        wanted = {str(e) for e in episode_ids}
+        out: dict = {}
+        root = tkeys_dir(ledger_root)
+        if not os.path.isdir(root):
+            return out
+        for fn in sorted(os.listdir(root)):
+            if not (fn.startswith("BD-") and fn.endswith(".json")):
+                continue
+            day = fn[3:-5]
+            try:
+                date.fromisoformat(day)
+            except ValueError:
+                continue
+            try:
+                with open(os.path.join(root, fn)) as fh:
+                    m = _json.load(fh)
+            except Exception:  # noqa: BLE001 — one bad file must not kill the stage
+                continue
+            for eid in (m.keys() if isinstance(m, dict) else []):
+                if eid in wanted:
+                    out[eid] = day
+        return out
+
+    return provider
+
+
 def _transition_key_provider(ledger_root):
     """episode_id -> transition_key, from the per-basket maps in tkeys/.
 
@@ -627,6 +671,7 @@ def stage_settle(ledger_root, day):
         coldkey_reader=coldkey_reader,
         alpha_reader=alpha_reader,
         transition_key_provider=_transition_key_provider(ledger_root),
+        basket_day_provider=_basket_day_provider(ledger_root),
         type_weight_fn=_type_weight_fn(ledger_root),
     )
     # Trim the noisy nested prediction index out of the summary. Keep

@@ -167,6 +167,10 @@ def run_daily_loop(
     day_volume_provider: Callable[[date], int] | None = None,
     vertical_map_provider: Callable[[list], dict] | None = None,
     transition_key_provider: Callable[[list], dict] | None = None,
+    # episode_id -> basket day the prediction was made on, for the receipt's
+    # `predicted_on` field (rule amendment 2026-09-14). None keeps the
+    # receipt byte-identical to the pre-amendment shape.
+    basket_day_provider: Callable[[list], dict] | None = None,
     # Change-type weight multiplier for NEW standing-ledger entries
     # (type_weights.py). None = weight 1.0 everywhere, identical to the
     # pre-type-weight pipeline. Only ever wired from a RATIFIED table —
@@ -494,6 +498,19 @@ def run_daily_loop(
                 except Exception as e:                       # noqa: BLE001
                     summary["receipt_repair"] = {"error": str(e)}
 
+            # The basket day of every episode about to be published, so a
+            # reader of the receipt ages the entry from the day it was
+            # predicted without deriving it from the settle schedule.
+            _predicted_on_map = None
+            if basket_day_provider is not None and horizon_results:
+                try:
+                    _predicted_on_map = basket_day_provider(
+                        sorted({str(r.episode_id) for r in horizon_results}))
+                except Exception as exc:                     # noqa: BLE001
+                    print(f"[receipt] basket-day map unavailable ({exc}) — "
+                          f"publishing without predicted_on", flush=True)
+                    _predicted_on_map = None
+
             # RECEIPT FIRST, deliberately: the accuracy document embeds the
             # receipt's sha256 and the chain anchors the accuracy document,
             # so one anchor covers both (governance ruling 2026-08-05: miners must be able
@@ -511,6 +528,7 @@ def run_daily_loop(
                 # the pre-21-Aug shape.
                 transition_map=(_tkey_map if transition_key_provider is not None
                                 else None),
+                predicted_on_map=_predicted_on_map,
             )
             summary["receipt"] = {"published": receipt.published,
                                   "sha256": receipt.sha256,

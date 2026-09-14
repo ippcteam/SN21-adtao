@@ -43,7 +43,9 @@ class TestDefaultsReproduceTheRuleInForce:
             "half_life_days": 12.0, "prior_mass": 0.0, "window_days": 35,
             "promotion_margin_abs": None, "curve_score_threshold": 0.0,
             "curve_tail_decay": 0.5, "curve_tail_configured": None,
-            "curve_tail_effective_from": None}
+            "curve_tail_effective_from": None,
+            "age_basis": "settle_day", "age_basis_effective_from": None,
+            "previous_model_weight": None, "previous_model_threshold": None}
 
     def test_absolute_mode_reads_the_ledger(self, tmp_path):
         root = str(tmp_path)
@@ -164,7 +166,9 @@ class TestWindowAndPromotionMargin:
             "half_life_days": 7.0, "prior_mass": 250.0,
             "window_days": 28, "promotion_margin_abs": 0.01, "curve_score_threshold": -1.0,
             "curve_tail_decay": 0.5, "curve_tail_configured": None,
-            "curve_tail_effective_from": None}
+            "curve_tail_effective_from": None,
+            "age_basis": "settle_day", "age_basis_effective_from": None,
+            "previous_model_weight": None, "previous_model_threshold": None}
         assert standing_method.promotion_margin_abs({}) is None
 
     def test_absolute_margin_replaces_relative_test(self):

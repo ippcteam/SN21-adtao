@@ -82,7 +82,7 @@ from hope.scoring.duplication import (
     suppressed_copies,
 )
 from hope.scoring.episode_average import (
-    PLACEMENT_FLOOR_PREDICTIONS, ScoredEpisode, standing)
+    PLACEMENT_FLOOR_PREDICTIONS, ScoredEpisode, prediction_basis_in_force, standing)
 from hope.scoring.weight_curve import CurveParams, curve_weights
 
 logger = logging.getLogger(__name__)
@@ -144,10 +144,24 @@ def absolute_standings(root: str, day: date, environ=os.environ) -> dict:
     public board can show accuracy as the headline number."""
     from hope.scoring.episode_average import (
         episode_weighted_average, half_life_in_force, window_in_force)
+    from hope.scoring.standing_method import load_relative_entries, relative_enabled
     w = window_in_force(environ, day)
     hl = half_life_in_force(environ, day)
+    if relative_enabled(environ, day):
+        # The same entries, dating and weights the relative standing ranks
+        # on — absolute scores instead of edges — so the headline number and
+        # the rank describe one window. Under the prediction-day basis this
+        # is also where the previous-model discount reaches the headline.
+        model_since: dict | None = None
+        if prediction_basis_in_force(environ, day):
+            from hope.scoring.model_epoch import load_model_since
+            model_since = load_model_since(root) or None
+        by_hotkey = load_relative_entries(root, day, w, environ=environ,
+                                          model_since=model_since, relative=False)
+    else:
+        by_hotkey = standing_ledger.load_entries(root, as_of=day, window_days=w)
     out: dict = {}
-    for hk, eps in standing_ledger.load_entries(root, as_of=day, window_days=w).items():
+    for hk, eps in by_hotkey.items():
         avg = episode_weighted_average(eps, day, half_life_days=hl, window_days=w, prior_mass=0.0)
         if avg is not None:
             out[hk] = avg
@@ -606,7 +620,23 @@ def allocation_from_ledger(
     # Standing entries by the published method (hope.scoring.standing_method):
     # the ledger's absolute scores, or receipt-derived scores relative to the
     # field on the same episode when SN21_STANDING_MODE=episode_relative.
-    entries = load_standing_entries(root, day, environ)
+    # Under the prediction-day basis (rule amendment 2026-09-14) the executor's
+    # model_since map (which model each hotkey runs, since when) feeds the
+    # previous-model discount, and what the loader did is published with the
+    # method parameters so the day is recomputable from the audit.
+    _standing_stats: dict = {}
+    _model_since: dict = {}
+    if prediction_basis_in_force(environ, day):
+        from hope.scoring.model_epoch import load_model_since
+        _model_since = load_model_since(root)
+    entries = load_standing_entries(root, day, environ,
+                                    model_since=(_model_since or None),
+                                    stats=_standing_stats)
+    _standing_method = dict(method_params(environ, day))
+    if prediction_basis_in_force(environ, day):
+        _standing_method["model_since"] = {
+            hk: d.isoformat() for hk, d in sorted(_model_since.items())}
+        _standing_method["previous_model"] = _standing_stats.get("previous_model")
     state = standing_ledger.load_promotion_state(root)
 
     evicted: frozenset = frozenset()
@@ -680,7 +710,7 @@ def allocation_from_ledger(
         one_payer_on=one_payer_enabled(environ),
         one_payer_stats=one_payer_stats,
         lineage_on=lineage_params_from_env(environ).configured(),
-        standing_method=method_params(environ, day),
+        standing_method=_standing_method,
     )
 
     # BLAST RADIUS, declared not patched: with the flag on, evicting every

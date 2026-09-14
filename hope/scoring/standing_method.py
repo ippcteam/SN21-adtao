@@ -45,9 +45,15 @@ from hope.scoring import standing_ledger
 from hope.scoring.daily_score_flow import horizon_entry_weight
 from hope.scoring.episode_average import (
     DEFAULT_WINDOW_DAYS,
+    SETTLE_LAG_DAYS,
     ScoredEpisode,
+    age_basis_effective_from,
+    age_basis_in_force,
     amendment_in_force,
     half_life_in_force,
+    prediction_basis_in_force,
+    previous_model_threshold,
+    previous_model_weight,
     prior_mass_in_force,
     window_from_env,
     window_in_force,
@@ -211,6 +217,17 @@ def method_params(environ=os.environ, day: date | None = None) -> dict:
         "curve_tail_configured": curve_tail_configured(environ),
         "curve_tail_effective_from": (curve_tail_effective_from(environ).isoformat()
                                       if curve_tail_effective_from(environ) else None),
+        # Rule amendment 2026-09-14: which day an entry's age is measured
+        # from, and how a replaced model's entries are weighted once the
+        # current one has evidence. Settle-day values before the effective
+        # date, so a reader of the audit knows which rule ranked the day.
+        "age_basis": age_basis_in_force(environ, day),
+        "age_basis_effective_from": (age_basis_effective_from(environ).isoformat()
+                                     if age_basis_effective_from(environ) else None),
+        "previous_model_weight": (previous_model_weight(environ)
+                                  if prediction_basis_in_force(environ, day) else None),
+        "previous_model_threshold": (previous_model_threshold(environ)
+                                     if prediction_basis_in_force(environ, day) else None),
     }
 
 
@@ -255,19 +272,57 @@ def field_means(entries: list[dict]) -> dict[tuple[str, int], float]:
     return {k: sum(v) / len(v) for k, v in acc.items() if v}
 
 
+def predicted_on_of(entry: dict, scored_on: date) -> date:
+    """The day the entry's prediction was made: the receipt's `predicted_on`
+    when it carries one (receipts from the 2026-09-14 amendment on), else
+    derived from the settle schedule — settle = action-window end + 1 +
+    horizon + 7, so prediction day = settle day − horizon − 8. A late-measured
+    outcome derives an earlier (older) day than the truth, which only ever
+    weighs such an entry less, never more."""
+    raw = entry.get("predicted_on")
+    if raw:
+        try:
+            return date.fromisoformat(str(raw)[:10])
+        except ValueError:
+            pass
+    try:
+        horizon = int(entry.get("horizon_days") or 0)
+    except (TypeError, ValueError):
+        horizon = 0
+    return scored_on - timedelta(days=horizon + SETTLE_LAG_DAYS)
+
+
 def load_relative_entries(root: str, as_of: date,
                           window_days: int | None = None,
+                          environ=os.environ,
+                          model_since: dict | None = None,
+                          relative: bool = True,
+                          stats: dict | None = None,
                           ) -> dict[str, list[ScoredEpisode]]:
-    """hotkey -> relative ScoredEpisodes in the window, from receipts plus
-    the absence-penalty log net of cancellations."""
+    """hotkey -> ScoredEpisodes in the window, from receipts plus the
+    absence-penalty log net of cancellations. Relative to the field on the
+    same (episode, horizon) by default; `relative=False` keeps the absolute
+    scores (the board's headline accuracy) on the same entries, dating and
+    weights.
+
+    Under the prediction-day basis (rule amendment 2026-09-14) each entry is
+    aged from the day it was predicted (`aged_from`), the window is applied
+    to that day, and a hotkey's previous-model entries are discounted once
+    its current model carries the threshold mass (hope.scoring.model_epoch;
+    `model_since` = {hotkey: date the current model was admitted}).
+    """
     if window_days is None:
-        window_days = window_from_env()
+        window_days = window_in_force(environ, as_of)
+    by_prediction_day = prediction_basis_in_force(environ, as_of)
     files = _receipt_files(root, as_of, window_days)
-    sig = (root, as_of.isoformat(), window_days,
+    since_key = tuple(sorted((hk, d.isoformat()) for hk, d in (model_since or {}).items()))
+    sig = (root, as_of.isoformat(), window_days, by_prediction_day, relative,
            tuple((p, os.path.getmtime(p)) for _, p in files),
-           _penalty_signature(root))
+           _penalty_signature(root), since_key)
     hit = _CACHE.get("k")
     if hit and hit[0] == sig:
+        if stats is not None:
+            stats.update(hit[2])
         return {hk: list(v) for hk, v in hit[1].items()}
 
     out: dict[str, list[ScoredEpisode]] = defaultdict(list)
@@ -291,7 +346,9 @@ def load_relative_entries(root: str, as_of: date,
                     scored_on = date.fromisoformat(str(fo)[:10])
                 except ValueError:
                     pass
-            if scored_on < cutoff or scored_on > as_of:
+            aged_from = predicted_on_of(e, scored_on) if by_prediction_day else None
+            age_day = aged_from or scored_on
+            if age_day < cutoff or age_day > as_of:
                 continue
             # The receipt's own entry weight when it carries one (horizon
             # blend × episode weight, from the resolution gate); the plain
@@ -303,15 +360,28 @@ def load_relative_entries(root: str, as_of: date,
             if not w > 0:
                 w = horizon_entry_weight(key[1])
             out[miner].append(ScoredEpisode(
-                score=score - means[key], scored_on=scored_on, weight=w))
+                score=(score - means[key]) if relative else score,
+                scored_on=scored_on, weight=w, aged_from=aged_from))
     field_level = (sum(all_means) / len(all_means)) if all_means else 0.0
-    absence_value = PENALTY_SCORE - field_level
+    absence_value = (PENALTY_SCORE - field_level) if relative else PENALTY_SCORE
+    # An uncovered basket day is dated by that day under both bases: the
+    # prediction that was not made would have been made then.
     for hk, day, missed in _net_penalties(root, as_of, window_days):
         out[hk].extend(ScoredEpisode(score=absence_value, scored_on=day,
-                                     weight=PENALTY_ENTRY_WEIGHT)
+                                     weight=PENALTY_ENTRY_WEIGHT,
+                                     aged_from=(day if by_prediction_day else None))
                        for _ in range(missed))
     result = {hk: v for hk, v in out.items() if v}
-    _CACHE["k"] = (sig, {hk: list(v) for hk, v in result.items()})
+    info: dict = {"age_basis": age_basis_in_force(environ, as_of)}
+    if by_prediction_day and model_since:
+        from hope.scoring.model_epoch import apply_previous_model_discount
+        result, discount = apply_previous_model_discount(
+            result, model_since, as_of, window_days,
+            previous_model_weight(environ), previous_model_threshold(environ))
+        info["previous_model"] = discount
+    _CACHE["k"] = (sig, {hk: list(v) for hk, v in result.items()}, info)
+    if stats is not None:
+        stats.update(info)
     return result
 
 
@@ -362,11 +432,19 @@ def _net_penalties(root: str, as_of: date, window_days: int):
 
 def load_standing_entries(root: str, as_of: date, environ=os.environ,
                           window_days: int | None = None,
+                          model_since: dict | None = None,
+                          stats: dict | None = None,
                           ) -> dict[str, list[ScoredEpisode]]:
     """The entries every ranking consumer must read: ledger (absolute) or
-    receipts (episode-relative), by the published mode."""
+    receipts (episode-relative), by the published mode. Under the
+    prediction-day basis the executor's model_since map (written each shadow
+    day) is read from the ledger root unless one is passed."""
     if window_days is None:
         window_days = window_in_force(environ, as_of)
     if relative_enabled(environ, as_of):
-        return load_relative_entries(root, as_of, window_days)
+        if model_since is None and prediction_basis_in_force(environ, as_of):
+            from hope.scoring.model_epoch import load_model_since
+            model_since = load_model_since(root)
+        return load_relative_entries(root, as_of, window_days, environ=environ,
+                                     model_since=model_since, stats=stats)
     return standing_ledger.load_entries(root, as_of=as_of, window_days=window_days)
