@@ -285,10 +285,7 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
     # deliberately — the pipeline never does it by accident.
     _guard_day = basket_key.replace("BD-", "")
     from hope.backtest import shadow as _shadow_store
-    if _shadow_store.subnet_ran(ledger_root, _guard_day):
-        return {"registry": None, "models_run": 0,
-                "skipped": (f"shadow day {_guard_day} already ran — "
-                            f"predictions are locked; refusing to re-run")}
+    already_ran = _shadow_store.subnet_ran(ledger_root, _guard_day)
 
     as_of = str(date.today() if not hasattr(date, "today") else datetime.now(
         timezone.utc).date())
@@ -298,12 +295,20 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
     # Which model each hotkey runs today and since when — the boundary the
     # standing's previous-model discount reads (rule amendment 2026-09-14).
     # Written from the registry the models are run from, so the two cannot
-    # disagree; the settle stage and the audit read the file.
+    # disagree; the settle stage and the audit read the file. Written even
+    # on a day whose predictions are already locked, so a re-run settles
+    # with the same boundaries a first run would.
     try:
         from hope.scoring.model_epoch import write_model_since
         log(f"[shadow] model_since: {write_model_since(ledger_root, models)} hotkeys")
     except Exception as exc:                                   # noqa: BLE001
         log(f"[shadow] model_since not written ({exc}) — no previous-model discount today")
+
+    if already_ran:
+        return {"registry": stats, "models_run": 0,
+                "skipped": (f"shadow day {_guard_day} already ran — "
+                            f"predictions are locked; refusing to re-run")}
+
     if include_reference:
         models.append(ShadowModel(hotkey=REFERENCE_HOTKEY,
                                   image_digest=REFERENCE_IMAGE,
