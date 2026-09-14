@@ -281,10 +281,9 @@ def _write_model_since(ledger_root) -> None:
         from hope.scoring.model_epoch import (
             load_model_since_raw, model_since_from_shadow, write_model_since)
         mapping = model_since_from_shadow(ledger_root, load_model_since_raw(ledger_root))
-        changed = sum(1 for hk, rec in mapping.items()
-                      if rec.get("since") == max((r.get("since") or "") for r in mapping.values()))
+        with_change = sum(1 for rec in mapping.values() if int(rec.get("changes") or 0) > 0)
         log(f"[shadow] model_since: {write_model_since(ledger_root, mapping)} hotkeys "
-            f"({changed} whose current digest first ran on the latest day)")
+            f"({with_change} changed model inside the window)")
     except Exception as exc:                                   # noqa: BLE001
         log(f"[shadow] model_since not written ({exc}) — no previous-model discount today")
 

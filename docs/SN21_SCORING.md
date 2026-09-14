@@ -268,7 +268,10 @@ everything below is recomputable from published documents.
    is smaller, and 250 would over-shrink a model that is new but good.
 2. **A replaced model fades faster.** Each hotkey's **current model** is the
    digest it runs, dated from the first basket day that digest ran (published
-   per hotkey in the allocation audit, `standing_method.model_since`).
+   per hotkey in the allocation audit, `standing_method.model_since`). A
+   hotkey that changes model more than once inside the window keeps the
+   **earliest** change as its boundary: re-committing repeatedly does not
+   restart the discount.
    Entries predicted **before** that day count at **one quarter** of their
    weight — but only once the current model's own entries inside the window
    carry at least **250** prediction-mass (the placement floor). Until then

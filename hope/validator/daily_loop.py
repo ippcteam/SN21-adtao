@@ -690,7 +690,11 @@ def run_daily_loop(
                 from hope.scoring.standing_method import (
                     preview_enabled, standing_preview)
                 if preview_enabled(environ):
-                    _preview = standing_preview(ledger_root, day, environ)
+                    _preview = standing_preview(
+                        ledger_root, day, environ, with_controls=True,
+                        current_alloc=alloc, coldkey_of=coldkey_of,
+                        alpha_of=alpha_of, alpha_floor=float(effective_floor),
+                        day_episode_volume=vol or 0)
                     _pdir = os.path.join(ledger_root, "standing_preview")
                     os.makedirs(_pdir, exist_ok=True)
                     _ppath = os.path.join(_pdir, f"{day}.json")

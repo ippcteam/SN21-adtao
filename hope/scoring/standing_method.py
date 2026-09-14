@@ -488,12 +488,27 @@ def preview_enabled(environ=os.environ) -> bool:
 
 def standing_preview(root: str, as_of: date, environ=os.environ,
                      model_since: dict | None = None,
-                     placement_floor: float | None = None) -> dict:
+                     placement_floor: float | None = None,
+                     with_controls: bool = False,
+                     current_alloc=None,
+                     coldkey_of: dict | None = None,
+                     alpha_of: dict | None = None,
+                     alpha_floor: float = 0.0,
+                     day_episode_volume: int = 0) -> dict:
     """The prediction-day standing computed as if in force today, beside the
-    standing actually in force, per hotkey with a rank under each. Pure
-    apart from reading receipts and the model_since file. Not a control:
-    nothing here reaches weights, the audit or the report — it is written to
-    the operator's own store and summarised in the run log."""
+    standing actually in force, per hotkey with a rank under each.
+
+    `with_controls=True` runs the FULL allocation under both rules in dry-run
+    form (allocation_from_ledger(persist=False): coldkey cap, duplicate and
+    lineage controls, tenure, alpha hold, the curve) so the document also
+    says who would be PAID under each — the comparison a miner actually
+    wants. `current_alloc` reuses today's allocation when the caller already
+    has it. Without controls it ranks placement-eligible standings only.
+
+    Not a control: nothing here reaches weights, the audit or the report — it
+    is written to the operator's store, and mirrored only when the operator
+    publishes it.
+    """
     from hope.scoring.episode_average import (
         AGE_BASIS_EFFECTIVE_FROM_ENV, AGE_BASIS_ENV, AGE_BASIS_PREDICTION,
         PLACEMENT_FLOOR_PREDICTIONS, episode_weighted_average,
@@ -508,10 +523,19 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
         from hope.scoring.model_epoch import load_model_since
         model_since = load_model_since(root)
 
-    def ranked(env, since):
-        w = window_in_force(env, as_of)
-        hl = half_life_in_force(env, as_of)
-        prior = prior_mass_in_force(env, as_of)
+    def params(env):
+        return {"window_days": window_in_force(env, as_of),
+                "half_life_days": half_life_in_force(env, as_of),
+                "prior_mass": prior_mass_in_force(env, as_of)}
+
+    def ranked_from_standings(vals):
+        order = sorted(vals.items(), key=lambda kv: (-float(kv[1]), kv[0]))
+        return {hk: {"relative": round(float(v), 6), "rank": i}
+                for i, (hk, v) in enumerate(order, 1)}
+
+    def ranked_pure(env, since):
+        w = params(env)["window_days"]; hl = params(env)["half_life_days"]
+        prior = params(env)["prior_mass"]
         stats: dict = {}
         entries = load_relative_entries(root, as_of, w, environ=env,
                                         model_since=since, stats=stats)
@@ -523,13 +547,32 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
                                          window_days=w, prior_mass=prior)
             if v is not None:
                 vals[hk] = v
-        order = sorted(vals.items(), key=lambda kv: (-kv[1], kv[0]))
-        return ({hk: {"relative": round(v, 6), "rank": i}
-                 for i, (hk, v) in enumerate(order, 1)},
-                {"window_days": w, "half_life_days": hl, "prior_mass": prior}, stats)
+        return ranked_from_standings(vals), stats, None
 
-    current, current_params, _ = ranked(environ, None)
-    preview, preview_params, preview_stats = ranked(forced, model_since or None)
+    def ranked_alloc(env, alloc):
+        from hope.validator.daily_stream_weights import allocation_from_ledger
+        if alloc is None:
+            alloc = allocation_from_ledger(root, as_of, day_episode_volume, environ=env,
+                                           coldkey_of=coldkey_of, alpha_of=alpha_of,
+                                           alpha_floor=alpha_floor, persist=False)
+        stats = (alloc.collapse_audit.get("policies") or {}).get("standing_method") or {}
+        pm = ((alloc.collapse_audit.get("policies") or {}).get("standing_method") or {}).get("previous_model")
+        return (ranked_from_standings(alloc.standings),
+                {"previous_model": pm} if pm else {}, alloc)
+
+    if with_controls:
+        current, _, alloc_now = ranked_alloc(environ, current_alloc)
+        preview, preview_stats, alloc_new = ranked_alloc(forced, None)
+        paid_now = sorted(hk for hk, w in (alloc_now.weights or {}).items() if w > 0)
+        paid_new = sorted(hk for hk, w in (alloc_new.weights or {}).items() if w > 0)
+        previous_model = ((alloc_new.collapse_audit.get("policies") or {})
+                          .get("standing_method") or {}).get("previous_model")
+    else:
+        current, _, _ = ranked_pure(environ, None)
+        preview, preview_stats, _ = ranked_pure(forced, model_since or None)
+        paid_now = paid_new = None
+        previous_model = preview_stats.get("previous_model")
+
     top_now = {hk for hk, r in current.items() if r["rank"] <= 20}
     top_new = {hk for hk, r in preview.items() if r["rank"] <= 20}
     rows = {}
@@ -539,13 +582,32 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
             "current_relative": (current.get(hk) or {}).get("relative"),
             "preview_rank": (preview.get(hk) or {}).get("rank"),
             "preview_relative": (preview.get(hk) or {}).get("relative"),
+            **({"paid_now": hk in set(paid_now), "paid_preview": hk in set(paid_new)}
+               if paid_now is not None else {}),
         }
+    summary = {
+        "hotkeys_ranked_current": len(current),
+        "hotkeys_ranked_preview": len(preview),
+        "top20_seats_changed": len(top_new - top_now),
+        "enter_top20": sorted(top_new - top_now),
+        "leave_top20": sorted(top_now - top_new),
+    }
+    if paid_now is not None:
+        summary.update({
+            "paid_now": paid_now, "paid_preview": paid_new,
+            "paid_seats_changed": len(set(paid_new) - set(paid_now)),
+            "enter_paid": sorted(set(paid_new) - set(paid_now)),
+            "leave_paid": sorted(set(paid_now) - set(paid_new)),
+        })
     return {
         "as_of": as_of.isoformat(),
-        "note": ("dry run: the prediction-day basis computed beside the rule in "
-                 "force; standings before earning controls; nothing applied"),
-        "current": current_params,
-        "preview": {**preview_params,
+        "note": ("dry run: the prediction-day basis computed beside the rule in force; "
+                 + ("standings and the paid set with every earning control applied; "
+                    if with_controls else "standings before earning controls; ")
+                 + "nothing applied"),
+        "with_controls": bool(with_controls),
+        "current": params(environ),
+        "preview": {**params(forced),
                     "age_basis": "prediction_day",
                     "previous_model_weight": previous_model_weight(forced),
                     "previous_model_threshold": previous_model_threshold(forced),
@@ -554,14 +616,8 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
                     # before it counts (miner request, 14 September 2026).
                     "model_since": {hk: d.isoformat()
                                     for hk, d in sorted((model_since or {}).items())},
-                    "previous_model": preview_stats.get("previous_model")},
-        "summary": {
-            "hotkeys_ranked_current": len(current),
-            "hotkeys_ranked_preview": len(preview),
-            "top20_seats_changed": len(top_new - top_now),
-            "enter_top20": sorted(top_new - top_now),
-            "leave_top20": sorted(top_now - top_new),
-        },
+                    "previous_model": previous_model},
+        "summary": summary,
         "hotkeys": rows,
     }
 

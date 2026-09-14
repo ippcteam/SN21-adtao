@@ -47,6 +47,9 @@ def main(argv=None) -> int:
     p.add_argument("--model-since", action="store_true",
                    help="rebuild model_since.json from the shadow ledger first (full walk, no cache)")
     p.add_argument("--no-write", action="store_true", help="print only; do not write the file")
+    p.add_argument("--no-controls", action="store_true",
+                   help="rank standings only, without running the earning controls "
+                        "(no metagraph read; faster; no paid-set comparison)")
     args = p.parse_args(argv)
     day = date.fromisoformat(args.day)
     root = args.ledger_root
@@ -58,7 +61,29 @@ def main(argv=None) -> int:
     since = load_model_since(root)
     print(f"[preview] model boundaries on file: {len(since)} hotkeys", flush=True)
 
-    out = standing_preview(root, day, os.environ, model_since=since or None)
+    if args.no_controls:
+        out = standing_preview(root, day, os.environ, model_since=since or None)
+    else:
+        # The same inputs the settle stage gives the allocation: identities
+        # and alpha from one metagraph read, the floor in force, the day's
+        # basket volume. Everything runs in dry-run form; nothing is written
+        # but the preview file.
+        from hope.scoring.collateral_floor import active_floor
+        from scripts.run_daily_loop import _basket_volume
+        from scripts.run_daily_pipeline import _metagraph_maps
+        maps = _metagraph_maps() or {}
+        try:
+            vol = int(_basket_volume(day))
+        except Exception:  # noqa: BLE001 — a missing volume only affects the D3 flag
+            vol = 0
+        print(f"[preview] identities {len(maps.get('coldkey') or {})}, alpha "
+              f"{len(maps.get('alpha') or {})}, floor {active_floor(day, os.environ):.0f}, "
+              f"day volume {vol}; running both allocations (dry run)", flush=True)
+        out = standing_preview(root, day, os.environ, model_since=since or None,
+                               with_controls=True, coldkey_of=maps.get("coldkey"),
+                               alpha_of=maps.get("alpha"),
+                               alpha_floor=float(active_floor(day, os.environ)),
+                               day_episode_volume=vol)
     if not args.no_write:
         d = os.path.join(root, "standing_preview")
         os.makedirs(d, exist_ok=True)
@@ -80,6 +105,11 @@ def main(argv=None) -> int:
           f"top-20 seats changed {s['top20_seats_changed']}")
     print(f"enter top-20: {[_short(h) for h in s['enter_top20']]}")
     print(f"leave top-20: {[_short(h) for h in s['leave_top20']]}")
+    if "paid_now" in s:
+        print(f"PAID SET: now {len(s['paid_now'])}, preview {len(s['paid_preview'])}; "
+              f"seats changed {s['paid_seats_changed']}")
+        print(f"  enter paid: {[_short(h) for h in s['enter_paid']]}")
+        print(f"  leave paid: {[_short(h) for h in s['leave_paid']]}")
 
     rows = out["hotkeys"]
     def _move(hk):
@@ -87,12 +117,15 @@ def main(argv=None) -> int:
         if r["current_rank"] is None or r["preview_rank"] is None:
             return 0
         return r["current_rank"] - r["preview_rank"]
-    print(f"\n{'hotkey':16} {'now':>5} {'new':>5} {'move':>5} {'now_rel':>9} {'new_rel':>9}")
+    print(f"\n{'hotkey':16} {'now':>5} {'new':>5} {'move':>5} {'now_rel':>9} {'new_rel':>9}  paid now->new")
     ordered = sorted(rows, key=lambda h: (rows[h]["preview_rank"] or 10**6))
     for hk in ordered[:args.top]:
         r = rows[hk]
+        paid = ""
+        if "paid_now" in r:
+            paid = f"  {'Y' if r['paid_now'] else '-'} -> {'Y' if r['paid_preview'] else '-'}"
         print(f"{_short(hk):16} {str(r['current_rank']):>5} {str(r['preview_rank']):>5} "
-              f"{_move(hk):>+5} {str(r['current_relative']):>9} {str(r['preview_relative']):>9}")
+              f"{_move(hk):>+5} {str(r['current_relative']):>9} {str(r['preview_relative']):>9}{paid}")
     movers = sorted(rows, key=lambda h: -abs(_move(h)))[:10]
     print("\nlargest moves:")
     for hk in movers:

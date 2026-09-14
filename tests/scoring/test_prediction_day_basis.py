@@ -234,8 +234,10 @@ class TestModelSinceFile:
                                      "c": {"digest": "sha256:3", "since": None}})
         assert n == 2
         assert load_model_since(root) == {"a": date(2026, 9, 7), "b": date(2026, 8, 20)}
+        raw = json.load(open(os.path.join(root, "model_since.json")))
+        assert raw["a"]["changes"] == 0
 
-    def test_the_boundary_is_the_first_basket_day_the_current_digest_ran(self, tmp_path):
+    def test_the_boundary_is_the_first_day_the_current_digest_ran(self, tmp_path):
         from hope.scoring.model_epoch import model_since_from_shadow
         root = str(tmp_path)
         for day in ("2026-09-01", "2026-09-02", "2026-09-03"):
@@ -244,27 +246,51 @@ class TestModelSinceFile:
             _shadow(root, day, "a", "sha256:new")
         _shadow(root, "2026-09-05", "b", "sha256:b")
         out = model_since_from_shadow(root)
-        assert out["a"] == {"digest": "sha256:new", "since": "2026-09-04"}
-        assert out["b"] == {"digest": "sha256:b", "since": "2026-09-05"}
+        assert out["a"] == {"digest": "sha256:new", "since": "2026-09-04", "changes": 1}
+        assert out["b"] == {"digest": "sha256:b", "since": "2026-09-05", "changes": 0}
 
-    def test_an_unchanged_digest_keeps_its_boundary_from_the_cache(self, tmp_path):
+    def test_repeated_changes_inside_the_window_keep_the_earliest_boundary(self, tmp_path):
+        """Re-committing after every bad stretch must not restart the discount."""
+        from hope.scoring.model_epoch import model_since_from_shadow
+        root = str(tmp_path)
+        _shadow(root, "2026-09-01", "a", "sha256:v1")
+        _shadow(root, "2026-09-02", "a", "sha256:v2")
+        _shadow(root, "2026-09-03", "a", "sha256:v2")
+        _shadow(root, "2026-09-04", "a", "sha256:v3")
+        _shadow(root, "2026-09-05", "a", "sha256:v3")
+        out = model_since_from_shadow(root)
+        assert out["a"] == {"digest": "sha256:v3", "since": "2026-09-02", "changes": 2}
+
+    def test_a_digest_unchanged_across_the_window_has_no_boundary_inside_it(self, tmp_path):
+        from hope.scoring.model_epoch import model_since_from_shadow
+        root = str(tmp_path)
+        for day in ("2026-09-03", "2026-09-04", "2026-09-05"):
+            _shadow(root, day, "a", "sha256:same")
+        out = model_since_from_shadow(root)
+        assert out["a"]["changes"] == 0 and out["a"]["since"] == "2026-09-03"
+        # the loader then discounts nothing: every entry in the window is current
+        from hope.scoring.model_epoch import apply_previous_model_discount
+        eps = {"a": [ScoredEpisode(0.5, DAY, 1.0, aged_from=date(2026, 9, 4)) for _ in range(300)]}
+        out2, stats = apply_previous_model_discount(eps, {"a": date(2026, 9, 3)}, DAY, 42, 0.25, 250)
+        assert stats["hotkeys_discounted"] == []
+
+    def test_a_change_outside_the_window_does_not_count(self, tmp_path):
+        from hope.scoring.model_epoch import model_since_from_shadow
+        root = str(tmp_path)
+        _shadow(root, "2026-07-01", "a", "sha256:old")
+        for day in ("2026-09-04", "2026-09-05"):
+            _shadow(root, day, "a", "sha256:new")
+        out = model_since_from_shadow(root, window_days=42)
+        assert out["a"]["changes"] == 0 and out["a"]["since"] == "2026-09-04"
+
+    def test_a_hotkey_that_did_not_run_today_keeps_its_previous_entry(self, tmp_path):
         from hope.scoring.model_epoch import model_since_from_shadow
         root = str(tmp_path)
         _shadow(root, "2026-09-05", "a", "sha256:new")
-        previous = {"a": {"digest": "sha256:new", "since": "2026-08-20"},
-                    "gone": {"digest": "sha256:g", "since": "2026-08-01"}}
+        previous = {"gone": {"digest": "sha256:g", "since": "2026-08-01", "changes": 1}}
         out = model_since_from_shadow(root, previous)
-        assert out["a"]["since"] == "2026-08-20"
-        # a hotkey that did not run today keeps its entry
         assert out["gone"]["since"] == "2026-08-01"
-
-    def test_a_new_digest_ignores_the_cache_and_walks_back(self, tmp_path):
-        from hope.scoring.model_epoch import model_since_from_shadow
-        root = str(tmp_path)
-        _shadow(root, "2026-09-04", "a", "sha256:new")
-        _shadow(root, "2026-09-05", "a", "sha256:new")
-        out = model_since_from_shadow(root, {"a": {"digest": "sha256:old", "since": "2026-08-01"}})
-        assert out["a"] == {"digest": "sha256:new", "since": "2026-09-04"}
+        assert out["a"]["since"] == "2026-09-05"
 
     def test_no_shadow_ledger_keeps_whatever_was_known(self, tmp_path):
         from hope.scoring.model_epoch import model_since_from_shadow
@@ -352,3 +378,28 @@ class TestTheDryRun:
 
     def test_off_by_default(self):
         assert standing_method.preview_enabled({}) is False
+
+
+class TestTheDryRunWithControls:
+    def test_it_reports_the_paid_set_under_both_rules_and_writes_nothing(self, tmp_path):
+        root = str(tmp_path)
+        entries = []
+        for i in range(300):
+            for hk, score in (("a", 0.6), ("b", 0.5), ("c", 0.4)):
+                entries.append(_e(hk, f"n{i}", 7, score, "2026-09-19",
+                                  predicted_on="2026-09-12", weight=1.0))
+        _receipt(root, "2026-09-19", entries)
+        env = {**RELATIVE, "SN21_DAILY_STREAM_WEIGHTS": "1",
+               "SN21_PLACEMENT_FLOOR_PREDICTIONS": "50"}
+        before = sorted(os.listdir(root))
+        out = standing_method.standing_preview(root, DAY, env, with_controls=True,
+                                               coldkey_of={"a": "ck1", "b": "ck2", "c": "ck3"},
+                                               alpha_of={"a": 900.0, "b": 900.0, "c": 900.0},
+                                               alpha_floor=700.0, day_episode_volume=300)
+        assert out["with_controls"] is True
+        s = out["summary"]
+        assert set(s["paid_now"]) == {"a", "b", "c"} and set(s["paid_preview"]) == {"a", "b", "c"}
+        assert s["paid_seats_changed"] == 0
+        assert out["hotkeys"]["a"]["paid_now"] is True and out["hotkeys"]["a"]["paid_preview"] is True
+        # dry run: no promotion state, no events, nothing new on the disk
+        assert sorted(os.listdir(root)) == before

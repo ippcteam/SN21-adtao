@@ -28,7 +28,7 @@ def test_it_writes_the_preview_and_prints_the_summary(tmp_path, monkeypatch, cap
                  "SN21_STANDING_WINDOW_DAYS": "28", "SN21_STANDING_PRIOR_MASS": "250",
                  "SN21_PLACEMENT_FLOOR_PREDICTIONS": "50"}.items():
         monkeypatch.setenv(k, v)
-    rc = sp.main(["--day", "2026-09-14", "--ledger-root", root, "--top", "5"])
+    rc = sp.main(["--day", "2026-09-14", "--ledger-root", root, "--top", "5", "--no-controls"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "===PREVIEW-END===" in out and "top-20 seats changed" in out

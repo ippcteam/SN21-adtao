@@ -585,8 +585,14 @@ def allocation_from_ledger(
     commit_block: Mapping[str, int] | None = None,
     alpha_of: Mapping[str, float] | None = None,
     alpha_floor: float = 0.0,
+    persist: bool = True,
 ) -> DailyAllocation:
     """Load ledger + promotion state, compute, persist state + log events.
+
+    `persist=False` is the dry-run form: everything is computed exactly as
+    it would be, and nothing is written — no promotion state, no promotion
+    or vacate events. Used by the standing preview to run the announced
+    rule beside the rule in force on a real day.
 
     The one impure entrypoint: everything it does beyond
     compute_daily_allocation is ledger I/O. Promotion state is persisted
@@ -648,7 +654,7 @@ def allocation_from_ledger(
             # seated for the full [D8] hold (champion_promotion.vacate_seat).
             vac = vacate_seat(state, day, "chronic_failure_eviction")
             state = vac.state
-            if vac.event:
+            if vac.event and persist:
                 standing_ledger.append_promotion_event(root, vac.event)
 
     copy_suppressed: frozenset = frozenset()
@@ -760,7 +766,7 @@ def allocation_from_ledger(
                 sorted(counterfactual.weights),
             )
 
-    if alloc.promotion is not None:
+    if alloc.promotion is not None and persist:
         standing_ledger.save_promotion_state(root, alloc.promotion.state)
         if alloc.promotion.event:
             standing_ledger.append_promotion_event(root, alloc.promotion.event)
