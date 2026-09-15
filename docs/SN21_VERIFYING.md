@@ -83,6 +83,11 @@ before the day (at most three days back), and `controls.one_payer.receipt_day`
 and `controls.lineage.receipt_day` name the day they read, so a grouping can
 still be recomputed from a published document.
 
+A hotkey that has left the metagraph keeps its standing but is not seated:
+it cannot be paid on chain, so a seat given to it would be lost. The audit
+lists such hotkeys under `deregistered` and `controls.registration` says
+whether the check ran (it needs the day's identity read).
+
 The alpha hold ([SN21_STAKING.md](./SN21_STAKING.md)) is published in the
 same document under `alpha_hold`: the floor in force, whether it was
 enforced on that vector, every earning hotkey found below the floor with the

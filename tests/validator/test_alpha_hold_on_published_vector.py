@@ -119,3 +119,18 @@ def test_the_executor_entrypoint_supplies_the_alpha_map():
     src = inspect.getsource(entry.stage_settle)
     assert "alpha_reader=alpha_reader" in src
     assert "_shared_metagraph_readers()" in src
+
+
+def test_a_deregistered_hotkey_is_not_seated_when_identities_were_read():
+    """A seat given to a hotkey that left the metagraph cannot be paid; the
+    next-ranked miner takes it. With no identities nothing is judged."""
+    out = _alloc(FIELD, coldkey_of={"a": "ck1", "c": "ck3", "d": "ck4"},
+                 curve_params=TWO_SEATS)
+    paid = {hk for hk, w in out.weights.items() if w > 0}
+    assert paid == {"a", "c"}
+    assert out.collapse_audit["deregistered"] == ["b"]
+    assert out.collapse_audit["policies"]["registration"] == {"applied": True, "excluded": 1}
+    assert "b" in out.standings, "the standing is a fact and stays"
+    blind = _alloc(FIELD, coldkey_of=None, curve_params=TWO_SEATS)
+    assert {hk for hk, w in blind.weights.items() if w > 0} == {"a", "b"}
+    assert blind.collapse_audit["policies"]["registration"] == {"applied": False, "excluded": 0}

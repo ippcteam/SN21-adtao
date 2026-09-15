@@ -330,6 +330,22 @@ def compute_daily_allocation(
     # facts and a hotkey that is not paid is not a hotkey that did not score.
     all_standings = dict(placements)
 
+    # ---- Layer 0: a seat needs a registered hotkey -------------------------
+    # A hotkey that has left the metagraph keeps its standing (scores are
+    # facts) but cannot be paid: the committer maps hotkeys to uids and drops
+    # what it cannot map, so a seat given to it is simply lost. When the
+    # identities were read (the coldkey map is the metagraph), such hotkeys
+    # are not seated and the next-ranked miner takes the seat. With no
+    # identities nothing can be judged and nothing is removed — the audit
+    # records which.
+    deregistered: list[str] = []
+    if coldkey_of:
+        deregistered = sorted(hk for hk in placements if hk not in coldkey_of)
+        if deregistered:
+            placements = {hk: s for hk, s in placements.items()
+                          if hk not in set(deregistered)}
+            audit["deregistered"] = deregistered
+
     # ---- Layer 1: one coldkey, one seat -----------------------------------
     # Applied BEFORE promotion, unlike copy suppression: a second hotkey on the
     # same coldkey is not a distinct principal at all, so it should never have
@@ -544,6 +560,8 @@ def compute_daily_allocation(
             "below": len(below_floor),
         },
         "alpha_hold": hold_state,
+        "registration": {"applied": bool(coldkey_of),
+                         "excluded": len(deregistered)},
     }
 
     gated = bool(min_daily_episodes) and day_episode_volume < min_daily_episodes
