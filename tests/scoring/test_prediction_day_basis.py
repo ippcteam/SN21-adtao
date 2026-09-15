@@ -539,3 +539,11 @@ class TestTheAdoptedSwitch:
         [a] = standing_method.load_relative_entries(root, DAY, environ=RELATIVE,
                                                     model_since={"a": date(2026, 9, 15)})["a"]
         assert a.predicted_on is None and a.aged_from is None and a.weight > 0
+
+
+def test_the_daily_loop_retires_the_dry_run_once_the_rule_is_in_force():
+    import inspect
+    from hope.validator import daily_loop
+    src = inspect.getsource(daily_loop.run_daily_loop)
+    assert "preview_enabled(environ) and model_epoch_in_force(environ, day)" in src
+    assert '"retired": True' in src

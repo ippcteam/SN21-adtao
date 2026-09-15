@@ -692,9 +692,18 @@ def run_daily_loop(
             # operator's store and summarised here. Never reaches the vector,
             # the audit or the report.
             try:
+                from hope.scoring.episode_average import model_epoch_in_force
                 from hope.scoring.standing_method import (
                     preview_enabled, standing_preview)
-                if preview_enabled(environ):
+                if preview_enabled(environ) and model_epoch_in_force(environ, day):
+                    # The rule the dry run previews is the rule in force
+                    # now: computing it a second time would only cost the
+                    # extra allocation. The published audit carries it.
+                    print("[standing-preview] adopted rule in force — dry run "
+                          "retired; the audit is the record", flush=True)
+                    summary["standing_preview"] = {"retired": True,
+                                                   "reason": "rule in force"}
+                elif preview_enabled(environ):
                     _preview = standing_preview(
                         ledger_root, day, environ, with_controls=True,
                         current_alloc=alloc, coldkey_of=coldkey_of,
