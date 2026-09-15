@@ -549,6 +549,7 @@ def load_prediction_index(
     shadow_root: str,
     episode_ids: set[str] | None = None,
     not_before: date | None = None,
+    models: dict | None = None,
 ) -> dict[str, dict[str, dict]]:
     """episode_id -> miner -> horizons, across the shadow days that matter.
 
@@ -586,15 +587,22 @@ def load_prediction_index(
                         continue
                     rec = json.loads(line)
                     miner = rec.get("hotkey")
+                    digest = rec.get("image_digest")
                     for ep_id, horizons in (rec.get("predictions") or {}).items():
                         if episode_ids is not None and ep_id not in episode_ids:
                             continue
                         index.setdefault(ep_id, {})[miner] = horizons
+                        # The image that produced the prediction, for the
+                        # receipt (`models` is filled in the same walk; the
+                        # index itself stays the verbatim prediction).
+                        if models is not None and digest:
+                            models[(ep_id, miner)] = str(digest)
     return index
 
 
 def index_for_outcomes(shadow_root: str,
-                       outcomes: list[SettledHorizon]) -> dict[str, dict[str, dict]]:
+                       outcomes: list[SettledHorizon],
+                       models: dict | None = None) -> dict[str, dict[str, dict]]:
     """The prediction index for exactly these outcomes — empty when there
     are none, so a day with nothing to settle reads no shadow file at all."""
     if not outcomes:
@@ -603,6 +611,7 @@ def index_for_outcomes(shadow_root: str,
         shadow_root,
         episode_ids={str(o.episode_id) for o in outcomes},
         not_before=index_window_start(outcomes),
+        models=models,
     )
 
 
@@ -688,7 +697,8 @@ def run_settle_day(
     ]
     # Only the predictions these rows can match, from the shadow days that
     # can hold them. Nothing to enter means nothing to read.
-    index = index_for_outcomes(shadow_root, outcomes)
+    models: dict = {}
+    index = index_for_outcomes(shadow_root, outcomes, models=models)
     # environ THREADED, not defaulted. score_entry_active's os.environ
     # default meant an injected flag set scored with whatever the process env
     # said — the rehearsal ran v1 while every flag said v2, and only the
@@ -732,6 +742,7 @@ def run_settle_day(
         # the settled actuals and each miner's prediction VERBATIM
         out["settled_outcomes"] = outcomes
         out["prediction_index"] = index
+        out["prediction_models"] = models
         out["censored_counts"] = last_censored_counts()
     return out
 
@@ -765,7 +776,8 @@ def score_day_for_receipt(shadow_root: str, ledger_root: str, day: date,
     entered_today = entered_on_run(ledger_root, day)
     outcomes = [o for o in outcomes_provider(day)
                 if (str(o.episode_id), int(o.horizon_days)) in entered_today]
-    index = index_for_outcomes(shadow_root, outcomes)
+    models: dict = {}
+    index = index_for_outcomes(shadow_root, outcomes, models=models)
     results, components = score_settled_with_components(index, outcomes,
                                                         environ=environ)
     return {
@@ -773,6 +785,7 @@ def score_day_for_receipt(shadow_root: str, ledger_root: str, day: date,
         "components": components,
         "settled_outcomes": outcomes,
         "prediction_index": index,
+        "prediction_models": models,
         "censored_counts": last_censored_counts(),
         "results_scored": len(results),
         "miners": len({r.miner for r in results}),

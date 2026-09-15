@@ -229,6 +229,10 @@ def method_params(environ=os.environ, day: date | None = None) -> dict:
                                   if prediction_basis_in_force(environ, day) else None),
         "previous_model_threshold": (previous_model_threshold(environ)
                                      if prediction_basis_in_force(environ, day) else None),
+        # Who the field mean averages over: every scored hotkey (settle-day
+        # rule) or one hotkey per copy group (prediction-day rule).
+        "field_mean": ("one_per_copy_group" if prediction_basis_in_force(environ, day)
+                       else "every_scored_hotkey"),
     }
 
 
@@ -262,15 +266,32 @@ def _entries_of(path: str) -> list[dict]:
     return list((doc.get("metrics") or {}).get("entries") or [])
 
 
-def field_means(entries: list[dict]) -> dict[tuple[str, int], float]:
-    """Mean score per (episode, horizon) over every miner scored on it."""
+def field_means(entries: list[dict],
+                exclude: set | frozenset | None = None) -> dict[tuple[str, int], float]:
+    """Mean score per (episode, horizon) over every miner scored on it.
+
+    `exclude` names hotkeys left OUT of the mean (rule amendment 2026-09-14:
+    one hotkey per copy group, so a model's weight in the benchmark does not
+    grow with the number of hotkeys running it). Their own entries are still
+    scored against the mean. A cell whose only scorers are excluded keeps
+    the plain mean so no entry is left without a benchmark."""
     acc: dict[tuple[str, int], list[float]] = defaultdict(list)
+    all_acc: dict[tuple[str, int], list[float]] = defaultdict(list)
+    ex = exclude or ()
     for e in entries:
         try:
-            acc[(str(e["episode_id"]), int(e["horizon_days"]))].append(float(e["score"]))
+            key = (str(e["episode_id"]), int(e["horizon_days"]))
+            score = float(e["score"])
         except (KeyError, TypeError, ValueError):
             continue
-    return {k: sum(v) / len(v) for k, v in acc.items() if v}
+        all_acc[key].append(score)
+        if str(e.get("miner")) not in ex:
+            acc[key].append(score)
+    out = {k: sum(v) / len(v) for k, v in acc.items() if v}
+    for k, v in all_acc.items():
+        if k not in out and v:
+            out[k] = sum(v) / len(v)
+    return out
 
 
 def basket_days_from_tkeys(root: str) -> dict[str, date]:
@@ -338,6 +359,7 @@ def load_relative_entries(root: str, as_of: date,
                           relative: bool = True,
                           stats: dict | None = None,
                           basket_days: Mapping | None = None,
+                          field_exclude: set | frozenset | None = None,
                           ) -> dict[str, list[ScoredEpisode]]:
     """hotkey -> ScoredEpisodes in the window, from receipts plus the
     absence-penalty log net of cancellations. Relative to the field on the
@@ -362,7 +384,7 @@ def load_relative_entries(root: str, as_of: date,
            tuple((p, os.path.getmtime(p)) for _, p in files),
            _penalty_signature(root), since_key,
            _tkeys_signature(root) if by_prediction_day else None,
-           settle_lag_days(environ))
+           settle_lag_days(environ), tuple(sorted(field_exclude or ())))
     hit = _CACHE.get("k")
     if hit and hit[0] == sig:
         if stats is not None:
@@ -374,7 +396,7 @@ def load_relative_entries(root: str, as_of: date,
     cutoff = as_of - timedelta(days=window_days)
     for day, path in files:
         entries = _entries_of(path)
-        means = field_means(entries)
+        means = field_means(entries, field_exclude if by_prediction_day else None)
         all_means.extend(means.values())
         for e in entries:
             try:
@@ -417,7 +439,8 @@ def load_relative_entries(root: str, as_of: date,
                                      aged_from=(day if by_prediction_day else None))
                        for _ in range(missed))
     result = {hk: v for hk, v in out.items() if v}
-    info: dict = {"age_basis": age_basis_in_force(environ, as_of)}
+    info: dict = {"age_basis": age_basis_in_force(environ, as_of),
+                  "field_excluded": (len(field_exclude or ()) if by_prediction_day else 0)}
     if by_prediction_day and model_since:
         from hope.scoring.model_epoch import apply_previous_model_discount
         result, discount = apply_previous_model_discount(
@@ -633,6 +656,7 @@ def load_standing_entries(root: str, as_of: date, environ=os.environ,
                           window_days: int | None = None,
                           model_since: dict | None = None,
                           stats: dict | None = None,
+                          field_exclude: set | frozenset | None = None,
                           ) -> dict[str, list[ScoredEpisode]]:
     """The entries every ranking consumer must read: ledger (absolute) or
     receipts (episode-relative), by the published mode. Under the
@@ -645,5 +669,6 @@ def load_standing_entries(root: str, as_of: date, environ=os.environ,
             from hope.scoring.model_epoch import load_model_since
             model_since = load_model_since(root)
         return load_relative_entries(root, as_of, window_days, environ=environ,
-                                     model_since=model_since, stats=stats)
+                                     model_since=model_since, stats=stats,
+                                     field_exclude=field_exclude)
     return standing_ledger.load_entries(root, as_of=as_of, window_days=window_days)

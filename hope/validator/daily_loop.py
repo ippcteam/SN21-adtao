@@ -187,6 +187,7 @@ def run_daily_loop(
     settle_components: dict = {}
     settled_outcomes: list = []
     prediction_index: dict = {}
+    prediction_models: dict = {}
     censored_counts: dict = {}
     try:
         settle = run_settle_day(shadow_root, ledger_root, day,
@@ -197,6 +198,7 @@ def run_daily_loop(
         settle_components = settle.pop("components", {})
         settled_outcomes = settle.pop("settled_outcomes", [])
         prediction_index = settle.pop("prediction_index", {})
+        prediction_models = settle.pop("prediction_models", {})
         censored_counts = settle.pop("censored_counts", {})
         summary["settle"] = settle
     except Exception as e:
@@ -490,6 +492,7 @@ def run_daily_loop(
                         settle_components = repair["components"]
                         settled_outcomes = repair["settled_outcomes"]
                         prediction_index = repair["prediction_index"]
+                        prediction_models = repair.get("prediction_models", {})
                         censored_counts = repair["censored_counts"]
                         summary["receipt_repair"] = {
                             "results_scored": repair["results_scored"],
@@ -529,6 +532,7 @@ def run_daily_loop(
                 transition_map=(_tkey_map if transition_key_provider is not None
                                 else None),
                 predicted_on_map=_predicted_on_map,
+                model_map=prediction_models,
             )
             summary["receipt"] = {"published": receipt.published,
                                   "sha256": receipt.sha256,
@@ -537,6 +541,7 @@ def run_daily_loop(
             # verbatim; nothing after this point reads them. Drop them so
             # the publish steps do not run on top of the settle peak.
             prediction_index = {}
+            prediction_models = {}
             settled_outcomes = []
 
             published = publish_day(

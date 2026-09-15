@@ -648,19 +648,44 @@ def allocation_from_ledger(
     # model_since map (which model each hotkey runs, since when) feeds the
     # previous-model discount, and what the loader did is published with the
     # method parameters so the day is recomputable from the audit.
+    # The copy sets come first: under the prediction-day rule the field mean
+    # averages one hotkey per copy group, so the entries load needs to know
+    # who the copies are. Both detectors read receipts, not standings.
+    copy_suppressed: frozenset = frozenset()
+    one_payer_stats: dict = {}
+    if one_payer_enabled(environ):
+        copy_suppressed = one_payer_suppression_subprocess(
+            root, day, environ, stats=one_payer_stats)
+        logger.info(
+            "[one-payer] %d fingerprint(s) for %s across %d indexed day(s); "
+            "%d group(s), %d hotkey(s) suppressed",
+            one_payer_stats.get("fingerprints_today", 0), day,
+            one_payer_stats.get("days_indexed", 0),
+            one_payer_stats.get("groups", 0), len(copy_suppressed))
+
+    lineage_groups, lineage_audit = lineage_from_receipts(root, day, environ)
+    if lineage_groups:
+        logger.info("[lineage] %d group(s) collapsed under params@%s",
+                    len(lineage_groups), lineage_audit.get("params_version"))
+
     _standing_stats: dict = {}
     _model_since: dict = {}
+    _field_exclude: frozenset = frozenset()
     if prediction_basis_in_force(environ, day):
         from hope.scoring.model_epoch import load_model_since
         _model_since = load_model_since(root)
+        _field_exclude = frozenset(copy_suppressed) | frozenset(
+            hk for g in (lineage_groups or []) for hk in g.copies)
     entries = load_standing_entries(root, day, environ,
                                     model_since=(_model_since or None),
-                                    stats=_standing_stats)
+                                    stats=_standing_stats,
+                                    field_exclude=(_field_exclude or None))
     _standing_method = dict(method_params(environ, day))
     if prediction_basis_in_force(environ, day):
         _standing_method["model_since"] = {
             hk: d.isoformat() for hk, d in sorted(_model_since.items())}
         _standing_method["previous_model"] = _standing_stats.get("previous_model")
+        _standing_method["field_excluded_copies"] = len(_field_exclude)
     state = standing_ledger.load_promotion_state(root)
 
     evicted: frozenset = frozenset()
@@ -674,18 +699,6 @@ def allocation_from_ledger(
             state = vac.state
             if vac.event and persist:
                 standing_ledger.append_promotion_event(root, vac.event)
-
-    copy_suppressed: frozenset = frozenset()
-    one_payer_stats: dict = {}
-    if one_payer_enabled(environ):
-        copy_suppressed = one_payer_suppression_subprocess(
-            root, day, environ, stats=one_payer_stats)
-        logger.info(
-            "[one-payer] %d fingerprint(s) for %s across %d indexed day(s); "
-            "%d group(s), %d hotkey(s) suppressed",
-            one_payer_stats.get("fingerprints_today", 0), day,
-            one_payer_stats.get("days_indexed", 0),
-            one_payer_stats.get("groups", 0), len(copy_suppressed))
 
     tenure_min = tenure_min_days(environ) if tenure_gate_enabled(environ) else 0
     _house = chronic_failure.house_hotkey_from(environ)
@@ -705,11 +718,6 @@ def allocation_from_ledger(
     # Layer 2 runs off the published receipts, so its verdicts are
     # recomputable by anyone holding them. Empty unless the parameters have
     # been calibrated and set.
-    lineage_groups, lineage_audit = lineage_from_receipts(root, day, environ)
-    if lineage_groups:
-        logger.info("[lineage] %d group(s) collapsed under params@%s",
-                    len(lineage_groups), lineage_audit.get("params_version"))
-
     alloc = compute_daily_allocation(
         entries, day, day_episode_volume, state,
         min_daily_episodes=min_daily_episodes,

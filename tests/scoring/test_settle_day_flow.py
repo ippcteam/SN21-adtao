@@ -283,10 +283,10 @@ def test_settle_reads_only_the_episodes_it_enters(tmp_path, monkeypatch):
     seen = {}
     real = load_prediction_index
 
-    def spy(root, episode_ids=None, not_before=None):
+    def spy(root, episode_ids=None, not_before=None, **kw):
         seen["episode_ids"] = episode_ids
         seen["not_before"] = not_before
-        return real(root, episode_ids=episode_ids, not_before=not_before)
+        return real(root, episode_ids=episode_ids, not_before=not_before, **kw)
 
     monkeypatch.setattr("hope.scoring.settle_day_flow.load_prediction_index", spy)
     provider = lambda d: [SettledHorizon("ep1", 7, 0.4, 0.2, -0.1, d)]

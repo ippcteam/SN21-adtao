@@ -406,3 +406,74 @@ class TestTheDryRunWithControls:
         assert out["hotkeys"]["a"]["paid_now"] is True and out["hotkeys"]["a"]["paid_preview"] is True
         # dry run: no promotion state, no events, nothing new on the disk
         assert sorted(os.listdir(root)) == before
+
+
+class TestOneHotkeyPerCopyGroupInTheFieldMean:
+    def test_copies_are_left_out_of_the_mean_but_still_scored_against_it(self, tmp_path):
+        root = str(tmp_path)
+        # original 0.6, two copies 0.6, one honest 0.4: mean over all = 0.55,
+        # mean over one per group = 0.5
+        _receipt(root, "2026-09-18", [
+            _e("orig", "ep1", 7, 0.6, "2026-09-18", predicted_on="2026-09-10"),
+            _e("copy1", "ep1", 7, 0.6, "2026-09-18", predicted_on="2026-09-10"),
+            _e("copy2", "ep1", 7, 0.6, "2026-09-18", predicted_on="2026-09-10"),
+            _e("honest", "ep1", 7, 0.4, "2026-09-18", predicted_on="2026-09-10"),
+        ])
+        stats: dict = {}
+        got = standing_method.load_relative_entries(
+            root, DAY, environ=V2, field_exclude={"copy1", "copy2"}, stats=stats)
+        assert got["honest"][0].score == pytest.approx(-0.1)
+        assert got["orig"][0].score == pytest.approx(0.1)
+        assert got["copy1"][0].score == pytest.approx(0.1)
+        assert stats["field_excluded"] == 2
+        # the settle-day rule ignores the exclusion
+        plain = standing_method.load_relative_entries(
+            root, DAY, environ=RELATIVE, field_exclude={"copy1", "copy2"})
+        assert plain["honest"][0].score == pytest.approx(-0.15)
+
+    def test_a_cell_scored_only_by_copies_keeps_the_plain_mean(self):
+        means = standing_method.field_means(
+            [{"miner": "c1", "episode_id": "e", "horizon_days": 7, "score": 0.2},
+             {"miner": "c2", "episode_id": "e", "horizon_days": 7, "score": 0.4}],
+            exclude={"c1", "c2"})
+        assert means[("e", 7)] == pytest.approx(0.3)
+
+    def test_the_allocation_computes_the_copy_sets_before_it_loads_the_entries(self):
+        import inspect
+        from hope.validator import daily_stream_weights as dsw
+        src = inspect.getsource(dsw.allocation_from_ledger)
+        assert src.index("one_payer_suppression_subprocess(") < src.index("load_standing_entries(")
+        assert src.index("lineage_from_receipts(") < src.index("load_standing_entries(")
+        assert "field_exclude=(_field_exclude or None)" in src
+
+    def test_the_published_parameters_say_who_the_mean_averages(self):
+        assert standing_method.method_params(V2, DAY)["field_mean"] == "one_per_copy_group"
+        assert standing_method.method_params(RELATIVE, DAY)["field_mean"] == "every_scored_hotkey"
+
+
+class TestTheReceiptNamesTheModel:
+    def test_entries_carry_a_short_digest_when_the_map_is_given(self):
+        from hope.publication.receipt_feed import build_receipt_metrics, short_model_id
+        from hope.scoring.daily_score_flow import HorizonResult
+        r = HorizonResult(episode_id="ep1", horizon_days=7, miner="a",
+                          score=0.5, finalized_on=date(2026, 9, 18), resolution="HIGH")
+        full = "ghcr.io/x/model@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        metrics = build_receipt_metrics([], {"ep1": {"a": {"7": {"p50": 1}}}}, [r], {},
+                                        model_map={("ep1", "a"): full})
+        assert metrics["entries"][0]["model"] == "sha256:0123456789abcdef"
+        assert short_model_id("sha256:abc") == "sha256:abc"
+        without = build_receipt_metrics([], {"ep1": {"a": {"7": {"p50": 1}}}}, [r], {})
+        assert "model" not in without["entries"][0]
+
+    def test_the_index_walk_records_the_producing_image(self, tmp_path):
+        from hope.scoring.settle_day_flow import load_prediction_index
+        root = str(tmp_path)
+        _shadow(root, "2026-09-10", "a", "sha256:one")
+        d = os.path.join(root, "shadow", "2026-09-10")
+        with open(os.path.join(d, "a.jsonl"), "w") as f:
+            f.write(json.dumps({"day": "2026-09-10", "hotkey": "a", "image_digest": "sha256:one",
+                                "ok": True, "predictions": {"ep1": {"7": {"p50": 1}}}}) + "\n")
+        models: dict = {}
+        index = load_prediction_index(root, models=models)
+        assert index["ep1"]["a"] == {"7": {"p50": 1}}
+        assert models == {("ep1", "a"): "sha256:one"}

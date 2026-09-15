@@ -68,6 +68,19 @@ def receipt_path(root: str, day: date | str) -> str:
     return os.path.join(receipt_dir(root), f"{day}.json")
 
 
+def short_model_id(digest: str) -> str:
+    """A compact, stable id for an image digest: the algorithm and the first
+    16 hex characters ("sha256:0123abcd..."). The registration-status feed
+    publishes the full digest per hotkey, so the prefix resolves."""
+    d = str(digest or "")
+    if "@" in d:
+        d = d.split("@", 1)[1]
+    if ":" in d:
+        algo, hexpart = d.split(":", 1)
+        return f"{algo}:{hexpart[:16]}"
+    return d[:23]
+
+
 def build_receipt_metrics(
     outcomes: Iterable[SettledHorizon],
     prediction_index: dict,
@@ -77,6 +90,7 @@ def build_receipt_metrics(
     censored: dict | None = None,
     transition_map: dict | None = None,
     predicted_on_map: dict | None = None,
+    model_map: dict | None = None,
 ) -> dict:
     """The receipt payload. Deterministic: every list sorted on a total key,
     every float already rounded upstream — two validators building from the
@@ -129,9 +143,16 @@ def build_receipt_metrics(
             # The basket day the prediction was made on (rule amendment
             # 2026-09-14: standings age entries from this day, not the settle
             # day). Only present when the builder was given a map; a reader
-            # of an older receipt derives it as finalized_on − horizon − 8.
+            # of an older receipt derives it as finalized_on − horizon − 3.
             **({"predicted_on": str(predicted_on_map[eid])}
                if predicted_on_map is not None and eid in predicted_on_map else {}),
+            # The image that produced the prediction (short digest), so a
+            # reader can tell from the receipt alone which of a hotkey's
+            # models each entry came from — the boundary the standing's
+            # previous-model discount reads (miner request, 15 September
+            # 2026). Only present when the builder was given the map.
+            **({"model": short_model_id(model_map[(eid, miner)])}
+               if model_map is not None and (eid, miner) in model_map else {}),
             # Which change type this entry scored (Rob, 21 Aug: miners must
             # see WHERE they win and lose, and the receipt is the surface
             # they already trust). Only present when the builder was given a
@@ -214,6 +235,7 @@ def run_daily_receipt(
     censored: dict | None = None,
     transition_map: dict | None = None,
     predicted_on_map: dict | None = None,
+    model_map: dict | None = None,
 ) -> ReceiptPublish:
     """Publish the day's receipt. Append-only; a republished day raises.
 
@@ -238,7 +260,8 @@ def run_daily_receipt(
                                     components, environ=environ,
                                     censored=censored,
                                     transition_map=transition_map,
-                                    predicted_on_map=predicted_on_map)
+                                    predicted_on_map=predicted_on_map,
+                                    model_map=model_map)
     doc = build_document(RECEIPT_FEED_NAME, day_s, metrics, generated_at,
                          prev_sha256=(head or {}).get("sha256"))
     att = attest(doc, signing_key)
