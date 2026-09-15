@@ -537,23 +537,21 @@ confirm the daemon's start line shows the expected settings.
 and 13:00 UTC, when the day's run is in progress; a deploy kills the run
 and the next tick starts it again from resolve.
 
-**Standing age basis (amendment 2026-09-14).** `SN21_STANDING_AGE_BASIS=
-prediction_day` with `SN21_STANDING_AGE_BASIS_EFFECTIVE_FROM=YYYY-MM-DD`
-switches the standing to prediction-day ages on that date (window 42, prior
-100, previous-model entries × 0.25 above 250 mass; overrides
-`SN21_STANDING_WINDOW_DAYS_V2`, `SN21_STANDING_PRIOR_MASS_V2`,
-`SN21_PREVIOUS_MODEL_WEIGHT`, `SN21_PREVIOUS_MODEL_THRESHOLD`). Unset =
-the settle-day rule. `SN21_STANDING_AGE_BASIS_PREVIEW=1` (with the basis
-variables unset) runs a dry run each settle: the prediction-day standing is
-computed beside the rule in force and written to
-`<ledger>/standing_preview/<day>.json`, with a `[standing-preview]` log line
-and a `standing_preview` block in the heartbeat; nothing reaches the vector,
-the audit or the report. `SN21_STANDING_PREVIEW_PUBLISH=1` additionally
-mirrors those files as `/v1/daily/<day>/standing-preview` so miners can see
-the dry run; leave it unset until the announcement says the preview is public. The shadow stage writes `model_since.json` (which
-digest each hotkey runs, since when) beside the ledger; the settle log's
-`[settle]` summary and the audit's `standing_method.previous_model` say who
-was discounted. Receipts gain `predicted_on` per entry from the same date.
+**Standing amendment (2026-09-17).** `SN21_STANDING_MODEL_EPOCH=1` with
+`SN21_STANDING_MODEL_EPOCH_EFFECTIVE_FROM=YYYY-MM-DD` switches on the
+previous-model discount (linear 1.0 → 0.25 over 0 → 250 current-model mass;
+`SN21_PREVIOUS_MODEL_WEIGHT`, `SN21_PREVIOUS_MODEL_THRESHOLD`) and the
+one-per-copy-group field mean on that date; ageing, half-life, window and
+prior are untouched. The boundary is the latest model change with a minimum
+gap between counted changes (`SN21_MODEL_CHANGE_MIN_GAP_DAYS`, default 7).
+The shadow stage writes `model_since.json` beside the ledger. The
+prediction-day age basis (`SN21_STANDING_AGE_BASIS=prediction_day`) stays in
+the code but is not part of the adopted amendment; leave it unset.
+`SN21_STANDING_AGE_BASIS_PREVIEW=1` runs a dry run of the adopted rule each
+settle into `<ledger>/standing_preview/<day>.json`, with a
+`[standing-preview]` log line and a `standing_preview` block in the
+heartbeat; `SN21_STANDING_PREVIEW_PUBLISH=1` mirrors those files as
+`/v1/daily/<day>/standing-preview`.
 
 **Alpha hold.** `SN21_COLLATERAL_ENFORCE=1` on the executor applies the
 published hold (SN21_STAKING.md) inside the allocation, before the curve,

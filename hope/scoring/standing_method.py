@@ -52,6 +52,8 @@ from hope.scoring.episode_average import (
     age_basis_in_force,
     amendment_in_force,
     half_life_in_force,
+    model_epoch_effective_from,
+    model_epoch_in_force,
     prediction_basis_in_force,
     previous_model_threshold,
     previous_model_weight,
@@ -231,8 +233,22 @@ def method_params(environ=os.environ, day: date | None = None) -> dict:
                                      if prediction_basis_in_force(environ, day) else None),
         # Who the field mean averages over: every scored hotkey (settle-day
         # rule) or one hotkey per copy group (prediction-day rule).
-        "field_mean": ("one_per_copy_group" if prediction_basis_in_force(environ, day)
+        "field_mean": ("one_per_copy_group"
+                       if (model_epoch_in_force(environ, day) or prediction_basis_in_force(environ, day))
                        else "every_scored_hotkey"),
+        # Rule amendment 2026-09-17 as adopted: the previous-model discount
+        # and the copy-aware field mean, on settle-day ages.
+        "model_epoch": {
+            "in_force": model_epoch_in_force(environ, day),
+            "effective_from": (model_epoch_effective_from(environ).isoformat()
+                               if model_epoch_effective_from(environ) else None),
+            "previous_model_weight": (previous_model_weight(environ)
+                                      if model_epoch_in_force(environ, day) else None),
+            "previous_model_threshold": (previous_model_threshold(environ)
+                                         if model_epoch_in_force(environ, day) else None),
+            "boundary": "latest model change, minimum gap between counted changes",
+            "min_gap_days": __import__("hope.scoring.model_epoch", fromlist=["x"]).model_change_min_gap_days(environ),
+        },
     }
 
 
@@ -376,14 +392,15 @@ def load_relative_entries(root: str, as_of: date,
     if window_days is None:
         window_days = window_in_force(environ, as_of)
     by_prediction_day = prediction_basis_in_force(environ, as_of)
-    if by_prediction_day and basket_days is None:
+    by_model_epoch = model_epoch_in_force(environ, as_of) or by_prediction_day
+    if by_model_epoch and basket_days is None:
         basket_days = basket_days_from_tkeys(root)
     files = _receipt_files(root, as_of, window_days)
     since_key = tuple(sorted((hk, d.isoformat()) for hk, d in (model_since or {}).items()))
-    sig = (root, as_of.isoformat(), window_days, by_prediction_day, relative,
+    sig = (root, as_of.isoformat(), window_days, by_prediction_day, by_model_epoch, relative,
            tuple((p, os.path.getmtime(p)) for _, p in files),
            _penalty_signature(root), since_key,
-           _tkeys_signature(root) if by_prediction_day else None,
+           _tkeys_signature(root) if by_model_epoch else None,
            settle_lag_days(environ), tuple(sorted(field_exclude or ())))
     hit = _CACHE.get("k")
     if hit and hit[0] == sig:
@@ -396,7 +413,7 @@ def load_relative_entries(root: str, as_of: date,
     cutoff = as_of - timedelta(days=window_days)
     for day, path in files:
         entries = _entries_of(path)
-        means = field_means(entries, field_exclude if by_prediction_day else None)
+        means = field_means(entries, field_exclude if by_model_epoch else None)
         all_means.extend(means.values())
         for e in entries:
             try:
@@ -412,8 +429,9 @@ def load_relative_entries(root: str, as_of: date,
                     scored_on = date.fromisoformat(str(fo)[:10])
                 except ValueError:
                     pass
-            aged_from = (predicted_on_of(e, scored_on, basket_days, environ)
-                         if by_prediction_day else None)
+            predicted_on = (predicted_on_of(e, scored_on, basket_days, environ)
+                            if by_model_epoch else None)
+            aged_from = predicted_on if by_prediction_day else None
             age_day = aged_from or scored_on
             if age_day < cutoff or age_day > as_of:
                 continue
@@ -428,7 +446,8 @@ def load_relative_entries(root: str, as_of: date,
                 w = horizon_entry_weight(key[1])
             out[miner].append(ScoredEpisode(
                 score=(score - means[key]) if relative else score,
-                scored_on=scored_on, weight=w, aged_from=aged_from))
+                scored_on=scored_on, weight=w, predicted_on=predicted_on,
+                aged_from=aged_from))
     field_level = (sum(all_means) / len(all_means)) if all_means else 0.0
     absence_value = (PENALTY_SCORE - field_level) if relative else PENALTY_SCORE
     # An uncovered basket day is dated by that day under both bases: the
@@ -436,12 +455,14 @@ def load_relative_entries(root: str, as_of: date,
     for hk, day, missed in _net_penalties(root, as_of, window_days):
         out[hk].extend(ScoredEpisode(score=absence_value, scored_on=day,
                                      weight=PENALTY_ENTRY_WEIGHT,
+                                     predicted_on=(day if by_model_epoch else None),
                                      aged_from=(day if by_prediction_day else None))
                        for _ in range(missed))
     result = {hk: v for hk, v in out.items() if v}
     info: dict = {"age_basis": age_basis_in_force(environ, as_of),
-                  "field_excluded": (len(field_exclude or ()) if by_prediction_day else 0)}
-    if by_prediction_day and model_since:
+                  "model_epoch": by_model_epoch,
+                  "field_excluded": (len(field_exclude or ()) if by_model_epoch else 0)}
+    if by_model_epoch and model_since:
         from hope.scoring.model_epoch import apply_previous_model_discount
         result, discount = apply_previous_model_discount(
             result, model_since, as_of, window_days,
@@ -533,15 +554,17 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
     publishes it.
     """
     from hope.scoring.episode_average import (
-        AGE_BASIS_EFFECTIVE_FROM_ENV, AGE_BASIS_ENV, AGE_BASIS_PREDICTION,
+        MODEL_EPOCH_EFFECTIVE_FROM_ENV, MODEL_EPOCH_ENV,
         PLACEMENT_FLOOR_PREDICTIONS, episode_weighted_average,
         half_life_in_force, scored_prediction_count,
     )
     if placement_floor is None:
         placement_floor = PLACEMENT_FLOOR_PREDICTIONS
+    # The adopted amendment, as if in force today: the previous-model
+    # discount and the copy-aware field mean on settle-day ages.
     forced = {k: v for k, v in dict(environ).items()
-              if k != AGE_BASIS_EFFECTIVE_FROM_ENV}
-    forced[AGE_BASIS_ENV] = AGE_BASIS_PREDICTION
+              if k != MODEL_EPOCH_EFFECTIVE_FROM_ENV}
+    forced[MODEL_EPOCH_ENV] = "1"
     if model_since is None:
         from hope.scoring.model_epoch import load_model_since
         model_since = load_model_since(root)
@@ -630,7 +653,7 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
         })
     return {
         "as_of": as_of.isoformat(),
-        "note": ("dry run: the prediction-day basis computed beside the rule in force; "
+        "note": ("dry run: the model-epoch amendment computed beside the rule in force; "
                  + ("standings and the paid set with every earning control applied, "
                     "ignoring the day-volume hold; "
                     if with_controls else "standings before earning controls; ")
@@ -638,7 +661,8 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
         "with_controls": bool(with_controls),
         "current": params(environ),
         "preview": {**params(forced),
-                    "age_basis": "prediction_day",
+                    "age_basis": age_basis_in_force(forced, as_of),
+                    "model_epoch": True,
                     "previous_model_weight": previous_model_weight(forced),
                     "previous_model_threshold": previous_model_threshold(forced),
                     "model_since_hotkeys": len(model_since or {}),
@@ -665,7 +689,8 @@ def load_standing_entries(root: str, as_of: date, environ=os.environ,
     if window_days is None:
         window_days = window_in_force(environ, as_of)
     if relative_enabled(environ, as_of):
-        if model_since is None and prediction_basis_in_force(environ, as_of):
+        if model_since is None and (model_epoch_in_force(environ, as_of)
+                                    or prediction_basis_in_force(environ, as_of)):
             from hope.scoring.model_epoch import load_model_since
             model_since = load_model_since(root)
         return load_relative_entries(root, as_of, window_days, environ=environ,

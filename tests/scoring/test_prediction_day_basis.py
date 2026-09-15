@@ -155,9 +155,9 @@ class TestThePreviousModelDiscount:
 
     def _entries(self, current_mass, previous=3):
         eps = [ScoredEpisode(score=0.5, scored_on=DAY, weight=1.0,
-                             aged_from=date(2026, 9, 1)) for _ in range(previous)]
+                             predicted_on=date(2026, 9, 1)) for _ in range(previous)]
         eps += [ScoredEpisode(score=0.5, scored_on=DAY, weight=1.0,
-                              aged_from=date(2026, 9, 12))
+                              predicted_on=date(2026, 9, 12))
                 for _ in range(int(current_mass))]
         return {"m": eps}
 
@@ -193,8 +193,8 @@ class TestThePreviousModelDiscount:
     def test_only_entries_inside_the_window_count_toward_the_mass(self):
         eps = self._entries(current_mass=300)
         eps["m"] = [ScoredEpisode(e.score, e.scored_on, e.weight,
-                                  aged_from=date(2026, 7, 1))
-                    if e.aged_from == date(2026, 9, 12) else e for e in eps["m"]]
+                                  predicted_on=date(2026, 7, 1), aged_from=date(2026, 7, 1))
+                    if e.predicted_on == date(2026, 9, 12) else e for e in eps["m"]]
         out, _ = apply_previous_model_discount(eps, self.SINCE, DAY, 42, 0.25, 250)
         assert all(e.weight == 1.0 for e in out["m"])
 
@@ -249,8 +249,9 @@ class TestModelSinceFile:
         assert out["a"] == {"digest": "sha256:new", "since": "2026-09-04", "changes": 1}
         assert out["b"] == {"digest": "sha256:b", "since": "2026-09-05", "changes": 0}
 
-    def test_repeated_changes_inside_the_window_keep_the_earliest_boundary(self, tmp_path):
-        """Re-committing after every bad stretch must not restart the discount."""
+    def test_a_change_inside_the_minimum_gap_does_not_move_the_boundary(self, tmp_path):
+        """Re-committing every few days after a bad stretch must not keep
+        restarting the discount; a change a week or more later does count."""
         from hope.scoring.model_epoch import model_since_from_shadow
         root = str(tmp_path)
         _shadow(root, "2026-09-01", "a", "sha256:v1")
@@ -258,8 +259,12 @@ class TestModelSinceFile:
         _shadow(root, "2026-09-03", "a", "sha256:v2")
         _shadow(root, "2026-09-04", "a", "sha256:v3")
         _shadow(root, "2026-09-05", "a", "sha256:v3")
-        out = model_since_from_shadow(root)
+        out = model_since_from_shadow(root, min_gap_days=7)
         assert out["a"] == {"digest": "sha256:v3", "since": "2026-09-02", "changes": 2}
+        _shadow(root, "2026-09-10", "a", "sha256:v4")
+        out = model_since_from_shadow(root, min_gap_days=7)
+        assert out["a"]["since"] == "2026-09-10", "8 days after the counted change: counts"
+        assert model_since_from_shadow(root, min_gap_days=0)["a"]["since"] == "2026-09-10"
 
     def test_a_digest_unchanged_across_the_window_has_no_boundary_inside_it(self, tmp_path):
         from hope.scoring.model_epoch import model_since_from_shadow
@@ -270,7 +275,7 @@ class TestModelSinceFile:
         assert out["a"]["changes"] == 0 and out["a"]["since"] == "2026-09-03"
         # the loader then discounts nothing: every entry in the window is current
         from hope.scoring.model_epoch import apply_previous_model_discount
-        eps = {"a": [ScoredEpisode(0.5, DAY, 1.0, aged_from=date(2026, 9, 4)) for _ in range(300)]}
+        eps = {"a": [ScoredEpisode(0.5, DAY, 1.0, predicted_on=date(2026, 9, 4)) for _ in range(300)]}
         out2, stats = apply_previous_model_discount(eps, {"a": date(2026, 9, 3)}, DAY, 42, 0.25, 250)
         assert stats["hotkeys_discounted"] == []
 
@@ -366,8 +371,8 @@ class TestTheDryRun:
         env = {**RELATIVE, "SN21_STANDING_AGE_BASIS_PREVIEW": "1"}
         assert standing_method.preview_enabled(env)
         out = standing_method.standing_preview(root, DAY, env, placement_floor=50)
-        assert out["current"]["window_days"] == 28 and out["preview"]["window_days"] == 42
-        assert out["preview"]["age_basis"] == "prediction_day"
+        assert out["current"]["window_days"] == 28 and out["preview"]["window_days"] == 28
+        assert out["preview"]["age_basis"] == "settle_day" and out["preview"]["model_epoch"] is True
         # under the rule in force b's bad month lands fresh: b below a
         assert out["hotkeys"]["b"]["current_rank"] == 2
         # under the preview b's old entries are aged and discounted: closer to a
@@ -485,3 +490,52 @@ class TestTheSettleClockMatchesThePlatform:
         assert SETTLING_WINDOW_DAYS == 2
         assert settle_date(date(2026, 9, 11), 7) == date(2026, 9, 21)
         assert settle_date(date(2026, 9, 11), 28) == date(2026, 10, 12)
+
+
+ME = {**RELATIVE, "SN21_STANDING_MODEL_EPOCH": "1",
+      "SN21_STANDING_MODEL_EPOCH_EFFECTIVE_FROM": "2026-09-17"}
+
+
+class TestTheAdoptedSwitch:
+    def test_it_gates_on_its_date_and_keeps_the_settle_day_parameters(self):
+        from hope.scoring.episode_average import model_epoch_in_force
+        assert model_epoch_in_force(ME, date(2026, 9, 16)) is False
+        assert model_epoch_in_force(ME, date(2026, 9, 17)) is True
+        assert age_basis_in_force(ME, date(2026, 9, 17)) == "settle_day"
+        assert window_in_force(ME, date(2026, 9, 17)) == 28
+        assert prior_mass_in_force(ME, date(2026, 9, 17)) == 250.0
+        p = standing_method.method_params(ME, date(2026, 9, 17))
+        assert p["model_epoch"]["in_force"] is True
+        assert p["model_epoch"]["previous_model_weight"] == 0.25
+        assert p["model_epoch"]["min_gap_days"] == 7
+        assert p["field_mean"] == "one_per_copy_group"
+        before = standing_method.method_params(ME, date(2026, 9, 16))
+        assert before["model_epoch"]["in_force"] is False and before["field_mean"] == "every_scored_hotkey"
+
+    def test_the_loader_discounts_on_settle_day_ages(self, tmp_path):
+        root = str(tmp_path)
+        entries = []
+        for i in range(260):
+            entries.append(_e("m", f"new{i}", 7, 0.6, "2026-09-19", predicted_on="2026-09-12", weight=1.0))
+            entries.append(_e("x", f"new{i}", 7, 0.4, "2026-09-19", predicted_on="2026-09-12", weight=1.0))
+        entries.append(_e("m", "old", 7, 0.1, "2026-09-19", predicted_on="2026-09-01", weight=1.0))
+        entries.append(_e("x", "old", 7, 0.9, "2026-09-19", predicted_on="2026-09-01", weight=1.0))
+        _receipt(root, "2026-09-19", entries)
+        stats: dict = {}
+        got = standing_method.load_relative_entries(
+            root, DAY, environ=ME, model_since={"m": date(2026, 9, 10)}, stats=stats)
+        old = [e for e in got["m"] if e.predicted_on == date(2026, 9, 1)]
+        assert [e.weight for e in old] == [0.25]
+        assert all(e.aged_from is None for e in got["m"]), "ages stay settle-day"
+        assert stats["model_epoch"] is True and stats["age_basis"] == "settle_day"
+        assert stats["previous_model"]["hotkeys_discounted"] == ["m"]
+
+    def test_off_it_is_the_rule_in_force_exactly(self, tmp_path):
+        root = str(tmp_path)
+        _receipt(root, "2026-09-18", [
+            _e("a", "ep1", 7, 0.6, "2026-09-18", predicted_on="2026-09-10"),
+            _e("b", "ep1", 7, 0.4, "2026-09-18", predicted_on="2026-09-10"),
+        ])
+        [a] = standing_method.load_relative_entries(root, DAY, environ=RELATIVE,
+                                                    model_since={"a": date(2026, 9, 15)})["a"]
+        assert a.predicted_on is None and a.aged_from is None and a.weight > 0

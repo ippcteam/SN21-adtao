@@ -492,12 +492,13 @@ shows the floor and the alpha read for every hotkey found below it.
 
 Neither rule ever changes past days, scores, or receipts.
 
-**Standing rule change, announced 14 September 2026, effective date to follow** (details in
+**Standing rule change from the 17 September 2026 run** (details in
 [SN21_SCORING.md](./SN21_SCORING.md), "Current model, current form"): entries
-age from the day the prediction was made rather than the day it settled
-(half-life 7 days, window 42 days, prior 100), and entries from the model
-you replaced are weighted down in proportion to the evidence your current
-model has shown, reaching a quarter once it carries 250 prediction-mass. The model you are running is what ranks you. Nothing changes until the effective date is announced.
+from a model you replaced are weighted down in proportion to the evidence
+your current model has shown, reaching a quarter once it carries 250
+prediction-mass, and the field mean counts one hotkey per copy group. Ageing,
+half-life, window and prior are unchanged. The model you are running is what
+ranks you.
 
 Burn rates in the transition plan are **planned and indicative only** and may
 change to protect alpha for holders.

@@ -82,7 +82,7 @@ from hope.scoring.duplication import (
     suppressed_copies,
 )
 from hope.scoring.episode_average import (
-    PLACEMENT_FLOOR_PREDICTIONS, ScoredEpisode, prediction_basis_in_force, standing)
+    PLACEMENT_FLOOR_PREDICTIONS, ScoredEpisode, model_epoch_in_force, prediction_basis_in_force, standing)
 from hope.scoring.weight_curve import CurveParams, curve_weights
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,7 @@ def absolute_standings(root: str, day: date, environ=os.environ) -> dict:
         # the rank describe one window. Under the prediction-day basis this
         # is also where the previous-model discount reaches the headline.
         model_since: dict | None = None
-        if prediction_basis_in_force(environ, day):
+        if model_epoch_in_force(environ, day) or prediction_basis_in_force(environ, day):
             from hope.scoring.model_epoch import load_model_since
             model_since = load_model_since(root) or None
         by_hotkey = load_relative_entries(root, day, w, environ=environ,
@@ -671,7 +671,8 @@ def allocation_from_ledger(
     _standing_stats: dict = {}
     _model_since: dict = {}
     _field_exclude: frozenset = frozenset()
-    if prediction_basis_in_force(environ, day):
+    _epoch_rule = model_epoch_in_force(environ, day) or prediction_basis_in_force(environ, day)
+    if _epoch_rule:
         from hope.scoring.model_epoch import load_model_since
         _model_since = load_model_since(root)
         _field_exclude = frozenset(copy_suppressed) | frozenset(
@@ -681,7 +682,7 @@ def allocation_from_ledger(
                                     stats=_standing_stats,
                                     field_exclude=(_field_exclude or None))
     _standing_method = dict(method_params(environ, day))
-    if prediction_basis_in_force(environ, day):
+    if _epoch_rule:
         _standing_method["model_since"] = {
             hk: d.isoformat() for hk, d in sorted(_model_since.items())}
         _standing_method["previous_model"] = _standing_stats.get("previous_model")

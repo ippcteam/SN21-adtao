@@ -171,7 +171,7 @@ that date. Entries already in the standing ledger are unchanged.
 
 Your published standing is an **episode-age-weighted** mean of scored entries — **not** a per-day average.
 
-- Each scored (episode, horizon) enters at its settle day (a second amendment, announced below with its effective date to follow, will age it from its **prediction day**).
+- Each scored (episode, horizon) enters at its settle day.
 - Weight decays with age: half-life **12 days**, window **35 days** (amended below).
 - A thin Saturday contributes fewer entries and therefore less influence — automatically. No special weekend rule.
 
@@ -243,74 +243,77 @@ audit (`/v1/daily/{day}/allocation-audit`, `standing_method`); a run before
 the effective date reports `absolute` there. Applied forward, never
 retroactively: no published score, receipt or past weight changes.
 
-### Current model, current form (rule amendment, announced 2026-09-14 — effective date to follow)
+### Current model, current form (rule amendment, announced 2026-09-14, revised 2026-09-15)
 
 Under the settle-day rule above, a replaced model kept deciding a miner's
 rank for weeks: nothing the new model predicts settles for 10 days, the old
 model's 14- and 28-day results keep landing at full weight for 31 days, and a
 bad settle day then takes a week to lose half its weight. A miner who fixed
 their model saw accuracy rise and rank stay flat. From the effective date
-below, two things change in how entries are aged and weighted. Nothing
-changes in how an entry is scored, the receipts stay as they are, and
-everything below is recomputable from published documents.
+below, two things change in how entries are weighted. Nothing changes in how
+an entry is scored, in how entries are aged, or in the half-life, window and
+prior; the receipts stay as they are; and everything below is recomputable
+from published documents.
 
-1. **Entries age from the day the prediction was made.** An entry's age is
-   the number of days since its **basket day**, not since its settle day.
-   Receipts from this date carry the basket day as `predicted_on`; for
-   older receipts the operator uses the basket the episode was released in
-   (the daily basket feed names it), and where that is unavailable derives it
-   as `finalized_on − horizon − 3` (the settle schedule: action-window end +
-   1 day + horizon + 2-day settling window).
-   The half-life stays **7 days**. The window becomes **42 days** of
-   prediction age, so the 28-day horizon, which lands at age 31, still
-   counts. The prior toward the field becomes **100** prediction-mass: with
-   entries entering already aged, the effective evidence behind a standing
-   is smaller, and 250 would over-shrink a model that is new but good.
-2. **A replaced model fades faster.** Each hotkey's **current model** is the
-   digest it runs, dated from the first basket day that digest ran (published
-   per hotkey in the allocation audit, `standing_method.model_since`). A
-   hotkey that changes model more than once inside the window keeps the
-   **earliest** change as its boundary: re-committing repeatedly does not
-   restart the discount.
-   Entries predicted **before** that day count at **one quarter** of their
-   weight — but only once the current model's own entries inside the window
-   carry at least **250** prediction-mass (the placement floor). Until then
-   the previous model's entries count in full: a new commit cannot shed a
-   bad month before it has shown anything, and a good new model is ranked on
-   its own work as soon as it has the floor's worth of it.
-3. Everything else is unchanged: the relative-to-field entry value, the
-   absence rule (an uncovered basket day is dated by that day under both
-   rules), tenure (still counted in settle days), the placement floor, the
-   curve.
+> **Revised 2026-09-15.** The version announced on 14 September also aged
+> entries from the prediction day with a 7-day half-life. Miners showed from
+> the receipts that this would have cut the 28-day horizon's share of a
+> standing from 29% to about 6%, against the published blend weights. That
+> part is withdrawn; entries keep settle-day ages.
+
+1. **A replaced model fades as the current one shows evidence.** Each
+   hotkey's **current model** is the digest it runs, dated from the first
+   basket day that digest ran (published per hotkey in the allocation audit,
+   `standing_method.model_since`). Entries predicted **before** that day are
+   weighted down **in proportion to the evidence the current model has
+   shown**: their weight falls linearly from full at zero current-model mass
+   to **one quarter** once the current model's own entries inside the window
+   carry **250** prediction-mass (the placement floor), and stays at a
+   quarter above that. A new commit cannot shed a bad month before it has
+   shown anything; a model with half the floor's evidence is half-way there;
+   and there is no single day on which a standing jumps. The boundary is the
+   **latest** model change, but a change counts only if it comes at least
+   **7 days** after the previously counted change, so re-committing every
+   few days cannot keep restarting the discount.
+2. **The field mean counts one hotkey per copy group.** An entry is still
+   your score minus the field mean on the same (episode, horizon), but the
+   mean is taken over one hotkey per group the duplicate-model and lineage
+   controls identify that day (the member that holds the seat, named in the
+   audit), so a model's weight in the benchmark does not grow with the
+   number of hotkeys running it. Copies are still scored against the mean.
+   A cell scored only by copies keeps the plain mean.
+3. Everything else is unchanged: settle-day ageing, half-life 7, window 28,
+   prior 250, the absence rule, tenure, the placement floor, the curve.
 
 | Parameter | Settle-day rule (2026-09-05) | From the effective date |
 | :---- | :---- | :---- |
-| Age measured from | settle day | prediction (basket) day |
-| Half-life | 7 days | 7 days |
-| Window | 28 days | 42 days |
-| Prior mass toward the field | 250 | 100 |
-| Previous model's entries | full weight | × 0.25 once the current model carries 250 mass in the window |
+| Age measured from | settle day | settle day (unchanged) |
+| Half-life / window / prior | 7 / 28 / 250 | 7 / 28 / 250 (unchanged) |
+| Previous model's entries | full weight | linear from × 1.0 (current model has 0 mass) to × 0.25 (250 mass in the window), then × 0.25 |
+| Model boundary | — | latest model change, at least 7 days after the previous counted change |
+| Field mean averages | every scored hotkey | one hotkey per copy group |
 
 **What this means for a new model.** Its first entries still land 10 days
-after its first basket; outcomes must mature and no rule changes that. From
-that day, each entry enters at the age of its prediction, so the new model's
-first landing already carries its own weight against the old model's late
-results instead of being outweighed by them; and once the new model holds
-250 mass of evidence, the old model's entries count at a quarter. A better
-model shows in the standing within days of its first landing rather than
-weeks, and a bad month stops counting against a miner about three weeks
-earlier than under the settle-day rule. The leaderboard's headline accuracy
-uses the same dating and weights, so the number a miner watches and the
-number that ranks them move together.
+after its first basket; outcomes must mature and no rule changes that. As
+its own evidence accumulates, the old model's entries count for less, down
+to a quarter once the new model holds the floor's worth of evidence, so a
+better model is ranked on its own work within about two weeks of its first
+landing rather than five. The leaderboard's headline accuracy uses the same
+weights, so the number a miner watches and the number that ranks them move
+together.
 
-Effective date: **to be announced**, with notice, in the miner channels and
-here. Until that date the settle-day rule above ranks every day, and each
-day's allocation audit reports `standing_method.age_basis: settle_day`.
-From the effective date it reports `prediction_day` together with
-`window_days`, `prior_mass`, `previous_model_weight`,
-`previous_model_threshold`, `model_since`, and `previous_model` naming the
-hotkeys discounted that day. Applied forward, never retroactively: no
-published score, receipt or past weight changes.
+**Receipts** carry the basket day as `predicted_on` (from 14 September 2026)
+and the producing image as `model` (short digest, from 15 September 2026);
+for older receipts the prediction day is the basket the episode was released
+in, or `finalized_on − horizon − 3`.
+
+Effective date: **the daily run of 2026-09-17** and every run after it.
+Applied forward, never retroactively: no published score, receipt or past
+weight changes. The parameters in force are published in each day's
+allocation audit (`standing_method.model_epoch`, `model_since`,
+`previous_model` naming the hotkeys discounted that day and the factor
+applied, `field_mean`). Until then a daily dry run of the rule is published
+at `/v1/daily/{day}/standing-preview`.
 
 Cold-start evidence floors (used when placing you for emissions — see rewards doc):
 

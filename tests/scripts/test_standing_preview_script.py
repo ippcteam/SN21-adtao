@@ -34,7 +34,7 @@ def test_it_writes_the_preview_and_prints_the_summary(tmp_path, monkeypatch, cap
     assert "===PREVIEW-END===" in out and "top-20 seats changed" in out
     path = os.path.join(root, "standing_preview", "2026-09-14.json")
     doc = json.load(open(path))
-    assert doc["preview"]["age_basis"] == "prediction_day"
+    assert doc["preview"]["model_epoch"] is True and doc["preview"]["age_basis"] == "settle_day"
     assert doc["preview"]["model_since"] == {"a": "2026-09-01"}
     # nothing else appeared on the disk
     assert sorted(os.listdir(root)) == ["model_since.json", "receipts", "standing_preview"]

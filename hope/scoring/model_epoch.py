@@ -36,12 +36,23 @@ def model_since_path(root: str) -> str:
     return os.path.join(root, MODEL_SINCE_FILE)
 
 
-# The boundary is judged inside the standing window: a hotkey that changed
-# its model more than once inside it gets the EARLIEST change as its
-# boundary, so re-committing repeatedly cannot restart the discount and shed
-# a second bad stretch. Half the field changed digest inside one window on
-# the first dry run (14 September 2026), which is what made this necessary.
+# The boundary is the LATEST model change, but a change counts only if it
+# comes at least MODEL_CHANGE_MIN_GAP_DAYS after the previous counted change:
+# re-committing every few days after a poor stretch cannot keep restarting
+# the discount, while a genuine improvement every week or two is ranked on
+# the model actually running. 0 = every change counts. Judged inside the
+# standing window plus the gap.
 MODEL_SINCE_WINDOW_DAYS = 42
+MODEL_CHANGE_MIN_GAP_DAYS = 7
+MODEL_CHANGE_MIN_GAP_ENV = "SN21_MODEL_CHANGE_MIN_GAP_DAYS"
+
+
+def model_change_min_gap_days(environ=os.environ) -> int:
+    try:
+        v = int((environ.get(MODEL_CHANGE_MIN_GAP_ENV) or "").strip())
+        return v if v >= 0 else MODEL_CHANGE_MIN_GAP_DAYS
+    except (TypeError, ValueError):
+        return MODEL_CHANGE_MIN_GAP_DAYS
 
 
 def _digest_on(root: str, day: str, hotkey: str) -> str | None:
@@ -57,27 +68,29 @@ def _digest_on(root: str, day: str, hotkey: str) -> str | None:
 
 def model_since_from_shadow(root: str, previous: Mapping | None = None,
                             window_days: int = MODEL_SINCE_WINDOW_DAYS,
-                            as_of: date | None = None) -> dict:
+                            as_of: date | None = None,
+                            min_gap_days: int | None = None) -> dict:
     """{hotkey: {"digest", "since", "changes"}} from the shadow ledger.
 
     For every hotkey that ran on the latest shadow day: the digest it ran,
-    and its boundary — the EARLIEST basket day inside the last `window_days`
-    on which its digest differed from the digest it ran the day before (its
-    first model change in the window). A hotkey whose digest is unchanged
-    across the whole window has no boundary inside it (`since` is the first
-    day of its current run, before the window) and nothing to discount.
-    `changes` counts the changes seen in the window. A hotkey that did not
-    run on the latest day keeps its `previous` entry, if any: a day's
-    absence does not change which model it runs.
+    and its boundary — the LATEST basket day on which its digest differed
+    from the day before, counting only changes that come at least
+    `min_gap_days` after the previously counted change (the first change in
+    the span always counts). A hotkey whose digest never changed in the span
+    has no boundary inside it (`since` is the first day of its run) and
+    nothing to discount. `changes` counts the changes seen. A hotkey that did
+    not run on the latest day keeps its `previous` entry, if any.
     """
     from hope.backtest.shadow import shadow_days
+    if min_gap_days is None:
+        min_gap_days = model_change_min_gap_days()
     days = shadow_days(root)
     if not days:
         return dict(previous or {})
     latest = days[-1]
     as_of = as_of or date.fromisoformat(latest)
-    cutoff = (as_of - timedelta(days=window_days)).isoformat()
-    in_window = [d for d in days if d >= cutoff]
+    cutoff = (as_of - timedelta(days=window_days + min_gap_days)).isoformat()
+    in_span = [d for d in days if d >= cutoff]
     latest_dir = os.path.join(root, "shadow", latest)
     hotkeys = sorted(fn[:-6] for fn in os.listdir(latest_dir) if fn.endswith(".jsonl"))
     out: dict = dict(previous or {})
@@ -85,16 +98,14 @@ def model_since_from_shadow(root: str, previous: Mapping | None = None,
         current = _digest_on(root, latest, hk)
         if not current:
             continue
-        seq = [(d, _digest_on(root, d, hk)) for d in in_window]
+        seq = [(d, _digest_on(root, d, hk)) for d in in_span]
         seq = [(d, g) for d, g in seq if g]
-        changes: list[str] = []
-        for (d0, g0), (d1, g1) in zip(seq, seq[1:]):
-            if g1 != g0:
-                changes.append(d1)
-        if changes:
-            since = changes[0]
-        else:
-            since = seq[0][0] if seq else latest
+        changes: list[str] = [d1 for (d0, g0), (d1, g1) in zip(seq, seq[1:]) if g1 != g0]
+        counted: list[str] = []
+        for d in changes:
+            if not counted or (date.fromisoformat(d) - date.fromisoformat(counted[-1])).days >= min_gap_days:
+                counted.append(d)
+        since = counted[-1] if counted else (seq[0][0] if seq else latest)
         out[hk] = {"digest": current, "since": since, "changes": len(changes)}
     return out
 
@@ -161,8 +172,8 @@ def apply_previous_model_discount(
     14 September 2026 on the first cut, which held the old entries at full
     weight until the threshold and then cut them in one step.
 
-    An entry's prediction day is `aged_from` (set by the receipt loader under
-    the prediction-day basis); an entry without one is left alone. Hotkeys
+    An entry's prediction day is `predicted_on` (set by the receipt loader);
+    an entry without one is left alone. Hotkeys
     absent from `model_since` are left alone. Returns the new mapping and a
     stats block for the audit, with the factor applied per discounted hotkey.
     """
@@ -178,11 +189,13 @@ def apply_previous_model_discount(
         current_mass = 0.0
         previous: list[int] = []
         for i, ep in enumerate(eps):
-            day = ep.aged_from or ep.scored_on
-            age = (as_of - day).days
+            pday = ep.predicted_on or ep.aged_from
+            if pday is None:
+                continue                      # unknown prediction day: left alone
+            age = (as_of - ep.age_day).days
             if age < 0 or age > window_days:
                 continue
-            if day >= since:
+            if pday >= since:
                 current_mass += ep.weight
             else:
                 previous.append(i)
@@ -197,6 +210,7 @@ def apply_previous_model_discount(
             ep = eps[i]
             scaled[i] = ScoredEpisode(score=ep.score, scored_on=ep.scored_on,
                                       weight=ep.weight * factor,
+                                      predicted_on=ep.predicted_on,
                                       aged_from=ep.aged_from)
         out[hk] = scaled
         discounted_hotkeys.append(hk)

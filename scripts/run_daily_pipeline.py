@@ -280,7 +280,8 @@ def _write_model_since(ledger_root) -> None:
     try:
         from hope.scoring.model_epoch import (
             load_model_since_raw, model_since_from_shadow, write_model_since)
-        mapping = model_since_from_shadow(ledger_root, load_model_since_raw(ledger_root))
+        mapping = model_since_from_shadow(ledger_root, load_model_since_raw(ledger_root),
+                                          min_gap_days=None)
         with_change = sum(1 for rec in mapping.values() if int(rec.get("changes") or 0) > 0)
         log(f"[shadow] model_since: {write_model_since(ledger_root, mapping)} hotkeys "
             f"({with_change} changed model inside the window)")

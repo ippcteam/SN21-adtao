@@ -145,6 +145,43 @@ def settle_lag_days(environ=os.environ) -> int:
     return 1 + settle
 
 
+# ---- rule amendment 2026-09-17: "current model, current form" (as adopted) --
+#
+# Entries keep settle-day ages, the published half-life, window and prior.
+# What changes: a hotkey's previous-model entries are weighted down as its
+# current model shows evidence (linear ramp, hope.scoring.model_epoch), and
+# the field mean counts one hotkey per copy group. The prediction-day basis
+# above stays available but is not part of the adopted amendment: with a
+# 7-day half-life it cut the 28-day horizon's share of a standing from 29%
+# to 6% (miner review, 15 September 2026).
+MODEL_EPOCH_ENV = "SN21_STANDING_MODEL_EPOCH"
+MODEL_EPOCH_EFFECTIVE_FROM_ENV = "SN21_STANDING_MODEL_EPOCH_EFFECTIVE_FROM"
+
+
+def model_epoch_effective_from(environ=os.environ) -> date | None:
+    raw = (environ.get(MODEL_EPOCH_EFFECTIVE_FROM_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def model_epoch_in_force(environ=os.environ, day: date | None = None) -> bool:
+    """True when the previous-model discount and the one-per-copy-group field
+    mean apply on `day`: the relative amendment is in force, the switch is
+    on, and its effective date (if any) has arrived. Pure."""
+    if not amendment_in_force(environ, day):
+        return False
+    if (environ.get(MODEL_EPOCH_ENV) or "").strip().lower() not in ("1", "true", "yes", "on"):
+        return False
+    start = model_epoch_effective_from(environ)
+    if start is None:
+        return True
+    return (day or date.today()) >= start
+
+
 def age_basis_effective_from(environ=os.environ) -> date | None:
     raw = (environ.get(AGE_BASIS_EFFECTIVE_FROM_ENV) or "").strip()
     if not raw:
@@ -236,6 +273,10 @@ class ScoredEpisode:
     score: float
     scored_on: date
     weight: float = 1.0
+    # The basket day the prediction was made on, when the loader knows it.
+    # Read by the previous-model discount (rule amendment 2026-09-17) to
+    # decide which of a hotkey's models produced the entry. None = unknown.
+    predicted_on: date | None = None
     # The day the entry's age is measured from when it differs from the day
     # it was scored: the PREDICTION day under the prediction-day basis (rule
     # amendment 2026-09-14). None = age from scored_on, the settle-day rule.
