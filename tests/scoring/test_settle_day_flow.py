@@ -81,11 +81,13 @@ def test_saturated_actual_does_not_blow_up():
 
 # ---- settle clock ------------------------------------------------------------
 
-def test_settle_date_is_window_end_plus_1_h_7():
+def test_settle_date_is_window_end_plus_1_h_2():
+    """The settling window the platform runs is two days (verified against
+    every published receipt, 2026-09-14): day 10 / 17 / 31, not 15 / 22 / 36."""
     we = date(2026, 7, 27)
-    assert settle_date(we, 7) == date(2026, 8, 11)    # day 15
-    assert settle_date(we, 14) == date(2026, 8, 18)   # day 22
-    assert settle_date(we, 28) == date(2026, 9, 1)    # day 36
+    assert settle_date(we, 7) == date(2026, 8, 6)     # day 10
+    assert settle_date(we, 14) == date(2026, 8, 13)   # day 17
+    assert settle_date(we, 28) == date(2026, 8, 27)   # day 31
 
 
 # ---- settled matching ----------------------------------------------------

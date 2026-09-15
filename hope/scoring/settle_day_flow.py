@@ -101,11 +101,14 @@ from hope.scoring.daily_score_flow import HorizonResult, day_flow, resolution_in
 # treats as a real magnitude.
 MIN_ENTRY_SCALE = 0.01
 
-# Settle clock (mirrors the operator platform's constants: OUTCOME_SETTLING_WINDOW_DAYS=7;
-# settle date = window_end + 1 + horizon + settle). Env-configurable; default is
-# the published 7-day buffer. Read once at import, so a process sets the env
-# before importing to choose its clock.
-SETTLING_WINDOW_DAYS = int(os.environ.get("SN21_SETTLING_WINDOW_DAYS", "7"))
+# Settle clock: settle date = window_end + 1 + horizon + settling window. The
+# window mirrors what the operator platform RUNS (OUTCOME_SETTLING_WINDOW_DAYS
+# = 2 — verified against every published receipt on 2026-09-14: finalized_on
+# is 10 / 17 / 31 days after the basket), not the 7 this constant carried
+# until then, which put the registration feed's first-settle dates two days
+# early. Same variable as the standing's derived prediction day; the legacy
+# SN21_SETTLING_WINDOW_DAYS is no longer read. Read once at import.
+SETTLING_WINDOW_DAYS = int(os.environ.get("SN21_OUTCOME_SETTLING_WINDOW_DAYS", "2") or "2")
 
 # ---- v2 restoration constants ------------------------------------------------
 # Ported from hope/scoring/onchain_adapter.py, converted from that module's

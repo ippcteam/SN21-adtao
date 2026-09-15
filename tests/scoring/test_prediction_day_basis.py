@@ -477,3 +477,11 @@ class TestTheReceiptNamesTheModel:
         index = load_prediction_index(root, models=models)
         assert index["ep1"]["a"] == {"7": {"p50": 1}}
         assert models == {("ep1", "a"): "sha256:one"}
+
+
+class TestTheSettleClockMatchesThePlatform:
+    def test_settle_date_uses_the_two_day_window(self):
+        from hope.scoring.settle_day_flow import SETTLING_WINDOW_DAYS, settle_date
+        assert SETTLING_WINDOW_DAYS == 2
+        assert settle_date(date(2026, 9, 11), 7) == date(2026, 9, 21)
+        assert settle_date(date(2026, 9, 11), 28) == date(2026, 10, 12)
