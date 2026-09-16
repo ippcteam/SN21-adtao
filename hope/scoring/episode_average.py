@@ -277,6 +277,13 @@ class ScoredEpisode:
     # Read by the previous-model discount (rule amendment 2026-09-17) to
     # decide which of a hotkey's models produced the entry. None = unknown.
     predicted_on: date | None = None
+    # The previous-model discount (rule amendment 2026-09-17): a factor on
+    # the entry's contribution to the MEAN only. The entry's `weight` is
+    # untouched, so the evidence mass the prior is weighed against, the
+    # placement floor and tenure all count it in full — a switch to an
+    # equally good model leaves the standing where it was (miner review,
+    # 16 September 2026).
+    discount: float = 1.0
     # The day the entry's age is measured from when it differs from the day
     # it was scored: the PREDICTION day under the prediction-day basis (rule
     # amendment 2026-09-14). None = age from scored_on, the settle-day rule.
@@ -325,18 +332,26 @@ def episode_weighted_average(
         prior_mass = prior_mass_in_force(day=as_of)
     if window_days is None:
         window_days = window_in_force(day=as_of)
+    # The discounted mean decides which entries dominate (the current
+    # model's); the prior is applied to the UNDISCOUNTED mass, so a discount
+    # never makes the prior pull harder. With every discount at 1.0 this is
+    # exactly (num + prior·value) / (mass + prior), the published formula.
     num = 0.0
     den = 0.0
+    mass = 0.0
     for ep in episodes:
         age = (as_of - ep.age_day).days
         if age < 0 or age > window_days:
             continue
         w = episode_weight(age, half_life_days) * ep.weight
-        num += w * ep.score
-        den += w
-    if den <= 0:
+        d = ep.discount if ep.discount is not None else 1.0
+        num += w * d * ep.score
+        den += w * d
+        mass += w
+    if den <= 0 or mass <= 0:
         return None
-    return (num + prior_mass * prior_value) / (den + prior_mass)
+    mean = num / den
+    return (mean * mass + prior_mass * prior_value) / (mass + prior_mass)
 
 
 def scored_prediction_count(

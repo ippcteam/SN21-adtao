@@ -269,9 +269,16 @@ from published documents.
    shown**: their weight falls linearly from full at zero current-model mass
    to **one quarter** once the current model's own entries inside the window
    carry **250** prediction-mass (the placement floor), and stays at a
-   quarter above that. A new commit cannot shed a bad month before it has
-   shown anything; a model with half the floor's evidence is half-way there;
-   and there is no single day on which a standing jumps. The boundary is the
+   quarter above that. The discount applies to an entry's share of the
+   **mean** only: the prior toward the field, the placement floor and
+   tenure count every entry's full mass. So a switch to an equally good
+   model leaves the standing where it was, a better one lifts it as its
+   rows arrive, a worse one lowers it, and switching as such costs nothing.
+   In symbols, standing = (Σ rel·w·f / Σ w·f) × (Σ w / (Σ w + 250)), with
+   f the discount and w the age-weighted entry weight. A new commit cannot
+   shed a bad month before it has shown anything; a model with half the
+   floor's evidence is half-way there; and there is no single day on which
+   a standing jumps. The boundary is the
    **latest** model change, but a change counts only if it comes at least
    **7 days** after the previously counted change, so re-committing every
    few days cannot keep restarting the discount.
@@ -289,7 +296,7 @@ from published documents.
 | :---- | :---- | :---- |
 | Age measured from | settle day | settle day (unchanged) |
 | Half-life / window / prior | 7 / 28 / 250 | 7 / 28 / 250 (unchanged) |
-| Previous model's entries | full weight | linear from × 1.0 (current model has 0 mass) to × 0.25 (250 mass in the window), then × 0.25 |
+| Previous model's entries | full weight | share of the mean × linear from 1.0 (current model has 0 mass) to 0.25 (250 mass in the window); full mass for the prior and the floors |
 | Model boundary | — | latest model change, at least 7 days after the previous counted change |
 | Field mean averages | every scored hotkey | one hotkey per copy group |
 

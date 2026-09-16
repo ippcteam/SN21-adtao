@@ -164,23 +164,25 @@ class TestThePreviousModelDiscount:
     def test_a_model_that_has_shown_nothing_sheds_nothing(self):
         out, stats = apply_previous_model_discount(
             self._entries(current_mass=0), self.SINCE, DAY, 42, 0.25, 250)
-        assert all(e.weight == 1.0 for e in out["m"])
+        assert all(e.discount == 1.0 and e.weight == 1.0 for e in out["m"])
         assert stats["hotkeys_discounted"] == []
 
     def test_the_discount_ramps_linearly_with_the_current_models_mass(self):
         # half the floor's evidence: half-way from 1.0 to 0.25
         out, stats = apply_previous_model_discount(
             self._entries(current_mass=125), self.SINCE, DAY, 42, 0.25, 250)
-        old = sorted(e.weight for e in out["m"])[:3]
+        old = sorted(e.discount for e in out["m"])[:3]
         assert old == pytest.approx([0.625, 0.625, 0.625])
+        assert all(e.weight == 1.0 for e in out["m"]), "mass is never discounted"
         assert stats["factor"] == {"m": 0.625}
 
     def test_at_and_above_the_threshold_the_old_entries_count_at_the_fraction(self):
         for mass in (250, 400):
             out, stats = apply_previous_model_discount(
                 self._entries(current_mass=mass), self.SINCE, DAY, 42, 0.25, 250)
-            weights = sorted(e.weight for e in out["m"])
-            assert weights[:3] == [0.25, 0.25, 0.25] and set(weights[3:]) == {1.0}
+            discounts = sorted(e.discount for e in out["m"])
+            assert discounts[:3] == [0.25, 0.25, 0.25] and set(discounts[3:]) == {1.0}
+            assert all(e.weight == 1.0 for e in out["m"])
             assert stats["hotkeys_discounted"] == ["m"]
             assert stats["factor"] == {"m": 0.25}
             assert stats["entries_discounted"] == 3
@@ -188,7 +190,7 @@ class TestThePreviousModelDiscount:
     def test_a_hotkey_with_no_known_model_is_left_alone(self):
         out, stats = apply_previous_model_discount(
             self._entries(current_mass=300), {}, DAY, 42, 0.25, 250)
-        assert all(e.weight == 1.0 for e in out["m"])
+        assert all(e.discount == 1.0 for e in out["m"])
 
     def test_only_entries_inside_the_window_count_toward_the_mass(self):
         eps = self._entries(current_mass=300)
@@ -196,7 +198,7 @@ class TestThePreviousModelDiscount:
                                   predicted_on=date(2026, 7, 1), aged_from=date(2026, 7, 1))
                     if e.predicted_on == date(2026, 9, 12) else e for e in eps["m"]]
         out, _ = apply_previous_model_discount(eps, self.SINCE, DAY, 42, 0.25, 250)
-        assert all(e.weight == 1.0 for e in out["m"])
+        assert all(e.discount == 1.0 for e in out["m"])
 
     def test_the_loader_applies_it_end_to_end(self, tmp_path):
         root = str(tmp_path)
@@ -211,7 +213,7 @@ class TestThePreviousModelDiscount:
         got = standing_method.load_relative_entries(
             root, DAY, environ=V2, model_since={"m": date(2026, 9, 10)}, stats=stats)
         old = [e for e in got["m"] if e.aged_from == date(2026, 9, 1)]
-        assert [e.weight for e in old] == [0.25]
+        assert [e.discount for e in old] == [0.25] and [e.weight for e in old] == [1.0]
         assert stats["previous_model"]["hotkeys_discounted"] == ["m"]
         assert stats["age_basis"] == "prediction_day"
 
@@ -525,7 +527,7 @@ class TestTheAdoptedSwitch:
         got = standing_method.load_relative_entries(
             root, DAY, environ=ME, model_since={"m": date(2026, 9, 10)}, stats=stats)
         old = [e for e in got["m"] if e.predicted_on == date(2026, 9, 1)]
-        assert [e.weight for e in old] == [0.25]
+        assert [e.discount for e in old] == [0.25] and [e.weight for e in old] == [1.0]
         assert all(e.aged_from is None for e in got["m"]), "ages stay settle-day"
         assert stats["model_epoch"] is True and stats["age_basis"] == "settle_day"
         assert stats["previous_model"]["hotkeys_discounted"] == ["m"]
@@ -547,3 +549,46 @@ def test_the_daily_loop_retires_the_dry_run_once_the_rule_is_in_force():
     src = inspect.getsource(daily_loop.run_daily_loop)
     assert "preview_enabled(environ) and model_epoch_in_force(environ, day)" in src
     assert '"retired": True' in src
+
+
+class TestTheDiscountNeverPenalisesSwitchingAsSuch:
+    """Sam's check (16 September 2026): replace a hotkey's previous-model
+    entries with its current model's average and the standing must not move.
+    Under the first cut the discount also shrank the mass the prior was
+    weighed against, so an equal-quality switch dropped a standing toward the
+    field and could push a miner under the placement floor."""
+
+    def _hotkey(self, old_score, new_score, n_old=200, n_new=300):
+        eps = [ScoredEpisode(old_score, DAY, 1.0, predicted_on=date(2026, 9, 1))
+               for _ in range(n_old)]
+        eps += [ScoredEpisode(new_score, DAY, 1.0, predicted_on=date(2026, 9, 12))
+                for _ in range(n_new)]
+        return {"m": eps}
+
+    def test_an_equal_quality_replacement_leaves_the_standing_unchanged(self):
+        same, _ = apply_previous_model_discount(self._hotkey(0.02, 0.02), {"m": date(2026, 9, 10)},
+                                                DAY, 28, 0.25, 250)
+        plain = self._hotkey(0.02, 0.02)["m"]
+        a = episode_weighted_average(same["m"], DAY, half_life_days=7, window_days=28, prior_mass=250)
+        b = episode_weighted_average(plain, DAY, half_life_days=7, window_days=28, prior_mass=250)
+        assert a == pytest.approx(b)
+
+    def test_a_better_replacement_lifts_and_a_worse_one_lowers(self):
+        better, _ = apply_previous_model_discount(self._hotkey(-0.02, 0.03), {"m": date(2026, 9, 10)},
+                                                  DAY, 28, 0.25, 250)
+        worse, _ = apply_previous_model_discount(self._hotkey(0.03, -0.02), {"m": date(2026, 9, 10)},
+                                                 DAY, 28, 0.25, 250)
+        undiscounted_better = episode_weighted_average(self._hotkey(-0.02, 0.03)["m"], DAY, 7, 28, 250)
+        undiscounted_worse = episode_weighted_average(self._hotkey(0.03, -0.02)["m"], DAY, 7, 28, 250)
+        assert episode_weighted_average(better["m"], DAY, 7, 28, 250) > undiscounted_better
+        assert episode_weighted_average(worse["m"], DAY, 7, 28, 250) < undiscounted_worse
+
+    def test_placement_mass_is_not_discounted(self):
+        out, _ = apply_previous_model_discount(self._hotkey(0.0, 0.0), {"m": date(2026, 9, 10)},
+                                               DAY, 28, 0.25, 250)
+        assert scored_prediction_count(out["m"], DAY, window_days=28) == 500.0
+
+    def test_no_discount_is_the_published_formula_exactly(self):
+        eps = [ScoredEpisode(0.6, DAY, 1.0), ScoredEpisode(0.4, DAY, 1.0)]
+        assert episode_weighted_average(eps, DAY, 12, 35, prior_mass=0) == pytest.approx(0.5)
+        assert episode_weighted_average(eps, DAY, 12, 35, prior_mass=2) == pytest.approx((0.6 + 0.4) / (2 + 2))

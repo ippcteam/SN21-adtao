@@ -162,8 +162,15 @@ def apply_previous_model_discount(
     weight: float,
     threshold_mass: float,
 ) -> tuple[dict[str, list[ScoredEpisode]], dict]:
-    """Scale the weight of entries predicted before a hotkey's current model,
-    in proportion to how much evidence the current model has shown. Pure.
+    """Discount the entries predicted before a hotkey's current model, in
+    proportion to how much evidence the current model has shown. Pure.
+
+    The discount is a factor on the entry's contribution to the MEAN
+    (`ScoredEpisode.discount`); its `weight` — the evidence mass the prior,
+    the placement floor and tenure count — is untouched. So a switch to an
+    equally good model leaves the standing unchanged, a better one lifts it
+    as its rows arrive, a worse one lowers it, and switching as such costs
+    nothing (miner review, 16 September 2026).
 
     The factor falls linearly from 1.0 at zero current-model mass to `weight`
     at `threshold_mass` (and stays there above it): a commit that has shown
@@ -209,9 +216,10 @@ def apply_previous_model_discount(
         for i in previous:
             ep = eps[i]
             scaled[i] = ScoredEpisode(score=ep.score, scored_on=ep.scored_on,
-                                      weight=ep.weight * factor,
+                                      weight=ep.weight,
                                       predicted_on=ep.predicted_on,
-                                      aged_from=ep.aged_from)
+                                      aged_from=ep.aged_from,
+                                      discount=ep.discount * factor)
         out[hk] = scaled
         discounted_hotkeys.append(hk)
         factors[hk] = round(factor, 4)
