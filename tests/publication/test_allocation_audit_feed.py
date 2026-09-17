@@ -190,3 +190,12 @@ class TestTheAlphaHoldIsPublished:
                                      "below_floor": {}, "excluded": [],
                                      "unreadable_kept": []}
         assert doc["summary"]["hotkeys_below_alpha_hold"] == 0
+
+
+class TestDeregisteredHotkeysAreNamed:
+    def test_the_list_and_the_count_are_published(self):
+        audit = dict(AUDIT); audit["deregistered"] = ["hk-gone-b", "hk-gone-a"]
+        doc = build_document(DAY, audit)
+        assert doc["deregistered"] == ["hk-gone-a", "hk-gone-b"]
+        assert doc["summary"]["hotkeys_deregistered"] == 2
+        assert build_document(DAY, AUDIT)["deregistered"] == []

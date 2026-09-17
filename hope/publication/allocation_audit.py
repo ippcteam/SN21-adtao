@@ -116,6 +116,7 @@ def build_document(day: date | str, collapse_audit: dict | None) -> dict:
             "hotkeys_below_placement_floor": len(
                 (audit.get("placement") or {}).get("below") or {}),
             "hotkeys_below_alpha_hold": len(alpha_hold.get("below_floor") or {}),
+            "hotkeys_deregistered": len(audit.get("deregistered") or []),
         },
         # The alpha hold (SN21_STAKING.md): the floor in force, whether it was
         # enforced on this vector, and every earner whose hold was under it
@@ -147,6 +148,10 @@ def build_document(day: date | str, collapse_audit: dict | None) -> dict:
             "scored_days": dict(tenure.get("scored_days") or {}),
             "stood_down": bool(tenure.get("stood_down")),
         },
+        # Hotkeys that hold a standing but have left the metagraph: not
+        # seated (a seat given to them cannot be paid). Named, so the paid
+        # set can be recomputed from the document.
+        "deregistered": _names(audit.get("deregistered")),
         "controls": policies,
         # Per-hotkey standings (rule amendment 2026-09-05): the relative
         # standing that ranks and pays, the absolute accuracy over the same
