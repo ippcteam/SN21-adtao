@@ -61,6 +61,22 @@ def test_published_days_and_metrics_come_from_the_envelopes(tmp_path):
     assert [m["entries"][0]["score"] for m in metrics] == [0.6, 0.8]
 
 
+def test_the_loader_keeps_only_the_fields_the_series_reads(tmp_path):
+    # A receipt entry carries the prediction, its components and more; the
+    # series reads four fields. Keeping the rest for every published day is
+    # what made this loader the run's largest allocation.
+    root = str(tmp_path)
+    _write_receipt(root, "2026-08-18",
+                   _entry("hkA", 7, 0.6, "2026-08-18"), {"not": "an entry"},
+                   "not a mapping")
+    (metrics,) = load_receipt_metrics(root)
+    entry, stray = metrics["entries"]      # the string is dropped
+    assert entry == {"miner": "hkA", "score": 0.6, "horizon_days": 7,
+                     "finalized_on": "2026-08-18"}
+    assert "prediction" not in entry and "components" not in entry
+    assert stray == {}                     # a mapping with none of them
+
+
 def test_an_unreadable_receipt_is_skipped_not_fatal(tmp_path):
     """One corrupt file must not take out a chart covering every other week."""
     root = str(tmp_path)

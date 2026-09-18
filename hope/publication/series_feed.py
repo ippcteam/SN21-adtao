@@ -52,8 +52,20 @@ def published_receipt_days(ledger_root: str) -> list[str]:
     )
 
 
+# The fields of a receipt entry the series reads (winner_series.roll_up and
+# entries_by_week). Nothing else in a receipt is looked at here.
+SERIES_ENTRY_FIELDS = ("miner", "score", "horizon_days", "finalized_on")
+
+
 def load_receipt_metrics(ledger_root: str) -> list[dict]:
-    """The `metrics` block of every published receipt.
+    """The `metrics` block of every published receipt, cut down to what the
+    series reads.
+
+    Each receipt is parsed on its own and released before the next one is
+    opened, and only the four entry fields the roll-up uses are kept. A full
+    receipt is tens of megabytes of JSON and several times that as objects;
+    holding every published day's at once made this loader the largest
+    allocation of the daily run, growing with every day published.
 
     A receipt that cannot be read is skipped rather than fatal: one corrupt
     file must not take out a chart covering every other week.
@@ -67,8 +79,17 @@ def load_receipt_metrics(ledger_root: str) -> list[dict]:
         except (OSError, ValueError):
             continue
         metrics = (envelope.get("document") or {}).get("metrics")
-        if isinstance(metrics, dict):
-            out.append(metrics)
+        del envelope
+        if not isinstance(metrics, dict):
+            continue
+        entries = metrics.get("entries")
+        slim = {k: v for k, v in metrics.items() if k != "entries"}
+        slim["entries"] = [
+            {k: e.get(k) for k in SERIES_ENTRY_FIELDS if k in e}
+            for e in (entries if isinstance(entries, list) else ())
+            if isinstance(e, dict)
+        ]
+        out.append(slim)
     return out
 
 
