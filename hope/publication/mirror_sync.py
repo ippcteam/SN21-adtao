@@ -387,12 +387,16 @@ def receipt_summary(envelope: dict) -> dict:
 
 
 def _ship_object(api_url: str, api_key: str, path: str, raw: bytes,
-                 body, timeout: int) -> dict:
+                 envelope_sha: str | None, summary: dict | None,
+                 timeout: int) -> dict:
     """Publish one large document through object storage: ask for an upload
     URL, PUT the exact bytes, then commit. The operator reads the object back
     and refuses the commit unless size and sha256 match, so a path can never
-    point at bytes other than the ones signed here."""
-    envelope_sha = body.get("sha256") if isinstance(body, dict) else None
+    point at bytes other than the ones signed here.
+
+    Takes the envelope's own sha256 and the receipt summary as values, not
+    the parsed document: by the time a large receipt is uploaded its parsed
+    form has been released (see sync_mirror), and only the bytes remain."""
     if not (isinstance(envelope_sha, str) and _HEX64_RE.match(envelope_sha)):
         envelope_sha = None
     spec = {
@@ -400,9 +404,7 @@ def _ship_object(api_url: str, api_key: str, path: str, raw: bytes,
         "size_bytes": len(raw),
         "content_sha256": hashlib.sha256(raw).hexdigest(),
         "envelope_sha256": envelope_sha,
-        "summary": (receipt_summary(body)
-                    if path.endswith("/receipt") and isinstance(body, dict)
-                    else None),
+        "summary": summary,
     }
     grant = _api_json(api_url, api_key, MIRROR_OBJECT_UPLOAD_PATH, spec, timeout)
     _put_object(grant["upload_url"], raw, timeout)
@@ -522,8 +524,17 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
     # rejected there.
     digest_of: dict[str, str] = {}
     skipped: list[str] = []
-    to_send = []
     adopted: list[str] = []
+    # Small documents travel in batches; large ones go to object storage
+    # (see below). A large document is kept here as its canonical BYTES
+    # only. The parsed form of a busy day's receipt is many times the size
+    # of the bytes, and the loop used to hold every one of them — plus a
+    # second serialisation for the digest, a third for the batch — until the
+    # end of the run; that is what pushed the mirror stage's memory into the
+    # gigabytes. Now a document is serialised once, its digest is taken from
+    # those bytes, and the objects are released as soon as the bytes exist.
+    small: list[dict] = []
+    large: list[tuple[str, bytes, str | None]] = []
     for it in items:
         path = it.get("path") or ""
         if "file" in it:
@@ -539,106 +550,126 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
                 digest_of[path] = cached[2]
                 skipped.append(path)
                 continue
-            it = {"path": path, "body": _read_envelope(file)}
-            digest = _sha256_of(it["body"])
-            if stamp is not None:
-                files[path] = [stamp[0], stamp[1], digest]
+            body = _read_envelope(file)
         else:
-            digest = _sha256_of(it.get("body"))
+            stamp = None
+            body = it.get("body")
+        if isinstance(body, (dict, list)):
+            raw = canonical_bytes(body)
+            digest = hashlib.sha256(raw).hexdigest()
+        else:
+            raw = None
+            digest = _sha256_of(body)
+        if stamp is not None:
+            files[path] = [stamp[0], stamp[1], digest]
         digest_of[path] = digest
-        if not _is_immutable(path):
-            to_send.append(it)
-            continue
-        if shipped.get(path) == digest:
-            skipped.append(path)
-            continue
-        # No record, but the mirror may already hold it from before this
-        # bookkeeping existed — which is true of every receipt published so
-        # far, including the ones too large to re-upload. Ask before sending.
-        body = it.get("body")
         envelope_sha = body.get("sha256") if isinstance(body, dict) else None
-        if _mirror_has(api_url, path, expected_sha=envelope_sha):
-            shipped[path] = digest
-            adopted.append(path)
-            skipped.append(path)
-            continue
-        to_send.append(it)
-    # Large documents are published to object storage, not batched, and only
-    # after every small document has shipped: the index, root and allocation
-    # audit must never wait on a receipt. A receipt published that way has no
-    # parsed copy on the mirror to filter per miner, so its per-miner route
-    # bodies are rendered here, with the validator route's own function.
-    small: list[dict] = []
-    large: list[tuple[dict, bytes]] = []
-    for it in to_send:
-        body = it.get("body")
-        raw = canonical_bytes(body) if isinstance(body, (dict, list)) else None
+        if _is_immutable(path):
+            if shipped.get(path) == digest:
+                skipped.append(path)
+                continue
+            # No record, but the mirror may already hold it from before this
+            # bookkeeping existed — which is true of every receipt published
+            # so far, including the ones too large to re-upload. Ask before
+            # sending.
+            if _mirror_has(api_url, path, expected_sha=envelope_sha):
+                shipped[path] = digest
+                adopted.append(path)
+                skipped.append(path)
+                continue
         if raw is not None and len(raw) > LARGE_OBJECT_BYTES:
-            large.append((it, raw))
+            large.append((path, raw, envelope_sha))
         else:
-            small.append(it)
-    for it, _raw in large:
-        path = it.get("path") or ""
-        if not (path.endswith("/receipt") and isinstance(it.get("body"), dict)):
-            continue
-        day = path.split("/")[3]
-        for hotkey, doc in miner_day_documents(it["body"], day).items():
-            if not _HOTKEY_RE.match(hotkey):
-                continue
-            slice_path = f"/v1/daily/{day}/miner/{hotkey}"
-            digest = _sha256_of(doc)
-            digest_of[slice_path] = digest
-            if shipped.get(slice_path) == digest:
-                skipped.append(slice_path)
-                continue
-            small.append({"path": slice_path, "body": doc})
-    items = small
-    batches: list[list[dict]] = []
-    batch: list[dict] = []
-    batch_bytes = 0
-    for it in items:
-        size = len(json.dumps(it))
-        if batch and batch_bytes + size > MAX_POST_BYTES:
-            batches.append(batch)
-            batch, batch_bytes = [], 0
-        batch.append(it)
-        batch_bytes += size
-    if batch:
-        batches.append(batch)
+            small.append({"path": path, "body": body})
+        del body, raw
 
     stored = 0
     rejected: list = []
     failed: list = []
+    posts = 0
+    items_sent = 0
     confirmed = dict(shipped)
-    for i, b in enumerate(batches):
+
+    def _post_batched(docs: list[dict]) -> None:
+        """POST `docs` in size-bounded batches, recording what the mirror
+        accepted. Never aborts on a failed batch: the index, root and the
+        absence-penalty log ride in the final batches, and a stale root is
+        worse than a missing receipt. Failures are surfaced after every
+        batch has been attempted."""
+        nonlocal stored, posts, items_sent
+        batch: list[dict] = []
+        batch_bytes = 0
+
+        def flush() -> None:
+            nonlocal stored, posts, items_sent, batch, batch_bytes
+            if not batch:
+                return
+            index = posts
+            posts += 1
+            items_sent += len(batch)
+            try:
+                out = _post(api_url, api_key, batch, timeout)
+                stored += int(out.get("stored") or 0)
+                batch_rejected = out.get("rejected") or []
+                rejected.extend(batch_rejected)
+                # Only what the mirror actually accepted. A rejected path
+                # must not be recorded as shipped, or it is never sent again.
+                bad = {r.get("path") if isinstance(r, dict) else r
+                       for r in batch_rejected}
+                for it in batch:
+                    p = it.get("path") or ""
+                    if _is_immutable(p) and p not in bad and p in digest_of:
+                        confirmed[p] = digest_of[p]
+            except Exception as e:  # noqa: BLE001
+                failed.append({"batch": index,
+                               "paths": [it.get("path") for it in batch],
+                               "error": str(e)})
+            batch, batch_bytes = [], 0
+
+        for it in docs:
+            size = len(json.dumps(it))
+            if batch and batch_bytes + size > MAX_POST_BYTES:
+                flush()
+            batch.append(it)
+            batch_bytes += size
+        flush()
+
+    # Every small document ships first: the index, root and allocation audit
+    # must never wait on a receipt.
+    _post_batched(small)
+    del small
+
+    # Large documents are published to object storage, one at a time. A
+    # receipt published that way has no parsed copy on the mirror to filter
+    # per miner, so its per-miner route bodies are rendered here, with the
+    # validator route's own function, posted, and released — all before the
+    # next receipt is parsed, so the run holds at most one parsed receipt.
+    for path, raw, envelope_sha in large:
+        summary = None
+        slice_prefix = None
+        if path.endswith("/receipt"):
+            body = json.loads(raw)
+            if isinstance(body, dict):
+                day = path.split("/")[3]
+                slice_prefix = path[: -len("receipt")] + "miner/"
+                summary = receipt_summary(body)
+                slices: list[dict] = []
+                for hotkey, doc in miner_day_documents(body, day).items():
+                    if not _HOTKEY_RE.match(hotkey):
+                        continue
+                    slice_path = f"{slice_prefix}{hotkey}"
+                    digest = _sha256_of(doc)
+                    digest_of[slice_path] = digest
+                    if shipped.get(slice_path) == digest:
+                        skipped.append(slice_path)
+                        continue
+                    slices.append({"path": slice_path, "body": doc})
+                del body
+                _post_batched(slices)
+                del slices
         try:
-            out = _post(api_url, api_key, b, timeout)
-            stored += int(out.get("stored") or 0)
-            batch_rejected = out.get("rejected") or []
-            rejected.extend(batch_rejected)
-            # Only what the mirror actually accepted. A rejected path must
-            # not be recorded as shipped, or it is never sent again.
-            bad = {r.get("path") if isinstance(r, dict) else r
-                   for r in batch_rejected}
-            for it in b:
-                p = it.get("path") or ""
-                if _is_immutable(p) and p not in bad and p in digest_of:
-                    confirmed[p] = digest_of[p]
-        except Exception as e:  # noqa: BLE001
-            # Do NOT abort the loop: index, root and the absence-penalty log
-            # ride in the FINAL batches, and a stale root is worse than a
-            # missing receipt. Record the failure and keep shipping; surface
-            # it after every batch has been attempted.
-            failed.append({"batch": i,
-                           "paths": [it.get("path") for it in b],
-                           "error": str(e)})
-    failed_paths = {p for f in failed for p in f["paths"]}
-    rejected_paths = {r.get("path") if isinstance(r, dict) else r
-                      for r in rejected}
-    for it, raw in large:
-        path = it.get("path") or ""
-        try:
-            _ship_object(api_url, api_key, path, raw, it.get("body"), timeout)
+            _ship_object(api_url, api_key, path, raw, envelope_sha, summary,
+                         timeout)
         except Exception as e:  # noqa: BLE001
             failed.append({"batch": f"object:{path}", "paths": [path],
                            "error": str(e)})
@@ -648,8 +679,9 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
         # Slices are rendered only for receipts a run sends, so recording the
         # receipt while one of its slices failed would leave that slice
         # missing for good.
-        slice_prefix = (path[: -len("receipt")] + "miner/"
-                        if path.endswith("/receipt") else None)
+        failed_paths = {p for f in failed for p in f["paths"]}
+        rejected_paths = {r.get("path") if isinstance(r, dict) else r
+                          for r in rejected}
         slices_ok = slice_prefix is None or not any(
             p and p.startswith(slice_prefix)
             for p in failed_paths | rejected_paths)
@@ -659,7 +691,7 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
         confirmed[_FILES_KEY] = files
     _record_shipped(ledger_root, confirmed)
     summary = {"success": not failed, "stored": stored, "rejected": rejected,
-               "items_sent": len(items), "posts": len(batches),
+               "items_sent": items_sent, "posts": posts,
                "objects": len(large),
                "skipped_unchanged": len(skipped),
                "adopted_from_mirror": len(adopted), "failed_posts": failed}
