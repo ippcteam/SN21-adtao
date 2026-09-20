@@ -73,3 +73,23 @@ class TestVerdictFeed:
             "by_horizon": {"7": {"model": {"gate_score": 0.71}, "baseline": {"gate_score": 0.40}, "cells": 250}}}
         assert "model_detail" not in by["sha256:aa"]["gate"]
         assert "gate" not in by["sha256:bb"]
+
+
+class TestVerdictCorpus:
+    def test_the_corpus_identity_travels_when_the_record_kept_it(self, tmp_path):
+        write_verdict(tmp_path, "a.json",
+                      {"hotkey": "5A", "image_digest": "sha256:aa", "status": "admitted",
+                       "corpus": {"source": "held-out", "key": "HO-2026-09-20",
+                                  "sha256": "ab" * 32, "cutoff": "2026-07-17",
+                                  "episodes": 250, "outcome_rows": 750,
+                                  "private_note": "never published"}},
+                      attested=True)
+        write_verdict(tmp_path, "b.json",
+                      {"hotkey": "5B", "image_digest": "sha256:bb", "status": "admitted"})
+        doc = build_verdicts_document(str(tmp_path))
+        by = {v["digest"]: v for v in doc["verdicts"]}
+        assert by["sha256:aa"]["corpus"] == {
+            "source": "held-out", "key": "HO-2026-09-20", "sha256": "ab" * 32,
+            "cutoff": "2026-07-17", "episodes": 250, "outcome_rows": 750}
+        assert "corpus" not in by["sha256:bb"]          # predates the field
+        assert "held-out" in doc["note"] and "public-bundle" in doc["note"]

@@ -567,6 +567,49 @@ The settle log line `[alpha-hold]` and the daemon's `[alpha-gate]` line
 report the floor, its source and the hotkeys or uids below it.
 
 
+## Admission corpus (the episode set the gate judges on)
+
+The model gate judges every newly committed image on one frozen set of
+episodes with settled outcomes, served by the operator API:
+
+- `GET /internal/bittensor/v1/admission/corpus` — which set is current:
+  key, cutoff date, episode and truth-row counts, sha256 of the document.
+- `GET /internal/bittensor/v1/admission/corpus/<key>/document` — the
+  document itself, gzip'd, bytes as stored.
+
+The pipeline asks for the metadata at the start of every run, keeps a copy
+of the document under `<ledger_root>/admission_corpus/<key>.jsonl`, and
+downloads only when the served sha differs from the copy on disk. The
+document is verified against the served sha before it is written; a
+mismatch is refused. Every verdict records the corpus it was judged on
+(`corpus`: source, key, sha256, cutoff, counts), and the same block is in
+the run record and the public verdict feed.
+
+**What the set is.** Episodes never served in any basket, whose outcomes
+were never published, on public-training accounts that are not
+operator-managed, with every horizon measured, and with action windows
+after the last window in the published training bundle. Selection is
+deterministic: sort by episode id, then stride to the corpus size. Because
+every horizon has settled, the action window is at least 36 days old and a
+corpus episode cannot be picked up by a later daily basket.
+
+**Rotating the set.** Build and activate a new one on the operator side:
+
+```bash
+python3 scripts/sn21_build_admission_corpus.py --cutoff <bundle last window> --n 250 --activate
+```
+
+Activation retires the previous set; the next pipeline run fetches the new
+document and every verdict from then on names the new key. Earlier verdicts
+keep the key they were judged on — a corpus is never edited in place. Do
+not rotate mid-run.
+
+**Fallback.** If the API cannot name a corpus and nothing is cached, the
+gate runs on the public training bundle for that run and says so in the log
+(`[corpus] WARNING`), the run record (`corpus.source = public-bundle`) and
+the verdict. Verdicts issued before this section existed were judged on the
+bundle and carry no `corpus` block.
+
 ## Day-volume gate (SN21_D3_MIN_DAILY_EPISODES)
 
 A day whose basket carries fewer episodes than this holds the previous

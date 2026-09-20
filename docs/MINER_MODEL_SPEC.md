@@ -203,6 +203,9 @@ naive baseline** (persistence: zero-change medians with corpus-calibrated
 spreads) on the gate metric — quantile pinball blended with direction
 accuracy, 70/30 — and reaching at least 90% of the reference model's
 coverage. Every model update re-runs the gate, and gate results are published.
+The corpus is not published; each published verdict names the corpus it was
+judged on (its key and the sha256 of the document), so two verdicts can be
+compared only when they name the same corpus.
 
 ## 4. The daily cycle once admitted
 

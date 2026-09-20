@@ -64,6 +64,11 @@ def build_verdicts_document(ledger_root: str) -> dict:
                     "margin", "coverage_ok") if gate.get(k) is not None}
                 if isinstance(gate.get("by_horizon"), dict) and gate["by_horizon"]:
                     rec["gate"]["by_horizon"] = gate["by_horizon"]
+            corpus = body.get("corpus")
+            if isinstance(corpus, dict) and corpus.get("source"):
+                rec["corpus"] = {k: corpus.get(k) for k in (
+                    "source", "key", "sha256", "cutoff", "episodes", "outcome_rows")
+                    if corpus.get(k) is not None}
             verdicts.append(rec)
     return {
         "feed": "sn21-admission-verdicts",
@@ -73,7 +78,13 @@ def build_verdicts_document(ledger_root: str) -> dict:
                  "digest with no record here has not been judged yet — "
                  "still queued, not rejected. `gate` carries the pooled "
                  "scores the verdict was decided on and the same scores per "
-                 "horizon, for records that kept them."),
+                 "horizon, for records that kept them. `corpus` names the "
+                 "episode set the verdict was judged on: `held-out` is the "
+                 "operator's unpublished corpus (key, sha256 of the document, "
+                 "cutoff after the published bundle's last window); "
+                 "`public-bundle` is the published training bundle, the source "
+                 "used before a held-out corpus was served. Records without "
+                 "`corpus` predate the field and were judged on the bundle."),
         "verdicts": verdicts,
         "total": len(verdicts),
     }

@@ -8,7 +8,7 @@ WHAT IT DOES, IN ORDER (each stage fail-soft, with its own summary line):
   0. resolve   — today's basket (BD-<date>), full episode payloads fetched from
                  the operator data API over HTTP. No operator database login.
   1. intake    — gate every newly-committed model image through the namespace
-                 sandbox against the admission corpus; write the admitted-digest
+                 sandbox against the held-out admission corpus; write the admitted-digest
                  set. Idempotent: a digest with a final verdict is never
                  re-gated.
   2. shadow    — execute every ADMITTED model against today's basket in the
@@ -45,7 +45,7 @@ from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.backtest import bundle_corpus  # noqa: E402
+from hope.backtest import admission_corpus  # noqa: E402
 from hope.backtest.execution_mode import basket_runner, executor_mode  # noqa: E402
 from hope.backtest.gate_service import gate_submission  # noqa: E402
 from hope.backtest.intake_runner import run_intake  # noqa: E402
@@ -65,6 +65,14 @@ def _api_base_and_key():
         raise SystemExit("HOPE_API_URL and HOPE_API_KEY are required to fetch "
                          "the basket from the operator data API")
     return url, key
+
+
+def _api_get_bytes(path: str, timeout_s: int = 600) -> bytes:
+    url, key = _api_base_and_key()
+    req = urllib.request.Request(f"{url}/internal/bittensor/v1/{path.lstrip('/')}",
+                                 headers={"X-API-Key": key})
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        return resp.read()
 
 
 def _api_get(path: str, timeout_s: int = 120):
@@ -181,7 +189,7 @@ def fetch_basket_payloads(release_key: str) -> list:
 
 # ---- 1. intake ---------------------------------------------------------------
 
-def stage_intake(ledger_root, corpus, key, timeout_s, limit):
+def stage_intake(ledger_root, corpus, key, timeout_s, limit, corpus_info=None):
     from scripts.run_model_intake import (
         _persist,
         _rewrite_admitted,
@@ -206,7 +214,8 @@ def stage_intake(ledger_root, corpus, key, timeout_s, limit):
         return gate_submission(
             pinned_ref, corpus[0], corpus[1], generated_at=now,
             private_key=key, timeout_s=timeout_s,
-            runner=lambda ref, eps, _t: run_basket(ref, eps))
+            runner=lambda ref, eps, _t: run_basket(ref, eps),
+            corpus_info=corpus_info)
 
     # Bound a single sweep so a run cannot be a hundred untrusted container
     # starts unattended. The bound applies to digests that still NEED a
@@ -1218,13 +1227,17 @@ def main():
 
     note_memory("resolve", record)
 
-    # corpus for admission
+    # corpus for admission — the served held-out corpus, cached on the
+    # ledger disk by sha; the public bundle only if nothing else is available
     from scripts.run_daily_loop import _key_loader
     key = _key_loader()
-    bundle = bundle_corpus.fetch_bundle(workdir)
-    corpus = bundle_corpus.build_from_bundle(bundle, args.corpus_size)
-    log(f"[corpus] {len(corpus[0])} episodes, {len(corpus[1])} outcome rows "
-        f"(public bundle — mechanics gate)")
+    episodes_c, outcomes_c, corpus_info = admission_corpus.load_corpus(
+        args.ledger_root, args.corpus_size, _api_get, _api_get_bytes, workdir, log=log)
+    corpus = (episodes_c, outcomes_c)
+    record["corpus"] = corpus_info
+    log(f"[corpus] {corpus_info['source']} {corpus_info.get('key') or ''} "
+        f"{corpus_info['episodes']} episodes, {corpus_info['outcome_rows']} outcome rows"
+        + (f", sha {corpus_info['sha256'][:12]}" if corpus_info.get('sha256') else ""))
 
     if args.dry_run:
         log("[pipeline] DRY RUN — nothing executed or written past this point")
@@ -1235,7 +1248,8 @@ def main():
     if not args.skip_intake:
         try:
             s = stage_intake(args.ledger_root, corpus, key,
-                             args.gate_timeout_s, args.intake_limit)
+                             args.gate_timeout_s, args.intake_limit,
+                             corpus_info=corpus_info)
             record["stages"]["intake"] = s
             log(f"[intake] gated={s['gated']} admitted={s['admitted']} "
                 f"rejected={s['rejected']} admitted_total={s['admitted_total']}")

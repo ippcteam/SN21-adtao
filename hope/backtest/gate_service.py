@@ -90,7 +90,8 @@ def gate_submission(image_digest: str,
                     private_key=None,
                     timeout_s: int = 15 * 60,
                     determinism_sample: int = DETERMINISM_SAMPLE_EPISODES,
-                    runner=None) -> dict:
+                    runner=None,
+                    corpus_info: dict | None = None) -> dict:
     """Run the full admission: sandbox -> gate -> attested verdict document.
 
     Includes a DETERMINISM check, because the subnet publishes that a rerun
@@ -106,6 +107,10 @@ def gate_submission(image_digest: str,
     `runner(image, episodes, timeout_s) -> RunResult` selects the executor.
     Default docker, so every existing caller is unchanged; the Render worker
     passes the namespace-sandbox runner.
+
+    `corpus_info` names the corpus the verdict was judged on (source, key,
+    sha256, cutoff, counts). It goes into the verdict before attestation, so
+    a published verdict says which episode set produced it.
     """
     run_fn = runner or _default_runner
     run = run_fn(image_digest, episodes, timeout_s)
@@ -145,6 +150,9 @@ def gate_submission(image_digest: str,
                     "episodes_in": run.episodes_in,
                     "predictions_out": run.predictions_out,
                 })
+
+    if corpus_info:
+        verdict["corpus"] = dict(corpus_info)
 
     doc = build_document(
         ADMISSION_FEED, generated_at[:10],
