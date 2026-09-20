@@ -15,6 +15,7 @@ from hope.backtest.gate import (
     OutcomeRow,
     admission_verdict,
     corpus_spread,
+    gate_by_horizon,
     gate_score,
     naive_baseline_prediction,
 )
@@ -114,10 +115,11 @@ def gate_submission(image_digest: str,
     else:
         preds = runner_predictions_to_gate_keys(run.predictions)
         spread = corpus_spread(outcomes)
-        base = gate_score(outcomes, {
-            (o.episode_id, o.horizon_days): naive_baseline_prediction(spread)
-            for o in outcomes})
+        base_preds = {(o.episode_id, o.horizon_days): naive_baseline_prediction(spread)
+                      for o in outcomes}
+        base = gate_score(outcomes, base_preds)
         model = gate_score(outcomes, preds)
+        by_horizon = gate_by_horizon(outcomes, preds, base_preds) if model else {}
         if model is None:
             verdict = {"admitted": False, "reason": "no_scoreable_predictions",
                        "episodes_in": run.episodes_in,
@@ -139,6 +141,7 @@ def gate_submission(image_digest: str,
                     "reason": ("beats_baseline" if verdict["admitted"]
                                else "below_baseline_or_coverage"),
                     "model_detail": model, "baseline_detail": base,
+                    "by_horizon": by_horizon,
                     "episodes_in": run.episodes_in,
                     "predictions_out": run.predictions_out,
                 })

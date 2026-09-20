@@ -133,6 +133,23 @@ def gate_score(outcomes: list[OutcomeRow],
     }
 
 
+def gate_by_horizon(outcomes: list[OutcomeRow],
+                    predictions: dict[tuple[str, int], dict],
+                    baseline: dict[tuple[str, int], dict]) -> dict:
+    """The gate score per horizon, model and baseline, on the same corpus.
+
+    The admission decision stays on the pooled score; this is reporting only.
+    It answers "which horizon is weak" for the miner, and gives every reader
+    the same per-horizon numbers the verdict's pooled score is made of."""
+    out: dict = {}
+    for h in sorted({o.horizon_days for o in outcomes}):
+        cells = [o for o in outcomes if o.horizon_days == h]
+        out[str(h)] = {"model": gate_score(cells, predictions),
+                       "baseline": gate_score(cells, baseline),
+                       "cells": len(cells)}
+    return out
+
+
 def admission_verdict(model_result: dict, baseline_result: dict,
                       min_coverage_ratio: float = 0.9) -> dict:
     """ADMIT iff the model beats the baseline gate_score with adequate coverage."""

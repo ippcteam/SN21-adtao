@@ -310,6 +310,8 @@ Updating your model = **new digest** = re-enters the backtest gate.
 
 > **Intake / gate.** The subnet pulls by digest, verifies `RepoDigests`, and
 > runs the admission gate (beat naive baseline on the held-out corpus).
+> The published verdict carries the gate's pooled scores and the same
+> scores per horizon (7 / 14 / 28), so a miner can see which horizon is weak.
 > Coordinate publication with the AdTAO operator via Discord if you need the
 > current intake window or registry allow-list details while tooling lands.
 > Gate results are published when admission completes.

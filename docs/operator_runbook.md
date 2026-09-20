@@ -565,3 +565,16 @@ runs in observing mode and the allocation audit's `alpha_hold` block names
 who would lose a seat, so read that block for a day before switching it on.
 The settle log line `[alpha-hold]` and the daemon's `[alpha-gate]` line
 report the floor, its source and the hotkeys or uids below it.
+
+
+## Day-volume gate (SN21_D3_MIN_DAILY_EPISODES)
+
+A day whose basket carries fewer episodes than this holds the previous
+weight vector (the run still settles, scores and publishes the audit; only
+the vector is held). Weekend baskets are small — 106 on BD-2026-09-19, 124
+on BD-2026-09-13 — so at 150 every Sunday run held. Set to **50** on
+2026-09-20 so the vector is recomputed every day; the 28-day standing window
+means a thin day moves ranks very little, and the gate now guards only
+against a near-empty day. Lower or raise via the executor's env (a deploy
+applies it); a rerun of a held day is `SN21_RERUN_DAY=<day>` plus a deploy,
+then unset it.

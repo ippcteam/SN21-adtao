@@ -53,6 +53,17 @@ def build_verdicts_document(ledger_root: str) -> dict:
                 if body.get(k):
                     rec["judged_at"] = str(body[k])
                     break
+            # The gate's own numbers, when the record carries them: the pooled
+            # scores the verdict was decided on, the bar, and the same scores
+            # per horizon — so "which horizon is weak" is readable here rather
+            # than inferred from the receipts weeks later.
+            gate = body.get("gate")
+            if isinstance(gate, dict) and gate.get("model_gate_score") is not None:
+                rec["gate"] = {k: gate.get(k) for k in (
+                    "model_gate_score", "baseline_gate_score", "required_gate_score",
+                    "margin", "coverage_ok") if gate.get(k) is not None}
+                if isinstance(gate.get("by_horizon"), dict) and gate["by_horizon"]:
+                    rec["gate"]["by_horizon"] = gate["by_horizon"]
             verdicts.append(rec)
     return {
         "feed": "sn21-admission-verdicts",
@@ -60,7 +71,9 @@ def build_verdicts_document(ledger_root: str) -> dict:
                  "run on every daily basket; `rejected_gate` carries the "
                  "first line of the container's own failure. A committed "
                  "digest with no record here has not been judged yet — "
-                 "still queued, not rejected."),
+                 "still queued, not rejected. `gate` carries the pooled "
+                 "scores the verdict was decided on and the same scores per "
+                 "horizon, for records that kept them."),
         "verdicts": verdicts,
         "total": len(verdicts),
     }
