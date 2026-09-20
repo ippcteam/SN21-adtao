@@ -217,6 +217,29 @@ class TestThePreviousModelDiscount:
         assert stats["previous_model"]["hotkeys_discounted"] == ["m"]
         assert stats["age_basis"] == "prediction_day"
 
+    def test_the_ramp_is_published_for_every_hotkey_with_a_boundary(self):
+        """A miner reads their position on the ramp off the audit: the current
+        model's mass, what is left to the threshold, the factor — whether or
+        not anything was discounted that day."""
+        def ep(score, pday):
+            return ScoredEpisode(score=score, scored_on=date(2026, 9, 19), weight=1.0,
+                                 predicted_on=date.fromisoformat(pday))
+        eps = {
+            "half": [ep(0.5, "2026-09-12")] * 125 + [ep(0.1, "2026-09-01")],
+            "fresh": [ep(0.1, "2026-09-01")],
+            "done": [ep(0.5, "2026-09-12")] * 300,
+            "nobound": [ep(0.5, "2026-09-12")],
+        }
+        since = {"half": date(2026, 9, 10), "fresh": date(2026, 9, 10), "done": date(2026, 9, 10)}
+        _out, stats = apply_previous_model_discount(eps, since, DAY, 42, 0.25, 250)
+        ramp = stats["ramp"]
+        assert set(ramp) == {"half", "fresh", "done"}
+        assert ramp["half"] == {"current_mass": 125.0, "threshold_mass": 250,
+                                "remaining_mass": 125.0, "factor": 0.625, "previous_entries": 1}
+        assert ramp["fresh"]["current_mass"] == 0.0 and ramp["fresh"]["factor"] == 1.0
+        assert ramp["done"]["remaining_mass"] == 0.0 and ramp["done"]["factor"] == 0.25
+        assert ramp["done"]["previous_entries"] == 0
+
 
 def _shadow(root, day, hotkey, digest):
     d = os.path.join(root, "shadow", day)

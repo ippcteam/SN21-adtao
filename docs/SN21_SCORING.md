@@ -319,7 +319,10 @@ Applied forward, never retroactively: no published score, receipt or past
 weight changes. The parameters in force are published in each day's
 allocation audit (`standing_method.model_epoch`, `model_since`,
 `previous_model` naming the hotkeys discounted that day and the factor
-applied, `field_mean`). Until then a daily dry run of the rule is published
+applied, and `previous_model.ramp` giving, for every hotkey with a model
+boundary, the current model's in-window prediction-mass, the mass still
+needed to reach the 250 threshold and the factor its earlier entries
+carry, `field_mean`). Until then a daily dry run of the rule is published
 at `/v1/daily/{day}/standing-preview`.
 
 Cold-start evidence floors (used when placing you for emissions — see rewards doc):

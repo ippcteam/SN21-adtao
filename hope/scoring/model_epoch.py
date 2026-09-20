@@ -187,6 +187,11 @@ def apply_previous_model_discount(
     out: dict[str, list[ScoredEpisode]] = {}
     discounted_hotkeys: list[str] = []
     factors: dict[str, float] = {}
+    # Where every hotkey with a model boundary sits on the ramp, discounted
+    # or not: the current model's in-window mass, what is left to the
+    # threshold, and the factor its previous entries carry. Published so a
+    # miner reads their position off the audit instead of inferring it.
+    ramp: dict[str, dict] = {}
     discounted_entries = 0
     for hk, eps in entries.items():
         since = model_since.get(hk)
@@ -209,6 +214,13 @@ def apply_previous_model_discount(
         progress = (min(1.0, current_mass / threshold_mass)
                     if threshold_mass > 0 else 1.0)
         factor = 1.0 - (1.0 - weight) * progress
+        ramp[hk] = {
+            "current_mass": round(current_mass, 4),
+            "threshold_mass": threshold_mass,
+            "remaining_mass": round(max(0.0, threshold_mass - current_mass), 4),
+            "factor": round(factor, 4),
+            "previous_entries": len(previous),
+        }
         if not previous or factor >= 1.0:
             out[hk] = list(eps)
             continue
@@ -229,4 +241,5 @@ def apply_previous_model_discount(
                           "`weight` at `threshold_mass`",
                  "hotkeys_discounted": sorted(discounted_hotkeys),
                  "factor": {hk: factors[hk] for hk in sorted(factors)},
-                 "entries_discounted": discounted_entries}
+                 "entries_discounted": discounted_entries,
+                 "ramp": {hk: ramp[hk] for hk in sorted(ramp)}}
