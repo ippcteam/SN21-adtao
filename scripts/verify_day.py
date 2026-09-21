@@ -105,6 +105,18 @@ class _Source:
         got = self._get_json(f"{self.url}/v1/daily/{day}/accuracy")
         return None if "_absent" in got else got
 
+    def allocation_audit(self, day):
+        """The day's allocation audit — where the controls publish what they
+        read. The grouping needs one input the receipt does not carry: which
+        model each hotkey was running. That is published here, and every row
+        in the receipt carries the digest that produced it, so the map can be
+        checked against the rows rather than taken on faith."""
+        if self.root:
+            p = os.path.join(self.root, "allocation_audit", f"{day}.json")
+            return _load(p) if os.path.exists(p) else None
+        got = self._get_json(f"{self.url}/v1/daily/{day}/allocation-audit")
+        return None if "_absent" in got else got
+
     def proof(self, day):
         """The day's inclusion proof in the rolling feed root."""
         if self.root:
@@ -321,7 +333,16 @@ def recheck_grouping(root, day, params_csv, url=None):
         actuals_from_receipt,
         predictions_from_receipt,
     )
-    predictions = predictions_from_receipt(metrics.get("entries", []))
+    # The four signals read only the rows a hotkey produced under the model
+    # it was running that day, so the recheck has to narrow the same way or
+    # it rebuilds a grouping the subnet never made. The digest map comes from
+    # the day's published audit; when it is absent (a day before the control
+    # published one) the recheck falls back to every row, as the run did.
+    audit_doc = _Source(root=root, url=url).allocation_audit(day) or {}
+    lineage_control = ((audit_doc.get("controls") or {}).get("lineage") or {})
+    current_model = lineage_control.get("current_model")
+    predictions = predictions_from_receipt(metrics.get("entries", []),
+                                           current_model or None)
     actuals = actuals_from_receipt(metrics.get("outcomes", []))
 
     groups, audit = lineage_collisions(
@@ -340,6 +361,7 @@ def recheck_grouping(root, day, params_csv, url=None):
         "groups": [{"payee": g.original, "eliminated": list(g.copies)}
                    for g in groups],
         "pairs_examined": len(audit),
+        "rows": lineage_control.get("rows"),
     }
 
 

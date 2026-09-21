@@ -217,3 +217,30 @@ def test_the_published_control_block_carries_what_was_compared():
     assert published["rows"] == "each hotkey's current model only"
     assert published["comparable_hotkeys"] == 2
     assert published["current_model"] == {"a": "aaaa000000000001"}
+
+
+def test_the_independent_recheck_narrows_the_same_way(tmp_path, monkeypatch):
+    """`verify_day --recheck-grouping` rebuilds the grouping from published
+    documents. If it reads every row while the run read current-model rows,
+    it reports a mismatch on every honest day — the verification tool would
+    accuse the subnet of publishing a grouping it did not compute.
+    """
+    import scripts.verify_day as vd
+
+    entries, outcomes = _world()
+    root = _ledger(tmp_path, entries, outcomes, model_since=CURRENT)
+    groups, audit = lineage_from_receipts(root, DAY, LINEAGE_ON)
+    assert groups == []                      # the run groups nobody
+
+    os.makedirs(os.path.join(root, "allocation_audit"), exist_ok=True)
+    with open(os.path.join(root, "allocation_audit", f"{DAY}.json"), "w") as fh:
+        json.dump({"controls": {"lineage": {
+            "rows": audit["rows"],
+            "current_model": audit["current_model"]}}}, fh)
+
+    out = vd.recheck_grouping(root=root, url=None, day=str(DAY),
+                              params_csv="0.98,0.95,0.05,0.10")
+    assert out["ok"] is True
+    assert out["recomputed_suppressed"] == [], (
+        "the recheck must reach the same verdict as the run")
+    assert out["rows"] == "each hotkey's current model only"
