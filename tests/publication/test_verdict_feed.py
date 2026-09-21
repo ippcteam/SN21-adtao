@@ -93,3 +93,45 @@ class TestVerdictCorpus:
             "cutoff": "2026-07-17", "episodes": 250, "outcome_rows": 750}
         assert "corpus" not in by["sha256:bb"]          # predates the field
         assert "held-out" in doc["note"] and "public-bundle" in doc["note"]
+
+
+class TestRealIntakeRecordShape:
+    """The intake persists the WHOLE gate result under `gate` — verdict plus
+    attested document — not the verdict's numbers flat. The feed must read
+    that shape, or the gate and corpus blocks publish for nobody."""
+
+    def _real_record(self):
+        from hope.backtest.container_runner import RunResult
+        from hope.backtest.gate import OutcomeRow
+        from hope.backtest.gate_service import gate_submission
+        outs = [OutcomeRow(episode_id="e0", horizon_days=7, cost_delta_pct=0.1,
+                           conversions_delta_pct=0.0, efficiency_delta_pct=0.05)]
+        trio = {"p10": 0.0, "p50": 0.1, "p90": 0.2}
+        preds = {"e0": {"7": {"cost_delta_pct": trio, "conversions_delta_pct": trio,
+                              "efficiency_delta_pct": trio}}}
+        res = gate_submission(
+            "repo@sha256:" + "1" * 64, [{"episode_id": "e0"}], outs,
+            generated_at="2026-09-21T08:02:53+00:00",
+            runner=lambda _i, eps, _t: RunResult(ok=True, predictions=preds,
+                                                 episodes_in=len(eps), predictions_out=1),
+            determinism_sample=0,
+            corpus_info={"source": "held-out", "key": "HO-2026-09-20", "sha256": "ab" * 32,
+                         "cutoff": "2026-07-17", "episodes": 250, "outcome_rows": 750})
+        # exactly what intake_runner.run_intake persists per digest
+        return {"hotkey": "5A", "digest": "sha256:" + "1" * 64, "status": "admitted",
+                "detail": res["verdict"].get("reason"), "gate": res}
+
+    def test_gate_and_corpus_publish_from_the_record_as_the_intake_writes_it(self, tmp_path):
+        write_verdict(tmp_path, "a.json", self._real_record())
+        rec = build_verdicts_document(str(tmp_path))["verdicts"][0]
+        assert rec["status"] == "admitted"
+        assert rec["judged_at"] == "2026-09-21T08:02:53+00:00"
+        g = rec["gate"]
+        assert set(g) >= {"model_gate_score", "baseline_gate_score", "required_gate_score",
+                          "margin", "coverage_ok", "by_horizon"}
+        assert g["model_gate_score"] > g["baseline_gate_score"]
+        assert "7" in g["by_horizon"]
+        assert rec["corpus"] == {"source": "held-out", "key": "HO-2026-09-20", "sha256": "ab" * 32,
+                                 "cutoff": "2026-07-17", "episodes": 250, "outcome_rows": 750}
+        # nothing private leaks: the attested document and signature stay on disk
+        assert "document" not in rec and "sha256" not in rec

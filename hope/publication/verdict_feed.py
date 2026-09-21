@@ -56,15 +56,26 @@ def build_verdicts_document(ledger_root: str) -> dict:
             # The gate's own numbers, when the record carries them: the pooled
             # scores the verdict was decided on, the bar, and the same scores
             # per horizon — so "which horizon is weak" is readable here rather
-            # than inferred from the receipts weeks later.
-            gate = body.get("gate")
-            if isinstance(gate, dict) and gate.get("model_gate_score") is not None:
-                rec["gate"] = {k: gate.get(k) for k in (
+            # than inferred from the receipts weeks later. The intake persists
+            # the whole gate result (verdict + attested document); an older or
+            # hand-written record may carry the verdict numbers flat.
+            gate_raw = body.get("gate")
+            verdict = None
+            if isinstance(gate_raw, dict):
+                if isinstance(gate_raw.get("verdict"), dict):
+                    verdict = gate_raw["verdict"]
+                    judged = (gate_raw.get("document") or {}).get("generated_at")
+                    if judged and "judged_at" not in rec:
+                        rec["judged_at"] = str(judged)
+                elif gate_raw.get("model_gate_score") is not None:
+                    verdict = gate_raw
+            if verdict and verdict.get("model_gate_score") is not None:
+                rec["gate"] = {k: verdict.get(k) for k in (
                     "model_gate_score", "baseline_gate_score", "required_gate_score",
-                    "margin", "coverage_ok") if gate.get(k) is not None}
-                if isinstance(gate.get("by_horizon"), dict) and gate["by_horizon"]:
-                    rec["gate"]["by_horizon"] = gate["by_horizon"]
-            corpus = body.get("corpus")
+                    "margin", "coverage_ok") if verdict.get(k) is not None}
+                if isinstance(verdict.get("by_horizon"), dict) and verdict["by_horizon"]:
+                    rec["gate"]["by_horizon"] = verdict["by_horizon"]
+            corpus = body.get("corpus") or (verdict or {}).get("corpus")
             if isinstance(corpus, dict) and corpus.get("source"):
                 rec["corpus"] = {k: corpus.get(k) for k in (
                     "source", "key", "sha256", "cutoff", "episodes", "outcome_rows")
