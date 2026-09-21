@@ -541,6 +541,14 @@ def compute_daily_allocation(
             "receipt_day": (lineage_audit or {}).get("receipt_day"),
             "exempt_groups": len((lineage_audit or {}).get("exempt_groups")
                                  or []),
+            # Which rows the four signals read, how many hotkeys had any, and
+            # the digest each was compared under. Without these the grouping
+            # cannot be redone by hand from the receipt, and a control nobody
+            # can recompute is an accusation rather than evidence.
+            "rows": (lineage_audit or {}).get("rows"),
+            "comparable_hotkeys": (lineage_audit or {}).get(
+                "comparable_hotkeys"),
+            "current_model": (lineage_audit or {}).get("current_model"),
         },
         # The standing method in force (rule amendment 2026-09-04): mode,
         # half-life, prior mass, window — so a reader of the audit knows which

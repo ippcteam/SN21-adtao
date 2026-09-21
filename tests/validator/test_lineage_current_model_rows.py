@@ -190,3 +190,30 @@ class TestRowSelection:
             _entry("A", "e2", 7, 0.2, "sha256:aaaa000000000002", "2026-08-10"),
         ]
         assert sorted(predictions_from_receipt(entries, None)["A"]) == ["e1", "e2"]
+
+
+def test_the_published_control_block_carries_what_was_compared():
+    """The audit is the only place a miner can check the grouping from.
+
+    The row filter is invisible in the receipt alone: every row carries a
+    digest, but which digest was CURRENT for each hotkey is ours to state.
+    Dropping these fields on the way into the published document would
+    leave a control nobody outside can recompute.
+    """
+    from hope.scoring.standing_method import ScoredEpisode
+    from hope.validator.daily_stream_weights import (
+        PromotionState, compute_daily_allocation,
+    )
+
+    entries = {hk: [ScoredEpisode(score=s, scored_on=DAY) for _ in range(300)]
+               for hk, s in {"a": 0.8, "b": 0.7}.items()}
+    alloc = compute_daily_allocation(
+        entries, DAY, day_episode_volume=500, promotion_state=PromotionState(),
+        lineage_audit={"a|b": {"correlation": 0.99},
+                       "rows": "each hotkey's current model only",
+                       "comparable_hotkeys": 2,
+                       "current_model": {"a": "aaaa000000000001"}})
+    published = alloc.collapse_audit["policies"]["lineage"]
+    assert published["rows"] == "each hotkey's current model only"
+    assert published["comparable_hotkeys"] == 2
+    assert published["current_model"] == {"a": "aaaa000000000001"}
