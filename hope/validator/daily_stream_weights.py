@@ -1122,14 +1122,60 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ,
         return frozenset()
 
 
-def predictions_from_receipt(entries) -> dict:
-    """{miner: {episode: {horizon: prediction}}} from the receipt entries."""
+def _short_digest(value) -> str:
+    """A digest in the form the receipt publishes: 16 hex characters.
+
+    The receipt carries a short digest and the model map a full one, so
+    neither side can be compared as-is.
+    """
+    text = str(value or "").strip()
+    if ":" in text:
+        text = text.rsplit(":", 1)[1]
+    return text[:16].lower()
+
+
+def predictions_from_receipt(entries, current_digest=None) -> dict:
+    """{miner: {episode: {horizon: prediction}}} from the receipt entries.
+
+    With `current_digest` ({hotkey: digest}) only rows a hotkey produced
+    under the model it is running NOW are returned. A hotkey with no known
+    current digest, or none of whose rows came from it, returns no rows.
+
+    WHY THE ROWS ARE NARROWED (2026-09-21)
+
+        A hotkey that stopped running still has settled rows landing for
+        weeks. Its only overlap with everyone else is that one old basket,
+        and on a basket where many models agree it correlates 1.0 with all
+        of them — so it joins every lineage it touches, and being similar
+        to everyone makes it the MEDOID, which then decides the group. On
+        2026-09-21 one such hotkey merged sixteen models that correlate
+        about 0.71 on current rows, and the day's highest standing earned
+        nothing. Comparing models on the rows they produce now is what the
+        published rule already promises: the exclusion "lapses the moment
+        the hotkey runs a model of its own" (SN21_REWARDS.md), and
+        precedence follows "the earliest commitment that actually produced
+        the behaviour in question" (SN21_THREAT_MODEL.md §1.7).
+
+    WHY AN UNKNOWN DIGEST CONTRIBUTES NOTHING
+
+        The discount fails OPEN on an unknown boundary because the question
+        there is "should this evidence shrink?". Here the question is
+        "should this hotkey lose its earnings to another?", and the
+        protective direction is the opposite: a hotkey is never suppressed
+        on behaviour we cannot tie to the model it runs today. The exact
+        tests — byte-identical predictions and matching point estimates —
+        are untouched and still read every row.
+    """
     out: dict = {}
     for entry in entries or []:
         miner = entry.get("miner")
         prediction = entry.get("prediction")
         if not miner or prediction is None:
             continue
+        if current_digest is not None:
+            want = _short_digest(current_digest.get(miner))
+            if not want or _short_digest(entry.get("model")) != want:
+                continue
         (out.setdefault(miner, {})
             .setdefault(str(entry.get("episode_id")), {})
             [str(entry.get("horizon_days"))]) = prediction
@@ -1303,6 +1349,7 @@ def lineage_from_receipts(root: str, day: date, environ):
     # judged on, and the audit names it.
     receipt_day = str(day) if str(day) in on_or_before else \
         receipt_stand_in_day([(d, None) for d in on_or_before], day)
+    receipt_entries: list = []
     for rank, day_name in enumerate(on_or_before):
         try:
             with open(os.path.join(receipt_dir_path, f"{day_name}.json")) as fh:
@@ -1316,8 +1363,24 @@ def lineage_from_receipts(root: str, day: date, environ):
             if hotkey and hotkey not in first_seen:
                 first_seen[hotkey] = rank
         if day_name == receipt_day:
-            predictions = predictions_from_receipt(entries)
+            receipt_entries = entries
             actuals = actuals_from_receipt(metrics.get("outcomes", []))
+
+    # Each hotkey's CURRENT model, so the four signals compare the models
+    # that are running rather than whatever a hotkey last left behind. An
+    # empty map means the boundary file is missing entirely: fall back to
+    # every row and say so in the audit, because a silent map failure must
+    # not switch copy detection off.
+    from hope.scoring.model_epoch import load_model_since_raw
+    current_digest = {hk: (rec or {}).get("digest")
+                      for hk, rec in (load_model_since_raw(root) or {}).items()
+                      if isinstance(rec, dict) and rec.get("digest")}
+    scoped = bool(current_digest)
+    if not scoped:
+        logger.warning("[lineage] no current-model map — pair signals fall "
+                       "back to every row on the receipt")
+    predictions = predictions_from_receipt(
+        receipt_entries, current_digest if scoped else None)
 
     if not predictions:
         return [], {}
@@ -1338,11 +1401,23 @@ def lineage_from_receipts(root: str, day: date, environ):
         else:
             enforced.append(group)
 
+    # What the run compared is recorded whether or not it found anything: a
+    # day with no groups is itself a claim, and it is only checkable if the
+    # rows behind it are named.
+    audit = dict(audit)
+    audit["params_version"] = params.version
+    audit["receipt_day"] = receipt_day
+    audit["rows"] = ("each hotkey's current model only" if scoped
+                     else "every row on the receipt (no current-model map)")
+    audit["comparable_hotkeys"] = len(predictions)
+    # The filter has to be recomputable from published documents, so the
+    # digest each hotkey was compared under is published beside the
+    # signals. The receipt already carries a digest on every row.
+    if scoped:
+        audit["current_model"] = {hk: _short_digest(current_digest.get(hk))
+                                  for hk in sorted(predictions)}
     if groups:
-        audit = dict(audit)
-        audit["params_version"] = params.version
         audit["exemption_configured"] = bool(exempt)
-        audit["receipt_day"] = receipt_day
         if exempted:
             audit["exempt_groups"] = [
                 {"payee": g.original, "stood_down": list(g.copies),

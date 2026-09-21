@@ -87,6 +87,18 @@ before the day (at most three days back), and `controls.one_payer.receipt_day`
 and `controls.lineage.receipt_day` name the day they read, so a grouping can
 still be recomputed from a published document.
 
+The lineage control compares each hotkey on the rows its CURRENT model
+produced. A hotkey that has stopped running keeps producing settled rows
+for weeks, and those rows are its only overlap with everyone else, so a
+retired model could join — and, by being similar to everyone, anchor —
+lineages it has nothing to do with. `controls.lineage.rows` says which
+rows were compared, `controls.lineage.current_model` gives the digest each
+hotkey was compared under, and every row on the receipt already carries
+the digest that produced it, so the selection can be redone by hand. A
+hotkey with no settled rows under its current model is not compared at
+all; the exact tests (byte-identical predictions and matching point
+estimates) still read every row.
+
 A hotkey that has left the metagraph keeps its standing but is not seated:
 it cannot be paid on chain, so a seat given to it would be lost. The audit
 lists such hotkeys under `deregistered` and `controls.registration` says
