@@ -399,15 +399,18 @@ when a check fails: **[SN21_VERIFYING.md](./SN21_VERIFYING.md)**.
 > **Full end-to-end training path:** [SN21_TRAINING.md](./SN21_TRAINING.md)
 > — data → join → train → containerise → smoke test → self-score.
 
-Train on the **rich v2 bundle** (29,129 reconstructed daily-stream episodes,
-all change types — not only budget / pause). Those types are already in live
-daily baskets from **20 August 2026**. Weekly-era public exports under
-`data/episodes/` / `data/outcomes/` and the in-repo sample remain available
-but will not prepare you for that population:
+Train on the **rich bundles**: v2 (29,129 reconstructed daily-stream
+episodes, windows 15 Jun – 4 Aug) and v3 (7,132 episodes, windows 5 – 14 Aug,
+with `account_state.goal_basis` inline). All change types — not only budget /
+pause; those types are already in live daily baskets from **20 August 2026**.
+Weekly-era public exports under `data/episodes/` / `data/outcomes/` and the
+in-repo sample remain available but will not prepare you for that population:
 
 ```bash
 curl -L -o SN21_rich_training_v2.jsonl \
   https://github.com/ippcteam/SN21-adtao/releases/download/training-v2-2026-08/SN21_rich_training_v2.jsonl
+curl -L -o SN21_rich_training_v3.jsonl \
+  https://github.com/ippcteam/SN21-adtao/releases/download/training-v3-2026-09/SN21_rich_training_v3.jsonl
 
 # Bundled sample — a PIPELINE CHECK only (10 episodes). A model trained
 # on this alone will not clear the gate; train on the v2 bundle.

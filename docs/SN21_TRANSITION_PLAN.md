@@ -60,6 +60,7 @@ Bittensor’s emissions-allocation methodology is changing significantly. SN21 m
 | **Tue 25 Aug** | First **daily 14-day** settled scores begin feeding payouts. | **15%** | **450** |
 | **Tue 8 Sep** | First **daily 28-day** (35-day settled) scores begin feeding payouts. | 15% | **700** |
 | **Tue 15 Sep** | **Terminal alpha hold** in force; burn steps to target. Steady-state daily stream. | **0%** | **1,000** |
+| **Thu 24 Sep** | **Rich training data v3 (slice 2)** published — 7,132 reconstructed daily-stream episodes, windows 5 – 14 Aug, `account_state.goal_basis` inline, all three horizons settled. Continues v2; the held-out evaluation set now sits after it. [Fetch](https://github.com/ippcteam/SN21-adtao/releases/tag/training-v3-2026-09). | — | — |
 
 ### Same timeline — stake ramp only
 

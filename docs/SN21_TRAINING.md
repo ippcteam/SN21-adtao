@@ -4,45 +4,62 @@
 | :---- | :---- |
 | **Audience** | Miners |
 | **Status** | Authoritative training path for the daily stream |
-| **Last updated** | 2026-08-20 |
+| **Last updated** | 2026-09-24 |
 | **Prerequisites** | Registered hotkey ([quickstart §2](./miner_quickstart.md)) |
 
 One route from published data to a container the subnet will run. Six steps,
 each with the exact command. If a step needs something that does not exist
 yet, it says so rather than inventing a CLI.
 
-> **What you are training on, plainly.** The current published corpus is
-> **rich daily-stream v2** (`training-v2-2026-08`): reconstructed real account
-> change windows whose outcome periods have already elapsed, with measured
-> 7- and 14-day labels and 28-day labels where they have matured. The live
-> contract is the **daily stream** (`BD-*` baskets, 7/14/**28**-day). The first
-> *live* 28-day daily outcomes still settle on **8 September 2026**; v2 already
-> carries 28-day labels on the historical windows that have elapsed. The
-> expanded change types are already in this bundle **and** in live daily
-> baskets from **20 August 2026**. A model trained only on budget and
-> campaign-pause will miss that population.
+> **What you are training on, plainly.** The published corpus is the
+> **rich daily-stream** series: reconstructed real account change windows
+> whose outcome periods have already elapsed, with measured 7-, 14- and
+> 28-day labels. It ships in **slices**: v2 (`training-v2-2026-08`) covers
+> windows **15 Jun – 4 Aug 2026**; v3 (`training-v3-2026-09`) continues it
+> with windows **5 – 14 Aug 2026**. Train on both. The live contract is the
+> **daily stream** (`BD-*` baskets, 7/14/**28**-day), and the expanded change
+> types are in these bundles **and** in live daily baskets from
+> **20 August 2026**. A model trained only on budget and campaign-pause will
+> miss that population.
 >
-> Two things are deliberately excluded from both the bundle and the live
+> Two things are deliberately excluded from both the bundles and the live
 > baskets: IP-blocklist hygiene churn, and budget moves under $5/day.
-> Label coverage in v2: every episode carries 7-day outcomes, ~4 in 5 carry
-> 14-day, and about half carry 28-day — a share that grows with each refresh
-> as more windows mature.
+>
+> **Release policy.** A slice is published once every window in it is old
+> enough for all three horizons to have settled **and** the held-out
+> evaluation set has moved past it. The held-out set is always drawn from
+> windows *after* the last published slice, so later windows stay
+> unpublished until the next rotation. Slices are announced here and on the
+> releases page; nothing is refreshed silently.
 
 ---
 
 ## 1. Get the data
 
-**Rich training bundle v2 (current, train on this):** 29,129 reconstructed
-daily-stream episodes, one JSON object per line. First line is a `_manifest`.
-Windows span **2026-06-15 – 2026-08-04**. Labels are measured results, not
-simulations.
+**Rich training bundle v3 — slice 2 (current, 24 Sep 2026):** 7,132
+reconstructed daily-stream episodes, windows **2026-08-05 – 2026-08-14**,
+one JSON object per line, first line a `_manifest`. Same record shape as v2,
+plus `account_state.goal_basis` inline on every record (the basis you are
+graded on — no join needed). Label coverage: 7-day 6,951 · 14-day 7,060 ·
+28-day 7,132.
+
+```bash
+curl -L -o SN21_rich_training_v3.jsonl \
+  https://github.com/ippcteam/SN21-adtao/releases/download/training-v3-2026-09/SN21_rich_training_v3.jsonl
+```
+
+**Rich training bundle v2 (train on this too):** 29,129 reconstructed
+daily-stream episodes, windows **2026-06-15 – 2026-08-04**. Labels are
+measured results, not simulations.
 
 ```bash
 curl -L -o SN21_rich_training_v2.jsonl \
   https://github.com/ippcteam/SN21-adtao/releases/download/training-v2-2026-08/SN21_rich_training_v2.jsonl
 ```
 
-Also on the [releases page](https://github.com/ippcteam/SN21-adtao/releases/tag/training-v2-2026-08).
+Both are on the [releases page](https://github.com/ippcteam/SN21-adtao/releases).
+The two slices share no episode; concatenate them (skip each file's
+`_manifest` line).
 
 Each record is `{"episode_id", "input": {"payload", "transition_key"}, "labels"}`.
 `input.payload` is what you train on:
@@ -67,8 +84,11 @@ Each record is `{"episode_id", "input": {"payload", "transition_key"}, "labels"}
 > inline on each record as `account_state.goal_basis`. See
 > [MINER_MODEL_SPEC](./MINER_MODEL_SPEC.md#account_stategoal_basis--which-efficiency-metric-you-are-scored-on).
 
-**Change types.** Not only budget and pause. About 16.9k records are
-**composite** windows — several changes land together; predict the net effect.
+**Change types (v2 counts; v3 has the same families — 3,099 budget, 1,773
+negative-keyword adds, 828 target-value, 821 bid-strategy, 594 criterion, 468
+asset, 433 pause; 1,526 of its 7,132 records are composite).** Not only budget
+and pause. About 16.9k v2 records are **composite** windows — several changes
+land together; predict the net effect.
 
 | Type | Episodes containing it | Signal |
 | :---- | ---: | :---- |
@@ -88,9 +108,10 @@ follow in a later release. Outcome deltas naturally skew negative: many real
 changes intentionally cut volume. `source_mix` treats web/mobile as `user`
 and scripts/API/rules as `system`.
 
-A held-out evaluation set is **never** published, and any training episode
-that overlapped it has been removed. That set is the only clean benchmark
-that exists; publishing it would destroy it permanently.
+A held-out evaluation set is **never** published. It is drawn from windows
+after the last published slice, and any training episode overlapping it has
+been removed from the bundles. That set is the only clean benchmark that
+exists; publishing it would destroy it permanently.
 
 **Weekly-era bundle (superseded for training):** the 10,791-record
 [`SN21_training_bundle.jsonl`](https://github.com/ippcteam/SN21-adtao/releases/tag/training-bundle-2026-08)
@@ -121,12 +142,13 @@ The rich bundle is already joined. Skip the first line (`_manifest`), then
 import json
 
 records = []
-with open("SN21_rich_training_v2.jsonl") as f:
-    for i, line in enumerate(f):
-        obj = json.loads(line)
-        if i == 0 and "_manifest" in obj:
-            continue
-        records.append((obj["input"]["payload"], obj["labels"]))
+for path in ("SN21_rich_training_v2.jsonl", "SN21_rich_training_v3.jsonl"):
+    with open(path) as f:
+        for line in f:
+            obj = json.loads(line)
+            if "_manifest" in obj:
+                continue
+            records.append((obj["input"]["payload"], obj["labels"]))
 
 print(f"{len(records)} (payload, labels) pairs")
 ```
