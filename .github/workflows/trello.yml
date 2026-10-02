@@ -1,0 +1,64 @@
+name: Trello sync
+
+# Keeps the Trello board up to date from this repository (see .github/scripts/trello_sync.py):
+#   - every push to the default branch: commits naming a card (trello:<card id>) comment on it
+#     and move it to "Done";
+#   - every evening: one "Shipped" card with the day's commits;
+#   - by hand (Actions tab, "Run workflow"): "daily" for any day, or "backfill" for the last N days.
+# Needs repository secrets TRELLO_KEY, TRELLO_TOKEN and TRELLO_BOARD; without them it does nothing.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "55 18 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "daily or backfill"
+        required: true
+        default: backfill
+        type: choice
+        options: [daily, backfill]
+      day:
+        description: "daily: the day (YYYY-MM-DD); empty for today"
+        required: false
+      days:
+        description: "backfill: how many days back"
+        required: false
+        default: "7"
+
+concurrency:
+  group: trello-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Sync
+        env:
+          TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
+          TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
+          TRELLO_BOARD: ${{ secrets.TRELLO_BOARD }}
+          TRELLO_DONE_LIST: ${{ vars.TRELLO_DONE_LIST }}
+          TRELLO_SHIPPED_LIST: ${{ vars.TRELLO_SHIPPED_LIST }}
+          TRELLO_DAY_TZ: ${{ vars.TRELLO_DAY_TZ }}
+          TRELLO_REPO_LABEL: ${{ vars.TRELLO_REPO_LABEL }}
+          TRELLO_DAY: ${{ github.event.inputs.day }}
+          TRELLO_DAYS: ${{ github.event.inputs.days }}
+        run: |
+          MODE="push"
+          if [ "${{ github.event_name }}" = "schedule" ]; then MODE="daily"; fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then MODE="${{ github.event.inputs.mode }}"; fi
+          python .github/scripts/trello_sync.py "$MODE"
