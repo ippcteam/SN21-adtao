@@ -125,13 +125,23 @@ def _save(index_path: str, role: str, netuid: int,
     """
     union = _union_with_disk(index_path, entries)
     _atomic_write_json(index_path, union)
-    _atomic_write_json(_state_path(index_path), {
+    # Keep keys this builder does not own (the head refresh's
+    # last_head_refresh_* stamp, read by the staleness alarm).
+    try:
+        with open(_state_path(index_path)) as f:
+            state = json.load(f)
+        if not isinstance(state, dict):
+            state = {}
+    except (OSError, json.JSONDecodeError):
+        state = {}
+    state.update({
         "last_scanned_block": int(last_scanned_block),
         "entries": len(union),
         "role": role,
         "netuid": netuid,
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
     })
+    _atomic_write_json(_state_path(index_path), state)
 
 
 def _load(index_path: str, index: RegistrationIndex) -> int | None:

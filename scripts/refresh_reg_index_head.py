@@ -75,6 +75,33 @@ def _atomic_write(index_path: str, entries: list) -> None:
     os.replace(tmp, index_path)
 
 
+def _stamp_head_refresh(index_path: str, head: int, entries: int) -> None:
+    """Record that a full head sweep completed at block ``head``.
+
+    The staleness alarm reads ``<index>.state.json``. With the archive block-scan
+    switched off (SN21_SKIP_REG_INDEX_BLOCK, its normal state since September
+    2026) that file's ``last_scanned_block`` never moves, so the alarm fired on
+    every tick although this sweep was keeping the index current. The alarm now
+    takes the newer of the two; every other key in the sidecar is preserved.
+    """
+    from datetime import datetime, timezone
+    state_path = index_path + ".state.json"
+    try:
+        with open(state_path) as f:
+            state = json.load(f)
+        if not isinstance(state, dict):
+            state = {}
+    except (OSError, json.JSONDecodeError):
+        state = {}
+    state["last_head_refresh_block"] = int(head)
+    state["last_head_refresh_at_utc"] = datetime.now(timezone.utc).isoformat()
+    state["head_refresh_entries"] = int(entries)
+    tmp = state_path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(state, f, indent=2, sort_keys=True)
+    os.replace(tmp, state_path)
+
+
 def refresh(index_path: str, network: str, netuid: int,
             role: RegistrationRole) -> tuple[int, int]:
     """Merge current-commitment registrations into the index. Returns (before, after)."""
@@ -122,6 +149,9 @@ def refresh(index_path: str, network: str, netuid: int,
 
     merged = sorted(by_pk.values(), key=lambda e: e["block_number"])
     _atomic_write(index_path, merged)
+    # Only a sweep that got this far counts as a refresh: a failed sweep raises
+    # before here and leaves the stamp where it was, so the alarm still fires.
+    _stamp_head_refresh(index_path, head, len(merged))
     logger.info("refresh complete: before=%d after=%d added=%d",
                 before, len(merged), len(added))
     for hk in added:

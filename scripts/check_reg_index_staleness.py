@@ -42,19 +42,48 @@ EXIT_UNKNOWN = 0  # cannot determine → don't disrupt the tick
 EXIT_STALE = 3    # confirmed stale → loud + scrapeable by external monitors
 
 
-def read_last_scanned_block(state_path: str) -> int | None:
-    """Return `last_scanned_block` from the builder's `<index>.state.json`
-    sidecar, or None if the sidecar is missing/unreadable/lacks the field."""
+def _read_state(state_path: str) -> dict:
     try:
         with open(state_path, "r", encoding="utf-8") as fh:
             state = json.load(fh)
     except (OSError, ValueError):
-        return None
-    block = state.get("last_scanned_block")
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def _int_or_none(v) -> int | None:
     try:
-        return int(block) if block is not None else None
+        return int(v) if v is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def read_last_scanned_block(state_path: str) -> int | None:
+    """Return `last_scanned_block` from the builder's `<index>.state.json`
+    sidecar, or None if the sidecar is missing/unreadable/lacks the field."""
+    return _int_or_none(_read_state(state_path).get("last_scanned_block"))
+
+
+def read_freshest_block(state_path: str) -> tuple[int | None, str]:
+    """The newest block the index is known to be current at, and its source.
+
+    Two writers keep the index current: the archive block-scan
+    (`last_scanned_block`) and the fast head refresh (`last_head_refresh_block`,
+    stamped after every completed sweep). The archive scan is normally switched
+    off (SN21_SKIP_REG_INDEX_BLOCK), so its checkpoint alone froze and the
+    alarm fired on every tick (found 5 Oct 2026). The index is as fresh as the
+    newer of the two; if the head refresh stops completing, its stamp stops
+    moving and the alarm fires again — which is the failure it exists for.
+    """
+    state = _read_state(state_path)
+    candidates = [
+        (_int_or_none(state.get("last_head_refresh_block")), "head refresh"),
+        (_int_or_none(state.get("last_scanned_block")), "archive block-scan"),
+    ]
+    known = [(b, src) for b, src in candidates if b is not None]
+    if not known:
+        return None, "none"
+    return max(known)
 
 
 def evaluate(last_scanned_block: int | None, head: int | None,
@@ -76,9 +105,10 @@ def _warn_stale(gap: int, last_scanned_block: int, head: int,
         "\n"
         "==================== REG-INDEX STALE ====================\n"
         " reg-index is %d blocks behind chain head (threshold %d).\n"
-        "   last_scanned_block = %d\n"
+        "   last current block = %d (newest of head refresh / block-scan)\n"
         "   chain head         = %d\n"
-        " The event scan has stalled. Miners who bound after block %d are\n"
+        " Neither the head refresh nor the block-scan has completed since.\n"
+        " Check the daemon's reg-index-head step first. Miners who bound after block %d may be\n"
         " INVISIBLE to scoring (served as DQ 'not registered') and will be\n"
         " pruned on a full subnet. Catch it up now:\n"
         "   hope-reg-index-builder --network \"$SN21_REG_INDEX_ARCHIVE_URL\" \\\n"
@@ -110,7 +140,7 @@ def main(argv: list | None = None) -> int:
         return EXIT_UNKNOWN
 
     state_path = args.index + ".state.json"
-    last_scanned = read_last_scanned_block(state_path)
+    last_scanned, source = read_freshest_block(state_path)
     if last_scanned is None:
         logger.warning("no checkpoint at %s (builder never ran a full pass?); "
                        "cannot assess staleness", state_path)
@@ -128,8 +158,8 @@ def main(argv: list | None = None) -> int:
     if is_stale:
         _warn_stale(gap, last_scanned, head, args.threshold_blocks)
         return EXIT_STALE
-    logger.info("reg-index fresh: %d blocks behind head (<= %d); last_scanned=%d head=%d",
-                gap, args.threshold_blocks, last_scanned, head)
+    logger.info("reg-index fresh: %d blocks behind head (<= %d); current at=%d (%s) head=%d",
+                gap, args.threshold_blocks, last_scanned, source, head)
     return EXIT_FRESH
 
 
