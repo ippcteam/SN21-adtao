@@ -147,6 +147,21 @@ def test_window_check_raises_when_explicitly_closed(patch_get):
         check_submission_window("https://validator.example")
 
 
+def test_window_check_says_weekly_is_retired_on_a_daily_validator(patch_get):
+    response, _ = patch_get
+    response["value"] = _FakeResp(200, {
+        "mode": "daily",
+        "current_epoch": None,
+        "submission_open": False,
+        "deadline_utc": None,
+        "seconds_until_deadline": None,
+    })
+
+    with pytest.raises(PreflightError, match="retired") as exc:
+        check_submission_window("https://validator.example")
+    assert "next weekly epoch" not in str(exc.value)
+
+
 def test_window_check_silent_on_older_validator(patch_get):
     """Validator pre-deadline-fields: don't block."""
     response, _ = patch_get

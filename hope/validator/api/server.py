@@ -40,6 +40,15 @@ IP_RATE_LIMIT_PER_MINUTE = 120      # Max requests per IP per minute (global)
 IP_RATE_LIMIT_POST_PER_MINUTE = 20  # Max POST requests per IP per minute (stricter)
 _RATE_WINDOW_SECONDS = 60
 
+# What /health tells miners once no weekly window is open. The daily feed is
+# published by the operator API (docs/SN21_VERIFYING.md), not by this process.
+DAILY_RESULTS_URL = "https://hope-bittensor-api.onrender.com/v1/daily/index"
+DAILY_MODE_NOTE = (
+    "Weekly prediction submissions are retired. SN21 runs each miner's "
+    "container image on every daily basket; there is no submission window "
+    "to wait for. Daily results: see daily_results."
+)
+
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     """Reject requests with bodies larger than MAX_REQUEST_BODY_BYTES.
@@ -232,6 +241,30 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
                 )
             except (TypeError, ValueError):
                 seconds_until_deadline = None
+        window_open = submission_open_flag and (
+            seconds_until_deadline is None or seconds_until_deadline > 0
+        )
+        if not window_open:
+            # The weekly release this process was started with stays loaded
+            # after its window closes. Echoing it as `current_epoch`, with a
+            # countdown that only grows more negative, read as a stalled
+            # subnet (a miner reported it on 4 Oct). Scoring is daily: the
+            # subnet runs each miner's image on every basket, so there is no
+            # window to wait for and the closed weekly release is history.
+            return {
+                "status": "ok",
+                "service": "sn21-validator",
+                "version": _SN21_VERSION,
+                "mode": "daily",
+                "current_epoch": None,
+                "submission_open": False,
+                "deadline_utc": None,
+                "seconds_until_deadline": None,
+                "note": DAILY_MODE_NOTE,
+                "daily_results": DAILY_RESULTS_URL,
+                "last_weekly_epoch": epoch_id,
+                "last_weekly_deadline_utc": deadline_str,
+            }
         return {
             "status": "ok",
             "service": "sn21-validator",

@@ -151,6 +151,15 @@ def check_submission_window(validator_url: str) -> None:
     except ValueError:
         return
 
+    # A validator that scores daily has no weekly window to wait for, so the
+    # weekly "wait for the next epoch" advice below would never come true.
+    if body.get("mode") == "daily":
+        raise PreflightError(
+            "Weekly prediction submissions are retired. SN21 runs your "
+            "container image on every daily basket; see docs/miner_quickstart.md "
+            "and docs/MINER_MODEL_SPEC.md."
+        )
+
     deadline: str | None = body.get("deadline_utc")
     seconds_until: int | None = body.get("seconds_until_deadline")
     submission_open = body.get("submission_open")

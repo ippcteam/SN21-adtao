@@ -173,7 +173,30 @@ def test_health_reports_negative_seconds_when_closed():
     assert resp.status_code == 200
     body = resp.json()
     assert body["submission_open"] is False
-    assert body["seconds_until_deadline"] < 0
+    # A closed weekly window is history: no stale epoch, no growing countdown.
+    assert body["mode"] == "daily"
+    assert body["current_epoch"] is None
+    assert body["seconds_until_deadline"] is None
+    assert body["last_weekly_epoch"] == EPOCH_ID
+    assert body["daily_results"].endswith("/v1/daily/index")
+
+
+def test_health_daily_mode_when_deadline_passed_but_flag_still_open():
+    """Live 6 Oct: the frozen weekly state keeps submission_open=True with a
+    deadline 15 days gone. That must read as daily mode, not an open window."""
+    state = _closed_window_state()
+    state["submission_open"] = True
+    body = TestClient(create_app(state)).get("/health").json()
+    assert body["status"] == "ok"
+    assert body["mode"] == "daily"
+    assert body["submission_open"] is False
+    assert body["current_epoch"] is None
+
+
+def test_health_open_window_keeps_weekly_fields_and_no_mode():
+    body = TestClient(create_app(_open_window_state({HOTKEY_REGISTERED}))).get("/health").json()
+    assert "mode" not in body
+    assert body["current_epoch"] == EPOCH_ID
 
 
 # --- /v1/registration-status -----------------------------------------------
