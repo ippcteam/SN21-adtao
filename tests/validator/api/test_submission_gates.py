@@ -140,7 +140,7 @@ def test_late_submission_returns_deadline_aware_error():
     assert detail["deadline_utc"] is not None
     assert detail["seconds_late"] is not None
     assert detail["seconds_late"] > 0
-    assert "next weekly epoch" in detail["fix"]
+    assert "retired" in detail["fix"]
 
 
 # --- /health exposure ------------------------------------------------------
@@ -250,3 +250,30 @@ def test_registration_status_when_gate_disabled():
     body = resp.json()
     assert body["gate_enabled"] is False
     assert "no registration index" in body["hint"].lower()
+
+
+# --- weekly submissions are off unless an operator switches them on --------
+
+
+def test_weekly_submissions_off_by_default(monkeypatch):
+    from hope.validator.serve import weekly_submissions_enabled
+    monkeypatch.delenv("SN21_WEEKLY_SUBMISSIONS", raising=False)
+    assert weekly_submissions_enabled() is False
+    monkeypatch.setenv("SN21_WEEKLY_SUBMISSIONS", "1")
+    assert weekly_submissions_enabled() is True
+
+
+def test_fresh_restart_state_reports_daily_mode(monkeypatch):
+    """Live 6 Oct 13:57: a restart loaded BD-2026-10-05 with next Monday as the
+    deadline, and /health advertised an open weekly window. A state built with
+    weekly submissions off must read as daily mode and refuse predictions."""
+    monkeypatch.delenv("SN21_WEEKLY_SUBMISSIONS", raising=False)
+    from hope.validator.serve import weekly_submissions_enabled
+    state = _open_window_state({HOTKEY_REGISTERED})
+    state["submission_open"] = weekly_submissions_enabled()
+    client = TestClient(create_app(state))
+    body = client.get("/health").json()
+    assert body["mode"] == "daily"
+    assert body["current_epoch"] is None
+    assert body["seconds_until_deadline"] is None
+    assert _post_predictions(client, HOTKEY_REGISTERED).status_code == 403

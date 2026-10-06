@@ -83,6 +83,13 @@ def _load_registered_hotkeys(reg_index_path: str | None) -> tuple[set[str], int 
     return out, mtime_ns
 
 
+WEEKLY_SUBMISSIONS_ENV = "SN21_WEEKLY_SUBMISSIONS"
+
+
+def weekly_submissions_enabled() -> bool:
+    return os.environ.get(WEEKLY_SUBMISSIONS_ENV, "").strip() == "1"
+
+
 def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
                  wallet_name: str, wallet_hotkey: str,
                  reg_index_path: str | None) -> dict:
@@ -185,7 +192,12 @@ def _build_state(release_key: str, no_chain: bool, network: str, netuid: int,
         "current_epoch_id": release_key,
         "episodes": epoch_data.episodes,
         "deadline": deadline,
-        "submission_open": True,
+        # Weekly prediction submissions are retired (scoring is daily: the
+        # subnet runs each miner's image on every basket). Without this, every
+        # restart loaded the newest basket and advertised a fresh "weekly
+        # window" up to next Monday. An operator who really runs a weekly
+        # epoch sets SN21_WEEKLY_SUBMISSIONS=1.
+        "submission_open": weekly_submissions_enabled(),
         "predictions": {},
         "prediction_receipts": {},
         "registered_miners": registered_miners,

@@ -159,10 +159,9 @@ async def submit_predictions(
                 "now_utc": now.isoformat(),
                 "seconds_late": late_seconds,
                 "fix": (
-                    "Wait for the next weekly epoch to open. Poll "
-                    "GET /health on this validator — `current_epoch` will "
-                    "update once the next release is live and "
-                    "`submission_open` will return to true."
+                    "Weekly prediction submissions are retired. SN21 runs "
+                    "your container image on every daily basket; see "
+                    "docs/miner_quickstart.md. GET /health shows the mode."
                 ),
             },
         )
