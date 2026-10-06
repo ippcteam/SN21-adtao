@@ -250,7 +250,9 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
             # countdown that only grows more negative, read as a stalled
             # subnet (a miner reported it on 4 Oct). Scoring is daily: the
             # subnet runs each miner's image on every basket, so there is no
-            # window to wait for and the closed weekly release is history.
+            # window to wait for. The loaded release is not echoed at all: after
+            # a restart it is just the newest basket with a computed Monday
+            # deadline, which would read as a live weekly epoch.
             return {
                 "status": "ok",
                 "service": "sn21-validator",
@@ -262,8 +264,6 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
                 "seconds_until_deadline": None,
                 "note": DAILY_MODE_NOTE,
                 "daily_results": DAILY_RESULTS_URL,
-                "last_weekly_epoch": epoch_id,
-                "last_weekly_deadline_utc": deadline_str,
             }
         return {
             "status": "ok",

@@ -12,6 +12,7 @@ Both are now caught at HTTP submission time with actionable errors.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -177,7 +178,8 @@ def test_health_reports_negative_seconds_when_closed():
     assert body["mode"] == "daily"
     assert body["current_epoch"] is None
     assert body["seconds_until_deadline"] is None
-    assert body["last_weekly_epoch"] == EPOCH_ID
+    assert "last_weekly_epoch" not in body
+    assert EPOCH_ID not in json.dumps(body)
     assert body["daily_results"].endswith("/v1/daily/index")
 
 
