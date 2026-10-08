@@ -232,6 +232,47 @@ def allocation_from_api(base_url: str, api_key: str, timeout_s: int = 60) -> "Da
     )
 
 
+def orphaned_payees(groups, suppressed, seniority=None, preferred=()) -> set:
+    """Members to restore so that every connected copy set keeps one earner.
+
+    `groups` is [(payee, [excluded, ...]), ...] from every copy test. Groups
+    that share a hotkey are one set. A set whose every member is in
+    `suppressed` gets back its senior member: the earliest by `seniority`
+    (first receipt day), lineage payees (`preferred`) ahead of unknowns,
+    then the hotkey as the last tie-break.
+    """
+    seniority = seniority or {}
+    preferred = set(preferred)
+    parent: dict = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for payee, excluded in groups:
+        members = [m for m in [payee, *excluded] if m]
+        for m in members[1:]:
+            parent[find(m)] = find(members[0])
+        for m in members:
+            find(m)
+
+    sets: dict = {}
+    for m in parent:
+        sets.setdefault(find(m), []).append(m)
+
+    restore = set()
+    for members in sets.values():
+        if all(m in suppressed for m in members):
+            senior = min(members, key=lambda m: (
+                (0, seniority[m]) if m in seniority else (1,),
+                0 if m in preferred else 1, m))
+            restore.add(senior)
+    return restore
+
+
 def compute_daily_allocation(
     entries: dict[str, list[ScoredEpisode]],
     day: date,
@@ -392,6 +433,23 @@ def compute_daily_allocation(
                 "evidence": group.evidence,
             })
         audit["lineage"] = {"groups": groups_audit}
+
+    # One payer per model means exactly one: never none. Two tests that group
+    # the same hotkeys can name different payees, and their exclusions add up
+    # (7-8 Oct 2026: the lineage test seated uid72, the prediction test uid95,
+    # and neither earned). Restore the senior member of any connected set
+    # that would otherwise have no earner.
+    restored = orphaned_payees(
+        [(d.get("payee"), d.get("eliminated") or [])
+         for d in ((one_payer_stats or {}).get("group_detail") or [])]
+        + [(g.original, list(g.copies)) for g in (lineage_groups or [])],
+        suppressed,
+        seniority=(one_payer_stats or {}).get("seniority") or {},
+        preferred=[g.original for g in (lineage_groups or [])],
+    )
+    if restored:
+        suppressed -= restored
+        audit["payee_restored"] = sorted(restored)
 
     # One payer per model: the curve renormalises over genuine models only.
     if suppressed:
@@ -1090,12 +1148,31 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ,
         if not today["exact"] and not today["point"]:
             return frozenset()
 
+        # Behaviour seniority: the first receipt day each hotkey appears in,
+        # the same order the lineage test uses (lineage_from_receipts). It
+        # breaks the tie the fingerprint history cannot: a day's fingerprint
+        # covers that day's basket, so every member of a group first produces
+        # it on the same day, and before 2026-10-09 the tie fell through to
+        # the hotkey string. That named a later hotkey payee here while the
+        # lineage test named the earlier one, and the two exclusions together
+        # left the model with no seat (uid72/uid95, 7-8 Oct 2026).
+        seniority: dict = {}
+        for kind in kinds:
+            for day_name, prints in history_days[kind]:
+                for hotkey in prints:
+                    if hotkey not in seniority or day_name < seniority[hotkey]:
+                        seniority[hotkey] = day_name
+
         groups = []
         for kind in kinds:
             if not today[kind]:
                 continue
             history = first_seen_fingerprints(history_days[kind])
-            groups.extend(prediction_collisions(today[kind], history=history))
+            groups.extend(prediction_collisions(today[kind], precedence=seniority,
+                                                history=history))
+        if stats is not None:
+            stats["seniority"] = {hk: seniority[hk] for g in groups
+                                  for hk in (g.original, *g.copies) if hk in seniority}
 
         # Behavioural grouping is NOT done here. It lives in
         # lineage_from_receipts, which uses the four-signal test and publishes

@@ -281,6 +281,17 @@ copied the old build. Protect a new model before its first commitment by
 committing the digest while the image is still private — see the
 [quickstart](./miner_quickstart.md).
 
+> **Corrected 2026-10-09: one earner, not none.** When the same hotkeys are
+> grouped by more than one of the tests above, the groups now agree on one
+> earner: the earliest submission. For identical predictions, two hotkeys
+> that first produce a day's fingerprint on the same day are ordered by the
+> first day the published receipts record each of them, the same order the
+> lineage test uses; previously that tie fell to the hotkey. If two groups
+> would still leave a model with no earner, its earliest member keeps the
+> seat, and the allocation audit lists it under `payee_restored`. This
+> applies the rule as written above ("only the earliest submission earns");
+> on 2026-10-07 and 2026-10-08 one pair was left with no earner.
+
 ## Quiet days
 
 No special weekend multiplier. Thin baskets simply produce fewer scored predictions; your standing is per-prediction, so volume self-scales.
