@@ -18,11 +18,38 @@ METRICS = tuple(SPREAD)
 HORIZONS = ("7", "14", "28")
 
 
+def budget_change(episode: dict):
+    """(from, to) of a budget change, or None.
+
+    Reads the live daily basket layout (payload.action_bundle.actions[] with
+    magnitude.previous_amount_micros / new_amount_micros, transition_key
+    BUDGET:*), whether the episode arrives as served or wrapped in a training
+    record's `input`; falls back to the flat weekly-era fields.
+    """
+    if episode.get("action_type") == "BUDGET_CHANGE":
+        return episode.get("from_value"), episode.get("to_value")
+    inner = episode.get("input") if isinstance(episode.get("input"), dict) else episode
+    payload = inner.get("payload") or {}
+    bundle = payload.get("action_bundle") or {}
+    key = (inner.get("transition_key")
+           or (bundle.get("bundle_summary") or {}).get("transition_key") or "")
+    if not str(key).startswith("BUDGET"):
+        return None
+    before = after = 0
+    for action in bundle.get("actions") or []:
+        m = action.get("magnitude") or {}
+        if m.get("previous_amount_micros") is not None and m.get("new_amount_micros") is not None:
+            before += m["previous_amount_micros"]
+            after += m["new_amount_micros"]
+    return (before, after) if before else None
+
+
 def predict(episode: dict) -> dict:
     lean = dict(LEAN)
-    if episode.get("action_type") == "BUDGET_CHANGE":
+    change = budget_change(episode)
+    if change:
         try:
-            f, t = float(episode.get("from_value")), float(episode.get("to_value"))
+            f, t = float(change[0]), float(change[1])
             if f > 0:
                 lean["cost_delta_pct"] = max(min((t - f) / f * 0.5, 2.0), -0.9)
         except (TypeError, ValueError):
