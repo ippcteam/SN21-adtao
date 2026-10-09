@@ -391,6 +391,20 @@ The daily stream **does not** use Elite / Competitive / Participating bands or f
 
 Neither changes how an individual prediction is scored.
 
+## Self-mining (operator-run miners)
+
+The subnet operator runs its own miners on SN21. They are disclosed here so
+every miner knows who else is in the game.
+
+| UID | Run by |
+| :---- | :---- |
+| 1 | SN21 operator |
+| 154 | SN21 operator |
+| 221 | SN21 operator |
+
+Last updated 2026-10-09. A UID can change (for example after a
+deregistration); when one does, this table is updated.
+
 ## Parameter reviews
 
 Numeric curve parameters (threshold, shares, cap, tail) are restated at **four-weekly** published reviews. Changes are announced in advance; nothing silent between reviews.

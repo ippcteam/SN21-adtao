@@ -116,6 +116,8 @@ Protocol background (weekly-era sections historical): [Whitepaper](docs/whitepap
 1. **Predictions lock before outcomes exist.** Your on-chain commitment pins the container digest the subnet will run; each day's basket is scored from that run, before outcomes for that basket are knowable.
 2. **Scoring is open and reproducible.** Settle logic lives in `hope/scoring/`; standings and weights follow the published curve. Daily accuracy / receipt feeds and the public site mirror the operator's scored record — see [docs/SN21_SCORING.md](docs/SN21_SCORING.md) and [docs/SN21_REWARDS.md](docs/SN21_REWARDS.md). (Weekly-era epochs remain auditable with [`scripts/verify_epoch.py`](scripts/verify_epoch.py).)
 
+The operator also runs its own miners (UIDs 1, 154 and 221); they are listed under [Self-mining](docs/SN21_REWARDS.md#self-mining-operator-run-miners).
+
 ---
 
 ## How it works
