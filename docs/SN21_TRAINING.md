@@ -4,23 +4,25 @@
 | :---- | :---- |
 | **Audience** | Miners |
 | **Status** | Authoritative training path for the daily stream |
-| **Last updated** | 2026-09-24 |
+| **Last updated** | 2026-10-09 |
 | **Prerequisites** | Registered hotkey ([quickstart §2](./miner_quickstart.md)) |
 
 One route from published data to a container the subnet will run. Six steps,
 each with the exact command. If a step needs something that does not exist
 yet, it says so rather than inventing a CLI.
 
-> **What you are training on, plainly.** The published corpus is the
-> **rich daily-stream** series: reconstructed real account change windows
-> whose outcome periods have already elapsed, with measured 7-, 14- and
-> 28-day labels. It ships in **slices**: v2 (`training-v2-2026-08`) covers
-> windows **15 Jun – 4 Aug 2026**; v3 (`training-v3-2026-09`) continues it
-> with windows **5 – 14 Aug 2026**. Train on both. The live contract is the
+> **What you are training on, plainly.** Start with **v4**
+> (`training-v4-2026-10`): windows **15 Jun – 14 Aug 2026**, every record in
+> **exactly the shape of a live daily basket episode**: the same payload the
+> executor sends your container each day (campaign type, bid strategy,
+> industry, change velocity, diagnostics, daily clicks, impressions and
+> impression share), with the labels the scorer grades on. v2
+> (`training-v2-2026-08`, windows 15 Jun – 4 Aug) and v3
+> (`training-v3-2026-09`, windows 5 – 14 Aug) cover the same period in an
+> older, thinner shape and remain available. The live contract is the
 > **daily stream** (`BD-*` baskets, 7/14/**28**-day), and the expanded change
 > types are in these bundles **and** in live daily baskets from
-> **20 August 2026**. A model trained only on budget and campaign-pause will
-> miss that population.
+> **20 August 2026**.
 >
 > Two things are deliberately excluded from both the bundles and the live
 > baskets: IP-blocklist hygiene churn, and budget moves under $5/day.
@@ -36,7 +38,38 @@ yet, it says so rather than inventing a CLI.
 
 ## 1. Get the data
 
-**Rich training bundle v3 — slice 2 (current, 24 Sep 2026):** 7,132
+**Training data v4: live basket shape (current, 9 Oct 2026):** 27,768
+episodes, windows **2026-06-15 – 2026-08-14**, gzipped JSONL (61 MB; 1.1 GB
+unpacked), first line a `_manifest`. Each record is
+`{"episode_id", "input", "labels"}`:
+
+- `input` is a daily basket episode exactly as served:
+  `{"episode_id", "transition_key", "payload", "system_estimate"}`. Read it
+  the way you read a live episode.
+- `labels` has `"7"`, `"14"` and `"28"` on every record, each with
+  `cost_delta_pct`, `conversions_delta_pct`, `efficiency_delta_pct`,
+  `goal_basis` and `finalized_on`. `efficiency_delta_pct` is the CPA delta on
+  a `cpa` basis and the conversion-value delta on a `conversion_value` basis,
+  as the scorer grades it. Goal basis: cpa 25,802 · conversion_value 1,966.
+- Every payload is built **as of the end of its own change window**: no field
+  uses data from after the change.
+- Episode ids are basket ids, so they do not match v2/v3 ids for the same
+  change.
+
+```bash
+curl -L -o SN21_training_v4.jsonl.gz \
+  https://github.com/ippcteam/SN21-adtao/releases/download/training-v4-2026-10/SN21_training_v4.jsonl.gz
+gunzip SN21_training_v4.jsonl.gz
+```
+
+A note on v2/v3: their `pre_window.weekly_series` values are per-day averages
+over the spending days of each week, not weekly totals. v4 carries the live
+basket's daily series instead. The reference model (`reference_model/model.py`)
+reads the budget change from the live layout
+(`payload.action_bundle.actions[].magnitude`), so its budget lean works on live
+baskets and on v4 records alike.
+
+**Rich training bundle v3 — slice 2 (24 Sep 2026):** 7,132
 reconstructed daily-stream episodes, windows **2026-08-05 – 2026-08-14**,
 one JSON object per line, first line a `_manifest`. Same record shape as v2,
 plus `account_state.goal_basis` inline on every record (the basis you are
