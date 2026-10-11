@@ -11,8 +11,9 @@
 This is the contract between your model and the subnet: what you ship, how it
 is executed, and what it must emit. Scoring is in
 [SN21_SCORING.md](./SN21_SCORING.md); emissions are in
-[SN21_REWARDS.md](./SN21_REWARDS.md). When image bytes are closed vs
-released is in [SN21_MODEL_PRIVACY.md](./SN21_MODEL_PRIVACY.md).
+[SN21_REWARDS.md](./SN21_REWARDS.md). How your image is pulled today (it
+must be public) and the planned validator-only rule are in
+[SN21_MODEL_PRIVACY.md](./SN21_MODEL_PRIVACY.md).
 
 ---
 

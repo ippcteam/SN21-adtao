@@ -2,20 +2,43 @@
 
 | | |
 | :---- | :---- |
-| **Version** | 1.0 |
+| **Version** | 1.1 |
 | **Audience** | Miners, validators, auditors |
-| **Status** | Authoritative privacy policy for the daily stream |
-| **Last updated** | 2026-08-09 |
-| **Related** | [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_VERIFYING.md](./SN21_VERIFYING.md) |
+| **Status** | How model images are pulled **today**, and the **planned** validator-only rule (not built yet) |
+| **Last updated** | 2026-10-11 |
+| **Related** | [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_VERIFYING.md](./SN21_VERIFYING.md) · [miner_quickstart.md](./miner_quickstart.md) |
 
-This document defines **when a committed model image is closed** (validator-only
-pull) and **when it is released** (world-readable). It does **not** change how
-predictions are scored ([SN21_SCORING.md](./SN21_SCORING.md)) or how emissions
-are allocated ([SN21_REWARDS.md](./SN21_REWARDS.md)).
+> **Corrected 2026-10-11.** Earlier versions of this page described
+> validator-only downloads of earning models as the rule in force. That is
+> **not built**. Today every committed image is pulled anonymously, so it has
+> to be public. The validator-only rule below is planned work, in our backlog,
+> with no date yet. Nothing about scoring or emissions changes.
 
 ---
 
-## In one line
+## How it works today
+
+- The subnet pulls your image **anonymously**, by the digest you committed on
+  chain, from a public registry. It never sends credentials.
+- So your image **must stay public and pullable** for as long as you want it
+  to be run and scored. A private image simply fails to pull; the intake tries
+  again later, and a pull failure is never a permanent verdict.
+- Anyone can pull a public image. Commit order protects your claim to a model,
+  not its bytes: to protect a new model, commit its digest **while the image is
+  still private**, then make it public
+  ([quickstart, "Protect your model"](./miner_quickstart.md)).
+- Copying a public model does not earn twice: the one-payer and lineage rules
+  in [SN21_REWARDS.md](./SN21_REWARDS.md) decide who is paid.
+
+---
+
+## Planned: validator-only downloads (backlog, not built)
+
+Everything from here down is the **target rule**, kept so miners can see where
+this is going. **None of it is in force.** When it is built, the date it
+starts will be announced in advance, with notice, as for any rule change.
+
+## In one line (planned)
 
 While your digest is in the **earning set**, its image bytes stay **closed**.
 They are released on the first of: you are out of the earning set for **5
@@ -145,11 +168,11 @@ stream rules. Changes are announced in advance.
 
 ## Rollout
 
-Until closed pull and the release ledger are enabled in production, committed
-images remain pullable under the then-current intake path. The policy in this
-document is the target rule; the cutover announcement will name the first day
-enforcement applies and the commit prefix (e.g. `sn21-model:v2`) required for
-closed access.
+Not started. Until validator-only pull and the release ledger are built and
+announced, every committed image is pulled anonymously and must stay public
+(see "How it works today" above). The announcement will name the first day the
+rule applies and the commit prefix (e.g. `sn21-model:v2`) needed for closed
+access.
 
 ---
 
