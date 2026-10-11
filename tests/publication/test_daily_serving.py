@@ -260,7 +260,12 @@ def test_every_endpoint_the_verify_doc_advertises_actually_exists(served):
         "docs", "SN21_VERIFYING.md").read_text()
     paths = set(re.findall(r"/v1/daily/[\w\-{}<>/.]+", doc))
     assert paths, "doc advertises no endpoints — did the format change?"
-    for p in paths:
+    # The standing preview is served by the operator's public feed
+    # (mirror_sync), not by the validator's router, and only for days of a
+    # notice period: the doc says so. test_mirror_sync pins that it ships.
+    feed_only = {p for p in paths if p.endswith("/standing-preview")}
+    assert feed_only, "the doc should still point at the historical preview"
+    for p in paths - feed_only:
         concrete = (p.replace("2026-08-18", str(DAY))
                      .replace("<your-hotkey>", "alice"))
         status, _body = _get(url, concrete)

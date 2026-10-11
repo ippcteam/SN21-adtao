@@ -184,3 +184,18 @@ def test_sync_ships_index_and_root_when_a_receipt_batch_fails(tmp_path, monkeypa
     assert "/v1/daily/root" in shipped
     assert any("/receipt" in p
                for f in summary["failed_posts"] for p in f["paths"])
+
+
+def test_a_standing_preview_day_ships_on_the_public_feed_when_published(tmp_path, monkeypatch):
+    """SN21_VERIFYING.md points miners at /v1/daily/2026-09-14/standing-preview.
+    It exists only on the public feed, and only when the operator publishes
+    previews during a notice period."""
+    import os
+    os.makedirs(tmp_path / "standing_preview")
+    (tmp_path / "standing_preview" / "2026-09-14.json").write_text(json.dumps({"preview": {}}))
+    monkeypatch.setenv(ms.PREVIEW_PUBLISH_ENV, "1")
+    paths = {i["path"] for i in ms.build_mirror_items(str(tmp_path))}
+    assert "/v1/daily/2026-09-14/standing-preview" in paths
+    monkeypatch.delenv(ms.PREVIEW_PUBLISH_ENV)
+    paths = {i["path"] for i in ms.build_mirror_items(str(tmp_path))}
+    assert "/v1/daily/2026-09-14/standing-preview" not in paths

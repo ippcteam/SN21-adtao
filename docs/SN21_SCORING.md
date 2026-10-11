@@ -322,8 +322,9 @@ allocation audit (`standing_method.model_epoch`, `model_since`,
 applied, and `previous_model.ramp` giving, for every hotkey with a model
 boundary, the current model's in-window prediction-mass, the mass still
 needed to reach the 250 threshold and the factor its earlier entries
-carry, `field_mean`). Until then a daily dry run of the rule is published
-at `/v1/daily/{day}/standing-preview`.
+carry, `field_mean`). Before it took effect, a daily dry run of the rule was
+published for 14-16 Sep 2026 at `/v1/daily/{day}/standing-preview`; it
+retired when the rule came into force (see SN21_VERIFYING.md).
 
 Cold-start evidence floors (used when placing you for emissions — see rewards doc):
 

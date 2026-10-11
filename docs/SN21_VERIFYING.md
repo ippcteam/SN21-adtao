@@ -69,12 +69,16 @@ The document also records whether the reference-model exemption was in
 force that day, so its absence is visible rather than assumed.
 
 While a standing rule change is announced but not yet in force, the
-operator may publish a daily dry run of it at
-`/v1/daily/{day}/standing-preview`: for every hotkey, the rank and relative
-standing under the rule in force and under the announced rule, who would be
-paid under each with every earning control applied, each hotkey's model boundary
-(`preview.model_since`) and the previous-model factor applied. It is a
-preview only; the day's audit and vector come from the rule in force.
+operator publishes a daily dry run of it on the public feed (the standing
+preview): for every hotkey, the rank and relative standing under the rule in
+force and under the announced rule, who would be paid under each with every
+earning control applied, each hotkey's model boundary (`preview.model_since`)
+and the previous-model factor applied. It is a preview only; the day's audit
+and vector come from the rule in force. It exists **only during a notice
+period**: the last one ran on 14, 15 and 16 Sep 2026, before the amendment that
+took effect on 17 Sep, and those days stay readable, for example
+`/v1/daily/2026-09-14/standing-preview`. On any other day there is no
+preview, and that address answers "not found" by design.
 With the rule in force, the audit's `standing_method.previous_model.ramp`
 shows each such hotkey's current-model mass, the mass remaining to the
 threshold and its factor, so a miner can read their position on the ramp
