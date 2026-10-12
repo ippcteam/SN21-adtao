@@ -130,12 +130,51 @@ def process_memory_mb() -> tuple[float, float]:
     return now, peak
 
 
+def container_memory_mb(root: str = "/sys/fs/cgroup") -> dict | None:
+    """The whole container's memory, split into program memory (anon) and file
+    cache, in MiB. None when no cgroup files are readable.
+
+    12 Oct 2026: Render showed the executor at 8.0 GB of its 8 GB plan during
+    mirror-sync while this process peaked at 4.2 GB. Render's figure includes
+    the kernel's file cache (the 100 MB receipt and the 3.2M-entry performance
+    file are read and written in this window), which is reclaimed under
+    pressure; only anon memory gets a container killed. This line tells the
+    two apart each morning. cgroup v2 first, then v1."""
+    def read(name):
+        with open(os.path.join(root, name)) as fh:
+            return fh.read()
+    try:
+        try:
+            total = int(read("memory.current"))
+            keys = ("anon", "file")
+        except OSError:
+            total = int(read("memory/memory.usage_in_bytes"))
+            root = os.path.join(root, "memory")
+            keys = ("rss", "cache")
+        stat = {}
+        for line in read("memory.stat").splitlines():
+            k, _, v = line.partition(" ")
+            if k in keys:
+                stat[k] = int(v)
+        mib = 1024 * 1024
+        return {"total": round(total / mib), "anon": round(stat.get(keys[0], 0) / mib),
+                "file_cache": round(stat.get(keys[1], 0) / mib)}
+    except (OSError, ValueError):
+        return None
+
+
 def note_memory(stage: str, record: dict) -> None:
     """One line per stage boundary, and the numbers into the run record (and
     so the heartbeat), so growth is seen weeks before it becomes a kill."""
     now, peak = process_memory_mb()
-    record.setdefault("memory_mb", {})[stage] = {"rss": round(now), "peak": round(peak)}
-    log(f"[mem] after {stage}: rss={now:.0f} MiB peak={peak:.0f} MiB")
+    entry = {"rss": round(now), "peak": round(peak)}
+    box = container_memory_mb()
+    if box:
+        entry["container"] = box
+    record.setdefault("memory_mb", {})[stage] = entry
+    log(f"[mem] after {stage}: rss={now:.0f} MiB peak={peak:.0f} MiB"
+        + (f" | container={box['total']} MiB (programs {box['anon']}, file cache {box['file_cache']})"
+           if box else ""))
 
 
 def resolve_basket(explicit: str | None, day: date) -> str:
