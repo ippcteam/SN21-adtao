@@ -36,6 +36,15 @@ yet, it says so rather than inventing a CLI.
 
 ---
 
+> **Account and campaign codes: new in every slice from the next one (12 Oct 2026).**
+> Accounts, campaigns and ad groups appear as one-way codes, never as their
+> real IDs. In v4 and earlier slices an advertiser keeps the same code across
+> slices. From the next slice on, every slice gets its own codes: within one
+> slice the same campaign always has the same code, so its records still link
+> up, but the same advertiser has a different code in every slice, so slices
+> cannot be joined to follow one advertiser over time. v4 and earlier stay
+> exactly as published. Each slice's `_manifest` says which codes it uses.
+
 ## 1. Get the data
 
 **Training data v4: live basket shape (current, 9 Oct 2026):** 27,768
