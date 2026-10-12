@@ -26,6 +26,8 @@ from starlette.responses import JSONResponse
 
 from hope.validator.api.commitments import router as commitments_router
 from hope.validator.api.daily import router as daily_router
+from hope.validator.api.daily_redirect import feed_url as daily_feed_url
+from hope.validator.api.daily_redirect import router as daily_redirect_router
 from hope.validator.api.episodes import router as episodes_router
 from hope.validator.api.predictions import router as predictions_router
 from hope.validator.api.registration import router as registration_router
@@ -285,7 +287,13 @@ def create_app(validator_state: dict | None = None) -> FastAPI:
     # walk. Public and unauthenticated BY DESIGN — every document served
     # is attested and anchored, so gating it would add no security and
     # would break the one property it exists for: anyone can check us.
-    app.include_router(daily_router, prefix="/v1/daily", tags=["daily"])
+    # validator.adtao.io keeps no ledger of its own: with SN21_DAILY_FEED_URL
+    # set it sends every daily request to the public feed (daily_redirect), so
+    # the two addresses can never disagree (9 Oct 2026).
+    if daily_feed_url():
+        app.include_router(daily_redirect_router, prefix="/v1/daily", tags=["daily"])
+    else:
+        app.include_router(daily_router, prefix="/v1/daily", tags=["daily"])
     app.include_router(training_router, tags=["training"])
     app.include_router(registration_router, prefix="/v1", tags=["registration"])
 
