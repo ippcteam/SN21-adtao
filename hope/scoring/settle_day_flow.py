@@ -1078,11 +1078,17 @@ def operator_outcomes_provider(day: date) -> list[SettledHorizon]:
                        + make_interval(days => 1 + o.horizon_days + :settle)) <= :day
             )
             SELECT ep.*,
-                -- CONFIGURED goal: the account's own configured metric
+                -- CONFIGURED goal: the account's own configured metric.
+                -- priority is text ('high' / 'medium' / 'low'), so a plain
+                -- DESC sort put 'medium' first. Ranked like the operator's
+                -- goal lookup: high, medium, low, then the newest goal.
                 (SELECT g.metric_type FROM accountgoals g
                   WHERE g.googleadsaccountid = ep.gads_id
                     AND g.is_active = true AND g.goal_kind = 'main'
-                  ORDER BY g.priority DESC LIMIT 1) AS goal_metric_type,
+                  ORDER BY CASE g.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1
+                                           WHEN 'low' THEN 2 ELSE 3 END,
+                           g.createdat DESC
+                  LIMIT 1) AS goal_metric_type,
                 -- IMPLIED goal: account taxonomy root. lineage->>0 is the same
                 -- accessor the operator's verified J3 map uses, so this code and the
                 -- measured ~7% coverage describe the same population. Ordering

@@ -445,3 +445,16 @@ def test_provider_is_inert_while_the_v2_flag_is_off(monkeypatch):
     (settled,) = operator_outcomes_provider(_date(2026, 8, 1))
     assert settled.goal_basis == "cpa"
     assert settled.efficiency_delta_pct == -10.0
+
+
+def test_configured_goal_is_ranked_high_medium_low_then_newest():
+    """priority is text: a plain DESC sort put 'medium' before 'high'. The
+    settle side must pick the same main goal as the operator's lookup."""
+    import inspect
+
+    from hope.scoring.settle_day_flow import operator_outcomes_provider
+    src = inspect.getsource(operator_outcomes_provider)
+    assert "g.priority DESC" not in src
+    assert ("ORDER BY CASE g.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1\n"
+            "                                           WHEN 'low' THEN 2 ELSE 3 END,\n"
+            "                           g.createdat DESC") in src
