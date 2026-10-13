@@ -47,17 +47,28 @@ MIN_N_SOLID = 500
 # accuracy table so the two surfaces cannot disagree about what "best" means.
 MIN_N_FOR_BEST = 5
 
-_TARGETING_FAMILIES = frozenset({
+_NEGATIVE_FAMILIES = frozenset({
+    "NEGATIVE_KEYWORD_ADD", "NEGATIVE_KEYWORD_REMOVE", "NEGATIVE_KEYWORD_CHANGE",
+})
+_KEYWORD_FAMILIES = frozenset({
     "KEYWORD_ADD", "KEYWORD_REMOVE", "KEYWORD_PAUSE", "KEYWORD_ENABLE",
     "KEYWORD_BID_CHANGE", "KEYWORD_CHANGE",
-    "NEGATIVE_KEYWORD_REMOVE", "NEGATIVE_KEYWORD_CHANGE",
-    "GEO_CHANGE", "AUDIENCE_CHANGE", "DEVICE_TARGETING_CHANGE",
-    "PLACEMENT_CHANGE", "SCHEDULE_CHANGE", "DEMOGRAPHIC_CHANGE",
+})
+# A criterion whose kind the change did not carry (a status, bid or URL edit
+# on a row Google sent without its text). Kept apart from keywords so a
+# reader never sees an unknown kind presented as a keyword result.
+_CRITERION_FAMILIES = frozenset({
     "CRITERION_CHANGE", "CRITERION_REMOVE", "CRITERION_PAUSE",
     "CRITERION_ENABLE", "CRITERION_URL_CHANGE", "CRITERION_BID_CHANGE",
 })
+_AUDIENCE_GEO_FAMILIES = frozenset({"GEO_CHANGE", "AUDIENCE_CHANGE", "DEMOGRAPHIC_CHANGE"})
+_DEVICE_SCHEDULE_FAMILIES = frozenset({"DEVICE_TARGETING_CHANGE", "SCHEDULE_CHANGE",
+                                       "PLACEMENT_CHANGE"})
 
 # Ordered: the page renders groups in this order, densest concepts first.
+# 13 Oct 2026: the earlier 9 groups put 13 different families under one
+# "Targeting change" and ads with assets, which blurred where models win and
+# lose; each kind of change now has its own group.
 GROUP_DEFS = (
     ("budget", "Budget change",
      lambda fam: fam in ("BUDGET", "BUDGET_CHANGE")),
@@ -66,15 +77,26 @@ GROUP_DEFS = (
     ("bid_target", "Bid target change",
      lambda fam: fam in ("TARGET", "TARGET_VALUE_CHANGE",
                          "ADGROUP_TARGET_CHANGE")),
-    ("negative_keyword", "Negative keyword add",
-     lambda fam: fam == "NEGATIVE_KEYWORD_ADD"),
-    ("targeting", "Targeting change",
-     lambda fam: fam in _TARGETING_FAMILIES),
-    ("pause_enable", "Campaign and ad-group pause / enable",
-     lambda fam: fam in ("CAMPAIGN_PAUSE", "CAMPAIGN_ENABLE",
-                         "ADGROUP_PAUSE", "ADGROUP_ENABLE")),
-    ("ads_assets", "Ad and asset changes",
-     lambda fam: fam.startswith("AD_") or fam.startswith("ASSET_")),
+    ("negative_keyword", "Negative keyword changes",
+     lambda fam: fam in _NEGATIVE_FAMILIES),
+    ("keyword", "Keyword changes",
+     lambda fam: fam in _KEYWORD_FAMILIES),
+    ("criterion", "Other criterion changes (kind not recorded)",
+     lambda fam: fam in _CRITERION_FAMILIES),
+    ("location_audience", "Location, audience and demographic targeting",
+     lambda fam: fam in _AUDIENCE_GEO_FAMILIES),
+    ("device_schedule", "Device, schedule and placement targeting",
+     lambda fam: fam in _DEVICE_SCHEDULE_FAMILIES),
+    ("campaign_status", "Campaign pause / enable",
+     lambda fam: fam in ("CAMPAIGN_PAUSE", "CAMPAIGN_ENABLE")),
+    ("ad_group_status", "Ad group pause / enable",
+     lambda fam: fam in ("ADGROUP_PAUSE", "ADGROUP_ENABLE")),
+    ("ad_group_change", "Other ad group changes",
+     lambda fam: fam in ("ADGROUP_BID_CHANGE", "ADGROUP_CHANGE", "ADGROUP_REMOVE")),
+    ("ads", "Ad changes",
+     lambda fam: fam.startswith("AD_")),
+    ("assets", "Asset changes",
+     lambda fam: fam.startswith("ASSET_")),
     ("combined", "Combined changes",
      lambda fam: fam == "COMPOSITE"),
     ("unlabelled", "Unlabelled",
@@ -94,6 +116,20 @@ def group_of(transition_key: str | None) -> str:
         if member(fam):
             return key
     return "other"
+
+
+def row_key(transition_key: str | None) -> str:
+    """The detail row an entry is shown under. A combined change is shown by
+    the change that leads it ("COMPOSITE:BUDGET" for every BUDGET+N), so the
+    group has one row per leading kind, not one per count: per-count rows
+    reached 109 on 13 Oct 2026, close to the page's 120-row limit, past
+    which the whole document would be refused."""
+    key = str(transition_key) if transition_key else "UNKNOWN"
+    if family_of(key) == "COMPOSITE":
+        lead = key.split(":", 1)[1] if ":" in key else ""
+        lead = lead.split("+", 1)[0].strip()
+        return f"COMPOSITE:{lead}" if lead else "COMPOSITE"
+    return key
 
 
 def _mean(values) -> float | None:
@@ -206,7 +242,7 @@ def build_performance_document(
         miners_seen.add(miner)
         score = float(e["score"])
         comp = e.get("components")
-        for row in (str(tkey), None):        # detail row + group roll-up
+        for row in (row_key(tkey), None):    # detail row + group roll-up
             ck = (gkey, row or "__group__", h)
             cell = cells.get(ck)
             if cell is None:

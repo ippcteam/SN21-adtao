@@ -17,6 +17,8 @@ import pytest
 from hope.reporting.prediction_performance import (
     build_performance_document,
     group_of,
+    row_key,
+    GROUP_DEFS,
 )
 
 
@@ -68,12 +70,18 @@ class TestRollups:
         ("BID_SWITCH:manual_cpc->maximize_conversions", "bid_switch"),
         ("TARGET:maximize_conversions:up", "bid_target"),
         ("NEGATIVE_KEYWORD_ADD", "negative_keyword"),
-        ("KEYWORD_ADD", "targeting"),
-        ("GEO_CHANGE", "targeting"),
-        ("CRITERION_BID_CHANGE", "targeting"),
-        ("CAMPAIGN_PAUSE", "pause_enable"),
-        ("AD_CREATE", "ads_assets"),
-        ("ASSET_CHANGE", "ads_assets"),
+        ("NEGATIVE_KEYWORD_REMOVE", "negative_keyword"),
+        ("KEYWORD_ADD", "keyword"),
+        ("KEYWORD_REMOVE", "keyword"),
+        ("CRITERION_BID_CHANGE", "criterion"),
+        ("GEO_CHANGE", "location_audience"),
+        ("DEMOGRAPHIC_CHANGE", "location_audience"),
+        ("SCHEDULE_CHANGE", "device_schedule"),
+        ("CAMPAIGN_PAUSE", "campaign_status"),
+        ("ADGROUP_ENABLE", "ad_group_status"),
+        ("ADGROUP_BID_CHANGE", "ad_group_change"),
+        ("AD_CREATE", "ads"),
+        ("ASSET_CHANGE", "assets"),
         ("COMPOSITE:AD_CREATE+2", "combined"),
         ("UNKNOWN", "unlabelled"),
         (None, "unlabelled"),
@@ -101,7 +109,7 @@ class TestRollups:
             key_of={"a": "BUDGET:up"},
             basket_day_of={"a": "2026-08-25"},
         )
-        assert doc["groups"][0]["key"] == "ads_assets"
+        assert doc["groups"][0]["key"] == "ads"
 
 
 class TestCells:
@@ -151,3 +159,31 @@ class TestCells:
         )
         cell = doc["groups"][0]["cells"]["7"]
         assert cell["n"] == 1 and cell["solid"] is False
+
+
+class TestCombinedRows:
+    @pytest.mark.parametrize("tkey,expected", [
+        ("COMPOSITE:BUDGET+2", "COMPOSITE:BUDGET"),
+        ("COMPOSITE:CAMPAIGN_PAUSE+4", "COMPOSITE:CAMPAIGN_PAUSE"),
+        ("COMPOSITE", "COMPOSITE"),
+        ("BUDGET:up", "BUDGET:up"),
+        (None, "UNKNOWN"),
+    ])
+    def test_a_combined_change_is_shown_by_the_change_that_leads_it(self, tkey, expected):
+        assert row_key(tkey) == expected
+
+    def test_combined_sizes_share_one_row_and_one_rollup(self):
+        doc = build(
+            [entry("a", 7, "m1", 0.4), entry("b", 7, "m1", 0.8), entry("c", 7, "m1", 0.6)],
+            key_of={"a": "COMPOSITE:BUDGET+1", "b": "COMPOSITE:BUDGET+7", "c": "COMPOSITE:AD_CREATE+2"},
+            basket_day_of={"a": "2026-08-25", "b": "2026-08-25", "c": "2026-08-25"},
+        )
+        (g,) = doc["groups"]
+        assert g["key"] == "combined"
+        assert {r["key"] for r in g["rows"]} == {"COMPOSITE:BUDGET", "COMPOSITE:AD_CREATE"}
+        budget = next(r for r in g["rows"] if r["key"] == "COMPOSITE:BUDGET")
+        assert budget["cells"]["7"]["n"] == 2 and g["cells"]["7"]["n"] == 3
+
+    def test_the_page_stays_inside_the_cms_limits(self):
+        # payload validate.ts: at most 20 groups (and 120 rows per group)
+        assert len(GROUP_DEFS) + 1 <= 20
