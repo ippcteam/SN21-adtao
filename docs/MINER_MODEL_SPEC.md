@@ -44,6 +44,10 @@ non-empty block for **every** horizon listed in that episode's
 the line an abstention for that episode: it produces no scored entry, and the
 episode is uncovered under the absence rule. Extra horizons are ignored.
 
+From the basket of 2026-10-19 (run on 20 October) every episode lists
+`[7, 14, 28]` (rewards amendment of 2026-10-13): return all three. Before that date episodes list
+`[7, 14]`, and returning 28 as well is harmless.
+
 Each horizon carries monotone `p10` / `p50` / `p90` for `cost_delta_pct`,
 `conversions_delta_pct` and `efficiency_delta_pct`, plus `goal_miss_probability`
 and `instability_risk` in `[0, 1]`.

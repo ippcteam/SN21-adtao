@@ -160,6 +160,24 @@ only on easy days — and held first place with it while every participant
 moved. That is not a board worth topping. This amendment makes absence a
 scored event, which is the only way "show up every day" means anything.
 
+## Every episode lists 28 days (rule amendment, published 2026-10-13, effective 2026-10-20)
+
+Scoring and the admission gate have always used the 7, 14 and 28-day
+horizons, but each episode's `episode_metadata.outcome_horizons_days` listed
+only `[7, 14]`. A model that followed the payload and skipped 28 days was
+rejected at admission.
+
+From the basket of **2026-10-19** (run on **20 October**), every episode lists
+`[7, 14, 28]`. Under
+rule 0 above, an episode then counts as covered only when your output has a
+non-empty block for all three. A model that already returns 7, 14 and 28 (as
+the reference model and most miners do) needs no change. A model that returns
+only 7 and 14 must add 28 before that date, or each episode is charged as
+uncovered.
+
+Nothing else changes: the horizon blend, the settle days (15, 22 and 36 days
+after the change) and the admission gate stay as they are.
+
 ## Earning-set activation (rule amendment, published 2026-08-26)
 
 Two rules governing WHO the curve pays are active from **2026-08-26**,
