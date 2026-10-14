@@ -97,7 +97,26 @@ def backfill_tkey_maps_if_sparse(min_maps: int = 10) -> None:
     log(f"tkey backfill exited {proc.returncode}")
 
 
+# Why a champion forecast would be "busy" right now: the daily run is due or
+# running. Read by the forecast relay thread, written by the loop below.
+_BUSY = {"reason": None}
+
+
+def busy_reason(now=None):
+    if _BUSY["reason"]:
+        return _BUSY["reason"]
+    now = now or datetime.now(timezone.utc)
+    if now.hour >= TRIGGER_HOUR_UTC and not run_record_exists(now.date().isoformat()):
+        return "the daily basket run is due"
+    return None
+
+
 def main():
+    try:
+        from scripts.forecast_relay import start as start_forecast_relay
+        start_forecast_relay(LEDGER_ROOT, busy_reason, log=log)
+    except Exception as e:   # noqa: BLE001 - the forecast must never stop the daemon
+        log(f"forecast relay not started ({e})")
     log(f"start: trigger>={TRIGGER_HOUR_UTC}:00 UTC, check every "
         f"{CHECK_INTERVAL_S}s, ledger={LEDGER_ROOT}"
         + (f", rerun override for {RERUN_DAY}" if RERUN_DAY else ""))
@@ -113,7 +132,11 @@ def main():
         try:
             if now.hour >= TRIGGER_HOUR_UTC and (
                     rerun_today or not run_record_exists(day)):
-                rc = run_pipeline(day)
+                _BUSY["reason"] = "the daily basket run is in progress"
+                try:
+                    rc = run_pipeline(day)
+                finally:
+                    _BUSY["reason"] = None
                 if rerun_today and rc == 0:
                     rerun_pending = False
                     log(f"rerun override for {RERUN_DAY} satisfied "
