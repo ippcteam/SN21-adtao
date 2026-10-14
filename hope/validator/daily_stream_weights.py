@@ -1435,14 +1435,24 @@ def lineage_from_receipts(root: str, day: date, environ):
     receipt_day = str(day) if str(day) in on_or_before else \
         receipt_stand_in_day([(d, None) for d in on_or_before], day)
     receipt_entries: list = []
+    # First appearance needs only each entry's miner, so every receipt but the
+    # one judged is read through its standing index (14 Oct 2026: parsing every
+    # whole receipt since launch here, each run, was the larger part of the
+    # daily run's memory after settle). Same entries in the same order, so
+    # the precedence is unchanged.
+    from hope.scoring.standing_method import _entries_of as _standing_entries
     for rank, day_name in enumerate(on_or_before):
+        path = os.path.join(receipt_dir_path, f"{day_name}.json")
         try:
-            with open(os.path.join(receipt_dir_path, f"{day_name}.json")) as fh:
-                envelope = json.load(fh)
+            if day_name == receipt_day:
+                with open(path) as fh:
+                    envelope = json.load(fh)
+                metrics = (envelope.get("document") or {}).get("metrics", {})
+                entries = metrics.get("entries", [])
+            else:
+                entries = _standing_entries(path)
         except (OSError, ValueError):
             continue
-        metrics = (envelope.get("document") or {}).get("metrics", {})
-        entries = metrics.get("entries", [])
         for entry in entries:
             hotkey = entry.get("miner")
             if hotkey and hotkey not in first_seen:

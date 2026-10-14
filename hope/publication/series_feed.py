@@ -27,7 +27,6 @@ window is worse than one that says it has nothing yet.
 
 from __future__ import annotations
 
-import json
 import os
 from datetime import date
 
@@ -70,26 +69,21 @@ def load_receipt_metrics(ledger_root: str) -> list[dict]:
     A receipt that cannot be read is skipped rather than fatal: one corrupt
     file must not take out a chart covering every other week.
     """
+    # 14 Oct 2026: read through the standing index (the same small per-receipt
+    # file the standings read), so the mirror step no longer parses every
+    # published receipt in full each run. The series reads entries only.
+    from hope.scoring.standing_method import _entries_of
     directory = os.path.join(ledger_root, RECEIPTS_DIR)
     out = []
     for day in published_receipt_days(ledger_root):
         try:
-            with open(os.path.join(directory, f"{day}.json")) as f:
-                envelope = json.load(f)
+            entries = _entries_of(os.path.join(directory, f"{day}.json"))
         except (OSError, ValueError):
             continue
-        metrics = (envelope.get("document") or {}).get("metrics")
-        del envelope
-        if not isinstance(metrics, dict):
-            continue
-        entries = metrics.get("entries")
-        slim = {k: v for k, v in metrics.items() if k != "entries"}
-        slim["entries"] = [
-            {k: e.get(k) for k in SERIES_ENTRY_FIELDS if k in e}
-            for e in (entries if isinstance(entries, list) else ())
-            if isinstance(e, dict)
-        ]
-        out.append(slim)
+        out.append({"entries": [
+            {k: e[k] for k in SERIES_ENTRY_FIELDS if e.get(k) is not None}
+            for e in entries
+        ]})
     return out
 
 

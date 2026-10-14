@@ -1245,6 +1245,17 @@ def main():
             log(f"[fingerprint-index] built={_built}")
         except Exception as e:   # noqa: BLE001 — an optimisation, never fatal
             log(f"[fingerprint-index] skipped ({e})")
+
+        # 0c. standing indexes — the same idea for the standing reads: settle
+        # then reads seven fields per entry from small files instead of
+        # parsing every receipt in the window (twice) on top of its peak.
+        try:
+            from hope.scoring.standing_method import ensure_standing_indexes
+            _built = ensure_standing_indexes(args.ledger_root)
+            log(f"[standing-index] built={_built}")
+        except Exception as e:   # noqa: BLE001 — an optimisation, never fatal
+            log(f"[standing-index] skipped ({e})")
+        note_memory("indexes", record)
     except BasketNotReady as e:
         # TRANSIENT: no run record, so the once-per-day daemon guard does not
         # trip and the next hourly tick retries — the day self-heals when the

@@ -36,6 +36,7 @@ run read the standings.
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 from collections import defaultdict
@@ -275,11 +276,107 @@ def _receipt_files(root: str, as_of: date, window_days: int) -> list[tuple[date,
     return out
 
 
-def _entries_of(path: str) -> list[dict]:
+# The only entry fields a standing reads (field_means, load_relative_entries,
+# predicted_on_of). Everything else in a receipt entry — the prediction itself,
+# components, model, transition key — is for verifiers, not for ranking.
+STANDING_FIELDS = ("episode_id", "horizon_days", "score", "miner",
+                   "finalized_on", "predicted_on", "weight")
+STANDING_INDEX_DIR = "standing_index"
+
+
+def _standing_index_path(receipt_path: str) -> str:
+    root = os.path.dirname(os.path.dirname(os.path.abspath(receipt_path)))
+    return os.path.join(root, STANDING_INDEX_DIR, os.path.basename(receipt_path))
+
+
+def _receipt_stamp(path: str) -> list[int]:
+    st = os.stat(path)
+    return [st.st_size, st.st_mtime_ns]
+
+
+def _parse_receipt_entries(path: str) -> list[dict]:
     with open(path) as f:
         env = json.load(f)
     doc = env.get("document", env) if isinstance(env, dict) else {}
     return list((doc.get("metrics") or {}).get("entries") or [])
+
+
+def _rows_of(path: str) -> list[list]:
+    # A non-mapping entry was always skipped by every reader (a TypeError on
+    # e["..."]), so it is left out of the index rather than carried.
+    return [[e.get(k) for k in STANDING_FIELDS] for e in _parse_receipt_entries(path)
+            if isinstance(e, dict)]
+
+
+def build_standing_index(path: str) -> list[list]:
+    """Parse one receipt and write its standing index: the STANDING_FIELDS of
+    every entry, stamped with the receipt's size and mtime so a rewritten
+    receipt (a re-run day) is re-indexed instead of read stale. Returns the
+    rows. A failed write is not an error: the next read parses again."""
+    stamp = _receipt_stamp(path)
+    rows = _rows_of(path)
+    ipath = _standing_index_path(path)
+    try:
+        os.makedirs(os.path.dirname(ipath), exist_ok=True)
+        tmp = ipath + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"source": stamp, "fields": list(STANDING_FIELDS), "rows": rows}, f,
+                      separators=(",", ":"))
+        os.replace(tmp, ipath)
+    except OSError:
+        pass
+    return rows
+
+
+def _entries_of(path: str) -> list[dict]:
+    """A receipt's entries, reduced to the fields a standing reads.
+
+    14 Oct 2026: every standing read parsed each whole receipt in the window
+    (tens of megabytes each, twice a run) to use seven small fields per
+    entry; the parse churn left the daily run's memory high from the settle
+    step to the end of the run. The standing index holds just those fields, built once per
+    receipt by ensure_standing_indexes early in the daily run.
+
+    READ-ONLY: a missing or stale index is answered from the receipt itself and
+    nothing is written, so dry runs and verifiers never touch the ledger."""
+    ipath = _standing_index_path(path)
+    rows = None
+    try:
+        with open(ipath) as f:
+            idx = json.load(f)
+        if idx.get("source") == _receipt_stamp(path) and list(idx.get("fields") or []) == list(STANDING_FIELDS):
+            rows = idx["rows"]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        rows = None
+    if rows is None:
+        rows = _rows_of(path)
+    return [dict(zip(STANDING_FIELDS, r)) for r in rows]
+
+
+def ensure_standing_indexes(root: str) -> int:
+    """Build the standing index of every receipt that has none or a stale one.
+    Called early in the run while the process is light; returns how many were
+    built (0 on a warm ledger, so it is free to call daily)."""
+    d = os.path.join(root, "receipts")
+    if not os.path.isdir(d):
+        return 0
+    built = 0
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".json") or fn.startswith("_"):
+            continue
+        p = os.path.join(d, fn)
+        try:
+            with open(_standing_index_path(p)) as f:
+                if json.load(f).get("source") == _receipt_stamp(p):
+                    continue
+        except (OSError, ValueError, AttributeError):
+            pass
+        try:
+            build_standing_index(p)
+            built += 1
+        except (OSError, ValueError):
+            continue
+    return built
 
 
 def field_means(entries: list[dict],
@@ -342,6 +439,14 @@ def _tkeys_signature(root: str):
         return (d, None, 0)
 
 
+@functools.lru_cache(maxsize=4096)
+def _day(text: str) -> date:
+    """One shared date object per day string. A standing holds millions of
+    entries over a few dozen distinct days; parsing each entry's day afresh
+    gave every entry its own two date objects (14 Oct 2026)."""
+    return date.fromisoformat(text)
+
+
 def predicted_on_of(entry: dict, scored_on: date,
                     basket_days: Mapping | None = None,
                     environ=os.environ) -> date:
@@ -354,7 +459,7 @@ def predicted_on_of(entry: dict, scored_on: date,
     raw = entry.get("predicted_on")
     if raw:
         try:
-            return date.fromisoformat(str(raw)[:10])
+            return _day(str(raw)[:10])
         except ValueError:
             pass
     if basket_days:
@@ -426,7 +531,7 @@ def load_relative_entries(root: str, as_of: date,
             fo = e.get("finalized_on")
             if fo:
                 try:
-                    scored_on = date.fromisoformat(str(fo)[:10])
+                    scored_on = _day(str(fo)[:10])
                 except ValueError:
                     pass
             predicted_on = (predicted_on_of(e, scored_on, basket_days, environ)
