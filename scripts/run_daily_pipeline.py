@@ -1090,6 +1090,9 @@ def _funnel_block(api: dict, doc: dict) -> dict:
     }
 
 
+FUNNEL_TIMEOUT_S = 300
+
+
 def stage_publish_performance(ledger_root, day):
     """Build the cumulative Prediction Performance document and POST it to
     the CMS as a draft. Same publish gate and same identity sources as the
@@ -1124,8 +1127,12 @@ def stage_publish_performance(ledger_root, day):
     # eligible (minus holdout and own accounts) -> served -> settled here.
     # Counted by the operator from its tables; fail-soft, the page renders
     # without the strip when the reading is unavailable.
+    # The operator counts every change-history row per day for this, which
+    # took 150-175 s in October 2026 (past the 120 s default), so the strip
+    # was missing from every page that month. One call a day: allow 5 min.
     try:
-        funnel = _api_get(f"daily/funnel?since={doc.get('cutoff_day')}")
+        funnel = _api_get(f"daily/funnel?since={doc.get('cutoff_day')}",
+                          timeout_s=FUNNEL_TIMEOUT_S)
         if funnel.get("success"):
             doc["funnel"] = _funnel_block(funnel, doc)
     except Exception as e:  # noqa: BLE001
