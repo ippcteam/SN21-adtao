@@ -71,6 +71,8 @@ class TestRollups:
         ("TARGET:maximize_conversions:up", "bid_target"),
         ("NEGATIVE_KEYWORD_ADD", "negative_keyword"),
         ("NEGATIVE_KEYWORD_REMOVE", "negative_keyword"),
+        ("SHARED_NEGATIVE_KEYWORD_ADD:exact:2-10", "negative_keyword"),
+        ("SHARED_NEGATIVE_KEYWORD_REMOVE", "negative_keyword"),
         ("KEYWORD_ADD", "keyword"),
         ("KEYWORD_REMOVE", "keyword"),
         ("CRITERION_BID_CHANGE", "criterion"),

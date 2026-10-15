@@ -49,6 +49,9 @@ MIN_N_FOR_BEST = 5
 
 _NEGATIVE_FAMILIES = frozenset({
     "NEGATIVE_KEYWORD_ADD", "NEGATIVE_KEYWORD_REMOVE", "NEGATIVE_KEYWORD_CHANGE",
+    # Keywords added to or removed from a shared negative list, as seen on each
+    # campaign the list is attached to (from the date these episodes start).
+    "SHARED_NEGATIVE_KEYWORD_ADD", "SHARED_NEGATIVE_KEYWORD_REMOVE",
 })
 _KEYWORD_FAMILIES = frozenset({
     "KEYWORD_ADD", "KEYWORD_REMOVE", "KEYWORD_PAUSE", "KEYWORD_ENABLE",
