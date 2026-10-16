@@ -157,7 +157,9 @@ class SettledHorizon:
     horizon_days: int
     cost_delta_pct: float
     conversions_delta_pct: float
-    efficiency_delta_pct: float
+    # None = not measurable (spend and zero conversions on a CPA basis, Sir Rob
+    # 16 Oct 2026): the entry is scored on cost and conversions only.
+    efficiency_delta_pct: float | None
     finalized_on: date
     # Which measured column supplied efficiency_delta_pct: "cpa" (the
     # account's goal is cost-per-acquisition, or it has no configured goal)
@@ -190,7 +192,9 @@ def score_entry(pred: dict, actual: dict[str, float]) -> float:
     dir_hits = 0
     dir_total = 0
     for m in METRICS:
-        a = actual[m]
+        a = actual.get(m)
+        if a is None:
+            continue    # not measurable for this entry: neither scored nor a miss
         trio = pred.get(m)
         if trio:
             for q, key in QUANTILES:
@@ -223,7 +227,9 @@ def entry_components(pred: dict, actual: dict[str, float]) -> tuple[float, float
     dir_hits = 0
     dir_total = 0
     for m in METRICS:
-        a = actual[m]
+        a = actual.get(m)
+        if a is None:
+            continue    # not measurable for this entry: neither scored nor a miss
         trio = pred.get(m)
         if trio:
             for q, key in QUANTILES:
@@ -305,10 +311,16 @@ def entry_components_v2(pred: dict, actual: dict[str, float]) -> dict:
     metrics; direction and goal score the GOAL metric alone, per spec:137-138.
     """
     quantile, _v1_direction = entry_components(pred, actual)
-    coverage = sum(_coverage_score(pred.get(m), actual[m])
-                   for m in METRICS) / len(METRICS)
+    present = [m for m in METRICS if actual.get(m) is not None]
+    coverage = (sum(_coverage_score(pred.get(m), actual[m]) for m in present) / len(present)
+                if present else 0.0)
     goal_trio = pred.get(GOAL_METRIC)
-    goal_actual = actual[GOAL_METRIC]
+    goal_actual = actual.get(GOAL_METRIC)
+    if goal_actual is None:
+        # No goal result to judge against: direction and goal are not scored
+        # (score_entry_v2 re-weights over quantile and coverage).
+        return {"quantile": quantile, "coverage": round(coverage, 6),
+                "direction": None, "goal": None}
     return {
         "quantile": quantile,
         "coverage": round(coverage, 6),
@@ -323,6 +335,9 @@ def score_entry_v2(pred: dict, actual: dict[str, float]) -> float:
     An empty prediction still scores exactly 0.0, as under v1.
     """
     c = entry_components_v2(pred, actual)
+    if c["direction"] is None:
+        blended = (W_QUANTILE * c["quantile"] + W_COVERAGE * c["coverage"]) / (W_QUANTILE + W_COVERAGE)
+        return round(max(0.0, min(1.0, blended)), 6)
     blended = (
         W_QUANTILE * c["quantile"]
         + W_COVERAGE * c["coverage"]
@@ -945,7 +960,8 @@ def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60,
                 horizon_days=int(r["horizon_days"]),
                 cost_delta_pct=float(r["cost_delta_pct"]),
                 conversions_delta_pct=float(r["conversions_delta_pct"]),
-                efficiency_delta_pct=float(r["efficiency_delta_pct"]),
+                efficiency_delta_pct=(None if r.get("efficiency_delta_pct") is None
+                                      else float(r["efficiency_delta_pct"])),
                 finalized_on=date.fromisoformat(str(r["finalized_on"])[:10]),
                 goal_basis=(r.get("goal_basis") or "cpa"),
                 resolution=str(r.get("measurement_resolution") or "high").lower(),
@@ -1142,7 +1158,7 @@ def operator_outcomes_provider(day: date) -> list[SettledHorizon]:
             horizon_days=int(m["horizon_days"]),
             cost_delta_pct=float(m["cost_delta"] or 0),
             conversions_delta_pct=float(m["conv_delta"] or 0),
-            efficiency_delta_pct=float(efficiency or 0),
+            efficiency_delta_pct=None if efficiency is None else float(efficiency),
             finalized_on=settle_date(we, int(m["horizon_days"])),
             goal_basis=basis,
         ))

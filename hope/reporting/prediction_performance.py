@@ -161,7 +161,9 @@ class _Cell:
         self.by_miner[miner].append(score)
         if episode_id is not None:
             self.episodes.add(episode_id)
-        if components and all(k in components for k in COMPONENT_KEYS):
+        # An entry with no efficiency result carries no direction or goal part
+        # (None): it counts in the score, not in the per-part averages.
+        if components and all(isinstance(components.get(k), (int, float)) for k in COMPONENT_KEYS):
             for k in COMPONENT_KEYS:
                 self.comp_sums[k] += float(components[k])
             self.comp_n += 1
