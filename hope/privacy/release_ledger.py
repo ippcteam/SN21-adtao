@@ -15,7 +15,8 @@ digest starts its own clock; a released digest never closes again.
 Pure: the caller hands in each day's observations (who earns with which
 digest, who the anti-copy rule withheld, who holds the champion seat) and
 persists the state between days. Nothing here pulls, mirrors or publishes;
-reading a day from the ledger is `day_inputs`.
+reading a day from the ledger is `day_inputs`, the daily step is
+release_step.py and the operator copy is mirror.py.
 
 Days without a run record are not observations: they neither count toward
 the 5 nor reset it, so our downtime never releases anyone's model.
@@ -141,14 +142,28 @@ def is_closed(state: ReleaseState, digest: str) -> bool:
 # ---------------------------------------------------------------------------
 # reading one day from the operator ledger
 # ---------------------------------------------------------------------------
+# How far back to look for the run a hotkey's earning model came from. An
+# earner that has not run for longer than this is paid on standing alone and
+# has no digest to close.
+DIGEST_LOOKBACK_DAYS = 45
+
+
 def day_inputs(ledger_root: str, day: date) -> dict | None:
-    """(earning, copy_withheld, champion) for a run day, or None when the day
-    has no weights record (no run: not an observation).
+    """(earning, copy_withheld, champion, refs) for a run day, or None when
+    the day has no weights record (no run: not an observation).
 
     earning     hotkeys with a positive weight in intended_weights_<day>.json,
-                each with the digest it ran that day (shadow/<day>/<hk>.jsonl)
+                each with the digest it last ran BEFORE that day
     withheld    hotkeys the anti-copy grouping excluded (collapse_audit groups)
     champion    the seat holder recorded with the day's weights
+    refs        digest -> the repository it was pulled from (for the mirror)
+
+    The weights file is named by the RUN day, the shadow records by the
+    BASKET day, which is the day before (a run scores yesterday's basket).
+    Reading shadow/<run day> found nothing on the day itself (it is written
+    by the next run) and so counted every earner as out; only days strictly
+    before the run day are read, which gives the same answer live and on
+    replay.
     """
     path = os.path.join(ledger_root, f"intended_weights_{day.isoformat()}.json")
     if not os.path.exists(path):
@@ -156,50 +171,62 @@ def day_inputs(ledger_root: str, day: date) -> dict | None:
     with open(path) as f:
         rec = json.load(f)
     weights = rec.get("weights") or {}
-    earning = {}
+    earning, refs = {}, {}
     for hk, w in weights.items():
         try:
             if float(w) <= 0:
                 continue
         except (TypeError, ValueError):
             continue
-        dg = _digest_of(ledger_root, day, hk)
-        if dg:
+        ref = _ref_before(ledger_root, day, hk)
+        if ref:
+            repo, _, dg = ref.rpartition("@")
             earning[hk] = dg
+            if repo:
+                refs[dg] = repo
     withheld = set()
     audit = rec.get("collapse_audit") or {}
     for g in audit.get("groups") or []:
         withheld |= set(g.get("excluded") or [])
-    return {"earning": earning, "copy_withheld": withheld, "champion": rec.get("champion")}
+    return {"earning": earning, "copy_withheld": withheld,
+            "champion": rec.get("champion"), "refs": refs}
 
 
-def _digest_of(ledger_root: str, day: date, hotkey: str) -> str | None:
-    """The digest a hotkey ran on `day`: the shadow record's image_digest,
-    reduced to its sha256 (the repo part is not the identity)."""
-    p = os.path.join(ledger_root, "shadow", day.isoformat(), f"{hotkey}.jsonl")
-    if not os.path.exists(p):
-        return None
-    last = None
-    with open(p) as f:
-        for line in f:
-            if line.strip():
-                last = json.loads(line)
-    ref = (last or {}).get("image_digest") or ""
-    return ref.rsplit("@", 1)[-1] if "sha256:" in ref else None
+def _ref_before(ledger_root: str, day: date, hotkey: str) -> str | None:
+    """`repo@sha256:...` (or a bare digest) a hotkey last ran on a basket day
+    before `day`, from its shadow record; None if it has not run within the
+    lookback."""
+    for n in range(1, DIGEST_LOOKBACK_DAYS + 1):
+        p = os.path.join(ledger_root, "shadow", (day - timedelta(days=n)).isoformat(),
+                         f"{hotkey}.jsonl")
+        if not os.path.exists(p):
+            continue
+        last = None
+        with open(p) as f:
+            for line in f:
+                if line.strip():
+                    last = json.loads(line)
+        ref = (last or {}).get("image_digest") or ""
+        return ref if "sha256:" in ref else None
+    return None
 
 
 def replay(ledger_root: str, start: date, end: date,
            params: ReleaseParams = ReleaseParams()) -> tuple[ReleaseState, list[dict], int]:
     """Run the rule over the ledger from `start` to `end` inclusive.
-    Returns the final state, every release, and the number of observed days."""
-    state, out, observed = ReleaseState(), [], 0
+    Returns the final state, every release (with the `image_ref` its digest
+    was pulled from, when known), and the number of observed days."""
+    state, out, observed, refs = ReleaseState(), [], 0, {}
     d = start
     while d <= end:
         inp = day_inputs(ledger_root, d)
         if inp is not None:
+            refs.update(inp["refs"])
             state, rel = observe_day(state, d, inp["earning"], inp["copy_withheld"],
                                      inp["champion"], params)
             out.extend(rel)
             observed += 1
         d += timedelta(days=1)
+    for r in out:
+        r["image_ref"] = refs.get(r["digest"])
     return state, out, observed

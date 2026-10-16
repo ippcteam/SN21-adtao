@@ -1357,6 +1357,20 @@ def main():
         record["stages"]["publish_weights"] = {"error": str(e)}
         log(f"[publish-weights] ERROR {e}")
 
+    # 4b. model release (docs/SN21_MODEL_PRIVACY.md): the release ledger from
+    #     today's weights, and a public copy of each newly released model.
+    #     Off until SN21_MODEL_RELEASE_FROM is set; after the weights so a slow
+    #     copy never delays them, and fail-soft like every step after settle.
+    try:
+        from hope.privacy.release_step import run_release_step
+        s = run_release_step(args.ledger_root, day)
+        record["stages"]["model_release"] = s
+        log(f"[model-release] {json.dumps(s, default=str)[:600]}")
+    except Exception as e:   # noqa: BLE001
+        record["stages"]["model_release"] = {"error": str(e)}
+        log(f"[model-release] ERROR {e}")
+    note_memory("model release", record)
+
     # 5. publish the daily leaderboard report to the CMS (GATED — nothing is
     #    posted before the transition-plan reveal date; see _report_publish_gate)
     try:

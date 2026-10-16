@@ -89,18 +89,62 @@ def test_same_day_triggers_follow_the_published_table_order():
     assert [(r["digest"], r["reason"]) for r in rel] == [("sha256:a", "left_earning_set")]
 
 
+def _weights(root, day, weights, champion=None, excluded=()):
+    (root / f"intended_weights_{day}.json").write_text(json.dumps({
+        "weights": weights, "champion": champion,
+        "collapse_audit": {"groups": [{"excluded": list(excluded)}]}}))
+
+
+def _shadow(root, day, hk, ref):
+    sh = root / "shadow" / day.isoformat()
+    sh.mkdir(parents=True, exist_ok=True)
+    (sh / f"{hk}.jsonl").write_text(json.dumps({"image_digest": ref}) + "\n")
+
+
 def test_day_inputs_and_replay_read_the_ledger(tmp_path):
-    day = D0
-    (tmp_path / f"intended_weights_{day}.json").write_text(json.dumps({
-        "weights": {"hkA": 0.6, "hkB": 0.0, "hkC": 0.4}, "champion": "hkA",
-        "collapse_audit": {"groups": [{"excluded": ["hkD"]}]}}))
-    sh = tmp_path / "shadow" / day.isoformat()
-    sh.mkdir(parents=True)
-    (sh / "hkA.jsonl").write_text(json.dumps({"image_digest": "repo/m@sha256:aaa"}) + "\n")
-    (sh / "hkC.jsonl").write_text(json.dumps({"image_digest": "repo/m@sha256:ccc"}) + "\n")
-    inp = R.day_inputs(str(tmp_path), day)
+    run_day = D0
+    basket_day = D0 - timedelta(days=1)          # a run scores yesterday's basket
+    _weights(tmp_path, run_day, {"hkA": 0.6, "hkB": 0.0, "hkC": 0.4}, "hkA", ["hkD"])
+    _shadow(tmp_path, basket_day, "hkA", "repo/m@sha256:aaa")
+    _shadow(tmp_path, basket_day, "hkC", "repo/c@sha256:ccc")
+    inp = R.day_inputs(str(tmp_path), run_day)
     assert inp == {"earning": {"hkA": "sha256:aaa", "hkC": "sha256:ccc"},
-                   "copy_withheld": {"hkD"}, "champion": "hkA"}
-    assert R.day_inputs(str(tmp_path), day + timedelta(days=1)) is None    # no run: not an observation
-    state, rel, observed = R.replay(str(tmp_path), day, day + timedelta(days=3))
+                   "copy_withheld": {"hkD"}, "champion": "hkA",
+                   "refs": {"sha256:aaa": "repo/m", "sha256:ccc": "repo/c"}}
+    assert R.day_inputs(str(tmp_path), run_day + timedelta(days=1)) is None    # no run: not an observation
+    state, rel, observed = R.replay(str(tmp_path), run_day, run_day + timedelta(days=3))
     assert observed == 1 and rel == [] and R.is_closed(state, "sha256:aaa")
+
+
+def test_the_run_day_reads_the_basket_before_it_not_its_own_date(tmp_path):
+    """The bug found 16 Oct: shadow/<run day> does not exist when that run
+    writes its weights, so every earner read as out and would have been
+    released after five runs. A record written later for the run day itself
+    (the next run's basket) must not change the answer either."""
+    for i in range(7):
+        day = D0 + timedelta(days=i)
+        _weights(tmp_path, day, {"hkA": 1.0}, "hkA")
+        _shadow(tmp_path, day - timedelta(days=1), "hkA", "repo/m@sha256:aaa")
+    live_day = D0 + timedelta(days=6)
+    assert R.day_inputs(str(tmp_path), live_day)["earning"] == {"hkA": "sha256:aaa"}
+    state, rel, _ = R.replay(str(tmp_path), D0, live_day)
+    assert rel == [] and R.is_closed(state, "sha256:aaa")
+    _shadow(tmp_path, live_day, "hkA", "repo/m@sha256:bbb")     # next run's basket, a new model
+    assert R.day_inputs(str(tmp_path), live_day)["earning"] == {"hkA": "sha256:aaa"}
+
+
+def test_an_earner_that_skipped_yesterday_keeps_its_last_model(tmp_path):
+    _weights(tmp_path, D0, {"hkA": 1.0})
+    _shadow(tmp_path, D0 - timedelta(days=3), "hkA", "repo/m@sha256:aaa")
+    assert R.day_inputs(str(tmp_path), D0)["earning"] == {"hkA": "sha256:aaa"}
+
+
+def test_replay_names_where_each_released_digest_came_from(tmp_path):
+    _weights(tmp_path, D0, {"hkA": 1.0})
+    _shadow(tmp_path, D0 - timedelta(days=1), "hkA", "ghcr.io/x/m@sha256:aaa")
+    for i in range(1, 6):
+        _weights(tmp_path, D0 + timedelta(days=i), {"hkB": 1.0})
+        _shadow(tmp_path, D0 + timedelta(days=i - 1), "hkB", "ghcr.io/y/b@sha256:bbb")
+    _, rel, _ = R.replay(str(tmp_path), D0, D0 + timedelta(days=5))
+    assert [(r["digest"], r["reason"], r["image_ref"]) for r in rel] == \
+        [("sha256:aaa", "left_earning_set", "ghcr.io/x/m")]

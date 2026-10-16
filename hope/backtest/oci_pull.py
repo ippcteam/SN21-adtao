@@ -28,10 +28,20 @@ SCOPE
     indexes (multi-arch -> linux/amd64), v2 and OCI manifests, gzipped layers,
     whiteouts. Not a general-purpose registry client; it does one job and
     fails closed on anything it does not understand.
+
+CREDENTIALS (model privacy, docs/SN21_MODEL_PRIVACY.md)
+
+    Pulls are anonymous unless the operator configures an account for a
+    registry in SN21_PULL_AUTH (JSON: {"ghcr.io": {"username": ..., "password":
+    ...}}). With one, a miner can keep an earning image private and give that
+    account read access. The account is only ever offered to the registry it
+    is configured for and to that registry's own token service, never to a
+    token realm another host names, and a public image still pulls without it.
 """
 
 from __future__ import annotations
 
+import base64
 import gzip
 import hashlib
 import json
@@ -113,12 +123,57 @@ def _http_get(url, headers, timeout=120):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
-def _bearer_token(registry: str, repo: str, www_authenticate: str) -> str | None:
-    """Resolve a pull token from a WWW-Authenticate challenge.
+PULL_AUTH_ENV = "SN21_PULL_AUTH"
 
-    Anonymous pull only — we never send credentials, and a registry that
-    demands them for a public image simply fails the pull, which is correct:
-    a model a validator cannot fetch cannot be admitted.
+# A registry's token service may live on another host; these are the only
+# cross-host pairs credentials are offered to.
+_TOKEN_REALM_HOSTS = {
+    DEFAULT_REGISTRY: {"auth.docker.io"},
+}
+
+
+def credentials_for(registry: str, environ=None) -> tuple[str, str] | None:
+    """(username, password) configured for this registry host, or None.
+
+    A malformed setting gives None (anonymous), never an exception: a typo in
+    the operator's config must not stop public images from being pulled."""
+    raw = ((environ if environ is not None else os.environ).get(PULL_AUTH_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        table = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(table, dict):
+        return None
+    for host, entry in table.items():
+        if _REGISTRY_ALIASES.get(str(host), str(host)) != registry or not isinstance(entry, dict):
+            continue
+        user, password = entry.get("username"), entry.get("password")
+        if user and password:
+            return str(user), str(password)
+    return None
+
+
+def _basic(credentials: tuple[str, str]) -> str:
+    return "Basic " + base64.b64encode(f"{credentials[0]}:{credentials[1]}".encode()).decode()
+
+
+def _realm_trusted(registry: str, realm: str) -> bool:
+    host = urllib.parse.urlparse(realm).hostname or ""
+    return host == registry.split(":")[0] or host in _TOKEN_REALM_HOSTS.get(registry, set())
+
+
+def _bearer_token(registry: str, repo: str, www_authenticate: str,
+                  credentials: tuple[str, str] | None = None,
+                  actions: str = "pull") -> str | None:
+    """Resolve a token from a WWW-Authenticate challenge.
+
+    Anonymous unless `credentials` are given for this registry, and then only
+    sent to a token realm on the registry's own host (or its known token
+    service): a challenge naming any other realm gets an anonymous request.
+    A registry that demands credentials we do not have fails the pull, which
+    is correct: a model the subnet cannot fetch cannot be admitted.
     """
     if not www_authenticate.lower().startswith("bearer "):
         return None
@@ -131,11 +186,15 @@ def _bearer_token(registry: str, repo: str, www_authenticate: str) -> str | None
     if not realm:
         return None
     service = params.get("service", registry)
-    scope = params.get("scope", f"repository:{repo}:pull")
+    scope = f"repository:{repo}:{actions}" if actions != "pull" else \
+        params.get("scope", f"repository:{repo}:pull")
     url = (f"{realm}?service={urllib.parse.quote(service)}"
            f"&scope={urllib.parse.quote(scope)}")
+    headers = {}
+    if credentials and _realm_trusted(registry, realm):
+        headers["Authorization"] = _basic(credentials)
     try:
-        with _http_get(url, {}, timeout=60) as resp:
+        with _http_get(url, headers, timeout=60) as resp:
             body = json.load(resp)
     except urllib.error.HTTPError as exc:
         raise PullError(f"token request failed: {exc.code}") from exc
@@ -143,35 +202,82 @@ def _bearer_token(registry: str, repo: str, www_authenticate: str) -> str | None
 
 
 class _Registry:
-    def __init__(self, registry: str, repo: str):
+    def __init__(self, registry: str, repo: str, credentials=None, actions: str = "pull"):
         self.registry = registry
         self.repo = repo
         self.base = f"https://{registry}/v2/{repo}"
-        self._token: str | None = None
+        self.credentials = credentials_for(registry) if credentials is None else (credentials or None)
+        self.actions = actions
+        self._auth: str | None = None
 
     def _auth_headers(self, accept: str) -> dict:
         headers = {"Accept": accept}
-        if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
+        if self._auth:
+            headers["Authorization"] = self._auth
         return headers
+
+    def _authorize(self, exc: urllib.error.HTTPError) -> None:
+        """Answer a 401 once: a bearer token (anonymous or with our account),
+        or basic auth when the registry asks for it and we have an account."""
+        challenge = exc.headers.get("WWW-Authenticate", "") if exc.headers else ""
+        if challenge.lower().startswith("basic") and self.credentials:
+            self._auth = _basic(self.credentials)
+            return
+        token = _bearer_token(self.registry, self.repo, challenge,
+                              self.credentials, self.actions)
+        if not token:
+            raise PullError("registry requires auth we do not have") from exc
+        self._auth = f"Bearer {token}"
 
     def _get(self, url: str, accept: str):
         try:
             return _http_get(url, self._auth_headers(accept))
         except urllib.error.HTTPError as exc:
-            if exc.code == 401 and self._token is None:
-                challenge = exc.headers.get("WWW-Authenticate", "")
-                self._token = _bearer_token(self.registry, self.repo, challenge)
-                if not self._token:
-                    raise PullError("registry requires auth we do not have") from exc
-                return _http_get(url, self._auth_headers(accept))
+            if exc.code == 401 and self._auth is None:
+                self._authorize(exc)
+                try:
+                    return _http_get(url, self._auth_headers(accept))
+                except urllib.error.HTTPError as again:
+                    raise PullError(f"GET {url} -> {again.code}") from again
             raise PullError(f"GET {url} -> {exc.code}") from exc
 
-    def manifest(self, reference: str) -> tuple[dict, str]:
+    def request(self, method: str, url: str, body=None, headers=None, timeout=300):
+        """Any other registry call (HEAD/POST/PUT for the release mirror),
+        authorised the same way. Returns (status, headers, body bytes)."""
+        def once():
+            h = dict(headers or {})
+            if self._auth:
+                h["Authorization"] = self._auth
+            req = urllib.request.Request(url, data=body, method=method, headers=h)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, resp.headers, resp.read()
+        try:
+            return once()
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401 and self._auth is None:
+                self._authorize(exc)
+                try:
+                    return once()
+                except urllib.error.HTTPError as again:
+                    return again.code, again.headers, again.read()
+            return exc.code, exc.headers, exc.read()
+
+    def manifest_bytes(self, reference: str) -> tuple[bytes, str]:
+        """The manifest exactly as stored. When `reference` is a digest the
+        bytes must hash to it: the digest the miner committed is the anchor
+        for the manifest as much as for every blob it names."""
         url = f"{self.base}/manifests/{reference}"
         with self._get(url, _MANIFEST_ACCEPT) as resp:
             media_type = resp.headers.get("Content-Type", "").split(";")[0].strip()
             body = resp.read()
+        if reference.startswith("sha256:"):
+            actual = "sha256:" + hashlib.sha256(body).hexdigest()
+            if actual != reference:
+                raise PullError(f"manifest digest mismatch: asked {reference}, got {actual}")
+        return body, media_type
+
+    def manifest(self, reference: str) -> tuple[dict, str]:
+        body, media_type = self.manifest_bytes(reference)
         return json.loads(body), media_type
 
     def blob(self, digest: str, dest_path: str) -> None:
