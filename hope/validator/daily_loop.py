@@ -149,6 +149,20 @@ def save_capture_states(ledger_root: str, states: dict[str, CaptureState]) -> No
 
 # ---- the loop ----------------------------------------------------------------
 
+
+def _mem(step: str) -> None:
+    """One line of this process's memory after a step of the daily loop (16 Oct 2026):
+    the settle stage holds ~1.8 GB and the pipeline's own [mem] lines only show the
+    stage as a whole. Logging only; never raises."""
+    try:
+        import resource
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+        with open("/proc/self/statm") as f:
+            rss = int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 1048576.0
+        print(f"[mem-settle] after {step}: rss={rss:.0f} MiB peak={peak:.0f} MiB", flush=True)
+    except Exception:  # noqa: BLE001 - not Linux, or no /proc: nothing to log
+        pass
+
 def run_daily_loop(
     shadow_root: str,
     ledger_root: str,
@@ -204,6 +218,7 @@ def run_daily_loop(
     except Exception as e:
         summary["settle"] = {"error": str(e)}
 
+    _mem("settle")
     # 1b. [D4 condition 2] vertical-error series — the operator's episode->vertical
     # map tags each newly settled entry at entry time (J3, 2026-07-29).
     # vertical_map_provider: Callable[[list[str]], dict[episode_id -> vertical]]
@@ -246,6 +261,7 @@ def run_daily_loop(
         except Exception as e:
             summary["vertical_series"] = {"error": str(e)}
 
+    _mem("vertical series")
     # 1c. Accuracy by change type (Rob, 20 Aug) — the one aggregation behind
     # the public accuracy page (7/14/28 selector) and per-miner win/lose
     # feedback. Same provider pattern as 1b: the operator platform maps
@@ -306,6 +322,7 @@ def run_daily_loop(
         except Exception as e:
             summary["type_accuracy"] = {"error": str(e)}
 
+    _mem("type accuracy")
     # 1e. Absence penalties (Rob's ruling, 24 Aug) — every uncovered episode
     # on a subnet-run day enters the absentee's standing at the published
     # floor, so a board position cannot be held from the sidelines. Runs
@@ -326,6 +343,7 @@ def run_daily_loop(
     except Exception as e:
         summary["absence_penalty"] = {"error": str(e)}
 
+    _mem("absence penalties")
     # 1c. liveness — chronic-failure observation (strikes/eviction).
     # Reads the day's EXECUTION facts off the shadow ledger and folds them
     # into the liveness state machine. Runs whether or not
@@ -429,6 +447,7 @@ def run_daily_loop(
                        else active_floor(day, environ, _first_settled))
     summary["collateral_floor_alpha"] = effective_floor
 
+    _mem("liveness")
     # 2. [D9] capture fold — persisted; pre-M4 the provider returns {}
     try:
         earned = (earnings_provider or (lambda d: {}))(day)
@@ -464,6 +483,7 @@ def run_daily_loop(
     except Exception as e:
         summary["advisory"] = {"error": str(e)}
 
+    _mem("capture and advisory")
     # 4. [D11] publication + gated anchor
     try:
         if key_loader is None:
@@ -584,6 +604,7 @@ def run_daily_loop(
     except Exception as e:
         summary["publish"] = {"error": str(e)}
 
+    _mem("publish and receipt")
     # 5. weights intent + [D3] volume handoff
     try:
         vol = None
@@ -744,6 +765,7 @@ def run_daily_loop(
     except Exception as e:
         summary["weights"] = {"error": str(e)}
 
+    _mem("weights")
     return summary
 
 
