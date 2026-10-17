@@ -363,10 +363,75 @@ def run_sandboxed(spec: RunSpec, stdin_blob: bytes) -> SandboxResult:
     return SandboxResult(ok=True, stdout=stdout, exit_code=0, peak_rss_bytes=peak)
 
 
+def _make_writable_and_retry(func, path, _exc_info):
+    """rmtree error hook: an image's read-only directories (0555 is common)
+    refuse deletion of what is inside them. Make the parent and the entry
+    writable and try once more; anything still refused is left for the sweep."""
+    for p in (os.path.dirname(path), path):
+        try:
+            os.chmod(p, 0o700)
+        except OSError:
+            pass
+    try:
+        func(path)
+    except OSError:
+        pass
+
+
 def cleanup_rootfs(dest_dir: str) -> None:
     """Remove an unpacked image. Best-effort: disk is the scarce resource on
-    this host, so a failure to delete is logged by the caller, not raised."""
-    shutil.rmtree(dest_dir, ignore_errors=True)
+    this host, so a failure to delete is never raised.
+
+    17 Oct 2026: `rmtree(ignore_errors=True)` gave up silently inside read-only
+    directories, so parts of images stayed behind after every run; 6.5 GB had
+    collected in the work folder, which with the receipts is what filled the
+    disk from 5 to 11 Oct."""
+    if not os.path.lexists(dest_dir):
+        return
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(dest_dir, onexc=_make_writable_and_retry)
+    else:
+        shutil.rmtree(dest_dir, onerror=_make_writable_and_retry)
+    if os.path.lexists(dest_dir):
+        shutil.rmtree(dest_dir, ignore_errors=True)
+
+
+def sweep_stale_images(workdir_root: str, older_than_s: int = 6 * 3600,
+                       prefix: str = "sn21-img-") -> dict:
+    """Remove unpacked images left by earlier runs (a run killed mid-way never
+    reaches its own cleanup). Only `prefix` folders older than `older_than_s`
+    are touched, so a model running right now and the champion forecast's warm
+    image (named by digest) are never removed. Returns what it did."""
+    import time as _time
+    removed, freed, kept = 0, 0, 0
+    try:
+        names = os.listdir(workdir_root)
+    except OSError:
+        return {"removed": 0, "freed_mb": 0, "kept": 0}
+    now = _time.time()
+    for name in names:
+        path = os.path.join(workdir_root, name)
+        if not name.startswith(prefix) or not os.path.isdir(path):
+            continue
+        try:
+            age = now - os.path.getmtime(path)
+        except OSError:
+            continue
+        if age < older_than_s:
+            kept += 1
+            continue
+        size = 0
+        for root, _dirs, files in os.walk(path):
+            for f in files:
+                try:
+                    size += os.lstat(os.path.join(root, f)).st_size
+                except OSError:
+                    pass
+        cleanup_rootfs(path)
+        if not os.path.lexists(path):
+            removed += 1
+            freed += size
+    return {"removed": removed, "freed_mb": freed >> 20, "kept": kept}
 
 
 if __name__ == "__main__":   # pragma: no cover - a manual smoke entrypoint

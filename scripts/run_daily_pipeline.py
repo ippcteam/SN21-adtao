@@ -1265,6 +1265,18 @@ def main():
 
     started = time.time()
     record = {"day": str(day), "mode": executor_mode(), "stages": {}}
+
+    # Unpacked images left by earlier runs (17 Oct 2026: 6.5 GB had collected,
+    # part of what filled the disk from 5 to 11 Oct). Only stale sn21-img-*
+    # folders; never a model running now or the forecast's warm image.
+    try:
+        import tempfile
+        from hope.backtest.ns_sandbox import sweep_stale_images
+        sweeps = {d: sweep_stale_images(d) for d in sorted({workdir, tempfile.gettempdir()})}
+        record["disk_sweep"] = sweeps
+        log(f"[disk] stale image sweep {json.dumps(sweeps)} | free_mb={disk_free_mb(args.ledger_root, workdir)}")
+    except Exception as e:   # noqa: BLE001 - housekeeping must never stop the run
+        log(f"[disk] sweep skipped: {e}")
     log("===PIPELINE-START===")
     log(f"[pipeline] day={day} mode={executor_mode()} ledger={args.ledger_root}")
 
