@@ -258,6 +258,24 @@ def method_params(environ=os.environ, day: date | None = None) -> dict:
 _CACHE: dict = {}
 
 
+def release_standing_cache() -> None:
+    """Drop the cached standing entries and hand the freed memory back to the
+    system (17 Oct 2026). The cache holds one full copy of every entry in the
+    window (millions of objects); within a daily run the callers ask with
+    different settings (type accuracy, the relative and the absolute standing
+    of the weights step), so it never hit and only kept the last copy resident:
+    +0.8 GB after type accuracy and +1.1 GB after weights on 17 Oct. Called by
+    the daily loop after each of those steps. Never raises."""
+    import gc
+    _CACHE.clear()
+    gc.collect()
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:  # noqa: BLE001 - not glibc (macOS dev): the clear is enough
+        pass
+
+
 def _receipt_files(root: str, as_of: date, window_days: int) -> list[tuple[date, str]]:
     d = os.path.join(root, "receipts")
     if not os.path.isdir(d):

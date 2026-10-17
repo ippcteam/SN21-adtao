@@ -163,6 +163,15 @@ def _mem(step: str) -> None:
     except Exception:  # noqa: BLE001 - not Linux, or no /proc: nothing to log
         pass
 
+def _release_standing_memory() -> None:
+    """Free the standing entries a step loaded (see standing_method.release_standing_cache)."""
+    try:
+        from hope.scoring.standing_method import release_standing_cache
+        release_standing_cache()
+    except Exception:  # noqa: BLE001 - memory housekeeping must never fail the run
+        pass
+
+
 def run_daily_loop(
     shadow_root: str,
     ledger_root: str,
@@ -303,6 +312,7 @@ def run_daily_loop(
                         _standing,
                         key=lambda hk: (_standing[hk],
                                         len(_by_miner.get(hk) or ()), hk))
+                _by_miner = _standing = None         # only the winner is needed
             except Exception:                        # noqa: BLE001
                 _winner = None
             agg = aggregate_type_accuracy(
@@ -322,6 +332,7 @@ def run_daily_loop(
         except Exception as e:
             summary["type_accuracy"] = {"error": str(e)}
 
+    _release_standing_memory()
     _mem("type accuracy")
     # 1e. Absence penalties (Rob's ruling, 24 Aug) — every uncovered episode
     # on a subnet-run day enters the absentee's standing at the published
@@ -765,6 +776,7 @@ def run_daily_loop(
     except Exception as e:
         summary["weights"] = {"error": str(e)}
 
+    _release_standing_memory()
     _mem("weights")
     return summary
 
