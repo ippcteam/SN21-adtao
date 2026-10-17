@@ -139,11 +139,46 @@ def penalty_log(root: str) -> list[dict]:
     return out
 
 
+# "Until your entries age out" (SN21_REWARDS.md, absence rule point 2). Penalty
+# entries are themselves entries in the window, so a hotkey that stopped running
+# never aged out and was charged for ever (50 deregistered hotkeys, up to 53 days
+# in a row by 16 Oct). From the published date a hotkey is "on the board" only
+# while it holds at least one REAL scored entry in the window; once its last one
+# ages out it is no longer charged and its zeros age out after it. Playing
+# (shadow presence) still charges as before. Unset = the old reading.
+REAL_ENTRIES_FROM_ENV = "SN21_ABSENCE_NEEDS_REAL_ENTRIES_FROM"
+
+
+def needs_real_entries(day: date, environ=os.environ) -> bool:
+    raw = (environ.get(REAL_ENTRIES_FROM_ENV) or "").strip()
+    if not raw:
+        return False
+    try:
+        return day >= date.fromisoformat(raw)
+    except ValueError:
+        return False
+
+
+def is_penalty_entry(entry, score: float) -> bool:
+    """A charged zero: the penalty's (score, weight) signature. Weight 1.0 is
+    used by no scoring path (see standing_ledger.load_entries)."""
+    return (float(getattr(entry, "weight", 0.0)) == PENALTY_ENTRY_WEIGHT
+            and float(getattr(entry, "score", -1.0)) == score)
+
+
 def chargeable_hotkeys(root: str, day: date,
-                       lookback: int = ACTIVE_LOOKBACK_DAYS) -> set[str]:
-    """Ranked-or-active: on the board (in-window standing entries) OR
-    playing (shadow presence in the trailing window incl. day)."""
-    ranked = set(standing_ledger.load_entries(root, as_of=day).keys())
+                       lookback: int = ACTIVE_LOOKBACK_DAYS,
+                       environ=os.environ) -> set[str]:
+    """Ranked-or-active: on the board (in-window standing entries; from
+    SN21_ABSENCE_NEEDS_REAL_ENTRIES_FROM, at least one real one) OR playing
+    (shadow presence in the trailing window incl. day)."""
+    entries = standing_ledger.load_entries(root, as_of=day)
+    if needs_real_entries(day, environ):
+        score = penalty_score(environ)
+        ranked = {hk for hk, eps in entries.items()
+                  if any(not is_penalty_entry(e, score) for e in eps)}
+    else:
+        ranked = set(entries.keys())
     active: set[str] = set()
     for n in range(lookback):
         d = (day - timedelta(days=n)).isoformat()
@@ -196,7 +231,8 @@ def operator_fault(error: str | None, wall_budget_s: int | None = None) -> bool:
 
 
 def compute_penalties(root: str, day: date,
-                      published_budget_s: int | None = None) -> list[dict]:
+                      published_budget_s: int | None = None,
+                      environ=os.environ) -> list[dict]:
     """What day `day` charges, as plain dicts. Pure read, no flag check.
 
     [] when the subnet did not run. Every chargeable hotkey owes one entry
@@ -222,7 +258,7 @@ def compute_penalties(root: str, day: date,
     done = applied(root)
     status = shadow.day_run_status(root, d)
     out: list[dict] = []
-    for hk in sorted(chargeable_hotkeys(root, day)):
+    for hk in sorted(chargeable_hotkeys(root, day, environ=environ)):
         if (d, hk) in done:
             continue
         ok, error = status.get(hk, (None, None))
@@ -248,7 +284,8 @@ def apply_penalties(root: str, day: date, environ=os.environ) -> dict:
     for n in range(CATCHUP_DAYS - 1, -1, -1):
         d = day - timedelta(days=n)
         for p in compute_penalties(root, d,
-                                   published_budget_s=PUBLISHED_RUN_BUDGET_S):
+                                   published_budget_s=PUBLISHED_RUN_BUDGET_S,
+                                   environ=environ):
             entries = [WeightedEntry(miner=p["hotkey"], score=score,
                                      weight=PENALTY_ENTRY_WEIGHT,
                                      entered_on=d)
