@@ -378,9 +378,63 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
 
     summary = run_shadow_day(day, episodes, models, runner, ledger_root)
     _write_model_since(ledger_root)
+    workdir = os.environ.get("SN21_EXECUTOR_WORKDIR", "/tmp/executor")
     return {"registry": stats, "models_run": summary.get("models_run"),
+            "health": shadow_run_health(summary.get("results", {}),
+                                        disk_free_mb(ledger_root, workdir)),
             "results": {hk: r.get("predictions")
                         for hk, r in summary.get("results", {}).items()}}
+
+
+# Free disk under which the run reports a problem (17 Oct 2026). Image unpacks
+# refuse below 2 GB (local_executor.MIN_FREE_DISK_BYTES); from 5 to 11 Oct
+# 58-66 models a day were refused that way and nothing reported it, because a
+# failure on our side is excused from absence and the stage itself succeeded.
+DISK_WARN_MB = 5 * 1024
+
+
+def disk_free_mb(*paths) -> dict:
+    """Free MB on each path's volume; an unreadable path is left out."""
+    import shutil
+    out = {}
+    for p in paths:
+        try:
+            out[p] = int(shutil.disk_usage(p).free // (1 << 20))
+        except OSError:
+            continue
+    return out
+
+
+def shadow_run_health(results: dict, disk: dict | None = None) -> dict:
+    """What the day's shadow run did, for the run record and heartbeat.
+
+    results: hotkey -> {"ok", "predictions", "error"} (run_shadow_day).
+    A failure on OUR side (operator_fault: pull, low disk, no sandbox, a
+    timeout under the published budget) is excused from absence, so the
+    miner loses the day without any charge or trace; it is counted here so
+    the operator sees it the same morning."""
+    from hope.scoring.absence_penalty import PUBLISHED_RUN_BUDGET_S, operator_fault
+    by_error: dict = {}
+    ours: list = []
+    ok = 0
+    for hk, r in (results or {}).items():
+        if r.get("ok"):
+            ok += 1
+            continue
+        err = str(r.get("error") or "unknown")
+        kind = err.split(":")[0].split(">")[0].strip() or "unknown"
+        by_error[kind] = by_error.get(kind, 0) + 1
+        if operator_fault(err, PUBLISHED_RUN_BUDGET_S):
+            ours.append(hk)
+    low = {p: mb for p, mb in (disk or {}).items() if mb < DISK_WARN_MB}
+    problems = []
+    if ours:
+        problems.append(f"{len(ours)} model(s) failed on our side ({', '.join(f'{k} {v}' for k, v in sorted(by_error.items()))})")
+    if low:
+        problems.append("low disk: " + ", ".join(f"{p} {mb} MB free" for p, mb in low.items()))
+    return {"ok": ok, "failed": sum(by_error.values()), "failed_by_error": by_error,
+            "operator_faults": len(ours), "operator_fault_hotkeys": sorted(ours)[:20],
+            "disk_free_mb": disk or {}, "problems": problems}
 
 
 # ---- 3. settle + publish -----------------------------------------------------
@@ -1323,12 +1377,18 @@ def main():
                          include_reference=not args.no_reference)
         record["stages"]["shadow"] = {"registry": s["registry"],
                                       "models_run": s["models_run"],
+                                      **({"health": s["health"]} if "health" in s else {}),
                                       **({"skipped": s["skipped"]}
                                          if "skipped" in s else {})}
         if "skipped" in s:
             log(f"[shadow] SKIPPED — {s['skipped']}")
         else:
             log(f"[shadow] registry={s['registry']} models_run={s['models_run']}")
+            h = s.get("health") or {}
+            log(f"[shadow-health] ok={h.get('ok')} failed={h.get('failed')} "
+                f"by_error={h.get('failed_by_error')} ours={h.get('operator_faults')} "
+                f"disk_free_mb={h.get('disk_free_mb')}"
+                + (f" PROBLEMS: {'; '.join(h['problems'])}" if h.get("problems") else ""))
     except Exception as e:   # noqa: BLE001
         record["stages"]["shadow"] = {"error": str(e)}
         log(f"[shadow] ERROR {e}")
@@ -1460,6 +1520,10 @@ def publish_pipeline_heartbeat(day, record):
         # keep the summary compact but diagnostic: per-stage keys, errors verbatim
         "stages": {name: (s if isinstance(s, dict) else {"value": s})
                    for name, s in stages.items()},
+        # Problems that do not fail a stage but cost miners a day: models that
+        # failed on our side, low disk (17 Oct 2026). The operator's watcher
+        # alerts on these.
+        "problems": list(((stages.get("shadow") or {}).get("health") or {}).get("problems") or []),
     }
     resp = _api_post("daily/pipeline-heartbeat",
                      {"day": day, "ok": ok, "summary": summary})
