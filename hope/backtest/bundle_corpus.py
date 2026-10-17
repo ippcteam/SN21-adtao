@@ -27,7 +27,7 @@ import json
 import os
 import urllib.request
 
-from hope.backtest.gate import OutcomeRow
+from hope.backtest.gate import OutcomeRow, label_value
 
 BUNDLE_URL = ("https://github.com/ippcteam/SN21-adtao/releases/download/"
               "training-bundle-2026-08/SN21_training_bundle.jsonl")
@@ -76,8 +76,8 @@ def build_from_bundle(bundle_path: str, limit: int = 250):
                 outcomes.append(OutcomeRow(
                     episode_id=eid, horizon_days=h,
                     cost_delta_pct=float(vals["cost_delta_pct"]),
-                    conversions_delta_pct=float(vals.get("conversions_delta_pct") or 0),
-                    efficiency_delta_pct=float(vals.get(EFFICIENCY_LABEL) or 0)))
+                    conversions_delta_pct=label_value(vals, "conversions_delta_pct"),
+                    efficiency_delta_pct=label_value(vals, EFFICIENCY_LABEL)))
                 got_label = True
             if got_label:
                 episodes.append(payload)

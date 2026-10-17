@@ -156,7 +156,9 @@ class SettledHorizon:
     episode_id: str
     horizon_days: int
     cost_delta_pct: float
-    conversions_delta_pct: float
+    # None = too few conversions to measure (fewer than 3 expected in the after
+    # days, from the operator's published date): not scored, like efficiency.
+    conversions_delta_pct: float | None
     # None = not measurable (spend and zero conversions on a CPA basis, Sir Rob
     # 16 Oct 2026): the entry is scored on cost and conversions only.
     efficiency_delta_pct: float | None
@@ -959,7 +961,8 @@ def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60,
                 episode_id=str(r["episode_id"]),
                 horizon_days=int(r["horizon_days"]),
                 cost_delta_pct=float(r["cost_delta_pct"]),
-                conversions_delta_pct=float(r["conversions_delta_pct"]),
+                conversions_delta_pct=(None if r.get("conversions_delta_pct") is None
+                                       else float(r["conversions_delta_pct"])),
                 efficiency_delta_pct=(None if r.get("efficiency_delta_pct") is None
                                       else float(r["efficiency_delta_pct"])),
                 finalized_on=date.fromisoformat(str(r["finalized_on"])[:10]),
@@ -1157,7 +1160,7 @@ def operator_outcomes_provider(day: date) -> list[SettledHorizon]:
             episode_id=str(m["episode_id"]),
             horizon_days=int(m["horizon_days"]),
             cost_delta_pct=float(m["cost_delta"] or 0),
-            conversions_delta_pct=float(m["conv_delta"] or 0),
+            conversions_delta_pct=None if m["conv_delta"] is None else float(m["conv_delta"]),
             efficiency_delta_pct=None if efficiency is None else float(efficiency),
             finalized_on=settle_date(we, int(m["horizon_days"])),
             goal_basis=basis,

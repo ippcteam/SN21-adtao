@@ -41,7 +41,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Iterator
 
-from hope.backtest.gate import OutcomeRow
+from hope.backtest.gate import OutcomeRow, label_value
 
 # Matches the published per-basket budget: the gate must cost a miner's
 # image no more than a normal day would.
@@ -114,8 +114,8 @@ def outcome_rows(episode_id: str, settled: dict) -> list[OutcomeRow]:
             episode_id=episode_id,
             horizon_days=horizon_days,
             cost_delta_pct=float(values["cost_delta_pct"]),
-            conversions_delta_pct=float(values.get("conversions_delta_pct") or 0),
-            efficiency_delta_pct=float(values.get(EFFICIENCY_KEY) or 0),
+            conversions_delta_pct=label_value(values, "conversions_delta_pct"),
+            efficiency_delta_pct=label_value(values, EFFICIENCY_KEY),
         ))
     return rows
 

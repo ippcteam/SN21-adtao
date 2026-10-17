@@ -29,8 +29,19 @@ class OutcomeRow:
     episode_id: str
     horizon_days: int
     cost_delta_pct: float
-    conversions_delta_pct: float
-    efficiency_delta_pct: float
+    # None = not measurable for this entry under the operator's dated rules
+    # (too few conversions; spend with zero conversions): skipped, never 0.
+    conversions_delta_pct: float | None
+    efficiency_delta_pct: float | None
+
+
+def label_value(values: dict, key: str) -> float | None:
+    """A corpus label: an explicit None stays None (not measurable); an absent
+    key reads 0, as every corpus did before those rules existed."""
+    if key not in values:
+        return 0.0
+    v = values[key]
+    return None if v is None else float(v)
 
 
 def pinball(actual: float, pred: float, q: float) -> float:
@@ -79,7 +90,9 @@ def corpus_spread(outcomes: Iterable[OutcomeRow]) -> dict[str, float]:
     vals: dict[str, list[float]] = {m: [] for m in METRICS}
     for o in outcomes:
         for m in METRICS:
-            vals[m].append(abs(getattr(o, m)))
+            v = getattr(o, m)
+            if v is not None:
+                vals[m].append(abs(v))
     return {m: (median(v) if v else 0.1) for m, v in vals.items()}
 
 
@@ -103,6 +116,8 @@ def gate_score(outcomes: list[OutcomeRow],
         covered += 1
         for m in METRICS:
             actual = getattr(o, m)
+            if actual is None:
+                continue            # not measurable for this entry: neither scored nor a miss
             trio = p.get(m)
             if not trio:
                 continue
