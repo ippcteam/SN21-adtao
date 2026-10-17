@@ -59,7 +59,21 @@ def main(argv=None) -> int:
                    default=os.environ.get("SN21_EXECUTOR_WORKDIR") or "/tmp")
     p.add_argument("--episodes", type=int, default=None,
                    help="day_episode_volume for the D3 gate (default: large enough to pass)")
+    p.add_argument("--keep", action="store_true",
+                   help="keep the ledger copies afterwards (default: removed, see below)")
     args = p.parse_args(argv)
+    # 17 Oct 2026: the 9 Sep run left one full ledger copy per tail in the work
+    # folder (6.1 GB), which is most of what filled the executor disk from 5 to
+    # 11 Oct. The copies are removed when the preview ends, whatever happens.
+    preview_root = os.path.join(args.workdir, "curve_preview")
+    try:
+        return _preview(args)
+    finally:
+        if not args.keep:
+            shutil.rmtree(preview_root, ignore_errors=True)
+
+
+def _preview(args) -> int:
 
     day = date.fromisoformat(args.day)
     tails = [float(t) for t in args.tails.split(",") if t.strip()]
