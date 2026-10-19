@@ -114,7 +114,20 @@ def admitted_models(root: str, network: str, netuid: int,
         "active": registry["active_count"],
         "pending_admission": registry["pending_count"],
     }
-    return list(registry["active"].values()), stats
+    # A hotkey whose new model waits for admission or was rejected keeps
+    # running its last admitted model from the switch date (18 Oct decision).
+    # The record is kept every day so it is complete when the switch turns on;
+    # a problem with it never stops the run.
+    from hope.backtest import last_admitted
+    kept = {}
+    try:
+        record = last_admitted.remember(root, registry["active"], as_of, admitted)
+        if last_admitted.enabled(as_of):
+            kept = last_admitted.fallbacks(registry, record, admitted, as_of)
+    except Exception as exc:                                  # noqa: BLE001
+        stats["last_admitted_error"] = str(exc)[:200]
+    stats["kept_last_admitted"] = len(kept)
+    return list(registry["active"].values()) + list(kept.values()), stats
 
 
 def _parse_args(argv):

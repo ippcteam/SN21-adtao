@@ -11,8 +11,11 @@ problem without guessing.
 Statuses:
   active   — current on-chain digest is admitted and runnable
   pending  — current on-chain digest is committed but not yet judged (intake
-             will verdict it) — nothing runs until it is admitted
+             will verdict it) — nothing runs until it is admitted, unless
+             running_digest names the hotkey's previous admitted model,
+             which keeps running meanwhile (SN21_KEEP_LAST_ADMITTED_FROM)
   rejected — current on-chain digest was judged and did not pass the baseline
+             (running_digest as for pending)
   none     — no model commitment on chain for this hotkey
 
 `build_registration_status_document` opens a subtensor and reads the ledger; the
@@ -71,17 +74,22 @@ def assemble(registry: dict,
             "first_settle_date": None if scored else first_settle_by_hotkey.get(hk),
         })
 
+    kept = registry.get("kept_last_admitted") or {}
     for hk, digest in (registry.get("pending_admission") or {}).items():
         vs = verdict_status_by_hex.get(_hex(digest))
         status = "rejected" if vs and "reject" in str(vs).lower() else "pending"
-        out.append({
+        rec = {
             "hotkey": hk,
             "uid": uid_by_hotkey.get(hk),
             "current_digest": _short(digest),
             "status": status,
             "scored": hk in scored_hotkeys,
             "first_settle_date": None,
-        })
+        }
+        if hk in kept:
+            # The hotkey's previous admitted model keeps running meanwhile.
+            rec["running_digest"] = _short(getattr(kept[hk], "image_digest", None))
+        out.append(rec)
 
     out.sort(key=lambda r: (r["uid"] if r["uid"] is not None else 1 << 30, r["hotkey"]))
     return out
@@ -162,6 +170,10 @@ def build_registration_status_document(ledger_root: str,
     commitments = bulk_model_commitments(subtensor, netuid, hotkeys)
     registry = build_registry(hotkeys, as_registry_reader(commitments),
                               admitted, as_of)
+    from hope.backtest import last_admitted
+    if last_admitted.enabled(as_of):
+        registry["kept_last_admitted"] = last_admitted.fallbacks(
+            registry, last_admitted.load(ledger_root) or {}, admitted, as_of)
 
     statuses = assemble(
         registry,
