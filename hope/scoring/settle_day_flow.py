@@ -173,6 +173,12 @@ class SettledHorizon:
     # Measurement resolution from the operator (high / medium / low), the
     # April table derived from what the episode touched. Historic rows: high.
     resolution: str = "high"
+    # Conversion counts over the horizon, set only where there is no
+    # conversion percentage because too few were expected (the count score,
+    # Sir Rob 19 Oct 2026): expected = daily conversions before x horizon days,
+    # actual = daily conversions after x horizon days.
+    expected_conversions: float | None = None
+    actual_conversions: float | None = None
 
 
 def settle_date(action_window_end: date, horizon_days: int) -> date:
@@ -454,6 +460,16 @@ def score_entry_active(pred: dict, actual: dict[str, float],
     return score_entry(pred, actual)
 
 
+# Small-campaign count scores pooled per miner per settle day (option c), from
+# the last score_settled call: {settle_day: count_score.Pooled}. Published beside
+# the standing for the first four weeks, never counted in it.
+_LAST_COUNT_POOLED: dict = {}
+
+
+def last_count_pooled() -> dict:
+    return {d: p.report() for d, p in sorted(_LAST_COUNT_POOLED.items())}
+
+
 def score_settled(
     prediction_index: dict[str, dict[str, dict]],
     outcomes: Iterable[SettledHorizon],
@@ -468,7 +484,9 @@ def score_settled(
     docstring). Nothing is rescored (v0.5 §4) — the caller's entered-
     markers guarantee each (episode, horizon) flows exactly once.
     """
+    from hope.scoring import count_score
     results: list[HorizonResult] = []
+    _LAST_COUNT_POOLED.clear()
     for o in outcomes:
         actual = {
             "cost_delta_pct": o.cost_delta_pct,
@@ -480,11 +498,20 @@ def score_settled(
             if not pred:
                 continue
             _env = environ if environ is not None else os.environ
+            score = score_entry_active(pred, actual, environ=_env)
+            if (o.conversions_delta_pct is None and o.expected_conversions
+                    and count_score.in_force(o.finalized_on, _env)):
+                # Small campaign: the conversion part is scored as a count.
+                score = count_score.blend(score, count_score.count_component(
+                    pred, o.expected_conversions, o.actual_conversions or 0.0))
+                _LAST_COUNT_POOLED.setdefault(
+                    o.finalized_on.isoformat(), count_score.Pooled()).add(
+                    miner, pred, o.expected_conversions, o.actual_conversions or 0.0)
             results.append(HorizonResult(
                 episode_id=o.episode_id,
                 horizon_days=o.horizon_days,
                 miner=miner,
-                score=score_entry_active(pred, actual, environ=_env),
+                score=score,
                 finalized_on=o.finalized_on,
                 # Measurement resolution (operator-derived, April table),
                 # applied from the published effective date; "high" before.
@@ -1084,6 +1111,8 @@ def operator_outcomes_provider(day: date) -> list[SettledHorizon]:
                        o.cpa_delta_pct             AS cpa_delta,
                        o.conversion_value_delta_pct AS cv_delta,
                        COALESCE(o.baseline_avg_conv_value_micros, 0) AS b_cv,
+                       o.baseline_avg_conversions  AS b_conv,
+                       o.outcome_avg_conversions   AS o_conv,
                        c.action_window_end         AS window_end,
                        {frozen_cols},
                        r.google_ads_account_id     AS gads_id,
@@ -1156,14 +1185,20 @@ def operator_outcomes_provider(day: date) -> list[SettledHorizon]:
         # the validator down with a KeyError.
         basis_counts[basis] = basis_counts.get(basis, 0) + 1
 
+        h = int(m["horizon_days"])
+        b_conv, o_conv = m.get("b_conv"), m.get("o_conv")
+        counts = (m["conv_delta"] is None and b_conv is not None and float(b_conv) > 0
+                  and o_conv is not None)
         out.append(SettledHorizon(
             episode_id=str(m["episode_id"]),
-            horizon_days=int(m["horizon_days"]),
+            horizon_days=h,
             cost_delta_pct=float(m["cost_delta"] or 0),
             conversions_delta_pct=None if m["conv_delta"] is None else float(m["conv_delta"]),
             efficiency_delta_pct=None if efficiency is None else float(efficiency),
-            finalized_on=settle_date(we, int(m["horizon_days"])),
+            finalized_on=settle_date(we, h),
             goal_basis=basis,
+            expected_conversions=float(b_conv) * h if counts else None,
+            actual_conversions=float(o_conv) * h if counts else None,
         ))
 
     # Fail loud, with denominators — a coverage number without its denominator
