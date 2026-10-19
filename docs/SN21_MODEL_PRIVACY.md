@@ -2,12 +2,19 @@
 
 | | |
 | :---- | :---- |
-| **Version** | 1.1 |
+| **Version** | 1.2 |
 | **Audience** | Miners, validators, auditors |
-| **Status** | How model images are pulled **today**, and the **planned** validator-only rule (not built yet) |
-| **Last updated** | 2026-10-11 |
+| **Status** | How model images are pulled **today**, and the **planned** closed-while-earning rule (not in force yet) |
+| **Last updated** | 2026-10-19 |
 | **Related** | [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_VERIFYING.md](./SN21_VERIFYING.md) · [miner_quickstart.md](./miner_quickstart.md) |
 
+> **Updated 2026-10-19.** Validators do not run models: the subnet's executor
+> runs every admitted model and publishes signed receipts, and validators set
+> weights from those. So the planned rule no longer gives validators a
+> download. While a model earns, only the executor pulls it; once released, it
+> is public and the operator keeps a public copy. The release rules are
+> unchanged.
+>
 > **Corrected 2026-10-11.** Earlier versions of this page described
 > validator-only downloads of earning models as the rule in force. That is
 > **not built**. Today every committed image is pulled anonymously, so it has
@@ -32,7 +39,7 @@
 
 ---
 
-## Planned: validator-only downloads (backlog, not built)
+## Planned: closed while earning, public on release (not in force)
 
 Everything from here down is the **target rule**, kept so miners can see where
 this is going. **None of it is in force.** When it is built, the date it
@@ -67,8 +74,8 @@ Full container replay by the public is available **after release**.
 
 | State | Who may pull the digest-pinned image |
 | :---- | :---- |
-| **Closed** | Registered validators that pass the published auth check (hotkey + stake floor), via the subnet pull path |
-| **Released** | Anyone; the operator also mirrors the digest so release cannot be undone by deleting the miner's repo |
+| **Closed** | Only the subnet's executor, through a read-only pull account you grant on your registry. Validators do not need the image: they verify from the public receipts |
+| **Released** | Anyone; the operator also keeps a public copy under the same digest, so release cannot be undone by deleting the miner's repo |
 
 The trust anchor does not move: intake always pulls **by committed digest** and
 verifies local `RepoDigests`. Auth only gates *who* may fetch; it never allows
@@ -128,7 +135,7 @@ updated the same day.
 1. **Bytes must remain available** to the subnet pull path for the whole closed
    period and at the moment of release (so the operator can mirror).
 2. **Deleting, rotating credentials, or otherwise withholding** a closed digest
-   so validators cannot pull, or so release mirroring fails, is a **miner
+   so the executor cannot pull, or so the release copy fails, is a **miner
    fault**: published strike / forfeiture of future closed access for that
    coldkey, as announced with enforcement. Scores already locked stay facts;
    you do not get to erase the audit trail by deleting the image.
@@ -142,7 +149,7 @@ updated the same day.
 - It does **not** hide predictions or scores.
 - It does **not** replace anti-copy / one-payer controls on emissions. Closed
   pull slows casual cloning; it does not stop distillation from public
-  predictions or a compromised validator pull. Emission uniqueness is a
+  predictions. Emission uniqueness is a
   separate rule.
 - It does **not** require discretionary judgment. Closed vs released is a
   function of earning-set membership, D8 promotion events, and the 45-day
@@ -168,8 +175,9 @@ stream rules. Changes are announced in advance.
 
 ## Rollout
 
-Not started. Until validator-only pull and the release ledger are built and
-announced, every committed image is pulled anonymously and must stay public
+Not in force. The release ledger, the executor's pull account and the public
+copy are built and switched off. Until the rule is announced with a start
+date, every committed image is pulled anonymously and must stay public
 (see "How it works today" above). The announcement will name the first day the
 rule applies and the commit prefix (e.g. `sn21-model:v2`) needed for closed
 access.
