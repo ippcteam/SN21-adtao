@@ -203,6 +203,48 @@ def resolve_basket(explicit: str | None, day: date) -> str:
         f"basket; will retry next tick. Pass --basket explicitly to override.")
 
 
+# Descriptions in the scored run (19 Oct 2026). Change descriptions are made for
+# the basket day's episodes from ~07:20 on the operator's side; the package
+# carries only those already stored. From SN21_WAIT_FOR_DESCRIPTIONS_FROM the run
+# waits (up to SN21_WAIT_FOR_DESCRIPTIONS_MAX_S) until nearly all of the basket
+# is described, then fetches; past the limit it runs with what is there.
+DESC_WAIT_ENV = "SN21_WAIT_FOR_DESCRIPTIONS_FROM"
+DESC_WAIT_MAX_ENV = "SN21_WAIT_FOR_DESCRIPTIONS_MAX_S"
+DESC_READY_SHARE = 0.98
+DESC_POLL_S = 60
+
+
+def wait_for_descriptions(release_key, day, api_get=None, sleep=time.sleep,
+                          clock=time.monotonic, environ=os.environ) -> dict:
+    raw = (environ.get(DESC_WAIT_ENV) or "").strip()
+    try:
+        on = bool(raw) and day >= date.fromisoformat(raw)
+    except ValueError:
+        on = False
+    if not on:
+        return {"waited": False}
+    api_get = api_get or _api_get
+    try:
+        max_s = int(environ.get(DESC_WAIT_MAX_ENV) or 2400)
+    except ValueError:
+        max_s = 2400
+    t0, cov = clock(), {}
+    while True:
+        try:
+            cov = api_get(f"releases/{release_key}/descriptor-coverage")
+        except Exception as e:   # noqa: BLE001 - an unreadable count is waited on, then run past
+            cov = {"error": str(e)[:200]}
+        waited = round(clock() - t0)
+        if cov.get("publishing") is False:
+            return {"waited": True, "ready": None, "reason": "not publishing", "waited_s": waited, "coverage": cov}
+        if ((cov.get("described_share") or 0) >= DESC_READY_SHARE
+                and (cov.get("context_share") or 0) >= DESC_READY_SHARE):
+            return {"waited": True, "ready": True, "waited_s": waited, "coverage": cov}
+        if waited >= max_s:
+            return {"waited": True, "ready": False, "timed_out": True, "waited_s": waited, "coverage": cov}
+        sleep(DESC_POLL_S)
+
+
 def fetch_basket_payloads(release_key: str) -> list:
     """Full episode payloads (episode_id + v2.0 blocks) for the basket — the
     same package the validator serves to miners, no outcomes.
@@ -1283,6 +1325,10 @@ def main():
     # 0. resolve + fetch basket
     try:
         basket_key = resolve_basket(args.basket, day)
+        desc_wait = wait_for_descriptions(basket_key, day)
+        if desc_wait.get("waited"):
+            record["descriptions"] = desc_wait
+            log(f"[descriptions] {json.dumps(desc_wait, default=str)}")
         episodes = fetch_basket_payloads(basket_key)
         record["stages"]["resolve"] = {"basket": basket_key,
                                        "episodes": len(episodes)}
