@@ -69,3 +69,12 @@ def test_results_with_a_conversion_percentage_are_untouched():
     a = F.score_settled(idx, [_outcome(conv=0.1)], environ=ON)[0].score
     b = F.score_settled(idx, [_outcome(conv=0.1, expected=None)], environ=ON)[0].score
     assert a == b and F.last_count_pooled() == {}
+
+
+def test_pooled_score_can_be_shown_before_it_counts():
+    idx = {"e1": {"m": {"7": pred(-1.0)}}}
+    show_only = {C.SHOW_ENV: "2026-11-01"}
+    base = F.score_settled(idx, [_outcome(expected=None)], environ=show_only)[0].score
+    shown = F.score_settled(idx, [_outcome()], environ=show_only)[0].score
+    assert shown == base                               # not counted yet
+    assert F.last_count_pooled()["2026-11-10"]["m"]["results"] == 1   # but published

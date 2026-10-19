@@ -499,14 +499,15 @@ def score_settled(
                 continue
             _env = environ if environ is not None else os.environ
             score = score_entry_active(pred, actual, environ=_env)
-            if (o.conversions_delta_pct is None and o.expected_conversions
-                    and count_score.in_force(o.finalized_on, _env)):
-                # Small campaign: the conversion part is scored as a count.
-                score = count_score.blend(score, count_score.count_component(
-                    pred, o.expected_conversions, o.actual_conversions or 0.0))
-                _LAST_COUNT_POOLED.setdefault(
-                    o.finalized_on.isoformat(), count_score.Pooled()).add(
-                    miner, pred, o.expected_conversions, o.actual_conversions or 0.0)
+            if o.conversions_delta_pct is None and o.expected_conversions:
+                if count_score.in_force(o.finalized_on, _env):
+                    # Small campaign: the conversion part is scored as a count.
+                    score = count_score.blend(score, count_score.count_component(
+                        pred, o.expected_conversions, o.actual_conversions or 0.0))
+                if count_score.shown(o.finalized_on, _env):
+                    _LAST_COUNT_POOLED.setdefault(
+                        o.finalized_on.isoformat(), count_score.Pooled()).add(
+                        miner, pred, o.expected_conversions, o.actual_conversions or 0.0)
             results.append(HorizonResult(
                 episode_id=o.episode_id,
                 horizon_days=o.horizon_days,

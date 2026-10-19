@@ -13,9 +13,9 @@ SN21_COUNT_SCORE_FROM those results are scored on the conversion COUNT instead:
 
 (a) The count score is the conversion part of those results, weighed the same as
     cost (COUNT_SHARE), blended into the entry score.
-(c) For the first four weeks the same score is also pooled per miner per day over
-    all their small-campaign results (sums of deviances), published beside the
-    standing and not counted in it.
+(c) From SN21_COUNT_SCORE_SHOW_FROM (four weeks earlier) the same score is pooled
+    per miner per day over all their small-campaign results (sums of deviances)
+    and published beside the standing, not counted in it.
 
 Measured on the 16-18 Oct receipts before building: the typical miner would score
 about 0.41 on small campaigns and 0.58 on busy ones.
@@ -28,13 +28,14 @@ import os
 from collections import defaultdict
 from datetime import date
 
-SWITCH_ENV = "SN21_COUNT_SCORE_FROM"
+SWITCH_ENV = "SN21_COUNT_SCORE_FROM"            # (a) counts in the entry score
+SHOW_ENV = "SN21_COUNT_SCORE_SHOW_FROM"         # (c) pooled score published, not counted
 COUNT_SHARE = 0.5          # the conversion count weighs the same as cost on these results
 MU_FLOOR = 1e-6
 
 
-def in_force(day, environ=os.environ) -> bool:
-    raw = (environ.get(SWITCH_ENV) or "").strip()
+def in_force(day, environ=os.environ, env_name=SWITCH_ENV) -> bool:
+    raw = (environ.get(env_name) or "").strip()
     if not raw or day is None:
         return False
     try:
@@ -43,6 +44,12 @@ def in_force(day, environ=os.environ) -> bool:
         return False
     d = day if isinstance(day, date) else date.fromisoformat(str(day)[:10])
     return d >= start
+
+
+def shown(day, environ=os.environ) -> bool:
+    """The pooled score is published from its own date (four weeks before it
+    counts), and always once the count counts."""
+    return in_force(day, environ, SHOW_ENV) or in_force(day, environ)
 
 
 def deviance(y: float, mu: float) -> float:
