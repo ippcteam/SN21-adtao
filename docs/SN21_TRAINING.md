@@ -11,7 +11,11 @@ One route from published data to a container the subnet will run. Six steps,
 each with the exact command. If a step needs something that does not exist
 yet, it says so rather than inventing a CLI.
 
-> **What you are training on, plainly.** Start with **v4**
+> **From 23 Oct 2026, start with v5** (`training-v5-2026-10`, section 1): v4's
+> windows, Search campaigns only, with the change descriptions, account
+> context and measurement rules that apply from the run of 2026-10-30.
+>
+> **What you are training on, plainly.** **v4**
 > (`training-v4-2026-10`): windows **15 Jun – 14 Aug 2026**, every record in
 > **exactly the shape of a live daily basket episode**: the same payload the
 > executor sends your container each day (campaign type, bid strategy,
@@ -47,7 +51,46 @@ yet, it says so rather than inventing a CLI.
 
 ## 1. Get the data
 
-**Training data v4: live basket shape (current, 9 Oct 2026):** 27,768
+**Training data v5: the rules from 30 Oct 2026 (published 2026-10-23):**
+27,325 episodes, windows **2026-06-15 – 2026-08-14** (the same windows
+as v4), gzipped JSONL (85 MB; 1.7 GB unpacked), first line a `_manifest`. The record shape is v4's
+(below), with three differences:
+
+- **Search campaigns only.** Records on campaigns of another type (1.3% of
+  v4, see "Campaign types" under v4) are left out.
+
+- **Payloads carry the change descriptions and account context** that live
+  baskets carry from the run of 2026-10-30 (`descriptor` on each action,
+  `bundle_summary.change_descriptor`, `action_bundle.change_context`; see
+  MINER_MODEL_SPEC.md, "Change descriptions and account context"), and the
+  account's industry path one level up (MINER_MODEL_SPEC.md, "Industry path
+  one level up"). Each is built as of the end of its own change window,
+  exactly as for a live episode.
+- **Labels follow the measurement rules in force from 2026-10-30**
+  (SN21_SCORING.md, "How each result is measured"): the 28 days before the
+  change as the comparison period, every day with data counted in both
+  periods, no efficiency result when the period after spent money and got no
+  conversions, and no conversion or efficiency result when fewer than 3
+  conversions were expected after the change. Such a label has
+  `conversions_delta_pct` and/or `efficiency_delta_pct` set to `null`; its
+  `cost_delta_pct` is still there and is still scored. Train your cost head
+  on these records too.
+
+Codes in v5 are new to this slice: records cannot be joined to v4 or earlier.
+Shared negative-list changes are not in v5 (they are recorded from 17 Oct
+2026, after its windows).
+
+```bash
+curl -L -o SN21_training_v5.jsonl.gz \
+  https://github.com/ippcteam/SN21-adtao/releases/download/training-v5-2026-10/SN21_training_v5.jsonl.gz
+gunzip SN21_training_v5.jsonl.gz
+```
+
+v5 is the slice to train on for scoring from 2026-10-30: v4's windows, with
+what the live basket will then carry and labels measured the way the live
+results will be.
+
+**Training data v4: live basket shape (9 Oct 2026):** 27,768
 episodes, windows **2026-06-15 – 2026-08-14**, gzipped JSONL (61 MB; 1.1 GB
 unpacked), first line a `_manifest`. Each record is
 `{"episode_id", "input", "labels"}`:

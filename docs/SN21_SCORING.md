@@ -51,6 +51,28 @@ Examples (from action-window end):
 | 14-day | day 17 |
 | 28-day | day 31 |
 
+## How each result is measured (rule amendment, published 2026-10-23, effective 2026-10-30)
+
+For episodes scored from the run of **2026-10-30**, each result compares the
+campaign's daily averages after the change with its daily averages before it:
+
+1. **The 28 days before the change** are the comparison period (it was 60
+   days). Four whole weeks balance weekdays and stay in the same season.
+2. **Both periods count the same days:** every day with data, in the period
+   before and the period after. (The period before used to count only days
+   with spend, which made it look higher and pulled cost results down.)
+3. **Spend and no conversions after the change: no efficiency result.** Cost
+   and conversions are still scored; the parts of the score that judge
+   efficiency are left out for that result.
+4. **Fewer than 3 conversions expected after the change: no conversion or
+   efficiency result.** The expectation is the campaign's daily conversions
+   before the change times the days after it. On campaigns that small, a
+   percentage change is mostly chance (one conversion more or less reads
+   +100% or -100%). Cost is still scored.
+
+The v5 training data (published 2026-10-23) is labelled with exactly these
+rules. Results scored before 2026-10-30 stay as published.
+
 ## What you predict
 
 Unchanged from launch: probabilistic distributions (P10 / P50 / P90) for the published metrics at each horizon, plus goal-related fields required by the episode schema.

@@ -160,6 +160,38 @@ only on easy days — and held first place with it while every participant
 moved. That is not a board worth topping. This amendment makes absence a
 scored event, which is the only way "show up every day" means anything.
 
+## Absence and model updates (rule amendment, published 2026-10-23, effective 2026-10-30)
+
+From the run of **2026-10-30**:
+
+1. **Absence stops when nothing real is left.** Point 2 of the absence
+   penalty ("No exit") said charges last until you return or your entries
+   age out. In practice they never aged out: each day's charge was itself an
+   entry in the window. From this date a hotkey is charged only while it
+   holds at least one **real** scored result in the 35-day window. A miner
+   who has left stops being charged once its last real result is older than
+   35 days; its remaining zeros then age out and it leaves the board. A
+   miner whose model is running is charged exactly as before.
+2. **A new model does not stop your running one.** If you commit a new
+   model and it is waiting for admission or is rejected, your **last
+   admitted model keeps running** and being scored. The new model takes
+   over on the first run after it is admitted. The model that runs is
+   always one that passed admission, and only ever your own. The
+   registration status feed shows both: `current_digest` (the one you
+   committed) and `running_digest` (the one still running).
+
+Results already scored and charges already applied do not change.
+
+## Shared negative keyword list changes (rule amendment, published 2026-10-23, effective 2026-10-30)
+
+From the run of **2026-10-30**, keywords added to or removed from a shared negative
+keyword list are served as episodes, one per campaign the list is attached
+to (`SHARED_NEGATIVE_KEYWORD_ADD` / `SHARED_NEGATIVE_KEYWORD_REMOVE`). They
+are scored exactly like every other change. The fields, and how the time of
+a change is worked out, are in [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md)
+("Shared negative keyword lists"). A model that does not recognise the new
+types keeps working; an episode it covers is scored as usual.
+
 ## Every episode lists 28 days (rule amendment, published 2026-10-13, effective 2026-10-20)
 
 Scoring and the admission gate have always used the 7, 14 and 28-day
@@ -441,3 +473,4 @@ across the change.
 - Staking: [SN21_STAKING.md](./SN21_STAKING.md)
 - Cutover: [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md)
 - Why daily: [SN21_WHY_DAILY.md](./SN21_WHY_DAILY.md)
+

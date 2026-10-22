@@ -152,6 +152,102 @@ design — families like `BUDGET:up_large`, `NEGATIVE_KEYWORD_ADD`, and
 `COMPOSITE:<dominant>+<n>` for mixed 72-hour windows, where the
 prediction is the net effect of the listed actions together.
 
+### Shared negative keyword lists (rule amendment, published 2026-10-23, effective 2026-10-30)
+
+A shared negative keyword list is one list attached to several campaigns,
+often by a manager account. From the run of 2026-10-30, keywords added to or removed
+from a shared list become episodes too, one for each campaign the list is
+attached to:
+
+| `transition_key` | Meaning |
+| :---- | :---- |
+| `SHARED_NEGATIVE_KEYWORD_ADD:<match>:<count>` | keywords added to a shared list; `<match>` is `exact`, `phrase`, `broad`, `mixed` or `unknown`, `<count>` is `1`, `2-10` or `11+` (the same shape as `NEGATIVE_KEYWORD_ADD`) |
+| `SHARED_NEGATIVE_KEYWORD_REMOVE` | keywords removed from a shared list |
+
+Each such action carries a `list_change` block:
+
+```json
+"list_change": {
+  "op": "ADD | REMOVE",
+  "list_id_hash": "…",
+  "list_owner_level": "account | manager",
+  "keyword_count": 12,
+  "match_types": {"EXACT": 10, "PHRASE": 2},
+  "window_start": "2026-10-22T05:10:04+00:00",
+  "time_source": "…"
+}
+```
+
+- **No keyword text**, as with every other change type: the count and the
+  match-type mix only. The list id is hashed like every other id.
+- **When it happened.** Google does not timestamp changes inside a shared
+  list. We check every list's keyword count each morning and read only the
+  lists whose count changed, so a change is dated **between the previous
+  check and this one** (`window_start` to the episode's window end). A list
+  edited twice in one day shows as one change.
+- **Who made it.** Google records no actor for these edits, so the action's
+  source is `unknown` (never `user` or `system`).
+- **Scoring** is unchanged: the same horizons, metrics and settle days as
+  every other change. These episodes are not in the published training data
+  yet; treat them like `NEGATIVE_KEYWORD_ADD` / `REMOVE` until they are.
+
+### Change descriptions and account context (rule amendment, published 2026-10-23, effective 2026-10-30)
+
+Until now an episode said a keyword was added to a campaign, and how big the
+campaign is, but not what kind of keyword it was, how it sits among what the
+account already had, or what an ad edit changed. From the run of
+**2026-10-30**, every episode also describes the change and the ad group and
+account around it. The v5 training slice carries the same fields, built the
+same way.
+
+| Field | What it says |
+| :---- | :---- |
+| `action_bundle.actions[].descriptor` | `kind` (`criterion`, `ad`, `other`). For criteria: `criterion_kind`, `level` (`ad_group`, `campaign`, `shared_list`, `unknown`), `negative`, `match_type`, `status_from` / `status_to`, `match_type_changed`, `word_count_band` (`1`, `2`, `3`, `4-5`, `6+`), `brand_context` (`own_brand`, `competitor`, `generic`, `unknown`), `topic` (industry path in the account's own tree, general themes such as location, urgency, price). Keywords add `relation`: duplicate in the ad group, same words in a wider or narrower match, the campaign's keyword count band, and whether a campaign or ad-group negative already blocks it. Negatives add `footprint`: the share of the campaign's impressions, clicks, cost and conversions the negative would have blocked, and whether it conflicts with keywords (and their cost share). Ad edits: headline and description counts before and after, added and removed, pins, final URL and path changes, the ad's impression share in its ad group before the change, and how many ads in the ad group were serving. Budget, bid, campaign-setting and asset changes carry `{"kind": "other"}` only. |
+| `action_bundle.bundle_summary.change_descriptor` | `actions`, `described_share`, `by_match_type`, `by_brand_context` |
+| `action_bundle.change_context.coverage` | `full`, `no_ad_group_data`, `no_campaign` or `error`; with `touched_ad_groups_band` and `campaign_ad_groups_band` |
+| `change_context.touched_ad_group` | The ad group that changed: status; its share of the campaign's cost, conversions and impressions; eight weekly points of cost, clicks and conversions as an index around their own average (capped at 5); keyword count band; match-type and topic mix; up to 100 keyword rows (`id` code, match type, topic, cost share, conversion rate against the ad group, quality-score bucket `low` / `mid` / `high` / `unknown`), the rest summed in `keywords_other` |
+| `change_context.siblings` | Up to 50 other ad groups in the campaign (cost share, conversion rate against the campaign, keyword count band, main topic), the rest in `siblings_other` |
+| `change_context.account` | Up to 50 campaigns in the account (`id` code, whether it is the one that changed, campaign type, cost and conversion share, ad-group and keyword count bands, main topic, eight-week cost index), the rest in `campaigns_other`; plus the account's topic mix |
+| `change_context.history` | `version` `h2`. The changed campaign's changes in the 30 and 90 days before, by family (`budget`, `campaign_setting`, `ad_group`, `keyword_or_ad_group_target`, `campaign_target`, `shared_list`, `account_negative`, `ad`, `asset`, `conversion`, `other`), with days since the last one (`0-1`, `2-7`, `8-30`, `31-90`, `none_in_90d`). A budget change counts under its campaign when that budget serves only that campaign; a shared budget's changes are not assigned to a campaign. The account's changes in 30 and 90 days, and who made them as shares (`people_web`, `editor`, `api`, `script`, `rule`, `adtao`, `unattributed`). Changes elsewhere in the account in the week before and during the window (`concurrent`). `prior_outcomes`: up to 3 of the account's results that had settled before the window opened, most recent first, each with its change type, horizon and the measured cost, conversions and efficiency changes as bands (`<-50%`, `-50..-20%`, `-20..-5%`, `-5..+5%`, `+5..+20%`, `+20..+50%`, `+50%+`, `unknown`). Upload jobs and IP exclusions are not counted. |
+| `change_context.seasonality` | `version` `s1`. The changed campaign's last 12 whole months of cost and conversions as an index around their own average (point 0 is the same month last year; a month before we hold the account's data is `null`, not zero), the same and next month last year, campaign age (`new`, `<6m`, `6-12m`, `12-24m`, `24m+`, `unknown`), month and week of year. Built from Search keyword data only (`coverage` says `no_keyword_data` otherwise). |
+| `change_context.cohort` | `version` `c1`. Where the account sits among active accounts in its industry (at least 100 clicks over the three whole months before): CTR, conversion rate and CPA as deciles (`p0-10` … `p90-100`), with `cohort_depth` and `cohort_size` (`20-50`, `51-200`, `200+`). A cohort needs at least 20 accounts; CPA is ranked only against accounts in the same currency, and only when at least 20 share it. Never the industry's name. |
+| `change_context.geo` | `version` `g1`. The changed campaign's area type (`major_metro`, `metro`, `suburban`, `small_town`, `rural`, `mixed`, `unknown`), the urbanity mix as shares, and how much results depend on location (`none` … `high`) with a confidence. If any campaign-level targeting change happened since the window, the location may have changed, and `coverage` says `changed_since` instead. |
+
+**What these fields never contain.** No keyword, negative, headline or URL
+text. No names (brand, competitor, list, account). No money amounts: shares
+and counts are bands (descriptor and neighbourhood shares `0`, `<1%`, `1-5%`,
+`5-20%`, `20-50%`, `50%+`; history source shares and urbanity mix `0`,
+`<10%`, `10-50%`, `50-90%`, `90%+`), and trends are an index around the
+item's own average. An industry or topic path appears only if at least 10
+accounts share it; otherwise it is cut back to a broader path that 10 accounts
+share, or left out.
+
+**"Unknown" is not "no".** A field that cannot be read says `unknown` (or is
+`null`) instead of a value that looks like an answer. "Already blocked by a
+negative" is either `true` or `unknown`: negatives removed since, and shared
+negative lists, cannot be seen for past days.
+
+**Nothing from after the change.** Every field is built from data dated
+before the change window: daily rows before the window, months that ended
+before it, and results that had settled before it opened. The area type is
+today's, and ships only where the campaign's location targeting cannot have
+changed since the window.
+
+**Training slices.** Before a slice is published, we count inside it how
+many accounts share each combination of industry, currency, spend band and
+area type. Where the area type would narrow a group to fewer than 10
+accounts, it is withheld in that slice and `geo.coverage` says
+`withheld_k_anonymity`.
+
+**Industry path one level up.** From the same run,
+`account_profile.vertical.anchor_industry_path` and `lineage` stop at the
+immediate parent of the account's industry (the last level is dropped), and
+`hierarchy_id` is no longer sent. v5 is built the same way.
+
+**What does not change.** Scoring, horizons, settle days, the admission gate
+and every published limit stay as they are. A model that ignores the new
+fields keeps working; models must ignore fields they do not use.
+
 ### `account_state.goal_basis` — which efficiency metric you are scored on
 
 Each episode is scored on the account's own optimization goal, resolved and

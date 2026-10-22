@@ -355,6 +355,20 @@ admission completes. There is no self-serve gate API yet — interim path is the
 Discord announcement or asking the operator. *(Code TODO: publish per-digest
 gate verdicts to the site automatically.)*
 
+The **registration status feed** (`registration-status`, published daily on
+the same host as the receipts) has one record per hotkey: `current_digest`
+(the first 16 hex characters of the digest you committed), `status`
+(`active` = admitted and run, `pending` = committed and awaiting a verdict,
+`rejected` = judged and not passed), `scored`, and, for an admitted model not
+yet scored, `first_settle_date`. `active` with a future `first_settle_date` is
+normal settlement lag, not a fault.
+
+From the run of **2026-10-30** (rule amendment, published 2026-10-23), a
+`pending` or `rejected` record can also carry `running_digest`: your last
+admitted model, which keeps running and being scored until the new one is
+admitted. See [SN21_REWARDS.md](./SN21_REWARDS.md), "Absence and model
+updates".
+
 **4. Is your model being run each day, and did the day count?**
 
 Per-day, per-miner coverage (`episodes_in` / `predictions_out`) is recorded by
