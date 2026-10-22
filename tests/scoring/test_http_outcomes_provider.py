@@ -138,3 +138,19 @@ def test_the_lookback_is_wider_than_the_index_window():
     window has to reach at least as far back as the shadow-day window."""
     from hope.scoring.settle_day_flow import INDEX_LOOKBACK_DAYS, OUTCOMES_LOOKBACK_DAYS
     assert OUTCOMES_LOOKBACK_DAYS >= INDEX_LOOKBACK_DAYS
+
+
+def test_the_conversion_counts_reach_the_count_score():
+    """The endpoint sends expected and actual conversions when the conversions %
+    is missing; without them the count score never applies to the HTTP path."""
+    body = {"outcomes": [
+        {"episode_id": "e1", "horizon_days": 28, "cost_delta_pct": 0.1,
+         "conversions_delta_pct": None, "efficiency_delta_pct": None,
+         "finalized_on": "2026-11-02", "goal_basis": "cpa",
+         "expected_conversions": 1.4, "actual_conversions": 0},
+        PAYLOAD["outcomes"][0]]}
+    with patch("urllib.request.urlopen", return_value=_Resp(body)):
+        small, usual = http_outcomes_provider("https://api.example", "k")(date(2026, 11, 2))
+    assert (small.expected_conversions, small.actual_conversions) == (1.4, 0.0)
+    assert small.conversions_delta_pct is None and small.cost_delta_pct == 0.1
+    assert usual.expected_conversions is None and usual.actual_conversions is None

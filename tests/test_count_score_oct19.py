@@ -78,3 +78,26 @@ def test_pooled_score_can_be_shown_before_it_counts():
     shown = F.score_settled(idx, [_outcome()], environ=show_only)[0].score
     assert shown == base                               # not counted yet
     assert F.last_count_pooled()["2026-11-10"]["m"]["results"] == 1   # but published
+
+
+def test_counts_sent_over_http_are_scored_from_the_date():
+    """The executor reads outcomes over HTTP: the endpoint's two count fields
+    must reach the count score through that reader too."""
+    import json
+    from unittest.mock import patch
+
+    class R:
+        def read(self):
+            return json.dumps({"outcomes": [{
+                "episode_id": "e1", "horizon_days": 7, "cost_delta_pct": 0.0,
+                "conversions_delta_pct": None, "efficiency_delta_pct": None,
+                "finalized_on": DAY.isoformat(), "goal_basis": "cpa",
+                "expected_conversions": 2.0, "actual_conversions": 0.0}]}).encode()
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    with patch("urllib.request.urlopen", return_value=R()):
+        (o,) = F.http_outcomes_provider("http://x", "k")(DAY)
+    idx = {"e1": {"m": {"7": pred(-1.0)}}}
+    assert F.score_settled(idx, [o], environ=ON)[0].score == F.score_settled(idx, [_outcome()], environ=ON)[0].score
+    assert F.last_count_pooled()["2026-11-10"]["m"]["results"] == 1

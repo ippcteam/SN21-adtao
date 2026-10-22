@@ -996,6 +996,12 @@ def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60,
                 finalized_on=date.fromisoformat(str(r["finalized_on"])[:10]),
                 goal_basis=(r.get("goal_basis") or "cpa"),
                 resolution=str(r.get("measurement_resolution") or "high").lower(),
+                # Sent only when the conversions % is missing on a campaign with
+                # conversions before the change; the count score reads them.
+                expected_conversions=(None if r.get("expected_conversions") is None
+                                      else float(r["expected_conversions"])),
+                actual_conversions=(None if r.get("actual_conversions") is None
+                                    else float(r["actual_conversions"])),
             ))
         return rows
 
