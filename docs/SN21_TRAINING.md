@@ -64,6 +64,13 @@ unpacked), first line a `_manifest`. Each record is
   uses data from after the change.
 - Episode ids are basket ids, so they do not match v2/v3 ids for the same
   change.
+- **Campaign types.** 368 of the 27,768 records (1.3%) are changes on
+  campaigns that are not Search campaigns: Performance Max 133, Shopping 116,
+  Demand Gen 67, Display 39, Video 6, Local Services 4, Travel 3. On every
+  record, `input.payload.campaign_metadata[0].campaign_type` names the
+  campaign's type. Daily baskets are selected from campaigns recorded as
+  Search, and nearly all episodes in them since September are on Search
+  campaigns, so you may want to leave these 368 records out of training.
 
 ```bash
 curl -L -o SN21_training_v4.jsonl.gz \
