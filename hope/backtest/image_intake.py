@@ -207,18 +207,30 @@ def intake_all(commitments: Iterable[ModelCommitment],
                gate_runner: Callable[[str], dict],
                puller: Callable[[str], tuple[bool, str]] | None = None,
                inspector: Callable[[str], list[str]] | None = None,
+               workers: int = 1,
                ) -> dict:
     """Intake sweep over the pending-admission set. Per-miner isolation:
-    every commitment gets an IntakeResult, no exception propagates."""
-    results: list[IntakeResult] = []
-    for c in commitments:
+    every commitment gets an IntakeResult, no exception propagates.
+
+    `workers` checks run at once. One at a time, 32 new models took 74
+    minutes on 21 Oct 2026 and pushed the end of the daily run past midday;
+    the daily stage already runs the same sandbox runner two models at a
+    time. Results come back in submission order whatever the worker count."""
+    def _one(c):
         try:
-            results.append(intake_model(c, gate_runner,
-                                        puller=puller, inspector=inspector))
+            return intake_model(c, gate_runner, puller=puller, inspector=inspector)
         except Exception as exc:
-            results.append(IntakeResult(c.hotkey, c.digest,
-                                        STATUS_PULL_FAILED,
-                                        detail=f"intake raised: {exc}"))
+            return IntakeResult(c.hotkey, c.digest, STATUS_PULL_FAILED,
+                                detail=f"intake raised: {exc}")
+
+    commitments = list(commitments)
+    if workers > 1 and len(commitments) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=workers,
+                                thread_name_prefix="sn21-intake") as pool:
+            results = list(pool.map(_one, commitments))
+    else:
+        results = [_one(c) for c in commitments]
     by_status: dict[str, int] = {}
     for r in results:
         by_status[r.status] = by_status.get(r.status, 0) + 1

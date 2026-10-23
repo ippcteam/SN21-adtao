@@ -336,9 +336,12 @@ def stage_intake(ledger_root, corpus, key, timeout_s, limit, corpus_info=None):
     else:
         puller = inspector = None       # docker path unchanged
 
+    # As many checks at once as the daily stage runs models (SN21_SHADOW_WORKERS).
+    from hope.backtest.shadow import shadow_workers
     result = run_intake(ledger_root, hotkeys, reader, gate_runner,
                         puller=puller, inspector=inspector,
-                        persist=_persist(ledger_root))
+                        persist=_persist(ledger_root),
+                        workers=shadow_workers())
     admitted = _rewrite_admitted(ledger_root)
     # Per-model verdicts so a rejection sweep is legible: is the gate correctly
     # filtering weak models, or is something systematically wrong?

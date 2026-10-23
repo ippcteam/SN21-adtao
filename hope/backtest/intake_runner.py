@@ -231,6 +231,7 @@ def run_intake(
     puller: Callable[[str], tuple[bool, str]] | None = None,
     inspector: Callable[[str], list[str]] | None = None,
     persist: Callable[[str, dict], None] | None = None,
+    workers: int = 1,
 ) -> IntakeRun:
     """One intake sweep. Returns what it did; writes verdicts through `persist`.
 
@@ -248,7 +249,8 @@ def run_intake(
                          gated=0, admitted=0, rejected=0,
                          unparseable=unparseable, details=[])
 
-    outcome = intake_all(pending, gate_runner, puller=puller, inspector=inspector)
+    outcome = intake_all(pending, gate_runner, puller=puller, inspector=inspector,
+                         workers=workers)
 
     admitted, rejected, details = 0, 0, []
     for result in outcome.get("results", []):

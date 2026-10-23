@@ -174,3 +174,36 @@ def test_intake_all_isolates_and_summarises():
     }
     assert out["admitted"] == ["good"]
     assert all(isinstance(r, IntakeResult) for r in out["results"])
+
+
+def test_intake_all_runs_checks_at_once_and_keeps_the_order():
+    """21 Oct 2026: 32 checks one at a time took 74 minutes. With workers the
+    checks overlap; results still come back in submission order, and one
+    check that raises is still that miner's verdict only."""
+    import threading
+    import time as _time
+    digests = ["sha256:" + c * 64 for c in "bcdef"]
+    commitments = [ModelCommitment(f"hk{i}", REF, d) for i, d in enumerate(digests)]
+    running, peak, lock = [0], [0], threading.Lock()
+
+    def gate(local_ref):
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        _time.sleep(0.05)
+        with lock:
+            running[0] -= 1
+        if local_ref.endswith(digests[2]):
+            raise RuntimeError("container died")
+        return {"verdict": {"admitted": True, "reason": "beats_baseline"}}
+
+    out = intake_all(commitments, gate, puller=_pull_ok,
+                     inspector=lambda pinned: [pinned], workers=2)
+    assert [r.hotkey for r in out["results"]] == [f"hk{i}" for i in range(5)]
+    assert peak[0] == 2
+    assert out["admitted"] == ["hk0", "hk1", "hk3", "hk4"]
+    assert out["results"][2].status == STATUS_REJECTED_GATE
+
+    peak[0] = 0
+    intake_all(commitments, gate, puller=_pull_ok, inspector=lambda pinned: [pinned])
+    assert peak[0] == 1, "default stays one at a time"
