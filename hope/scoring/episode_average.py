@@ -124,6 +124,15 @@ PREVIOUS_MODEL_WEIGHT = 0.25
 PREVIOUS_MODEL_THRESHOLD_MASS = 250.0
 PREVIOUS_MODEL_WEIGHT_ENV = "SN21_PREVIOUS_MODEL_WEIGHT"
 PREVIOUS_MODEL_THRESHOLD_ENV = "SN21_PREVIOUS_MODEL_THRESHOLD"
+# The published rule counts "the current model's own entries" toward the
+# threshold. Absence penalty entries are dated on the missed day, so after a
+# model change they were counted as the new model's evidence: one missed day
+# (a basket of zeros) passed 250 on its own and cut the old model's real
+# entries to the fraction before the new model had scored anything (miner
+# report, 22 Oct 2026). From this date only real scored entries count toward
+# the threshold; penalty entries stay in the mean and the prior as before.
+# Unset = the old reading.
+RAMP_REAL_ENTRIES_FROM_ENV = "SN21_RAMP_REAL_ENTRIES_FROM"
 # Older receipts carry no prediction day. Where the executor holds the basket
 # map for the episode the day is exact; otherwise it is derived from the
 # settle schedule: finalized_on = basket day + 1 + horizon + settling window.
@@ -227,6 +236,16 @@ def previous_model_threshold(environ=os.environ) -> float:
     return _float_env(environ, PREVIOUS_MODEL_THRESHOLD_ENV, PREVIOUS_MODEL_THRESHOLD_MASS)
 
 
+def ramp_counts_real_entries_only(environ=os.environ, day: date | None = None) -> bool:
+    raw = (environ.get(RAMP_REAL_ENTRIES_FROM_ENV) or "").strip()
+    if not raw:
+        return False
+    try:
+        return (day or date.today()) >= date.fromisoformat(raw)
+    except ValueError:
+        return False
+
+
 def window_in_force(environ=os.environ, day: date | None = None) -> int:
     if prediction_basis_in_force(environ, day):
         try:
@@ -290,6 +309,10 @@ class ScoredEpisode:
     # scored_on itself keeps its meaning everywhere else (tenure counts
     # distinct settle days; the receipt is dated by it).
     aged_from: date | None = None
+    # A charged absence zero, not a prediction. Read by the previous-model
+    # discount, which counts only real entries toward its threshold
+    # (SN21_RAMP_REAL_ENTRIES_FROM).
+    penalty: bool = False
 
     @property
     def age_day(self) -> date:

@@ -58,6 +58,7 @@ from hope.scoring.episode_average import (
     prediction_basis_in_force,
     previous_model_threshold,
     previous_model_weight,
+    ramp_counts_real_entries_only,
     prior_mass_in_force,
     window_from_env,
     window_in_force,
@@ -524,7 +525,8 @@ def load_relative_entries(root: str, as_of: date,
            tuple((p, os.path.getmtime(p)) for _, p in files),
            _penalty_signature(root), since_key,
            _tkeys_signature(root) if by_model_epoch else None,
-           settle_lag_days(environ), tuple(sorted(field_exclude or ())))
+           settle_lag_days(environ), tuple(sorted(field_exclude or ())),
+           ramp_counts_real_entries_only(environ, as_of))
     hit = _CACHE.get("k")
     if hit and hit[0] == sig:
         if stats is not None:
@@ -579,7 +581,8 @@ def load_relative_entries(root: str, as_of: date,
         out[hk].extend(ScoredEpisode(score=absence_value, scored_on=day,
                                      weight=PENALTY_ENTRY_WEIGHT,
                                      predicted_on=(day if by_model_epoch else None),
-                                     aged_from=(day if by_prediction_day else None))
+                                     aged_from=(day if by_prediction_day else None),
+                                     penalty=True)
                        for _ in range(missed))
     result = {hk: v for hk, v in out.items() if v}
     info: dict = {"age_basis": age_basis_in_force(environ, as_of),
@@ -589,7 +592,8 @@ def load_relative_entries(root: str, as_of: date,
         from hope.scoring.model_epoch import apply_previous_model_discount
         result, discount = apply_previous_model_discount(
             result, model_since, as_of, window_days,
-            previous_model_weight(environ), previous_model_threshold(environ))
+            previous_model_weight(environ), previous_model_threshold(environ),
+            real_entries_only=ramp_counts_real_entries_only(environ, as_of))
         info["previous_model"] = discount
     _CACHE["k"] = (sig, {hk: list(v) for hk, v in result.items()}, info)
     if stats is not None:

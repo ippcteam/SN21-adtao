@@ -161,6 +161,7 @@ def apply_previous_model_discount(
     window_days: int,
     weight: float,
     threshold_mass: float,
+    real_entries_only: bool = False,
 ) -> tuple[dict[str, list[ScoredEpisode]], dict]:
     """Discount the entries predicted before a hotkey's current model, in
     proportion to how much evidence the current model has shown. Pure.
@@ -180,7 +181,10 @@ def apply_previous_model_discount(
     weight until the threshold and then cut them in one step.
 
     An entry's prediction day is `predicted_on` (set by the receipt loader);
-    an entry without one is left alone. Hotkeys
+    an entry without one is left alone. With `real_entries_only`, absence
+    penalty entries do not count toward the current model's mass (they are
+    not its evidence); they are still discounted like any entry dated before
+    the boundary, and keep their full weight in the mean and the prior. Hotkeys
     absent from `model_since` are left alone. Returns the new mapping and a
     stats block for the audit, with the factor applied per discounted hotkey.
     """
@@ -208,7 +212,8 @@ def apply_previous_model_discount(
             if age < 0 or age > window_days:
                 continue
             if pday >= since:
-                current_mass += ep.weight
+                if not (real_entries_only and ep.penalty):
+                    current_mass += ep.weight
             else:
                 previous.append(i)
         progress = (min(1.0, current_mass / threshold_mass)
@@ -231,7 +236,8 @@ def apply_previous_model_discount(
                                       weight=ep.weight,
                                       predicted_on=ep.predicted_on,
                                       aged_from=ep.aged_from,
-                                      discount=ep.discount * factor)
+                                      discount=ep.discount * factor,
+                                      penalty=ep.penalty)
         out[hk] = scaled
         discounted_hotkeys.append(hk)
         factors[hk] = round(factor, 4)
@@ -239,6 +245,8 @@ def apply_previous_model_discount(
     return out, {"weight": weight, "threshold_mass": threshold_mass,
                  "shape": "linear from 1.0 at zero current-model mass to "
                           "`weight` at `threshold_mass`",
+                 "mass_counts": ("real scored entries" if real_entries_only
+                                 else "every entry from the boundary on"),
                  "hotkeys_discounted": sorted(discounted_hotkeys),
                  "factor": {hk: factors[hk] for hk in sorted(factors)},
                  "entries_discounted": discounted_entries,

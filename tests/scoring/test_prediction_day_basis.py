@@ -615,3 +615,92 @@ class TestTheDiscountNeverPenalisesSwitchingAsSuch:
         eps = [ScoredEpisode(0.6, DAY, 1.0), ScoredEpisode(0.4, DAY, 1.0)]
         assert episode_weighted_average(eps, DAY, 12, 35, prior_mass=0) == pytest.approx(0.5)
         assert episode_weighted_average(eps, DAY, 12, 35, prior_mass=2) == pytest.approx((0.6 + 0.4) / (2 + 2))
+
+
+class TestTheRampCountsOnlyRealEntries:
+    """Miner report, 22 Oct 2026: absence zeros dated after a model change
+    counted as the new model's evidence, so one missed day pushed the ramp to
+    the fraction before the new model had scored anything. From
+    SN21_RAMP_REAL_ENTRIES_FROM only real scored entries count toward the
+    threshold; the zeros stay in the mean and the prior."""
+    SINCE = {"m": date(2026, 9, 10)}
+
+    def _entries(self, real=0, penalties=0, old=3):
+        eps = [ScoredEpisode(score=0.5, scored_on=DAY, weight=0.4,
+                             predicted_on=date(2026, 9, 1)) for _ in range(old)]
+        eps += [ScoredEpisode(score=0.5, scored_on=DAY, weight=1.0,
+                              predicted_on=date(2026, 9, 12)) for _ in range(real)]
+        eps += [ScoredEpisode(score=0.0, scored_on=date(2026, 9, 15), weight=1.0,
+                              predicted_on=date(2026, 9, 15), penalty=True)
+                for _ in range(penalties)]
+        return {"m": eps}
+
+    def test_unset_keeps_the_old_reading(self):
+        from hope.scoring.episode_average import ramp_counts_real_entries_only
+        assert ramp_counts_real_entries_only({}, DAY) is False
+        out, stats = apply_previous_model_discount(
+            self._entries(penalties=800), self.SINCE, DAY, 42, 0.25, 250)
+        assert stats["factor"] == {"m": 0.25}
+        assert stats["ramp"]["m"]["current_mass"] == 800.0
+
+    def test_the_effective_date_gates_it(self):
+        from hope.scoring.episode_average import ramp_counts_real_entries_only
+        env = {"SN21_RAMP_REAL_ENTRIES_FROM": "2026-09-20"}
+        assert ramp_counts_real_entries_only(env, date(2026, 9, 19)) is False
+        assert ramp_counts_real_entries_only(env, date(2026, 9, 20)) is True
+        assert ramp_counts_real_entries_only({"SN21_RAMP_REAL_ENTRIES_FROM": "soon"}, DAY) is False
+
+    def test_a_missed_day_alone_moves_nothing(self):
+        out, stats = apply_previous_model_discount(
+            self._entries(penalties=800), self.SINCE, DAY, 42, 0.25, 250,
+            real_entries_only=True)
+        assert stats["hotkeys_discounted"] == []
+        assert stats["ramp"]["m"]["current_mass"] == 0.0
+        assert stats["ramp"]["m"]["factor"] == 1.0
+        assert stats["mass_counts"] == "real scored entries"
+        assert all(e.discount == 1.0 for e in out["m"])
+
+    def test_real_entries_still_ramp_it_and_the_zeros_keep_full_weight(self):
+        out, stats = apply_previous_model_discount(
+            self._entries(real=125, penalties=800), self.SINCE, DAY, 42, 0.25, 250,
+            real_entries_only=True)
+        assert stats["factor"] == {"m": 0.625}
+        zeros = [e for e in out["m"] if e.penalty]
+        assert len(zeros) == 800 and all(e.discount == 1.0 and e.weight == 1.0 for e in zeros)
+        old = [e for e in out["m"] if e.predicted_on == date(2026, 9, 1)]
+        assert [e.discount for e in old] == [0.625] * 3
+
+    def test_a_zero_from_before_the_change_is_discounted_like_any_old_entry(self):
+        eps = self._entries(real=300)
+        eps["m"].append(ScoredEpisode(score=0.0, scored_on=date(2026, 9, 5), weight=1.0,
+                                      predicted_on=date(2026, 9, 5), penalty=True))
+        out, stats = apply_previous_model_discount(eps, self.SINCE, DAY, 42, 0.25, 250,
+                                                   real_entries_only=True)
+        old_zero = [e for e in out["m"] if e.penalty]
+        assert [e.discount for e in old_zero] == [0.25] and old_zero[0].penalty is True
+        assert stats["entries_discounted"] == 4
+
+    def test_the_loader_marks_the_zeros_and_reads_the_switch(self, tmp_path):
+        from hope.scoring import standing_ledger
+        root = str(tmp_path)
+        entries = []
+        for i in range(5):
+            entries.append(_e("m", f"old{i}", 7, 0.6, "2026-09-19", predicted_on="2026-09-01", weight=1.0))
+            entries.append(_e("x", f"old{i}", 7, 0.4, "2026-09-19", predicted_on="2026-09-01", weight=1.0))
+        _receipt(root, "2026-09-19", entries)
+        os.makedirs(standing_ledger.standing_dir(root), exist_ok=True)
+        with open(os.path.join(standing_ledger.standing_dir(root), "_absence_penalties.jsonl"), "w") as f:
+            f.write(json.dumps({"day": "2026-09-15", "hotkey": "m", "missed": 300}) + "\n")
+        since = {"m": date(2026, 9, 10)}
+
+        before: dict = {}
+        got = standing_method.load_relative_entries(root, DAY, environ=V2, model_since=since, stats=before)
+        assert sum(e.penalty for e in got["m"]) == 300
+        assert before["previous_model"]["factor"] == {"m": 0.25}
+
+        after: dict = {}
+        env = {**V2, "SN21_RAMP_REAL_ENTRIES_FROM": "2026-09-20"}
+        got = standing_method.load_relative_entries(root, DAY, environ=env, model_since=since, stats=after)
+        assert after["previous_model"]["hotkeys_discounted"] == []
+        assert after["previous_model"]["ramp"]["m"]["current_mass"] == 0.0
+        assert all(e.discount == 1.0 for e in got["m"])
