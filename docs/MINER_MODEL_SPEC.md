@@ -248,6 +248,19 @@ immediate parent of the account's industry (the last level is dropped), and
 and every published limit stay as they are. A model that ignores the new
 fields keeps working; models must ignore fields they do not use.
 
+### New campaigns (rule amendment, published 2026-10-31, effective 2026-11-07)
+
+A new campaign has no period before it to compare with. For changes made from
+**2026-11-06** (the first basket under the rule is `BD-2026-11-06`, served by
+the run of 2026-11-07), a campaign's creation, and every change made to it
+within **7 days (168 hours) of its creation**, are not episodes: its
+keywords, ad groups, ads, targeting, assets and budget, and shared negative
+keyword list changes on it. Changes made after that are episodes as before.
+
+This also ends one misreading: a campaign created paused was recorded as a
+`CAMPAIGN_PAUSE` episode. It is not an episode any more. Episodes of earlier
+baskets are unchanged.
+
 ### `account_state.goal_basis` — which efficiency metric you are scored on
 
 Each episode is scored on the account's own optimization goal, resolved and

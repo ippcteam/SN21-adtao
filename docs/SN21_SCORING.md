@@ -82,6 +82,25 @@ out under rule 3 or 4 is `null` there.
 > one the run of 2026-10-30 serves, `BD-2026-10-29`, so the first results
 > under them are its 7-day results, scored on 2026-11-08. Asked by a miner.
 
+## Campaign pauses: measured on the whole account (rule amendment, published 2026-10-31, effective 2026-11-07)
+
+For the episodes of every basket served from the run of **2026-11-07** (the
+first is `BD-2026-11-06`), a `CAMPAIGN_PAUSE` is measured on the **account**,
+not on the paused campaign: the account's daily cost, conversions and cost per
+conversion over all its campaigns, the paused one included, in the period
+before the pause and the period after it. Every rule in the section above
+applies to these results the same way.
+
+Until then a pause was measured on the paused campaign. A campaign that really
+stops has no data after the pause, so those pauses were never scored. On the
+account, the result is what the rest of the account does when one campaign
+stops.
+
+If the account has no data at all after the pause, the pause is not scored
+(`left_system`, see [Account attrition](#account-attrition-stop-spending--leave-the-network)).
+Episodes of earlier baskets keep the earlier rule; nothing already scored is
+re-scored.
+
 ## What you predict
 
 Unchanged from launch: probabilistic distributions (P10 / P50 / P90) for the published metrics at each horizon, plus goal-related fields required by the episode schema.
@@ -135,6 +154,45 @@ Each finalised (episode, horizon) receives a score in **[0, 1]** from four compo
 > the subnet fails to run charge nobody, and every applied charge is
 > published at `/v1/daily/absence-penalties`. Full rule and the openly
 > recorded same-day floor correction: [SN21_REWARDS.md](./SN21_REWARDS.md).
+
+## Small campaigns: conversions as a count (rule amendment, published 2026-10-31)
+
+Rule 4 of [How each result is measured](#how-each-result-is-measured-rule-amendment-published-2026-10-23-effective-2026-10-30)
+leaves out the conversion result when fewer than 3 conversions are expected
+after the change. For those results your conversions forecast is also scored
+as a **count**:
+
+- expected count `E` = the campaign's daily conversions before the change ×
+  the days after it (the same expectation as rule 4); actual count `y` = its
+  daily conversions after the change × the same days;
+- your predicted count `μ = E × (1 + p50)`, from the `conversions_delta_pct`
+  p50 you already send (a count below 0 reads as 0). No new field;
+- the error is the Poisson deviance `D(y, μ) = 2 · (y · ln(y / μ) − (y − μ))`,
+  with `y · ln(y / μ)` = 0 when `y` = 0, so zero counts are handled;
+- **count score** `= D(y, E) / (D(y, μ) + D(y, E))`: 0.5 is as good as
+  predicting no change, 1.0 is exact, below 0.5 is worse. When both errors
+  are 0 the score is 0.5.
+
+Two dates, both by the day a result is scored:
+
+| From the results scored on | What happens |
+| :---- | :---- |
+| **2026-11-07** | The daily accuracy record shows, under `small_campaign_counts`, each miner's count score pooled over that day's small-campaign results (the deviances summed first). Shown, not counted. |
+| **2026-12-05** | On each such result the count score is the conversion part of the score: entry score = ½ × the score it would get without the count + ½ × the count score. |
+
+Only results that rule 4 left without a conversion result are affected, so
+in practice only episodes of `BD-2026-10-29` and later; their first 7-day
+results are scored on 2026-11-08. A result with no conversions forecast keeps
+its score. Results already scored do not change.
+
+**Example.** `E` = 1.4 (0.2 conversions a day before, 7-day horizon) and the
+campaign gets `y` = 0. "No change" (μ = 1.4) has `D` = 2.8.
+
+| Your p50 | μ | D(y, μ) | Count score |
+| :---- | :---- | :---- | :---- |
+| −50% | 0.7 | 1.4 | 2.8 / (1.4 + 2.8) = **0.67** |
+| 0% | 1.4 | 2.8 | **0.50** |
+| +50% | 2.1 | 4.2 | 2.8 / (4.2 + 2.8) = **0.40** |
 
 ## Account attrition (stop spending / leave the network)
 
