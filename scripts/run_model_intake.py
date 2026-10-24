@@ -43,21 +43,21 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.backtest import heldout_corpus  # noqa: E402
-from hope.backtest.chain_commitments import (  # noqa: E402
+from hope.backtest import heldout_corpus
+from hope.backtest.chain_commitments import (
     as_single_reader,
     bulk_model_commitments,
 )
-from hope.backtest.gate_service import gate_submission  # noqa: E402
-from hope.backtest.intake_runner import (  # noqa: E402
+from hope.backtest.gate_service import gate_submission
+from hope.backtest.intake_runner import (
     admitted_path,
     commitments_from_chain,
     run_intake,
     verdict_dir,
     verdicted_digests,
 )
-from hope.backtest.model_registry import MODEL_COMMIT_PREFIX  # noqa: E402
-from hope.commitment.chain_reader import read_commitment_of  # noqa: E402
+from hope.backtest.model_registry import MODEL_COMMIT_PREFIX
+from hope.commitment.chain_reader import read_commitment_of
 
 
 def _parse_args(argv):

@@ -142,6 +142,7 @@ def test_one_payer_subprocess_returns_reader_result(tmp_path):
     """The child re-runs the real reader over the same ledger; an empty
     receipts dir means an empty suppression set, delivered via the boundary."""
     from datetime import date
+
     from hope.validator.daily_stream_weights import (
         one_payer_suppression_subprocess,
     )
@@ -154,6 +155,7 @@ def test_one_payer_subprocess_returns_reader_result(tmp_path):
 def test_one_payer_subprocess_child_death_suppresses_nobody(tmp_path):
     """A dead child (here: killed by timeout) must fail EMPTY, not loud."""
     from datetime import date
+
     from hope.validator.daily_stream_weights import (
         one_payer_suppression_subprocess,
     )
@@ -180,8 +182,10 @@ def _entry(miner, episode, score=0.5, h=7, p50=1.0):
 
 def test_index_is_built_once_and_reused(tmp_path):
     import json as _json
+
     from hope.validator.daily_stream_weights import (
-        ensure_fingerprint_indexes, _load_day_fingerprints,
+        _load_day_fingerprints,
+        ensure_fingerprint_indexes,
     )
     _mini_receipt(tmp_path, "2026-08-20", [_entry("A", "e1"), _entry("B", "e1", p50=9.9)])
     assert ensure_fingerprint_indexes(str(tmp_path)) == 1
@@ -199,8 +203,10 @@ def test_index_is_built_once_and_reused(tmp_path):
 
 def test_suppression_via_index_matches_direct_receipts(tmp_path):
     from datetime import date
+
     from hope.validator.daily_stream_weights import (
-        ensure_fingerprint_indexes, one_payer_suppression_from_receipts,
+        ensure_fingerprint_indexes,
+        one_payer_suppression_from_receipts,
     )
     # day1: A alone produces the behaviour; day2: B copies A exactly
     _mini_receipt(tmp_path, "2026-08-20", [_entry("A", "e1")])

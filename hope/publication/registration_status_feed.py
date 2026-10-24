@@ -150,8 +150,7 @@ def build_registration_status_document(ledger_root: str,
     swallow failures (convenience feed)."""
     import bittensor as bt
 
-    from hope.backtest.chain_commitments import (
-        as_registry_reader, bulk_model_commitments)
+    from hope.backtest.chain_commitments import as_registry_reader, bulk_model_commitments
     from hope.backtest.intake_runner import load_admitted
     from hope.backtest.model_registry import build_registry
 

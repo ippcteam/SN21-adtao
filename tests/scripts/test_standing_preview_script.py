@@ -2,7 +2,6 @@
 
 import json
 import os
-from datetime import date
 
 
 def _receipt(root, day, entries):

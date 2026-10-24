@@ -202,7 +202,8 @@ def test_the_published_control_block_carries_what_was_compared():
     """
     from hope.scoring.standing_method import ScoredEpisode
     from hope.validator.daily_stream_weights import (
-        PromotionState, compute_daily_allocation,
+        PromotionState,
+        compute_daily_allocation,
     )
 
     entries = {hk: [ScoredEpisode(score=s, scored_on=DAY) for _ in range(300)]

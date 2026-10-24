@@ -1,8 +1,7 @@
 """type_accuracy — the one aggregation behind the accuracy page, the
 per-miner feedback, and the benchmark chart."""
 
-from hope.reporting.type_accuracy import (
-    MIN_N_FOR_BEST, ScoredEntry, aggregate_type_accuracy, type_family)
+from hope.reporting.type_accuracy import MIN_N_FOR_BEST, ScoredEntry, aggregate_type_accuracy, type_family
 
 
 def _e(miner, ep, tkey, h, score):
@@ -66,6 +65,7 @@ def test_json_serialisable_and_deterministic():
 
 def test_build_scored_entries_glue():
     from dataclasses import dataclass
+
     from hope.reporting.type_accuracy import build_scored_entries
 
     @dataclass

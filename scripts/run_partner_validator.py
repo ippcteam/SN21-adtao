@@ -123,7 +123,7 @@ def main() -> int:
                              else "")
                 print(f"set_weights ok={ok} ({len(uids)} uids{burn_note}) {msg or ''}",
                       flush=True)
-        except Exception as exc:   # noqa: BLE001 — a loop must outlive a bad tick
+        except Exception as exc:
             print(f"tick failed: {exc}", flush=True)
         time.sleep(tick)
 

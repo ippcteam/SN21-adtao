@@ -15,10 +15,10 @@ from __future__ import annotations
 import pytest
 
 from hope.reporting.prediction_performance import (
+    GROUP_DEFS,
     build_performance_document,
     group_of,
     row_key,
-    GROUP_DEFS,
 )
 
 
@@ -34,13 +34,13 @@ COMP = {"quantile": 0.8, "direction": 1.0, "coverage": 0.5, "goal": 0.6}
 
 
 def build(entries, **kw):
-    defaults = dict(
-        key_of=kw.pop("key_of", {}),
-        basket_day_of=kw.pop("basket_day_of", {}),
-        as_of="2026-09-02",
-        winner=kw.pop("winner", None),
-        uid_of=kw.pop("uid_of", {}),
-    )
+    defaults = {
+        "key_of": kw.pop("key_of", {}),
+        "basket_day_of": kw.pop("basket_day_of", {}),
+        "as_of": "2026-09-02",
+        "winner": kw.pop("winner", None),
+        "uid_of": kw.pop("uid_of", {}),
+    }
     return build_performance_document(entries, **defaults, **kw)
 
 

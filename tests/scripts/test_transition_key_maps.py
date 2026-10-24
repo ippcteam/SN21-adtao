@@ -23,12 +23,11 @@ WHY THIS EXISTS
 
 from __future__ import annotations
 
-import json
 import os
 import sys
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -131,6 +130,7 @@ class TestWiring:
         """The map must be written the moment payloads exist, or settle in
         two weeks has nothing to read."""
         import inspect
+
         import scripts.run_daily_pipeline as m
         src = inspect.getsource(m)
         resolve_block = src[src.index("# 0. resolve + fetch basket"):
@@ -141,6 +141,7 @@ class TestWiring:
         """The shadow store holds prediction rows, not payloads — walking it
         is the bug this file exists to prevent returning."""
         import inspect
+
         from scripts.run_daily_pipeline import _transition_key_provider as p
         src = inspect.getsource(p)
         assert "shadow" not in src

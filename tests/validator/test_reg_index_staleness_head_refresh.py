@@ -10,9 +10,9 @@ import types
 
 import pytest
 
+from scripts import build_reg_index as builder
 from scripts import check_reg_index_staleness as alarm
 from scripts import refresh_reg_index_head as head_refresh
-from scripts import build_reg_index as builder
 
 
 def _write_state(tmp_path, **state):

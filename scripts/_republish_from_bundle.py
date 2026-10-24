@@ -51,20 +51,20 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
 )
 
-from hope.publication.accuracy_feed import (  # noqa: E402
+from hope.publication.accuracy_feed import (
     ACCURACY_FEED_NAME,
     build_accuracy_metrics,
 )
-from hope.publication.rail import (  # noqa: E402
+from hope.publication.rail import (
     attest,
     build_document,
     document_sha256,
 )
-from hope.publication.receipt_feed import RECEIPT_FEED_NAME  # noqa: E402
+from hope.publication.receipt_feed import RECEIPT_FEED_NAME
 
 DEFAULT_BASE = "https://hope-bittensor-api.onrender.com"
 

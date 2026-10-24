@@ -25,7 +25,7 @@ from datetime import date, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from scripts.run_daily_pipeline import (  # noqa: E402
+from scripts.run_daily_pipeline import (
     fetch_basket_payloads,
     tkeys_dir,
     write_transition_key_map,
@@ -71,7 +71,7 @@ def main() -> int:
             n = write_transition_key_map(args.ledger_root, key, payloads)
             print(f"{key}: {n} keys", flush=True)
             done += 1
-        except Exception as e:  # noqa: BLE001 — one basket must not stop the walk
+        except Exception as e:
             if "404" in str(e):
                 skipped += 1          # basket never existed for that day
             else:

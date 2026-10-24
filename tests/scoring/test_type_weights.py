@@ -49,7 +49,7 @@ def _entries(fam, n_miners, per_miner, base=0.5, spread=0.0):
     return out
 
 
-GATES = dict(min_entries=100, min_miners=5, miner_min_n=10)
+GATES = {"min_entries": 100, "min_miners": 5, "miner_min_n": 10}
 
 
 class TestHeadroomIsTheSignal:
@@ -215,7 +215,7 @@ class TestDayFlowIntegration:
         assert [e.weight for e in out] == [e.weight for e in base]
 
     def test_per_episode_weights_differ_per_entry(self):
-        fn = lambda eid: 2.0 if eid == "e1" else 1.0   # noqa: E731
+        fn = lambda eid: 2.0 if eid == "e1" else 1.0
         out = {e.episode_id: e.weight
                for e in day_flow(self._results(), self.D, type_weight_fn=fn)}
         assert out["e1"] == pytest.approx(2 * out["e0"])

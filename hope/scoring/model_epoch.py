@@ -22,6 +22,7 @@ when every boundary read "today" and nothing was discounted).
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 from collections.abc import Mapping
@@ -100,7 +101,7 @@ def model_since_from_shadow(root: str, previous: Mapping | None = None,
             continue
         seq = [(d, _digest_on(root, d, hk)) for d in in_span]
         seq = [(d, g) for d, g in seq if g]
-        changes: list[str] = [d1 for (d0, g0), (d1, g1) in zip(seq, seq[1:]) if g1 != g0]
+        changes: list[str] = [d1 for (d0, g0), (d1, g1) in itertools.pairwise(seq) if g1 != g0]
         counted: list[str] = []
         for d in changes:
             if not counted or (date.fromisoformat(d) - date.fromisoformat(counted[-1])).days >= min_gap_days:

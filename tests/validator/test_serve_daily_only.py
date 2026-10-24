@@ -18,11 +18,10 @@ WHY THIS EXISTS
 """
 
 import sys
-import types
 
 import pytest
 
-import hope.validator.serve as serve
+from hope.validator import serve
 
 
 @pytest.fixture

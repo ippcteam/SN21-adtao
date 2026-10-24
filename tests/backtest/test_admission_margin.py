@@ -74,6 +74,7 @@ def test_the_gate_reports_per_horizon_on_the_same_corpus():
 
 def test_gate_submission_attaches_the_per_horizon_block():
     import inspect
+
     from hope.backtest import gate_service
     src = inspect.getsource(gate_service.gate_submission)
     assert "gate_by_horizon(outcomes, preds, base_preds)" in src

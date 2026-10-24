@@ -35,26 +35,15 @@ Pure core (compute_daily_allocation) + a thin I/O convenience
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
 from collections.abc import Mapping
-import dataclasses
 from dataclasses import dataclass, field, replace
 from datetime import date
 
 from hope.scoring import chronic_failure, standing_ledger
-from hope.scoring.standing_method import (
-    curve_params_in_force,
-    load_standing_entries,
-    method_params,
-    promotion_margin_abs,
-)
-from hope.scoring.tenure import (
-    short_tenure_hotkeys,
-    tenure_gate_enabled,
-    tenure_min_days,
-)
 from hope.scoring.champion_promotion import (
     PromotionDecision,
     PromotionParams,
@@ -82,7 +71,23 @@ from hope.scoring.duplication import (
     suppressed_copies,
 )
 from hope.scoring.episode_average import (
-    PLACEMENT_FLOOR_PREDICTIONS, ScoredEpisode, model_epoch_in_force, prediction_basis_in_force, standing)
+    PLACEMENT_FLOOR_PREDICTIONS,
+    ScoredEpisode,
+    model_epoch_in_force,
+    prediction_basis_in_force,
+    standing,
+)
+from hope.scoring.standing_method import (
+    curve_params_in_force,
+    load_standing_entries,
+    method_params,
+    promotion_margin_abs,
+)
+from hope.scoring.tenure import (
+    short_tenure_hotkeys,
+    tenure_gate_enabled,
+    tenure_min_days,
+)
 from hope.scoring.weight_curve import CurveParams, curve_weights
 
 logger = logging.getLogger(__name__)
@@ -142,8 +147,7 @@ def absolute_standings(root: str, day: date, environ=os.environ) -> dict:
     half-life in force on `day`, without the field prior. Published beside the
     relative standing (audit `standings`, intent `standings_absolute`) so the
     public board can show accuracy as the headline number."""
-    from hope.scoring.episode_average import (
-        episode_weighted_average, half_life_in_force, window_in_force)
+    from hope.scoring.episode_average import episode_weighted_average, half_life_in_force, window_in_force
     from hope.scoring.standing_method import load_relative_entries, relative_enabled
     w = window_in_force(environ, day)
     hl = half_life_in_force(environ, day)
@@ -181,7 +185,7 @@ def standings_block(relative: Mapping[str, float], absolute: Mapping[str, float]
     }
 
 
-def allocation_from_api(base_url: str, api_key: str, timeout_s: int = 60) -> "DailyAllocation":
+def allocation_from_api(base_url: str, api_key: str, timeout_s: int = 60) -> DailyAllocation:
     """The committer half of the M4 bridge: fetch the intended daily vector the
     operator (executor) published and return it as a DailyAllocation.
 
@@ -206,7 +210,7 @@ def allocation_from_api(base_url: str, api_key: str, timeout_s: int = 60) -> "Da
         req = urllib.request.Request(url, headers={"X-API-Key": api_key})
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:
             payload = _json.loads(resp.read().decode())
-    except Exception as exc:  # noqa: BLE001 — 404/network/parse all fail safe
+    except Exception as exc:
         logger.warning("[daily-stream] weight-vector fetch failed (%s) — "
                        "holding previous vector", exc)
         return DailyAllocation(day=_date.today(), gated=True, day_episode_volume=0)
@@ -1012,7 +1016,7 @@ def one_payer_suppression_subprocess(
     try:
         proc = subprocess.run(
             [sys.executable, "-c", child], input=payload,
-            capture_output=True, text=True, timeout=timeout_s)
+            capture_output=True, text=True, timeout=timeout_s, check=False)
         if proc.returncode != 0:
             logger.warning(
                 "one-payer child exited %d — suppressing NOBODY for %s "
@@ -1026,7 +1030,7 @@ def one_payer_suppression_subprocess(
             stats.update(parsed.get("stats") or {})
             stats["ran"] = True
         return frozenset(parsed.get("suppressed") or [])
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception(
             "one-payer subprocess failed — suppressing NOBODY for %s", day)
         if stats is not None:

@@ -90,7 +90,7 @@ def ensure_cached(ledger_root: str, api_get_json, api_get_bytes, log=print) -> d
     os.makedirs(cache_dir(ledger_root), exist_ok=True)
     try:
         meta = (api_get_json("admission/corpus") or {}).get("corpus") or {}
-    except Exception as e:                                       # noqa: BLE001
+    except Exception as e:
         log(f"[corpus] metadata unavailable ({type(e).__name__}: {e}); "
             "using the cached corpus if there is one")
         return _latest_cached(ledger_root)
@@ -105,7 +105,7 @@ def ensure_cached(ledger_root: str, api_get_json, api_get_bytes, log=print) -> d
         return meta
     try:
         raw = gzip.decompress(api_get_bytes(f"admission/corpus/{key}/document"))
-    except Exception as e:                                       # noqa: BLE001
+    except Exception as e:
         log(f"[corpus] document fetch failed ({type(e).__name__}: {e}); "
             "using the cached corpus if there is one")
         return _latest_cached(ledger_root)

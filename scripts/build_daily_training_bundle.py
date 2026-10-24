@@ -31,11 +31,10 @@ from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.backtest.daily_training_bundle import (  # noqa: E402
+from hope.backtest.daily_training_bundle import (
     build_records,
     validate_leakfree,
 )
-
 
 REPO = "ippcteam/SN21-adtao"
 DAILY_TAG = "training-bundle-daily"
@@ -107,11 +106,11 @@ def publish_bundle(path, count, dry_run=True):
     except urllib.error.HTTPError as e:
         if e.code != 404:
             raise
-        body = (f"Daily-stream training bundle — real BD-* episodes with their "
-                f"SETTLED 7/14/28-day outcomes, one JSON object per line "
-                f"(`{{episode_id, input, labels}}`). Refreshed as outcomes mature. "
-                f"A held-out evaluation set is never published. "
-                f"See docs/SN21_TRAINING.md.")
+        body = ("Daily-stream training bundle — real BD-* episodes with their "
+                "SETTLED 7/14/28-day outcomes, one JSON object per line "
+                "(`{episode_id, input, labels}`). Refreshed as outcomes mature. "
+                "A held-out evaluation set is never published. "
+                "See docs/SN21_TRAINING.md.")
         rel = _gh(f"repos/{REPO}/releases", token, "POST", {
             "tag_name": DAILY_TAG, "name": "SN21 daily training bundle",
             "body": body, "draft": False, "prerelease": False})

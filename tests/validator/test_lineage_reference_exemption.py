@@ -160,7 +160,7 @@ class TestBothDetectorsShareOneDerivation:
 
         d = os.path.join(str(tmp_path), "receipts")
         os.makedirs(d, exist_ok=True)
-        entry = lambda hk: {"miner": hk, "episode_id": "e1",  # noqa: E731
+        entry = lambda hk: {"miner": hk, "episode_id": "e1",
                             "horizon_days": 7,
                             "prediction": {"cost_delta_pct": {"p50": -0.05}}}
         with open(os.path.join(d, f"{DAY}.json"), "w") as fh:

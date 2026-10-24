@@ -36,7 +36,7 @@ def test_a_missing_metric_is_never_a_direction_miss():
     actual = {"cost_delta_pct": 0.3, "conversions_delta_pct": 0.3, "efficiency_delta_pct": None}
     pred = {"cost_delta_pct": {"p10": 0.1, "p50": 0.3, "p90": 0.5},
             "conversions_delta_pct": {"p10": 0.1, "p50": 0.3, "p90": 0.5}}
-    q, d = S.entry_components(pred, actual)
+    _q, d = S.entry_components(pred, actual)
     assert d == 1.0                      # two of two directions right; efficiency not counted
 
 

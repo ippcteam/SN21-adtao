@@ -188,7 +188,7 @@ class TestThePreviousModelDiscount:
             assert stats["entries_discounted"] == 3
 
     def test_a_hotkey_with_no_known_model_is_left_alone(self):
-        out, stats = apply_previous_model_discount(
+        out, _stats = apply_previous_model_discount(
             self._entries(current_mass=300), {}, DAY, 42, 0.25, 250)
         assert all(e.discount == 1.0 for e in out["m"])
 
@@ -301,7 +301,7 @@ class TestModelSinceFile:
         # the loader then discounts nothing: every entry in the window is current
         from hope.scoring.model_epoch import apply_previous_model_discount
         eps = {"a": [ScoredEpisode(0.5, DAY, 1.0, predicted_on=date(2026, 9, 4)) for _ in range(300)]}
-        out2, stats = apply_previous_model_discount(eps, {"a": date(2026, 9, 3)}, DAY, 42, 0.25, 250)
+        _out2, stats = apply_previous_model_discount(eps, {"a": date(2026, 9, 3)}, DAY, 42, 0.25, 250)
         assert stats["hotkeys_discounted"] == []
 
     def test_a_change_outside_the_window_does_not_count(self, tmp_path):
@@ -470,6 +470,7 @@ class TestOneHotkeyPerCopyGroupInTheFieldMean:
 
     def test_the_allocation_computes_the_copy_sets_before_it_loads_the_entries(self):
         import inspect
+
         from hope.validator import daily_stream_weights as dsw
         src = inspect.getsource(dsw.allocation_from_ledger)
         assert src.index("one_payer_suppression_subprocess(") < src.index("load_standing_entries(")
@@ -568,6 +569,7 @@ class TestTheAdoptedSwitch:
 
 def test_the_daily_loop_retires_the_dry_run_once_the_rule_is_in_force():
     import inspect
+
     from hope.validator import daily_loop
     src = inspect.getsource(daily_loop.run_daily_loop)
     assert "preview_enabled(environ) and model_epoch_in_force(environ, day)" in src
@@ -638,7 +640,7 @@ class TestTheRampCountsOnlyRealEntries:
     def test_unset_keeps_the_old_reading(self):
         from hope.scoring.episode_average import ramp_counts_real_entries_only
         assert ramp_counts_real_entries_only({}, DAY) is False
-        out, stats = apply_previous_model_discount(
+        _out, stats = apply_previous_model_discount(
             self._entries(penalties=800), self.SINCE, DAY, 42, 0.25, 250)
         assert stats["factor"] == {"m": 0.25}
         assert stats["ramp"]["m"]["current_mass"] == 800.0

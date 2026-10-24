@@ -109,8 +109,8 @@ class TestTheTwoSpellingsOfOneMiner:
 
     def test_a_miner_outside_the_vector_still_loses_the_tier(self):
         rows = _build_miner_results(self._artifact(), tier_split_active=True,
-                                    earning_set={"5Cccccccccccccccccccccccc"
-                                                 "cccccccccccccccccccccccc"})
+                                    earning_set={("5Cccccccccccccccccccccccc"
+                                                 "cccccccccccccccccccccccc")})
         assert rows[0].tier is None
 
     def test_an_ss58_keyed_audit_reaches_a_hex_keyed_row(self):

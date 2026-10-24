@@ -19,7 +19,8 @@ D = date(2026, 8, 10)
 
 
 def _runner(model, episodes):
-    return run_basket_callable(lambda e: {"7": {"x": 1}}, episodes)
+    # a block for every horizon the episode asks for (the default 7 and 14)
+    return run_basket_callable(lambda e: {"7": {"x": 1}, "14": {"x": 1}}, episodes)
 
 
 class TestLedger:
@@ -76,6 +77,7 @@ def test_shadow_workers_env():
 
 def test_two_models_run_concurrently_and_both_are_ledgered(tmp_path):
     import time
+
     from hope.backtest.container_runner import RunResult
     from hope.backtest.shadow import ShadowModel, run_shadow_day
 

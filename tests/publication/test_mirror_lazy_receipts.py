@@ -72,7 +72,7 @@ def test_lazy_items_carry_the_file_not_the_body(tmp_path):
 
 def test_a_new_receipt_is_read_once_and_sent(tmp_path, mirror):
     p = _write_receipt(str(tmp_path), DAY, {"entries": []})
-    sent, reads, out = mirror()
+    sent, reads, _out = mirror()
     assert f"/v1/daily/{DAY}/receipt" in sent
     assert reads.count(p) == 1
 
@@ -91,7 +91,7 @@ def test_a_rewritten_receipt_is_read_and_sent_again(tmp_path, mirror):
     mirror()
     time.sleep(1.1)                       # a new mtime second
     _write_receipt(str(tmp_path), DAY, {"entries": [{"miner": "x"}]})
-    sent, reads, out = mirror()
+    sent, reads, _out = mirror()
     assert f"/v1/daily/{DAY}/receipt" in sent
     assert p in reads
 
@@ -109,6 +109,7 @@ def test_the_file_record_never_travels_as_a_mirrored_path(tmp_path, mirror):
 def test_the_standing_preview_is_mirrored_only_when_the_operator_says_so(tmp_path, monkeypatch):
     import json as _json
     import os as _os
+
     from hope.publication.mirror_sync import build_mirror_items
     root = str(tmp_path)
     d = _os.path.join(root, "standing_preview"); _os.makedirs(d)

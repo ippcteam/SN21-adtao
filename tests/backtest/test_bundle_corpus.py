@@ -9,8 +9,7 @@ from hope.backtest.bundle_corpus import build_from_bundle
 def _bundle(tmp_path, records):
     path = tmp_path / "bundle.jsonl"
     with open(path, "w") as f:
-        for r in records:
-            f.write(json.dumps(r) + "\n")
+        f.writelines(json.dumps(r) + "\n" for r in records)
     return str(path)
 
 

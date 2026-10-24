@@ -51,7 +51,7 @@ def test_rlimits_are_only_the_safe_ones():
     AS (virtual, not RSS) are deliberately excluded because they break correct
     behaviour on a shared PaaS host — memory/pids caps are a cgroup job."""
     spec = RunSpec(rootfs="/x", argv=["/y"])
-    limits = dict((r, (s, h)) for r, s, h in _rlimits(spec))
+    limits = {r: (s, h) for r, s, h in _rlimits(spec)}
     assert limits[resource.RLIMIT_CPU][0] == 15 * 60         # 15 min CPU
     assert resource.RLIMIT_FSIZE in limits
     assert resource.RLIMIT_NPROC not in limits              # per-uid-global
@@ -130,7 +130,11 @@ def test_a_memory_kill_reads_like_a_docker_memory_kill():
     """chronic_failure classifies exit 137 as REASON_MEMORY: the two
     executors must report the same breach the same way."""
     from hope.scoring.chronic_failure import (
-        OOM_EXIT_CODE, REASON_MEMORY, classify_failure, failure_reason, FAULT_MINER,
+        FAULT_MINER,
+        OOM_EXIT_CODE,
+        REASON_MEMORY,
+        classify_failure,
+        failure_reason,
     )
     spec = RunSpec(rootfs="/x", argv=["/y"])
     r = ns_sandbox.oom_result(spec, observed_bytes=1300 << 20)

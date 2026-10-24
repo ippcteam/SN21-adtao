@@ -26,17 +26,17 @@ from datetime import date, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.scoring.daily_score_flow import horizon_entry_weight   # noqa: E402
-from hope.scoring.episode_average import (                       # noqa: E402
+from hope.scoring.daily_score_flow import horizon_entry_weight
+from hope.scoring.episode_average import (
     DEFAULT_HALF_LIFE_DAYS,
     DEFAULT_WINDOW_DAYS,
 )
-from hope.scoring.type_weights import TypeWeightTable            # noqa: E402
-from scripts.build_type_weight_table import (                    # noqa: E402
+from hope.scoring.type_weights import TypeWeightTable
+from scripts.build_type_weight_table import (
     _receipt_entries_from_dir,
     _receipt_entries_from_mirror,
 )
-from scripts.run_daily_pipeline import _transition_key_provider  # noqa: E402
+from scripts.run_daily_pipeline import _transition_key_provider
 
 
 def main() -> int:
@@ -87,7 +87,7 @@ def main() -> int:
             try:
                 yy, mm, ddd = (int(x) for x in fo.split("-"))
                 age = (as_of - date(yy, mm, ddd)).days
-            except Exception:  # noqa: BLE001 — unparseable date -> skip entry
+            except Exception:
                 continue
             if age < 0 or age > DEFAULT_WINDOW_DAYS:
                 continue
@@ -108,7 +108,7 @@ def main() -> int:
 
     print(f"miners: {len(base)}   entries: {len(seen)}   "
           f"as_of: {as_of}   table: {table.status}/{table.params_version}")
-    print(f"\n| miner | now | with weights | move | score now | score after |")
+    print("\n| miner | now | with weights | move | score now | score after |")
     print("|---|---|---|---|---|---|")
     for m_, _ in sorted(base.items(), key=lambda kv: -kv[1])[:args.top]:
         print(f"| {m_[:14]}.. | #{b_rank[m_]} | #{n_rank.get(m_, '-')} | "

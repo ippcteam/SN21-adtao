@@ -150,7 +150,7 @@ SETTLE_CLOCK_CUTOVER_UTC = datetime(2026, 7, 22, 10, 10, tzinfo=timezone.utc)
 class SettledHorizon:
     """One finalised (episode, horizon) truth, in delta fractions.
 
-    ``finalized_on`` is the SETTLE-CLOCK date (window_end+1+h+7), not the
+    ``finalized_on`` is the SETTLE-CLOCK date (window_end+1+h+2), not the
     measurement write date.
     """
     episode_id: str

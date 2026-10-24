@@ -20,13 +20,12 @@ ON = {"SN21_ABSENCE_NEEDS_REAL_ENTRIES_FROM": "2026-10-20"}
 def _entries(root, hk, rows):
     os.makedirs(standing_ledger.standing_dir(root), exist_ok=True)
     with open(os.path.join(standing_ledger.standing_dir(root), f"{hk}.jsonl"), "a") as f:
-        for score, weight, day in rows:
-            f.write(json.dumps({"score": score, "weight": weight, "day": day}) + "\n")
+        f.writelines(json.dumps({"score": score, "weight": weight, "day": day}) + "\n" for score, weight, day in rows)
 
 
 def _ledger(root):
     _shadow_day(root, "2026-10-20", {"live": (100, 100)})                 # the subnet ran
-    _entries(root, "gone", [(0.0, 1.0, "2026-10-1%d" % i) for i in range(10)])           # zeros only
+    _entries(root, "gone", [(0.0, 1.0, f"2026-10-1{i}") for i in range(10)])           # zeros only
     _entries(root, "fading", [(0.55, 0.35, "2026-10-01")] + [(0.0, 1.0, "2026-10-15")])  # one real left
     _entries(root, "player", [(0.0, 1.0, "2026-10-18")])                   # zeros only, but playing:
     _shadow_day(root, "2026-10-19", {"live": (100, 100), "player": (100, 0)})

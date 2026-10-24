@@ -41,9 +41,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from statistics import median
-from typing import Iterable, Mapping
 
 from hope.reporting.type_accuracy import type_family
 
@@ -116,7 +116,7 @@ class TypeWeightTable:
         }
 
     @classmethod
-    def from_json(cls, d: Mapping) -> "TypeWeightTable":
+    def from_json(cls, d: Mapping) -> TypeWeightTable:
         t = cls(
             params_version=str(d.get("params_version") or ""),
             status=str(d.get("status") or STATUS_DRAFT),
@@ -188,8 +188,8 @@ def compute_table(
             # from the middle. Index arithmetic, no interpolation — stable
             # under small-n changes.
             p90 = qual_means[min(len(qual_means) - 1,
-                                 int(round(0.90 * (len(qual_means) - 1))))]
-            p50 = qual_means[int(round(0.50 * (len(qual_means) - 1)))]
+                                 round(0.90 * (len(qual_means) - 1)))]
+            p50 = qual_means[round(0.50 * (len(qual_means) - 1))]
             head = max(0.0, p90 - p50)
         measured[fam] = {
             "n": len(scores_all),

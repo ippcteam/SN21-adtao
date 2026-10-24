@@ -124,7 +124,7 @@ def admitted_models(root: str, network: str, netuid: int,
         record = last_admitted.remember(root, registry["active"], as_of, admitted)
         if last_admitted.enabled(as_of):
             kept = last_admitted.fallbacks(registry, record, admitted, as_of)
-    except Exception as exc:                                  # noqa: BLE001
+    except Exception as exc:
         stats["last_admitted_error"] = str(exc)[:200]
     stats["kept_last_admitted"] = len(kept)
     return list(registry["active"].values()) + list(kept.values()), stats

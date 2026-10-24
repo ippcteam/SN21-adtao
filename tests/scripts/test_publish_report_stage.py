@@ -9,10 +9,13 @@ mocked so the test never touches the network.
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
-from substrateinterface.utils.ss58 import ss58_encode
+
+try:  # bittensor installs scalecodec; substrateinterface only on some machines
+    from scalecodec.utils.ss58 import ss58_encode
+except ImportError:
+    from substrateinterface.utils.ss58 import ss58_encode
 
 import scripts.run_daily_pipeline as rdp
 

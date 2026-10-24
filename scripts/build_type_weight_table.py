@@ -34,8 +34,8 @@ from datetime import date, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.scoring.type_weights import compute_table                # noqa: E402
-from scripts.run_daily_pipeline import _transition_key_provider    # noqa: E402
+from hope.scoring.type_weights import compute_table
+from scripts.run_daily_pipeline import _transition_key_provider
 
 
 def _receipt_entries_from_dir(receipts_dir: str, days: list[str]):
@@ -55,7 +55,7 @@ def _receipt_entries_from_mirror(mirror_url: str, days: list[str]):
         try:
             with urllib.request.urlopen(url, timeout=120) as resp:
                 doc = json.loads(resp.read().decode())
-        except Exception as e:  # noqa: BLE001 — a missing day is data, not a crash
+        except Exception as e:
             print(f"{d}: no receipt ({e})", flush=True)
             continue
         yield d, ((doc.get("document") or doc).get("metrics") or {}).get(
@@ -171,6 +171,7 @@ def per_family_review(triples, focus: str | None, miner_min_n: int) -> dict:
     miner's, so a leader carried by easy types is visible at a glance.
     """
     from collections import defaultdict
+
     from hope.reporting.type_accuracy import type_family
 
     per: dict = defaultdict(lambda: defaultdict(list))

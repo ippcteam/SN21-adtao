@@ -20,8 +20,6 @@ WHY THIS EXISTS
 
 from datetime import date
 
-import pytest
-
 from hope.scoring.champion_promotion import PromotionState
 from hope.scoring.episode_average import ScoredEpisode
 from hope.validator.daily_stream_weights import compute_daily_allocation

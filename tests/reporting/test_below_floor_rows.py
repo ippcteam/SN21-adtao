@@ -7,7 +7,10 @@ WHY
     single step being wrong. This holds the whole chain in one place.
 """
 
-from substrateinterface.utils.ss58 import ss58_encode
+try:  # bittensor installs scalecodec; substrateinterface only on some machines
+    from scalecodec.utils.ss58 import ss58_encode
+except ImportError:
+    from substrateinterface.utils.ss58 import ss58_encode
 
 from hope.reporting.aggregator import aggregate
 from hope.reporting.epoch_artifact import build_daily_artifact

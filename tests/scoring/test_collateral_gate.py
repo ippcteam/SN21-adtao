@@ -151,7 +151,7 @@ def test_gate_vector_noop_when_flag_off_and_not_forced():
 
 def test_gate_vector_refuses_to_empty():
     # all readable and all below floor -> zero survivors -> keep original
-    uids, weights, res = gate_uid_weight_vector(
+    uids, _weights, res = gate_uid_weight_vector(
         [10, 11], [0.5, 0.5], _reader({10: 10.0, 11: 10.0}), 150.0,
         environ={}, force=True)
     assert not res.applied and uids == [10, 11] and "refusing to empty" in res.refused_reason
@@ -166,9 +166,9 @@ def test_gate_vector_preserves_survivor_order():
 
 # ---- the floor the gate enforces ------------------------------------------
 
-from datetime import date as _date  # noqa: E402
+from datetime import date as _date
 
-from hope.scoring.collateral_gate import FLOOR_ENV, floor_in_force  # noqa: E402
+from hope.scoring.collateral_gate import FLOOR_ENV, floor_in_force
 
 
 def test_the_floor_follows_the_published_ladder_by_default():

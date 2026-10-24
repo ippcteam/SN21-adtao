@@ -76,7 +76,7 @@ def loop(stop: threading.Event, busy_reason, handle, fetch=next_request, send=po
         busy = busy_reason()
         try:
             req = fetch(0 if busy else POLL_WAIT_S, busy)
-        except Exception as exc:  # noqa: BLE001 - the API may be restarting
+        except Exception as exc:
             log(f"[forecast] could not reach the operator API ({str(exc)[:120]}); retrying")
             sleep(10)
             continue
@@ -86,7 +86,7 @@ def loop(stop: threading.Event, busy_reason, handle, fetch=next_request, send=po
             continue
         try:
             send(str(req["id"]), serve_one(req, handle, busy))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log(f"[forecast] answer for {req.get('id')} not delivered ({str(exc)[:120]})")
 
 

@@ -8,6 +8,7 @@ import json
 import os
 from datetime import date
 
+from hope.scoring import standing_ledger
 from hope.scoring.absence_penalty import (
     DEFAULT_PENALTY_SCORE,
     absence_penalty_enabled,
@@ -15,7 +16,6 @@ from hope.scoring.absence_penalty import (
     compute_penalties,
     penalty_log,
 )
-from hope.scoring import standing_ledger
 from hope.scoring.episode_average import episode_weighted_average
 
 DAY = date(2026, 8, 24)
@@ -36,9 +36,8 @@ def _standing(root, hk, n, score, day):
     os.makedirs(standing_ledger.standing_dir(root), exist_ok=True)
     with open(os.path.join(standing_ledger.standing_dir(root),
                            f"{hk}.jsonl"), "a") as f:
-        for _ in range(n):
-            f.write(json.dumps({"score": score, "weight": 1.0,
-                                "day": day}) + "\n")
+        f.writelines(json.dumps({"score": score, "weight": 1.0,
+                                "day": day}) + "\n" for _ in range(n))
 
 
 def test_subnet_down_charges_nobody(tmp_path):

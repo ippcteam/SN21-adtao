@@ -26,11 +26,14 @@ from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.scoring.model_epoch import (  # noqa: E402
-    load_model_since, load_model_since_raw, model_since_from_shadow, model_since_path,
+from hope.scoring.model_epoch import (
+    load_model_since,
+    load_model_since_raw,
+    model_since_from_shadow,
+    model_since_path,
     write_model_since,
 )
-from hope.scoring.standing_method import standing_preview  # noqa: E402
+from hope.scoring.standing_method import standing_preview
 
 
 def _short(hk: str) -> str:
@@ -74,7 +77,7 @@ def main(argv=None) -> int:
         maps = _metagraph_maps() or {}
         try:
             vol = int(_basket_volume(day))
-        except Exception:  # noqa: BLE001 — a missing volume only affects the D3 flag
+        except Exception:
             vol = 0
         print(f"[preview] identities {len(maps.get('coldkey') or {})}, alpha "
               f"{len(maps.get('alpha') or {})}, floor {active_floor(day, os.environ):.0f}, "
@@ -124,8 +127,8 @@ def main(argv=None) -> int:
         paid = ""
         if "paid_now" in r:
             paid = f"  {'Y' if r['paid_now'] else '-'} -> {'Y' if r['paid_preview'] else '-'}"
-        print(f"{_short(hk):16} {str(r['current_rank']):>5} {str(r['preview_rank']):>5} "
-              f"{_move(hk):>+5} {str(r['current_relative']):>9} {str(r['preview_relative']):>9}{paid}")
+        print(f"{_short(hk):16} {r['current_rank']!s:>5} {r['preview_rank']!s:>5} "
+              f"{_move(hk):>+5} {r['current_relative']!s:>9} {r['preview_relative']!s:>9}{paid}")
     movers = sorted(rows, key=lambda h: -abs(_move(h)))[:10]
     print("\nlargest moves:")
     for hk in movers:

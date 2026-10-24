@@ -29,8 +29,8 @@ import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.backtest.execution_mode import basket_runner, executor_mode  # noqa: E402
-from hope.backtest.gate import (  # noqa: E402
+from hope.backtest.execution_mode import basket_runner, executor_mode
+from hope.backtest.gate import (
     METRICS,
     OutcomeRow,
     admission_verdict,
@@ -38,9 +38,8 @@ from hope.backtest.gate import (  # noqa: E402
     gate_score,
     naive_baseline_prediction,
 )
-from hope.backtest.gate_service import runner_predictions_to_gate_keys  # noqa: E402
-from hope.scoring.settle_day_flow import (  # noqa: E402
-    GOAL_METRIC,
+from hope.backtest.gate_service import runner_predictions_to_gate_keys
+from hope.scoring.settle_day_flow import (
     entry_components_v2,
     score_entry_v2,
 )
@@ -236,9 +235,8 @@ def run_one(uid, ref, dig, corpus, run_basket, do_determinism):
         again = run_basket(pinned, sample_eps)
         mism = 0
         for eid, first in (run.predictions or {}).items():
-            if eid in (again.predictions or {}):
-                if again.predictions[eid] != first:
-                    mism += 1
+            if eid in (again.predictions or {}) and again.predictions[eid] != first:
+                mism += 1
         rec["determinism"] = {"rechecked": len(again.predictions or {}),
                               "mismatches": mism,
                               "deterministic": mism == 0}
@@ -284,7 +282,7 @@ def main():
         try:
             results.append(run_one(uid, ref, dig, corpus, run_basket,
                                    not args.no_determinism))
-        except Exception as exc:   # noqa: BLE001 - one bad model must not stop the sweep
+        except Exception as exc:
             log(f"    ERROR {type(exc).__name__}: {exc}")
             results.append({"uid": uid, "repo": ref, "error": str(exc)})
 
@@ -302,7 +300,7 @@ def main():
         tag = "OK " if r.get("ok") and r.get("predictions_out") else "-- "
         g = r.get("gate", {})
         s = r.get("settle", {})
-        log(f"  {tag}uid {str(r.get('uid')):<4} cov="
+        log(f"  {tag}uid {r.get('uid')!s:<4} cov="
             f"{r.get('coverage', '-')} gate_model={g.get('model_score', '-')} "
             f"settle_mean={s.get('mean_score', '-')} "
             f"{r.get('repo', '')[:40]}")

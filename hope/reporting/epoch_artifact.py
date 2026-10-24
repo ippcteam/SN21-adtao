@@ -301,7 +301,7 @@ def _ss58_to_bytes(hotkey_ss58: str) -> bytes:
     """
     try:
         from substrateinterface.utils.ss58 import ss58_decode
-    except Exception:  # noqa: BLE001 — missing dep, not a decode error
+    except Exception:
         from scalecodec.utils.ss58 import ss58_decode
 
     return bytes.fromhex(ss58_decode(hotkey_ss58))
@@ -385,7 +385,7 @@ def build_daily_artifact(
     for hotkey_ss58, score in standings.items():
         try:
             hk_bytes = _ss58_to_bytes(hotkey_ss58)
-        except Exception as _e:  # noqa: BLE001
+        except Exception as _e:
             # A single malformed hotkey should not sink the whole artifact — but
             # a decoder that fails for EVERY key once emptied the entire report
             # (0 rows -> CMS 400). Surface the first failure loudly and count the
@@ -410,7 +410,7 @@ def build_daily_artifact(
                   file=sys.stderr, flush=True)
             continue
         scored.add(hotkey_ss58)
-        score_map[hk_bytes] = int(round(float(score) * 1_000_000))
+        score_map[hk_bytes] = round(float(score) * 1_000_000)
         reads.append(_DailyRead(
             miner_hotkey=hk_bytes,
             miner_uid=int(_uid),
@@ -424,7 +424,7 @@ def build_daily_artifact(
             continue
         try:
             hk_bytes = _ss58_to_bytes(hotkey_ss58)
-        except Exception:  # noqa: BLE001
+        except Exception:
             continue
         _uid = uid_by_hotkey.get(hotkey_ss58)
         if _uid is None:            # same deregistration guard as above
@@ -477,7 +477,7 @@ def build_daily_artifact(
         for hotkey_ss58 in pending:
             try:
                 hex_to_pending[_ss58_to_bytes(hotkey_ss58).hex()] = hotkey_ss58
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
         for row in artifact.per_uid_scores:
             if row.get("status") != "below_placement_floor":
@@ -489,7 +489,7 @@ def build_daily_artifact(
             shown = max(0.0, min(1.0, float(acc)))
             row["absolute_score"] = shown
             row["raw_score"] = shown
-            row["score_micro"] = int(round(shown * 1_000_000))
+            row["score_micro"] = round(float(shown) * 1_000_000)
             # Not a baseline verdict: an unplaced row is measured against
             # nothing yet (the CMS holds met_baseline=true to scored rows).
             row["met_baseline"] = False
@@ -498,7 +498,7 @@ def build_daily_artifact(
         for hotkey_ss58 in scored:
             try:
                 hex_to_ss58[_ss58_to_bytes(hotkey_ss58).hex()] = hotkey_ss58
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
         for row in artifact.per_uid_scores:
             ss58 = hex_to_ss58.get(str(row.get("hotkey")))
@@ -508,7 +508,7 @@ def build_daily_artifact(
             row["relative_standing"] = float(row["raw_score"])
             row["absolute_score"] = shown
             row["raw_score"] = shown
-            row["score_micro"] = int(round(shown * 1_000_000))
+            row["score_micro"] = round(float(shown) * 1_000_000)
             row["met_baseline"] = shown > baseline_score
         # The tier gate ran on the RELATIVE standing, where "below baseline"
         # means below the field — a model that scored, not a disqualification.

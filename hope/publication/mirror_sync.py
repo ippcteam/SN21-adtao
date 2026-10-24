@@ -218,8 +218,7 @@ def build_mirror_items(ledger_root: str,
     # dashboard shows nothing" into a self-answering question. Opens a subtensor,
     # so any chain hiccup just skips this convenience feed for the run.
     try:
-        from hope.publication.registration_status_feed import (
-            build_registration_status_document)
+        from hope.publication.registration_status_feed import build_registration_status_document
         items.append({"path": "/v1/daily/registration-status",
                       "body": build_registration_status_document(ledger_root)})
     except Exception:
@@ -476,7 +475,7 @@ def _mirror_has(api_url: str, path: str, timeout: int = 20,
                 return True
             held = (resp.headers.get(ENVELOPE_SHA_HEADER) or "").strip()
             return bool(held) and held == expected_sha
-    except Exception:      # noqa: BLE001 — absent, unreachable, anything
+    except Exception:
         return False       # the safe answer is "send it"
 
 
@@ -489,7 +488,7 @@ def _is_immutable(path: str) -> bool:
     re-rendered every time a day publishes, because the root rolls — and must
     ship on every run.
     """
-    return (path.endswith("/receipt") or path.endswith("/accuracy")
+    return (path.endswith(("/receipt", "/accuracy"))
             # a miner's slice is derived from an immutable receipt
             or "/miner/" in path)
 
@@ -620,7 +619,7 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
                     p = it.get("path") or ""
                     if _is_immutable(p) and p not in bad and p in digest_of:
                         confirmed[p] = digest_of[p]
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 failed.append({"batch": index,
                                "paths": [it.get("path") for it in batch],
                                "error": str(e)})
@@ -670,7 +669,7 @@ def sync_mirror(ledger_root: str, api_url: str, api_key: str,
         try:
             _ship_object(api_url, api_key, path, raw, envelope_sha, summary,
                          timeout)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             failed.append({"batch": f"object:{path}", "paths": [path],
                            "error": str(e)})
             continue

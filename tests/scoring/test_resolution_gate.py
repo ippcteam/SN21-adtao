@@ -12,7 +12,6 @@ from hope.scoring.daily_score_flow import (
     HorizonResult,
     day_flow,
     entry_weight,
-    horizon_entry_weight,
     resolution_in_force,
 )
 from hope.scoring.settle_day_flow import SettledHorizon, score_settled
@@ -76,13 +75,15 @@ class TestSettlePassesResolution:
 
 class TestReceiptAndLoader:
     def test_receipt_entries_carry_resolution_and_weight(self):
-        from hope.publication.receipt_feed import build_receipt_metrics
         import inspect
+
+        from hope.publication.receipt_feed import build_receipt_metrics
         src = inspect.getsource(build_receipt_metrics)
         assert '"resolution": r.resolution' in src and '"weight": entry_weight(h, r.resolution)' in src
 
     def test_relative_loader_prefers_the_receipt_weight(self, tmp_path):
-        import json, os
+        import json
+        import os
         root = str(tmp_path); d = os.path.join(root, "receipts"); os.makedirs(d)
         ents = [{"miner": "A", "episode_id": "e1", "horizon_days": 7, "score": 0.8, "finalized_on": "2026-09-06",
                  "resolution": "medium", "weight": 0.105},

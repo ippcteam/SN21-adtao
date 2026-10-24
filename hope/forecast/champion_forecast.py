@@ -26,7 +26,6 @@ import os
 import shutil
 import threading
 import time
-from datetime import date
 
 WHATIF_PREFIX = "whatif"
 MAX_EPISODES = 20
@@ -131,7 +130,7 @@ def uid_of(hotkey: str, ttl_s: int = 3600) -> int | None:
                 int(os.environ.get("SN21_NETUID", "21")))
             _UID_CACHE["map"] = {str(mg.hotkeys[i]): int(mg.uids[i]) for i in range(len(mg.hotkeys))}
             _UID_CACHE["at"] = time.time()
-        except Exception:  # noqa: BLE001
+        except Exception:
             return _UID_CACHE["map"].get(hotkey)
     return _UID_CACHE["map"].get(hotkey)
 
@@ -155,8 +154,7 @@ class WarmRunner:
         self._image = None
 
     def _image_for(self, pinned_ref: str):
-        from hope.backtest.local_executor import (MIN_FREE_DISK_BYTES, _free_disk_bytes,
-                                                  split_pinned_ref)
+        from hope.backtest.local_executor import MIN_FREE_DISK_BYTES, _free_disk_bytes, split_pinned_ref
         from hope.backtest.ns_sandbox import cleanup_rootfs
         from hope.backtest.oci_pull import PullError, pull_and_unpack
         if self._ref == pinned_ref and self._image is not None and os.path.isdir(self._image.rootfs):
@@ -181,8 +179,7 @@ class WarmRunner:
 
     def __call__(self, pinned_ref: str, stdin_episodes: list[dict]):
         from hope.backtest.container_runner import RunResult, _parse_output, required_horizons
-        from hope.backtest.local_executor import (_as_limit_bytes, _memory_enforce,
-                                                  _resolve_entrypoint)
+        from hope.backtest.local_executor import _as_limit_bytes, _memory_enforce, _resolve_entrypoint
         from hope.backtest.ns_sandbox import RunSpec, run_sandboxed, sandbox_env
         with self._lock:
             image = self._image_for(pinned_ref)
@@ -235,7 +232,7 @@ def answer(body, ledger_root: str, runner, busy_reason: str | None = None,
         result = runner(champ["pinned_ref"], to_stdin(eps))
     except ForecastError as exc:
         return 503, {"reason": str(exc)}
-    except Exception as exc:  # noqa: BLE001 - never a 500 for the caller
+    except Exception as exc:
         return 503, {"reason": f"the champion could not be run ({type(exc).__name__})"}
     if not result.ok:
         return 503, {"reason": f"the champion's run failed ({str(result.error or '')[:80]})"}

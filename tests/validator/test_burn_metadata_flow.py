@@ -15,11 +15,10 @@ from unittest import mock
 
 import pytest
 
-from scripts.run_daily_pipeline import stage_publish_weights
-from scripts.run_partner_validator import compose_onchain_weights, fetch_vector
 from hope.scoring.collateral_floor import resolve_burn_fraction
 from hope.validator.onchain_runner import run_daily_weights_only
-
+from scripts.run_daily_pipeline import stage_publish_weights
+from scripts.run_partner_validator import compose_onchain_weights, fetch_vector
 
 # ---------------------------------------------------------------- publish ----
 
@@ -190,7 +189,7 @@ def test_tracker_composition_equals_operator_commit(monkeypatch, burn_uid, burn_
         burn_uid=burn_uid, burn_env=burn_env)
 
     # the tracker sees the SAME miner vector plus the published meta
-    uid_of = dict((hk, u) for hk, u in mg_pairs)
+    uid_of = {hk: u for hk, u in mg_pairs}
     pairs = [(uid_of[hk], w) for hk, w in miner_weights.items()]
     uids, weights = compose_onchain_weights(pairs, burn_uid, float(burn_env))
     tracker = dict(zip(uids, weights))

@@ -35,8 +35,7 @@ def _record(episode_id, start, horizons=(7, 14), cost=0.1):
 def _write(tmp_path, name, records):
     path = tmp_path / name
     with open(path, "w") as f:
-        for r in records:
-            f.write(json.dumps(r) + "\n")
+        f.writelines(json.dumps(r) + "\n" for r in records)
     return str(path)
 
 

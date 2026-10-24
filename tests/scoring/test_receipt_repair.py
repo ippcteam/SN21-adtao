@@ -21,8 +21,6 @@ import json
 import os
 from datetime import date
 
-import pytest
-
 from hope.scoring.settle_day_flow import (
     entered_on_run,
     entered_results,
@@ -38,9 +36,8 @@ def _markers(root, rows):
     d = os.path.join(root, "standing")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "_entered_results.jsonl"), "w") as fh:
-        for ep, h, run_day in rows:
-            fh.write(json.dumps({"episode_id": ep, "horizon_days": h,
-                                 "entered_on_run": str(run_day)}) + "\n")
+        fh.writelines(json.dumps({"episode_id": ep, "horizon_days": h,
+                                 "entered_on_run": str(run_day)}) + "\n" for ep, h, run_day in rows)
 
 
 class TestEnteredOnRun:
@@ -92,7 +89,7 @@ class TestScopeAndSafety:
             "hope.scoring.settle_day_flow.score_settled_with_components",
             fake_score)
 
-        provider = lambda _d: [_Outcome("e1", 7), _Outcome("e2", 7),  # noqa: E731
+        provider = lambda _d: [_Outcome("e1", 7), _Outcome("e2", 7),
                                _Outcome("e3", 7)]
         score_day_for_receipt(root, root, DAY, provider)
 

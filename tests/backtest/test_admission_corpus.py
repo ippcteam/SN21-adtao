@@ -9,7 +9,6 @@ import gzip
 import hashlib
 import json
 
-
 from hope.backtest import admission_corpus as ac
 
 
@@ -51,7 +50,7 @@ class Api:
 
 def test_first_run_fetches_verifies_and_caches(tmp_path):
     api = Api(_document())
-    eps, outs, info = ac.load_corpus(str(tmp_path), 250, api.get_json, api.get_bytes,
+    eps, _outs, info = ac.load_corpus(str(tmp_path), 250, api.get_json, api.get_bytes,
                                      str(tmp_path / "w"), log=lambda *_: None)
     assert info["source"] == "held-out" and info["key"] == "HO-1"
     assert info["sha256"] == api.sha and info["episodes"] == 4 and info["outcome_rows"] == 4
@@ -113,7 +112,7 @@ def test_nothing_served_and_nothing_cached_falls_back_to_the_bundle_and_says_so(
     api = Api(None)
     logs = []
     monkeypatch.setattr(ac.bundle_corpus, "fetch_bundle", lambda wd: str(_bundle(tmp_path)))
-    eps, outs, info = ac.load_corpus(str(tmp_path), 250, api.get_json, api.get_bytes, "w",
+    _eps, outs, info = ac.load_corpus(str(tmp_path), 250, api.get_json, api.get_bytes, "w",
                                      log=logs.append)
     assert info["source"] == "public-bundle" and info["key"] is None
     assert info["episodes"] == 1 and len(outs) == 1

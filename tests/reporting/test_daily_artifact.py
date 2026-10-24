@@ -9,7 +9,10 @@ set and the hex→SS58 encoding of hotkeys.
 
 from __future__ import annotations
 
-from substrateinterface.utils.ss58 import ss58_encode
+try:  # bittensor installs scalecodec; substrateinterface only on some machines
+    from scalecodec.utils.ss58 import ss58_encode
+except ImportError:
+    from substrateinterface.utils.ss58 import ss58_encode
 
 from hope.reporting.aggregator import aggregate
 from hope.reporting.epoch_artifact import build_daily_artifact
@@ -115,7 +118,7 @@ def test_missing_block_range_defaults_to_zero_not_a_crash():
 def test_display_scores_replace_the_headline_but_not_the_tiers():
     """Rule amendment 2026-09-05: `standings` (relative) ranks and tiers;
     `display_scores` (absolute accuracy) is what the row shows."""
-    standings, uid_by_hotkey, (hk1, hk2, hk3, _) = _standings()
+    _, uid_by_hotkey, (hk1, hk2, hk3, _) = _standings()
     relative = {hk1: 0.03, hk2: 0.01, hk3: -0.02}          # ranks 1, 2, 3
     absolute = {hk1: 0.55, hk2: 0.61, hk3: 0.58}           # a different order
     art = build_daily_artifact(
@@ -138,7 +141,7 @@ def test_display_scores_replace_the_headline_but_not_the_tiers():
 
 
 def test_row_extras_ride_only_when_enabled(monkeypatch):
-    standings, uid_by_hotkey, (hk1, hk2, hk3, _) = _standings()
+    _, uid_by_hotkey, (hk1, hk2, hk3, _) = _standings()
     art = build_daily_artifact(
         standings={hk1: 0.03, hk2: 0.01, hk3: -0.02}, uid_by_hotkey=uid_by_hotkey,
         total_registered_uids=256, day="2026-09-05",
@@ -173,7 +176,7 @@ def test_below_field_models_are_scored_rows_not_disqualified():
     """CMS invariant: met_baseline=true requires status "scored". Under the
     relative standing half the field sits below zero; shown with their
     accuracy they are scored, unpaid rows — never "below threshold"."""
-    standings, uid_by_hotkey, (hk1, hk2, hk3, _) = _standings()
+    _, uid_by_hotkey, (hk1, hk2, hk3, _) = _standings()
     art = build_daily_artifact(
         standings={hk1: 0.03, hk2: -0.01, hk3: -0.02}, uid_by_hotkey=uid_by_hotkey,
         total_registered_uids=256, day="2026-09-05",
@@ -198,7 +201,7 @@ class TestBelowFloorRows:
         ), (hk1, hk2, hk3, hk4)
 
     def test_the_row_shows_its_accuracy_and_the_pending_status(self):
-        art, (_, _, _, hk4) = self._art()
+        art, (_, _, _, _hk4) = self._art()
         rows = {r["uid"]: r for r in art.per_uid_scores}
         row = rows[4]
         assert row["status"] == "below_placement_floor"
@@ -226,7 +229,7 @@ class TestBelowFloorRows:
         assert [r["status"] for r in art.per_uid_scores if r["uid"] == 4] == ["below_placement_floor"]
 
     def test_a_deregistered_pending_hotkey_is_skipped(self):
-        standings, uid_by_hotkey, (hk1, hk2, hk3, hk4) = _standings()
+        standings, uid_by_hotkey, (_hk1, _hk2, _hk3, hk4) = _standings()
         gone = {k: v for k, v in uid_by_hotkey.items() if k != hk4}
         art = build_daily_artifact(
             standings=standings, uid_by_hotkey=gone, total_registered_uids=256,
@@ -234,9 +237,9 @@ class TestBelowFloorRows:
         assert all(r["uid"] != 4 for r in art.per_uid_scores)
 
     def test_missing_accuracy_leaves_the_row_at_zero_but_present(self):
-        standings, uid_by_hotkey, (hk1, hk2, hk3, hk4) = _standings()
+        standings, uid_by_hotkey, (_hk1, _hk2, _hk3, hk4) = _standings()
         art = build_daily_artifact(
             standings=standings, uid_by_hotkey=uid_by_hotkey, total_registered_uids=256,
             day="2026-09-07", below_floor={hk4: {"scored_predictions": 10.0}})
-        row = [r for r in art.per_uid_scores if r["uid"] == 4][0]
+        row = next(r for r in art.per_uid_scores if r["uid"] == 4)
         assert row["status"] == "below_placement_floor" and row["raw_score"] == 0.0

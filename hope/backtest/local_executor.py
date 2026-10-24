@@ -67,7 +67,8 @@ MIN_FREE_DISK_BYTES = 2 << 30    # 2 GB headroom
 
 # One unpack at a time (see run_basket_local): the disk check is only true
 # for the unpack that follows it if nothing else is unpacking meanwhile.
-import threading  # noqa: E402
+import threading
+
 _UNPACK_LOCK = threading.Lock()
 
 

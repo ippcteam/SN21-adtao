@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.validator.pipeline_health import assess  # noqa: E402
+from hope.validator.pipeline_health import assess
 
 
 def _api_get(path):
@@ -57,7 +57,7 @@ def post_alert(message: str) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=30):
             return True
-    except Exception as exc:   # noqa: BLE001
+    except Exception as exc:
         print(f"[alert] webhook POST failed: {exc}", flush=True)
         return False
 
@@ -76,7 +76,7 @@ def main():
         status, payload = _api_get("daily/pipeline-heartbeat?day=latest")
     except SystemExit:
         raise
-    except Exception as exc:   # noqa: BLE001
+    except Exception as exc:
         print(f"[health] could not reach the heartbeat endpoint: {exc}", flush=True)
         return 2
 

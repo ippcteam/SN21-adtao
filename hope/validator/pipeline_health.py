@@ -48,9 +48,9 @@ def assess(heartbeat: dict | None, now: datetime,
     """
     if not heartbeat:
         return Verdict(LEVEL_DOWN,
-                       ["no pipeline heartbeat reported — the executor has never "
+                       [("no pipeline heartbeat reported — the executor has never "
                         "checked in (service down, or never deployed with the "
-                        "heartbeat)"])
+                        "heartbeat)")])
 
     hb_day = _parse_date(heartbeat.get("day"))
     if hb_day is None:
@@ -81,7 +81,7 @@ def assess(heartbeat: dict | None, now: datetime,
     past_due = now.hour >= (trigger_hour + grace_hours)
     if past_due:
         return Verdict(LEVEL_DOWN,
-                       [f"today's pipeline has not run (last run {hb_day}, now past "
-                        f"{trigger_hour + grace_hours}:00 UTC)"], str(hb_day))
+                       [(f"today's pipeline has not run (last run {hb_day}, now past "
+                        f"{trigger_hour + grace_hours}:00 UTC)")], str(hb_day))
     return Verdict(LEVEL_OK,
                    [f"today's run not due yet (last run {hb_day})"], str(hb_day))

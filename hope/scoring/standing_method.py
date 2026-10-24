@@ -46,8 +46,6 @@ from datetime import date, timedelta
 from hope.scoring import standing_ledger
 from hope.scoring.daily_score_flow import horizon_entry_weight
 from hope.scoring.episode_average import (
-    DEFAULT_WINDOW_DAYS,
-    settle_lag_days,
     ScoredEpisode,
     age_basis_effective_from,
     age_basis_in_force,
@@ -58,9 +56,9 @@ from hope.scoring.episode_average import (
     prediction_basis_in_force,
     previous_model_threshold,
     previous_model_weight,
-    ramp_counts_real_entries_only,
     prior_mass_in_force,
-    window_from_env,
+    ramp_counts_real_entries_only,
+    settle_lag_days,
     window_in_force,
 )
 
@@ -273,7 +271,7 @@ def release_standing_cache() -> None:
     try:
         import ctypes
         ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except Exception:  # noqa: BLE001 - not glibc (macOS dev): the clear is enough
+    except Exception:
         pass
 
 
@@ -681,9 +679,12 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
     publishes it.
     """
     from hope.scoring.episode_average import (
-        MODEL_EPOCH_EFFECTIVE_FROM_ENV, MODEL_EPOCH_ENV,
-        PLACEMENT_FLOOR_PREDICTIONS, episode_weighted_average,
-        half_life_in_force, scored_prediction_count,
+        MODEL_EPOCH_EFFECTIVE_FROM_ENV,
+        MODEL_EPOCH_ENV,
+        PLACEMENT_FLOOR_PREDICTIONS,
+        episode_weighted_average,
+        half_life_in_force,
+        scored_prediction_count,
     )
     if placement_floor is None:
         placement_floor = PLACEMENT_FLOOR_PREDICTIONS
@@ -734,7 +735,6 @@ def standing_preview(root: str, as_of: date, environ=os.environ,
                                            min_daily_episodes=0, environ=env,
                                            coldkey_of=coldkey_of, alpha_of=alpha_of,
                                            alpha_floor=alpha_floor, persist=False)
-        stats = (alloc.collapse_audit.get("policies") or {}).get("standing_method") or {}
         pm = ((alloc.collapse_audit.get("policies") or {}).get("standing_method") or {}).get("previous_model")
         return (ranked_from_standings(alloc.standings),
                 {"previous_model": pm} if pm else {}, alloc)

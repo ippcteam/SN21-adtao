@@ -45,11 +45,11 @@ from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.backtest import admission_corpus  # noqa: E402
-from hope.backtest.execution_mode import basket_runner, executor_mode  # noqa: E402
-from hope.backtest.gate_service import gate_submission  # noqa: E402
-from hope.backtest.intake_runner import run_intake  # noqa: E402
-from hope.backtest.shadow import ShadowModel, run_shadow_day  # noqa: E402
+from hope.backtest import admission_corpus
+from hope.backtest.execution_mode import basket_runner, executor_mode
+from hope.backtest.gate_service import gate_submission
+from hope.backtest.intake_runner import run_intake
+from hope.backtest.shadow import ShadowModel, run_shadow_day
 
 
 def log(msg):
@@ -232,7 +232,7 @@ def wait_for_descriptions(release_key, day, api_get=None, sleep=time.sleep,
     while True:
         try:
             cov = api_get(f"releases/{release_key}/descriptor-coverage")
-        except Exception as e:   # noqa: BLE001 - an unreadable count is waited on, then run past
+        except Exception as e:
             cov = {"error": str(e)[:200]}
         waited = round(clock() - t0)
         if cov.get("publishing") is False:
@@ -271,17 +271,17 @@ def fetch_basket_payloads(release_key: str) -> list:
 # ---- 1. intake ---------------------------------------------------------------
 
 def stage_intake(ledger_root, corpus, key, timeout_s, limit, corpus_info=None):
+    import bittensor as bt
+
+    from hope.backtest.chain_commitments import (
+        as_single_reader,
+        bulk_model_commitments,
+    )
     from scripts.run_model_intake import (
         _persist,
         _rewrite_admitted,
         commitments_from_chain,
     )
-    from hope.backtest.chain_commitments import (
-        as_single_reader,
-        bulk_model_commitments,
-    )
-
-    import bittensor as bt
     netuid = int(os.environ.get("SN21_NETUID", "21"))
     st = bt.Subtensor(network=os.environ.get("SN21_NETWORK", "finney"))
     hotkeys = list(st.metagraph(netuid=netuid).hotkeys)
@@ -317,7 +317,7 @@ def stage_intake(ledger_root, corpus, key, timeout_s, limit, corpus_info=None):
         fresh = sorted(fresh,
                        key=lambda c: block_of.get(c.digest, 0))[:limit]
     keep = {c.digest for c in fresh}
-    reader = lambda hk: (read(hk) if _digest_of(read(hk)) in keep else None)  # noqa: E731
+    reader = lambda hk: (read(hk) if _digest_of(read(hk)) in keep else None)
 
     # In sandbox mode the intake's OWN pull step must not use docker (there is
     # none). The namespace sandbox pulls each image by digest itself and
@@ -371,14 +371,13 @@ def _write_model_since(ledger_root) -> None:
     an unchanged digest costs one record read. The settle stage and the
     audit read the file. Fail-open: a day without the file discounts nobody."""
     try:
-        from hope.scoring.model_epoch import (
-            load_model_since_raw, model_since_from_shadow, write_model_since)
+        from hope.scoring.model_epoch import load_model_since_raw, model_since_from_shadow, write_model_since
         mapping = model_since_from_shadow(ledger_root, load_model_since_raw(ledger_root),
                                           min_gap_days=None)
         with_change = sum(1 for rec in mapping.values() if int(rec.get("changes") or 0) > 0)
         log(f"[shadow] model_since: {write_model_since(ledger_root, mapping)} hotkeys "
             f"({with_change} changed model inside the window)")
-    except Exception as exc:                                   # noqa: BLE001
+    except Exception as exc:
         log(f"[shadow] model_since not written ({exc}) — no previous-model discount today")
 
 
@@ -614,7 +613,7 @@ def _metagraph_maps(attempts=COLDKEY_READ_ATTEMPTS,
                 f"(one-seat cap active, attempt {attempt}/{attempts}); "
                 f"alpha held for {len(maps['alpha'])}")
             return maps
-        except Exception as exc:   # noqa: BLE001 — fail OPEN, loudly
+        except Exception as exc:
             last = exc
             if attempt < attempts:
                 log(f"[settle] coldkey read attempt {attempt}/{attempts} "
@@ -709,7 +708,7 @@ def _basket_day_provider(ledger_root):
             try:
                 with open(os.path.join(root, fn)) as fh:
                     m = _json.load(fh)
-            except Exception:  # noqa: BLE001 — one bad file must not kill the stage
+            except Exception:
                 continue
             for eid in (m.keys() if isinstance(m, dict) else []):
                 if eid in wanted:
@@ -743,7 +742,7 @@ def _transition_key_provider(ledger_root):
             try:
                 with open(os.path.join(root, fn)) as fh:
                     m = _json.load(fh)
-            except Exception:  # noqa: BLE001 — one bad file must not kill the page
+            except Exception:
                 continue
             if not isinstance(m, dict):
                 continue
@@ -776,7 +775,7 @@ def _type_weight_fn(ledger_root):
     try:
         from hope.scoring.type_weights import load_table_for_scoring
         table = load_table_for_scoring(path)
-    except Exception as e:   # noqa: BLE001 — refuse loudly, run neutrally
+    except Exception as e:
         log(f"[type-weights] DISABLED — {e}")
         return None
 
@@ -793,7 +792,7 @@ def _type_weight_fn(ledger_root):
             try:
                 with open(os.path.join(root, fn_)) as fh:
                     m = json.load(fh)
-            except Exception:  # noqa: BLE001 — one bad file degrades to partial
+            except Exception:
                 continue
             if isinstance(m, dict):
                 for k, v in m.items():
@@ -808,12 +807,12 @@ def _type_weight_fn(ledger_root):
 
 
 def stage_settle(ledger_root, day):
+    from hope.validator.daily_loop import run_daily_loop
     from scripts.run_daily_loop import (
         _basket_volume,
         _key_loader,
         _outcomes_provider,
     )
-    from hope.validator.daily_loop import run_daily_loop
 
     key = _key_loader()
     coldkey_reader, alpha_reader = _shared_metagraph_readers()
@@ -869,6 +868,7 @@ def stage_publish_weights(ledger_root, day):
     # share and its vtrust caps at ~1-burn. Published as metadata, not applied
     # here (the operator's committer still applies it at 9.C.3).
     from datetime import date as _date
+
     from hope.scoring.collateral_floor import resolve_burn_fraction
     _day = day if isinstance(day, _date) else _date.fromisoformat(str(day))
     _override = (os.environ.get("SN21_OVERRIDE_WEIGHT_UID") or "").strip()
@@ -934,7 +934,7 @@ def _uid_by_hotkey():
         mg = bt.Subtensor(network=net).metagraph(netuid)
         return {str(mg.hotkeys[i]): int(mg.uids[i])
                 for i in range(len(mg.hotkeys))}
-    except Exception as exc:   # noqa: BLE001
+    except Exception as exc:
         log(f"[report] metagraph read failed ({exc})")
         return None
 
@@ -1000,7 +1000,7 @@ def stage_publish_report(ledger_root, day):
         if os.path.exists(_acc_path):
             with open(_acc_path) as _f:
                 _acc = json.load(_f)
-    except Exception as _e:  # noqa: BLE001
+    except Exception as _e:
         log(f"[publish-report] accuracy artifact unreadable ({_e}) — publishing without it")
     # The allocation audit travels with the report so each miner's row can
     # carry the reason a control acted on it. Without this the audit is
@@ -1019,9 +1019,10 @@ def stage_publish_report(ledger_root, day):
     # the vector that is actually live — the most recent published one —
     # together with THAT day's control decisions, never today's
     # (hope.reporting.held_day).
-    from hope.reporting.held_day import live_allocation
     import glob as _glob
     import re as _re
+
+    from hope.reporting.held_day import live_allocation
     _older = []
     for path in sorted(_glob.glob(os.path.join(ledger_root, "intended_weights_*.json")), reverse=True):
         m = _re.search(r"intended_weights_(\d{4}-\d{2}-\d{2})\.json$", path)
@@ -1095,7 +1096,7 @@ def stage_publish_report(ledger_root, day):
         log(f"[publish-report] {_unexplained} row(s) unfunded with no reason "
             f"— report hotkey={_unexplained_rows[0].hotkey[:12]}.. "
             f"audit hotkey={(str(_audit[0])[:12] + '..') if _audit else 'none'} "
-            f"earning hotkey={(sorted(_earning)[0][:12] + '..') if _earning else 'none'}")
+            f"earning hotkey={(min(_earning)[:12] + '..') if _earning else 'none'}")
 
     resp, posted_as = post_with_correction(
         artifact, payload, endpoint=endpoint, api_key=api_key)
@@ -1175,7 +1176,7 @@ def _funnel_block(api: dict, doc: dict) -> dict:
         "since": api.get("since"),
         "until": api.get("until"),
         "days": len(days),
-        "captured_raw_rows_per_day": int(round(int(t.get("captured_raw_rows") or 0) / n_days)),
+        "captured_raw_rows_per_day": round(int(t.get("captured_raw_rows") or 0) / n_days),
         "candidates": int(t.get("candidates") or 0),
         "excluded": int(t.get("excluded") or 0),
         "excluded_by_reason": dict(t.get("excluded_by_reason") or {}),
@@ -1234,7 +1235,7 @@ def stage_publish_performance(ledger_root, day):
                           timeout_s=FUNNEL_TIMEOUT_S)
         if funnel.get("success"):
             doc["funnel"] = _funnel_block(funnel, doc)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log(f"[publish-performance] funnel unavailable ({e})")
 
     out_dir = os.path.join(ledger_root, "prediction_performance")
@@ -1316,11 +1317,12 @@ def main():
     # folders; never a model running now or the forecast's warm image.
     try:
         import tempfile
+
         from hope.backtest.ns_sandbox import sweep_stale_images
         sweeps = {d: sweep_stale_images(d) for d in sorted({workdir, tempfile.gettempdir()})}
         record["disk_sweep"] = sweeps
         log(f"[disk] stale image sweep {json.dumps(sweeps)} | free_mb={disk_free_mb(args.ledger_root, workdir)}")
-    except Exception as e:   # noqa: BLE001 - housekeeping must never stop the run
+    except Exception as e:
         log(f"[disk] sweep skipped: {e}")
     log("===PIPELINE-START===")
     log(f"[pipeline] day={day} mode={executor_mode()} ledger={args.ledger_root}")
@@ -1345,7 +1347,7 @@ def main():
             _n = write_transition_key_map(args.ledger_root, basket_key,
                                           episodes)
             log(f"[tkey-map] {basket_key}: {_n} transition keys persisted")
-        except Exception as e:   # noqa: BLE001 — labelling, never fatal
+        except Exception as e:
             log(f"[tkey-map] skipped ({e})")
 
         # 0b. fingerprint indexes — build any missing ones NOW, while this
@@ -1358,7 +1360,7 @@ def main():
             )
             _built = ensure_fingerprint_indexes(args.ledger_root)
             log(f"[fingerprint-index] built={_built}")
-        except Exception as e:   # noqa: BLE001 — an optimisation, never fatal
+        except Exception as e:
             log(f"[fingerprint-index] skipped ({e})")
 
         # 0c. standing indexes — the same idea for the standing reads: settle
@@ -1368,7 +1370,7 @@ def main():
             from hope.scoring.standing_method import ensure_standing_indexes
             _built = ensure_standing_indexes(args.ledger_root)
             log(f"[standing-index] built={_built}")
-        except Exception as e:   # noqa: BLE001 — an optimisation, never fatal
+        except Exception as e:
             log(f"[standing-index] skipped ({e})")
         note_memory("indexes", record)
     except BasketNotReady as e:
@@ -1378,7 +1380,7 @@ def main():
         log(f"[resolve] BASKET NOT READY — {e}")
         log("===PIPELINE-END=== (will retry next tick)")
         return 1
-    except Exception as e:   # noqa: BLE001
+    except Exception as e:
         # Also no run record. Nothing has been executed or written yet, so
         # retrying next tick costs one listing call and one package fetch
         # and can only help; a record here would mark the day done with
@@ -1427,7 +1429,7 @@ def main():
                 f"rejected={s['rejected']} admitted_total={s['admitted_total']}")
             for v in s.get("verdicts", []):
                 log(f"[intake]   verdict {v['status']}: {v['detail']}")
-        except Exception as e:   # noqa: BLE001
+        except Exception as e:
             record["stages"]["intake"] = {"error": str(e)}
             log(f"[intake] ERROR {e}")
     note_memory("intake", record)
@@ -1450,7 +1452,7 @@ def main():
                 f"by_error={h.get('failed_by_error')} ours={h.get('operator_faults')} "
                 f"disk_free_mb={h.get('disk_free_mb')}"
                 + (f" PROBLEMS: {'; '.join(h['problems'])}" if h.get("problems") else ""))
-    except Exception as e:   # noqa: BLE001
+    except Exception as e:
         record["stages"]["shadow"] = {"error": str(e)}
         log(f"[shadow] ERROR {e}")
     note_memory("shadow", record)
@@ -1464,7 +1466,7 @@ def main():
         # log tail; a money-moving rule's charges get their own line.
         if isinstance(s, dict) and "absence_penalty" in s:
             log(f"[absence] {json.dumps(s['absence_penalty'], default=str)[:400]}")
-    except Exception as e:   # noqa: BLE001
+    except Exception as e:
         record["stages"]["settle"] = {"error": str(e)}
         log(f"[settle] ERROR {e}")
     note_memory("settle", record)
@@ -1474,7 +1476,7 @@ def main():
         s = stage_publish_weights(args.ledger_root, day)
         record["stages"]["publish_weights"] = s
         log(f"[publish-weights] {json.dumps(s, default=str)}")
-    except Exception as e:   # noqa: BLE001
+    except Exception as e:
         record["stages"]["publish_weights"] = {"error": str(e)}
         log(f"[publish-weights] ERROR {e}")
 
@@ -1487,7 +1489,7 @@ def main():
         s = run_release_step(args.ledger_root, day)
         record["stages"]["model_release"] = s
         log(f"[model-release] {json.dumps(s, default=str)[:600]}")
-    except Exception as e:   # noqa: BLE001
+    except Exception as e:
         record["stages"]["model_release"] = {"error": str(e)}
         log(f"[model-release] ERROR {e}")
     note_memory("model release", record)
@@ -1498,7 +1500,7 @@ def main():
         s = stage_publish_report(args.ledger_root, day)
         record["stages"]["publish_report"] = s
         log(f"[publish-report] {json.dumps(s, default=str)}")
-    except Exception as e:   # noqa: BLE001
+    except Exception as e:
         record["stages"]["publish_report"] = {"error": str(e)}
         log(f"[publish-report] ERROR {e}")
 
@@ -1508,7 +1510,7 @@ def main():
         s = stage_publish_performance(args.ledger_root, day)
         record["stages"]["publish_performance"] = s
         log(f"[publish-performance] {json.dumps(s, default=str)}")
-    except Exception as e:   # noqa: BLE001
+    except Exception as e:
         record["stages"]["publish_performance"] = {"error": str(e)}
         log(f"[publish-performance] ERROR {e}")
     note_memory("publish", record)
@@ -1540,7 +1542,7 @@ def main():
         else:
             record["stages"]["mirror_sync"] = {
                 "skipped": "HOPE_API_URL/HOPE_API_KEY unset"}
-    except Exception as e:   # noqa: BLE001
+    except Exception as e:
         record["stages"]["mirror_sync"] = {"error": str(e)}
         log(f"[mirror-sync] ERROR (non-fatal) {e}")
     note_memory("mirror", record)
@@ -1555,7 +1557,7 @@ def main():
     try:
         h = publish_pipeline_heartbeat(str(day), record)
         log(f"[heartbeat] {json.dumps(h, default=str)}")
-    except Exception as e:   # noqa: BLE001
+    except Exception as e:
         log(f"[heartbeat] publish failed (non-fatal): {e}")
 
     log("===PIPELINE-END===")

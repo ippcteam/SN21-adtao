@@ -24,7 +24,6 @@ the v2 scorer per miner) wires in with the Payload-v2 submission shapes.
 from __future__ import annotations
 
 import os
-
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date

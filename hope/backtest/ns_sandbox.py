@@ -58,7 +58,6 @@ import signal
 import subprocess
 import sys
 import threading
-import time
 from dataclasses import dataclass, field
 
 # Published budget (MINER_MODEL_SPEC §2): 1 GB memory, 15 min CPU per basket.
@@ -224,8 +223,9 @@ def unshare_command(spec: RunSpec, unshare_bin: str) -> list:
 def _apply_rlimits(spec: RunSpec):
     """A preexec hook that caps the child before it execs into the model.
     Limits are inherited across unshare's exec into the entrypoint."""
+    limits = _rlimits(spec)      # built here, so the forked child only calls setrlimit
     def preexec():
-        for res, soft, hard in _rlimits(spec):
+        for res, soft, hard in limits:
             try:
                 resource.setrlimit(res, (soft, hard))
             except (ValueError, OSError):
@@ -299,7 +299,7 @@ def run_sandboxed(spec: RunSpec, stdin_blob: bytes) -> SandboxResult:
         proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, env=spec.env,
-            preexec_fn=_apply_rlimits(spec), start_new_session=True)
+            preexec_fn=_apply_rlimits(spec), start_new_session=True)  # noqa: PLW1509 - limits must be set between fork and exec; the hook only calls setrlimit
     except OSError as exc:
         return SandboxResult(ok=False, error=f"{ERR_SANDBOX_UNAVAILABLE}: {exc}")
 
@@ -318,8 +318,7 @@ def run_sandboxed(spec: RunSpec, stdin_blob: bytes) -> SandboxResult:
                 rss = session_rss_bytes(proc.pid)
             except OSError:
                 return                      # no /proc here: nothing to enforce
-            if rss > breached["peak"]:
-                breached["peak"] = rss
+            breached["peak"] = max(breached["peak"], rss)
             if rss > spec.memory_bytes and spec.memory_enforce:
                 breached["bytes"] = rss
                 _kill_group()

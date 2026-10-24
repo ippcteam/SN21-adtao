@@ -26,9 +26,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
-from typing import Mapping
 
 LEFT_EARNING_SET = "left_earning_set"
 DETHRONED = "dethroned"
@@ -120,7 +120,7 @@ def observe_day(state: ReleaseState, day: date, earning: Mapping[str, str],
     for dg in sorted(due):
         cur = digests[dg]
         digests[dg] = replace(cur, released_on=day, reason=due[dg])
-        releases.append({"digest": dg, "hotkey": sorted(cur.hotkeys)[0] if cur.hotkeys else None,
+        releases.append({"digest": dg, "hotkey": min(cur.hotkeys) if cur.hotkeys else None,
                          "hotkeys": sorted(cur.hotkeys), "released_on": day.isoformat(),
                          "reason": due[dg], "closed_since": cur.closed_since.isoformat()})
 

@@ -160,7 +160,7 @@ def _mem(step: str) -> None:
         with open("/proc/self/statm") as f:
             rss = int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 1048576.0
         print(f"[mem-settle] after {step}: rss={rss:.0f} MiB peak={peak:.0f} MiB", flush=True)
-    except Exception:  # noqa: BLE001 - not Linux, or no /proc: nothing to log
+    except Exception:
         pass
 
 def _release_standing_memory() -> None:
@@ -168,7 +168,7 @@ def _release_standing_memory() -> None:
     try:
         from hope.scoring.standing_method import release_standing_cache
         release_standing_cache()
-    except Exception:  # noqa: BLE001 - memory housekeeping must never fail the run
+    except Exception:
         pass
 
 
@@ -313,7 +313,7 @@ def run_daily_loop(
                         key=lambda hk: (_standing[hk],
                                         len(_by_miner.get(hk) or ()), hk))
                 _by_miner = _standing = None         # only the winner is needed
-            except Exception:                        # noqa: BLE001
+            except Exception:
                 _winner = None
             agg = aggregate_type_accuracy(
                 build_scored_entries(horizon_results, _tkey_map),
@@ -529,7 +529,7 @@ def run_daily_loop(
                             "results_scored": repair["results_scored"],
                             "miners": repair["miners"],
                         }
-                except Exception as e:                       # noqa: BLE001
+                except Exception as e:
                     summary["receipt_repair"] = {"error": str(e)}
 
             # The basket day of every episode about to be published, so a
@@ -540,7 +540,7 @@ def run_daily_loop(
                 try:
                     _predicted_on_map = basket_day_provider(
                         sorted({str(r.episode_id) for r in horizon_results}))
-                except Exception as exc:                     # noqa: BLE001
+                except Exception as exc:
                     print(f"[receipt] basket-day map unavailable ({exc}) — "
                           f"publishing without predicted_on", flush=True)
                     _predicted_on_map = None
@@ -655,7 +655,7 @@ def run_daily_loop(
             if alpha_reader is not None:
                 try:
                     alpha_of = alpha_reader()
-                except Exception as exc:                      # noqa: BLE001
+                except Exception as exc:
                     print(f"[alpha-hold] metagraph read failed ({exc}) — "
                           f"the hold is NOT applied today", flush=True)
                     alpha_of = None
@@ -715,7 +715,7 @@ def run_daily_loop(
                 )
                 summary["allocation_audit"] = write_allocation_audit(
                     ledger_root, day, alloc.collapse_audit)
-            except Exception as e:                            # noqa: BLE001
+            except Exception as e:
                 # Never take the day's weights down for a published extra.
                 summary["allocation_audit"] = {"error": str(e)}
 
@@ -725,8 +725,7 @@ def run_daily_loop(
             # the audit or the report.
             try:
                 from hope.scoring.episode_average import model_epoch_in_force
-                from hope.scoring.standing_method import (
-                    preview_enabled, standing_preview)
+                from hope.scoring.standing_method import preview_enabled, standing_preview
                 if preview_enabled(environ) and model_epoch_in_force(environ, day):
                     # The rule the dry run previews is the rule in force
                     # now: computing it a second time would only cost the
@@ -752,11 +751,11 @@ def run_daily_loop(
                           f"{_ps['hotkeys_ranked_preview']} ranked vs "
                           f"{_ps['hotkeys_ranked_current']} today; top-20 seats "
                           f"changed {_ps['top20_seats_changed']}; previous-model "
-                          f"discount on {len(((_preview['preview'].get('previous_model') or {}).get('hotkeys_discounted') or []))} "
+                          f"discount on {len((_preview['preview'].get('previous_model') or {}).get('hotkeys_discounted') or [])} "
                           f"hotkey(s); written {_ppath}", flush=True)
                     summary["standing_preview"] = {"path": _ppath, **_ps,
                                                    "preview": _preview["preview"]}
-            except Exception as e:                            # noqa: BLE001
+            except Exception as e:
                 summary["standing_preview"] = {"error": str(e)}
 
             summary["weights"] = {"path": out_path, "gated": alloc.gated,

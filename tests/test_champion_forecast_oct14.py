@@ -8,8 +8,8 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from hope.forecast import champion_forecast as F
 import scripts.forecast_relay as R
+from hope.forecast import champion_forecast as F
 
 HK = "5Champ" + "x" * 42
 EP = {"episode_id": "whatiff456a80b0e", "transition_key": "BUDGET:up",
@@ -66,7 +66,7 @@ def test_answer_shape(ledger):
 
 
 def test_every_failure_is_a_plain_503(ledger, tmp_path):
-    ok = lambda ref, stdin: NS(ok=True, predictions={}, error=None)   # noqa: E731
+    ok = lambda ref, stdin: NS(ok=True, predictions={}, error=None)
     assert F.answer({"episodes": [EP]}, ledger, ok, busy_reason="the daily basket run is in progress")[0] == 503
     s, b = F.answer({"episodes": [EP]}, ledger, lambda r, e: NS(ok=False, predictions={}, error="timeout>75s"),
                     uid_lookup=lambda hk: None)
@@ -93,7 +93,7 @@ def test_nothing_is_written_to_the_ledger(ledger):
 
 def test_relay_answers_busy_and_stale_without_running():
     calls = []
-    handle = lambda body: calls.append(body) or (200, {})   # noqa: E731
+    handle = lambda body: calls.append(body) or (200, {})
     assert R.serve_one({"id": "a", "created": 0, "body": {}}, handle, "the daily basket run is due")["status"] == 503
     assert R.serve_one({"id": "a", "created": 0, "body": {}}, handle, None, now=lambda: 1000)["status"] == 503
     assert R.serve_one({"id": "a", "created": 990, "body": {"x": 1}}, handle, None, now=lambda: 1000) == \

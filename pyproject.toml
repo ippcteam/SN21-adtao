@@ -124,6 +124,7 @@ ignore = [
 # mutate and nothing to share.
 extend-immutable-calls = [
     "fastapi.Depends",
+    "hope.privacy.release_ledger.ReleaseParams",
     "hope.scoring.champion_promotion.PromotionParams",
     "hope.scoring.chronic_failure.ChronicFailureParams",
     "hope.scoring.participation.ParticipationParams",
@@ -150,6 +151,10 @@ extend-immutable-calls = [
 # single-shot CLI that awaits one fetch and then writes its output files;
 # nothing else is scheduled on the loop for it to stall.
 "scripts/generate_training_data.py" = ["ASYNC230"]
+
+# Tests read and write small fixture files in one line, and keep fixed
+# inputs as class constants that no test mutates.
+"tests/**/*.py" = ["RUF012", "SIM115"]
 
 [tool.mypy]
 python_version = "3.10"

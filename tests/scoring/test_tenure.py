@@ -2,6 +2,7 @@
 
 from datetime import date
 
+from hope.scoring.champion_promotion import PromotionState
 from hope.scoring.episode_average import ScoredEpisode
 from hope.scoring.tenure import (
     DEFAULT_MIN_DAYS,
@@ -11,7 +12,6 @@ from hope.scoring.tenure import (
     tenure_min_days,
 )
 from hope.validator.daily_stream_weights import compute_daily_allocation
-from hope.scoring.champion_promotion import PromotionState
 
 
 def _eps(day_scores):

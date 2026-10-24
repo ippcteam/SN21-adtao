@@ -29,17 +29,17 @@ from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.backtest.chain_commitments import model_commitments_at_block  # noqa: E402
-from hope.backtest.container_runner import RunResult, _parse_output  # noqa: E402
-from hope.backtest.model_registry import parse_model_commitment  # noqa: E402
-from hope.backtest.ns_sandbox import (  # noqa: E402
+from hope.backtest.chain_commitments import model_commitments_at_block
+from hope.backtest.container_runner import RunResult, _parse_output
+from hope.backtest.model_registry import parse_model_commitment
+from hope.backtest.ns_sandbox import (
     RunSpec,
     cleanup_rootfs,
     run_sandboxed,
     sandbox_env,
 )
-from hope.backtest.oci_pull import PullError, pull_and_unpack  # noqa: E402
-from hope.backtest.shadow import (  # noqa: E402
+from hope.backtest.oci_pull import PullError, pull_and_unpack
+from hope.backtest.shadow import (
     ShadowModel,
     record_day,
     record_run_marker,

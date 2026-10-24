@@ -67,7 +67,7 @@ def run_pipeline(day: str) -> int:
          "--no-reference",              # the reference image is not digest-pullable here
          "--intake-limit", str(INTAKE_LIMIT),
          "--corpus-size", str(CORPUS_SIZE)],
-        cwd=os.path.join(os.path.dirname(__file__), os.pardir))
+        cwd=os.path.join(os.path.dirname(__file__), os.pardir), check=False)
     log(f"pipeline for {day} exited {proc.returncode}")
     return proc.returncode
 
@@ -93,7 +93,7 @@ def backfill_tkey_maps_if_sparse(min_maps: int = 10) -> None:
     proc = subprocess.run(
         [sys.executable, "-m", "scripts.backfill_transition_key_maps",
          "--ledger-root", LEDGER_ROOT, "--days", "40"],
-        cwd=os.path.join(os.path.dirname(__file__), os.pardir))
+        cwd=os.path.join(os.path.dirname(__file__), os.pardir), check=False)
     log(f"tkey backfill exited {proc.returncode}")
 
 
@@ -115,14 +115,14 @@ def main():
     try:
         from scripts.forecast_relay import start as start_forecast_relay
         start_forecast_relay(LEDGER_ROOT, busy_reason, log=log)
-    except Exception as e:   # noqa: BLE001 - the forecast must never stop the daemon
+    except Exception as e:
         log(f"forecast relay not started ({e})")
     log(f"start: trigger>={TRIGGER_HOUR_UTC}:00 UTC, check every "
         f"{CHECK_INTERVAL_S}s, ledger={LEDGER_ROOT}"
         + (f", rerun override for {RERUN_DAY}" if RERUN_DAY else ""))
     try:
         backfill_tkey_maps_if_sparse()
-    except Exception as e:   # noqa: BLE001 — labelling must never block the daemon
+    except Exception as e:
         log(f"tkey backfill skipped ({e})")
     rerun_pending = bool(RERUN_DAY)
     while True:
@@ -146,7 +146,7 @@ def main():
                           else f"before trigger hour ({now.hour} < "
                                f"{TRIGGER_HOUR_UTC})")
                 log(f"idle — {reason}")
-        except Exception as exc:   # noqa: BLE001 - the supervisor must never die
+        except Exception as exc:
             log(f"ERROR in check loop (continuing): {exc}")
         time.sleep(CHECK_INTERVAL_S)
 

@@ -5,7 +5,6 @@ Each was excused from absence (our fault) and the stage succeeded, so nothing
 reported it for a week and ~60 miners lost seven days of results."""
 from scripts import run_daily_pipeline as P
 
-
 OCT5 = {**{f"hk{i}": {"ok": False, "predictions": 0, "error": "disk_low: 1959 MB free < 2048 MB required"}
            for i in range(58)},
         **{f"ok{i}": {"ok": True, "predictions": 1056, "error": None} for i in range(39)},

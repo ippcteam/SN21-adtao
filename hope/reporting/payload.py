@@ -54,7 +54,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import model_serializer, BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 # Tier emission shares are the policy constants per
 # SN21_REWARD_MECHANISM.md §"Component 2 — Tiered emission bands".

@@ -65,7 +65,7 @@ def test_an_empty_seat_is_not_a_dethrone_but_the_next_champion_is():
 
 def test_max_embargo_at_45_days_even_for_the_champion():
     days = [({"hkA": "sha256:a"}, set(), "hkA")] * 46
-    state, rel = run(days)
+    _state, rel = run(days)
     assert [(r["reason"], r["released_on"]) for r in rel] == [("max_embargo", (D0 + timedelta(days=45)).isoformat())]
 
 

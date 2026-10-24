@@ -31,14 +31,14 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.backtest import shadow as shadow_store  # noqa: E402
-from hope.backtest.execution_mode import basket_runner  # noqa: E402
-from scripts.run_daily_pipeline import (  # noqa: E402
+from hope.backtest import shadow as shadow_store
+from hope.backtest.execution_mode import basket_runner
+from scripts.run_daily_pipeline import (
     fetch_basket_payloads,
     tkeys_dir,
     write_transition_key_map,
 )
-from scripts.run_shadow_day_bd import admitted_models  # noqa: E402
+from scripts.run_shadow_day_bd import admitted_models
 
 
 def log(msg):

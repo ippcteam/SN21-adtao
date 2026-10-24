@@ -96,8 +96,9 @@ def test_the_request_is_bounded_to_the_lookback_window():
     """Every settled row ever was 140k rows / 35 MB and ~85% of it discarded
     by the entered markers. The default asks only for rows finalized in the
     last OUTCOMES_LOOKBACK_DAYS; None keeps the unbounded request."""
-    from hope.scoring.settle_day_flow import OUTCOMES_LOOKBACK_DAYS
     from datetime import timedelta
+
+    from hope.scoring.settle_day_flow import OUTCOMES_LOOKBACK_DAYS
     captured = {}
 
     def fake_urlopen(req, timeout=None):

@@ -64,12 +64,10 @@ _REGISTRY_ALIASES = {
     "index.docker.io": DEFAULT_REGISTRY,
 }
 
-_MANIFEST_ACCEPT = ", ".join([
-    "application/vnd.oci.image.index.v1+json",
-    "application/vnd.oci.image.manifest.v1+json",
-    "application/vnd.docker.distribution.manifest.list.v2+json",
-    "application/vnd.docker.distribution.manifest.v2+json",
-])
+_MANIFEST_ACCEPT = ("application/vnd.oci.image.index.v1+json, "
+                    "application/vnd.oci.image.manifest.v1+json, "
+                    "application/vnd.docker.distribution.manifest.list.v2+json, "
+                    "application/vnd.docker.distribution.manifest.v2+json")
 
 _INDEX_TYPES = {
     "application/vnd.oci.image.index.v1+json",

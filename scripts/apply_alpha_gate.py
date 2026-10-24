@@ -37,8 +37,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.scoring.collateral_floor import active_floor  # noqa: E402
-from hope.scoring.collateral_gate import (  # noqa: E402
+from hope.scoring.collateral_floor import active_floor
+from hope.scoring.collateral_gate import (
     apply_hold,
     metagraph_alpha_reader,
 )
@@ -104,7 +104,7 @@ def main(argv=None):
                    default=int(os.environ.get("SN21_OVERRIDE_WEIGHT_UID", "135")))
     args = p.parse_args(argv if argv is not None else sys.argv[1:])
 
-    from datetime import date, timezone
+    from datetime import date
 
     import bittensor as bt
 
@@ -127,7 +127,7 @@ def main(argv=None):
     total_u16 = sum(w for _, w in on_chain) or 1
     vector = {int(u): w / total_u16 for u, w in on_chain if w > 0}
 
-    day = date.today() if not hasattr(date, "today_utc") else date.today()
+    day = date.today()
     floor = (args.floor if args.floor is not None
              else active_floor(day, os.environ, None))
     burn_before = vector.get(args.burn_uid, 0.0)

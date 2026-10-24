@@ -208,7 +208,7 @@ def test_the_mirror_copies_the_image_byte_for_byte_under_the_same_digest(net, in
 
 def test_the_mirror_skips_blobs_it_already_holds(net):
     src = net["ghcr.io"] = FakeRegistry("ghcr.io")
-    dst = net["mirror.example"] = FakeRegistry("mirror.example")
+    net["mirror.example"] = FakeRegistry("mirror.example")
     a = src.put_image("miner/a", [b"base", b"a-only"])
     b = src.put_image("miner/b", [b"base", b"b-only"])
     M.mirror_image("ghcr.io/miner/a", a, "mirror.example/r")

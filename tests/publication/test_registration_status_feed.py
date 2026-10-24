@@ -3,7 +3,7 @@
 
 from types import SimpleNamespace
 
-from hope.publication.registration_status_feed import assemble, _hex, _short
+from hope.publication.registration_status_feed import _hex, _short, assemble
 
 
 def _model(digest):

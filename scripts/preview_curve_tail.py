@@ -27,12 +27,12 @@ from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
-from hope.scoring.standing_method import (  # noqa: E402
+from hope.scoring.standing_method import (
     CURVE_TAIL_DECAY_ENV,
     CURVE_TAIL_EFFECTIVE_FROM_ENV,
     curve_tail_decay,
 )
-from hope.validator.daily_stream_weights import allocation_from_ledger  # noqa: E402
+from hope.validator.daily_stream_weights import allocation_from_ledger
 
 # Bulky documents the allocation does not read. Everything else is copied.
 SKIP = ("prediction_performance", "pipeline_runs", "tkeys")
@@ -46,7 +46,7 @@ def copy_ledger(src: str, dst: str) -> str:
 
 
 def u16(share: float) -> int:
-    return int(round(share * 65535))
+    return round(float(share) * 65535)
 
 
 def main(argv=None) -> int:

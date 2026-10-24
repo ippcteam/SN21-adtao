@@ -142,7 +142,7 @@ def _mean(values) -> float | None:
 class _Cell:
     """One (rollup row, horizon) accumulator."""
 
-    __slots__ = ("scores", "comp_sums", "comp_n", "by_miner", "episodes")
+    __slots__ = ("by_miner", "comp_n", "comp_sums", "episodes", "scores")
 
     def __init__(self):
         self.scores: list[float] = []
@@ -263,7 +263,7 @@ def build_performance_document(
                            if g == gkey and rk != "__group__"})
         if not row_keys:
             continue
-        def _cells_for(row_key):
+        def _cells_for(row_key, gkey=gkey):
             return {h: cells[(gkey, row_key, h)].render(
                         winner, uid_of, min_n_solid, min_n_for_best)
                     for h in HORIZONS if (gkey, row_key, h) in cells}

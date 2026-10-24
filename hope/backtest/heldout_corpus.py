@@ -89,8 +89,7 @@ def published_cutoff(bundle_path: str) -> str:
         # The bundle nests the payload under `input` exactly as the labelled
         # export does, so one accessor serves both.
         start = action_window_start(record)
-        if start > latest:
-            latest = start
+        latest = max(latest, start)
     return latest
 
 
