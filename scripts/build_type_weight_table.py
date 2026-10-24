@@ -55,7 +55,7 @@ def _receipt_entries_from_mirror(mirror_url: str, days: list[str]):
         try:
             with urllib.request.urlopen(url, timeout=120) as resp:
                 doc = json.loads(resp.read().decode())
-        except Exception as e:
+        except Exception as e:  # a missing day is data, not a crash
             print(f"{d}: no receipt ({e})", flush=True)
             continue
         yield d, ((doc.get("document") or doc).get("metrics") or {}).get(

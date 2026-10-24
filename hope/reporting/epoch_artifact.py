@@ -301,7 +301,7 @@ def _ss58_to_bytes(hotkey_ss58: str) -> bytes:
     """
     try:
         from substrateinterface.utils.ss58 import ss58_decode
-    except Exception:
+    except Exception:  # missing dep, not a decode error
         from scalecodec.utils.ss58 import ss58_decode
 
     return bytes.fromhex(ss58_decode(hotkey_ss58))

@@ -160,7 +160,7 @@ def _mem(step: str) -> None:
         with open("/proc/self/statm") as f:
             rss = int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 1048576.0
         print(f"[mem-settle] after {step}: rss={rss:.0f} MiB peak={peak:.0f} MiB", flush=True)
-    except Exception:
+    except Exception:  # not Linux, or no /proc: nothing to log
         pass
 
 def _release_standing_memory() -> None:
@@ -168,7 +168,7 @@ def _release_standing_memory() -> None:
     try:
         from hope.scoring.standing_method import release_standing_cache
         release_standing_cache()
-    except Exception:
+    except Exception:  # memory housekeeping must never fail the run
         pass
 
 

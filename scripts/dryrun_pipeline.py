@@ -282,7 +282,7 @@ def main():
         try:
             results.append(run_one(uid, ref, dig, corpus, run_basket,
                                    not args.no_determinism))
-        except Exception as exc:
+        except Exception as exc:   # one bad model must not stop the sweep
             log(f"    ERROR {type(exc).__name__}: {exc}")
             results.append({"uid": uid, "repo": ref, "error": str(exc)})
 

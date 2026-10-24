@@ -210,7 +210,7 @@ def allocation_from_api(base_url: str, api_key: str, timeout_s: int = 60) -> Dai
         req = urllib.request.Request(url, headers={"X-API-Key": api_key})
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:
             payload = _json.loads(resp.read().decode())
-    except Exception as exc:
+    except Exception as exc:  # 404/network/parse all fail safe
         logger.warning("[daily-stream] weight-vector fetch failed (%s) — "
                        "holding previous vector", exc)
         return DailyAllocation(day=_date.today(), gated=True, day_episode_volume=0)

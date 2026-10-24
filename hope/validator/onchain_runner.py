@@ -775,7 +775,7 @@ def compose_and_commit_weights(*, subtensor, validator_wallet, netuid,
             else:
                 print(f"[alpha-gate] floor {_ag_floor:.0f} ({_ag_floor_src}) "
                       f"not applied: {_ag_res.refused_reason}", flush=True)
-    except Exception as _ag_e:
+    except Exception as _ag_e:   # fail OPEN
         print(f"[alpha-gate] skipped ({_ag_e}); vector unchanged", flush=True)
 
     # Optional weight-vector override. When SN21_OVERRIDE_WEIGHT_UID is set,

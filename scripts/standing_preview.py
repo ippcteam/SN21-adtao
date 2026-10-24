@@ -77,7 +77,7 @@ def main(argv=None) -> int:
         maps = _metagraph_maps() or {}
         try:
             vol = int(_basket_volume(day))
-        except Exception:
+        except Exception:  # a missing volume only affects the D3 flag
             vol = 0
         print(f"[preview] identities {len(maps.get('coldkey') or {})}, alpha "
               f"{len(maps.get('alpha') or {})}, floor {active_floor(day, os.environ):.0f}, "

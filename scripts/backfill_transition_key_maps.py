@@ -71,7 +71,7 @@ def main() -> int:
             n = write_transition_key_map(args.ledger_root, key, payloads)
             print(f"{key}: {n} keys", flush=True)
             done += 1
-        except Exception as e:
+        except Exception as e:  # one basket must not stop the walk
             if "404" in str(e):
                 skipped += 1          # basket never existed for that day
             else:

@@ -271,7 +271,7 @@ def release_standing_cache() -> None:
     try:
         import ctypes
         ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except Exception:
+    except Exception:  # not glibc (macOS dev): the clear is enough
         pass
 
 

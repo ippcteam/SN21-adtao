@@ -123,7 +123,7 @@ def main() -> int:
                              else "")
                 print(f"set_weights ok={ok} ({len(uids)} uids{burn_note}) {msg or ''}",
                       flush=True)
-        except Exception as exc:
+        except Exception as exc:   # a loop must outlive a bad tick
             print(f"tick failed: {exc}", flush=True)
         time.sleep(tick)
 

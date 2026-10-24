@@ -76,7 +76,7 @@ def loop(stop: threading.Event, busy_reason, handle, fetch=next_request, send=po
         busy = busy_reason()
         try:
             req = fetch(0 if busy else POLL_WAIT_S, busy)
-        except Exception as exc:
+        except Exception as exc:  # the API may be restarting
             log(f"[forecast] could not reach the operator API ({str(exc)[:120]}); retrying")
             sleep(10)
             continue

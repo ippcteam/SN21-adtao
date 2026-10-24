@@ -232,7 +232,7 @@ def wait_for_descriptions(release_key, day, api_get=None, sleep=time.sleep,
     while True:
         try:
             cov = api_get(f"releases/{release_key}/descriptor-coverage")
-        except Exception as e:
+        except Exception as e:   # an unreadable count is waited on, then run past
             cov = {"error": str(e)[:200]}
         waited = round(clock() - t0)
         if cov.get("publishing") is False:
@@ -613,7 +613,7 @@ def _metagraph_maps(attempts=COLDKEY_READ_ATTEMPTS,
                 f"(one-seat cap active, attempt {attempt}/{attempts}); "
                 f"alpha held for {len(maps['alpha'])}")
             return maps
-        except Exception as exc:
+        except Exception as exc:   # fail OPEN, loudly
             last = exc
             if attempt < attempts:
                 log(f"[settle] coldkey read attempt {attempt}/{attempts} "
@@ -708,7 +708,7 @@ def _basket_day_provider(ledger_root):
             try:
                 with open(os.path.join(root, fn)) as fh:
                     m = _json.load(fh)
-            except Exception:
+            except Exception:  # one bad file must not kill the stage
                 continue
             for eid in (m.keys() if isinstance(m, dict) else []):
                 if eid in wanted:
@@ -742,7 +742,7 @@ def _transition_key_provider(ledger_root):
             try:
                 with open(os.path.join(root, fn)) as fh:
                     m = _json.load(fh)
-            except Exception:
+            except Exception:  # one bad file must not kill the page
                 continue
             if not isinstance(m, dict):
                 continue
@@ -775,7 +775,7 @@ def _type_weight_fn(ledger_root):
     try:
         from hope.scoring.type_weights import load_table_for_scoring
         table = load_table_for_scoring(path)
-    except Exception as e:
+    except Exception as e:   # refuse loudly, run neutrally
         log(f"[type-weights] DISABLED — {e}")
         return None
 
@@ -792,7 +792,7 @@ def _type_weight_fn(ledger_root):
             try:
                 with open(os.path.join(root, fn_)) as fh:
                     m = json.load(fh)
-            except Exception:
+            except Exception:  # one bad file degrades to partial
                 continue
             if isinstance(m, dict):
                 for k, v in m.items():
@@ -1322,7 +1322,7 @@ def main():
         sweeps = {d: sweep_stale_images(d) for d in sorted({workdir, tempfile.gettempdir()})}
         record["disk_sweep"] = sweeps
         log(f"[disk] stale image sweep {json.dumps(sweeps)} | free_mb={disk_free_mb(args.ledger_root, workdir)}")
-    except Exception as e:
+    except Exception as e:   # housekeeping must never stop the run
         log(f"[disk] sweep skipped: {e}")
     log("===PIPELINE-START===")
     log(f"[pipeline] day={day} mode={executor_mode()} ledger={args.ledger_root}")
@@ -1347,7 +1347,7 @@ def main():
             _n = write_transition_key_map(args.ledger_root, basket_key,
                                           episodes)
             log(f"[tkey-map] {basket_key}: {_n} transition keys persisted")
-        except Exception as e:
+        except Exception as e:   # labelling, never fatal
             log(f"[tkey-map] skipped ({e})")
 
         # 0b. fingerprint indexes — build any missing ones NOW, while this
@@ -1360,7 +1360,7 @@ def main():
             )
             _built = ensure_fingerprint_indexes(args.ledger_root)
             log(f"[fingerprint-index] built={_built}")
-        except Exception as e:
+        except Exception as e:   # an optimisation, never fatal
             log(f"[fingerprint-index] skipped ({e})")
 
         # 0c. standing indexes — the same idea for the standing reads: settle
@@ -1370,7 +1370,7 @@ def main():
             from hope.scoring.standing_method import ensure_standing_indexes
             _built = ensure_standing_indexes(args.ledger_root)
             log(f"[standing-index] built={_built}")
-        except Exception as e:
+        except Exception as e:   # an optimisation, never fatal
             log(f"[standing-index] skipped ({e})")
         note_memory("indexes", record)
     except BasketNotReady as e:

@@ -232,7 +232,7 @@ def answer(body, ledger_root: str, runner, busy_reason: str | None = None,
         result = runner(champ["pinned_ref"], to_stdin(eps))
     except ForecastError as exc:
         return 503, {"reason": str(exc)}
-    except Exception as exc:
+    except Exception as exc:  # never a 500 for the caller
         return 503, {"reason": f"the champion could not be run ({type(exc).__name__})"}
     if not result.ok:
         return 503, {"reason": f"the champion's run failed ({str(result.error or '')[:80]})"}

@@ -87,7 +87,7 @@ def main() -> int:
             try:
                 yy, mm, ddd = (int(x) for x in fo.split("-"))
                 age = (as_of - date(yy, mm, ddd)).days
-            except Exception:
+            except Exception:  # unparseable date -> skip entry
                 continue
             if age < 0 or age > DEFAULT_WINDOW_DAYS:
                 continue

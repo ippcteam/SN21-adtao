@@ -115,14 +115,14 @@ def main():
     try:
         from scripts.forecast_relay import start as start_forecast_relay
         start_forecast_relay(LEDGER_ROOT, busy_reason, log=log)
-    except Exception as e:
+    except Exception as e:   # the forecast must never stop the daemon
         log(f"forecast relay not started ({e})")
     log(f"start: trigger>={TRIGGER_HOUR_UTC}:00 UTC, check every "
         f"{CHECK_INTERVAL_S}s, ledger={LEDGER_ROOT}"
         + (f", rerun override for {RERUN_DAY}" if RERUN_DAY else ""))
     try:
         backfill_tkey_maps_if_sparse()
-    except Exception as e:
+    except Exception as e:   # labelling must never block the daemon
         log(f"tkey backfill skipped ({e})")
     rerun_pending = bool(RERUN_DAY)
     while True:
@@ -146,7 +146,7 @@ def main():
                           else f"before trigger hour ({now.hour} < "
                                f"{TRIGGER_HOUR_UTC})")
                 log(f"idle — {reason}")
-        except Exception as exc:
+        except Exception as exc:   # the supervisor must never die
             log(f"ERROR in check loop (continuing): {exc}")
         time.sleep(CHECK_INTERVAL_S)
 

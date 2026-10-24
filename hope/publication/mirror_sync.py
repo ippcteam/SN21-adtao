@@ -475,7 +475,7 @@ def _mirror_has(api_url: str, path: str, timeout: int = 20,
                 return True
             held = (resp.headers.get(ENVELOPE_SHA_HEADER) or "").strip()
             return bool(held) and held == expected_sha
-    except Exception:
+    except Exception:      # absent, unreachable, anything
         return False       # the safe answer is "send it"
 
 
