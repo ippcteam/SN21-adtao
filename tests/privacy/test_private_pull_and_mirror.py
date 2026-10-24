@@ -216,6 +216,60 @@ def test_the_mirror_skips_blobs_it_already_holds(net):
     assert res["blobs_copied"] == 1                  # only b-only: the config and base are there
 
 
+class ExpiringRegistry(FakeRegistry):
+    """Turns away the next request carrying a token (of one method, if given)
+    once `expire()` is called, as Docker Hub does when its 5-minute token runs
+    out mid-copy. A real server has read an upload's body by the time it
+    answers 401."""
+
+    def __init__(self, host, account=None):
+        super().__init__(host, account)
+        self.expired, self.refused = None, 0
+
+    def expire(self, method="any"):
+        self.expired = method
+
+    def handle(self, method, url, headers, body):
+        if self.expired in ("any", method) and headers.get("Authorization"):
+            self.expired = None
+            self.refused += 1
+            if hasattr(body, "read"):
+                body.read()
+            raise urllib.error.HTTPError(url, 401, "expired", {"WWW-Authenticate": 'Basic realm="r"'},
+                                         io.BytesIO())
+        return super().handle(method, url, headers, body)
+
+
+def test_an_expired_token_on_the_source_is_renewed_mid_copy(net, monkeypatch):
+    src = net["ghcr.io"] = ExpiringRegistry("ghcr.io", account=BASIC)
+    net["mirror.example"] = FakeRegistry("mirror.example")
+    dg = src.put_image("miner/m", [b"layer-1", b"layer-2"])
+    pulled = O._Registry.blob
+
+    def blob_then_expire(self, digest, path):
+        pulled(self, digest, path)
+        src.expire()                                 # the next pull finds the token gone
+    monkeypatch.setattr(O._Registry, "blob", blob_then_expire)
+    res = M.mirror_image("ghcr.io/miner/m", dg, "mirror.example/r", source_credentials=CREDS)
+    assert res["blobs_copied"] == 3 and src.refused == 2
+
+
+def test_an_upload_retried_after_an_expired_token_sends_the_whole_file(net):
+    src = net["ghcr.io"] = FakeRegistry("ghcr.io")
+    dst = net["mirror.example"] = ExpiringRegistry("mirror.example", account=BASIC)
+    dg = src.put_image("miner/m", [b"x" * 5000])
+    dst.expire("PUT")                                # the first blob upload finds the token gone
+    res = M.mirror_image("ghcr.io/miner/m", dg, "mirror.example/r", target_credentials=CREDS)
+    assert dst.refused == 1 and res["blobs_copied"] == 2   # the fake checks each upload's digest
+    assert dst.manifests[("r", dg)][0] == src.manifests[("miner/m", dg)][0]
+
+
+def test_a_401_after_a_fresh_token_still_fails_once_not_forever(net):
+    net["ghcr.io"] = FakeRegistry("ghcr.io", account="Basic someone-else")
+    with pytest.raises(O.PullError, match="401"):
+        O._Registry("ghcr.io", "miner/m", credentials=CREDS).manifest_bytes("sha256:" + "0" * 64)
+
+
 # ---- the daily step ----------------------------------------------------------------
 
 D0 = date(2026, 11, 2)

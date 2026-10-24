@@ -231,7 +231,9 @@ class _Registry:
         try:
             return _http_get(url, self._auth_headers(accept))
         except urllib.error.HTTPError as exc:
-            if exc.code == 401 and self._auth is None:
+            # A 401 comes first on every registry, and again once a token
+            # expires (Docker Hub's last 5 minutes; a big image takes longer).
+            if exc.code == 401:
                 self._authorize(exc)
                 try:
                     return _http_get(url, self._auth_headers(accept))
@@ -243,6 +245,8 @@ class _Registry:
         """Any other registry call (HEAD/POST/PUT for the release mirror),
         authorised the same way. Returns (status, headers, body bytes)."""
         def once():
+            if hasattr(body, "seek"):
+                body.seek(0)       # a retried upload sends the file from the start
             h = dict(headers or {})
             if self._auth:
                 h["Authorization"] = self._auth
@@ -252,7 +256,7 @@ class _Registry:
         try:
             return once()
         except urllib.error.HTTPError as exc:
-            if exc.code == 401 and self._auth is None:
+            if exc.code == 401:                  # first call, or an expired token
                 self._authorize(exc)
                 try:
                     return once()

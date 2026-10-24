@@ -73,8 +73,8 @@ class _Target:
         sep = "&" if "?" in location else "?"
         url = f"{location}{sep}digest={urllib.parse.quote(digest)}"
         # Streamed from disk: a layer can be gigabytes and the daily run's
-        # memory is the constraint. The POST above already authorised us,
-        # so this PUT is never retried with a half-read file.
+        # memory is the constraint. If the token expires on the way, the
+        # request is retried once and sends the file again from the start.
         with open(path, "rb") as f:
             status, _, body = self.reg.request(
                 "PUT", url, body=f,
