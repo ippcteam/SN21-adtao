@@ -110,15 +110,17 @@ def publish_day(
     # in the anchored record itself rather than left ambiguous.
     metrics["receipt_sha256"] = receipt_sha256
     # Small-campaign conversions scored as a count, pooled per miner (Sir Rob,
-    # 19 Oct 2026, option c): shown beside the standing, never counted in it.
-    # Present only once SN21_COUNT_SCORE_FROM is in force and the day has some.
+    # 19 Oct 2026, option c): this pooled figure is shown beside the standing,
+    # never counted in it. Present from SN21_COUNT_SCORE_SHOW_FROM (or
+    # SN21_COUNT_SCORE_FROM) on a day that has such results. From
+    # SN21_COUNT_SCORE_FROM each result's own conversion part is scored this way.
     from hope.scoring.settle_day_flow import last_count_pooled
     pooled = last_count_pooled().get(str(day))
     if pooled:
         metrics["small_campaign_counts"] = {
             "note": ("conversions on campaigns expecting fewer than 3, scored as a count: "
                      "0.5 = as good as predicting no change, 1.0 = exact; pooled over the "
-                     "miner's results for the day; shown, not counted in standing"),
+                     "miner's results for the day; this pooled figure is not counted in standing"),
             "miners": pooled,
         }
     if zero_day:
