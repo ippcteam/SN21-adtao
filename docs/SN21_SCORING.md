@@ -53,8 +53,9 @@ Examples (from action-window end):
 
 ## How each result is measured (rule amendment, published 2026-10-23, effective 2026-10-30)
 
-For episodes scored from the run of **2026-10-30**, each result compares the
-campaign's daily averages after the change with its daily averages before it:
+For the episodes of every basket served from the run of **2026-10-30** (the
+first is `BD-2026-10-29`), each result compares the campaign's daily averages
+after the change with its daily averages before it:
 
 1. **The 28 days before the change** are the comparison period (it was 60
    days). Four whole weeks balance weekdays and stay in the same season.
@@ -71,7 +72,15 @@ campaign's daily averages after the change with its daily averages before it:
    +100% or -100%). Cost is still scored.
 
 The v5 training data (published 2026-10-23) is labelled with exactly these
-rules. Results scored before 2026-10-30 stay as published.
+rules. Episodes of earlier baskets keep the earlier rules at every horizon,
+including results scored after 2026-10-30; nothing already scored is
+re-scored. The daily receipt shows the values each score used: a result left
+out under rule 3 or 4 is `null` there.
+
+> **Clarified 2026-10-24.** This section said "episodes scored from the run of
+> 2026-10-30". The rules apply by basket: the first basket under them is the
+> one the run of 2026-10-30 serves, `BD-2026-10-29`, so the first results
+> under them are its 7-day results, scored on 2026-11-08. Asked by a miner.
 
 ## What you predict
 
