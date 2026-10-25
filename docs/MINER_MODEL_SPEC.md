@@ -261,6 +261,40 @@ This also ends one misreading: a campaign created paused was recorded as a
 `CAMPAIGN_PAUSE` episode. It is not an episode any more. Episodes of earlier
 baskets are unchanged.
 
+### Two payload corrections (published 2026-10-31, effective 2026-11-07)
+
+From the payloads of the run of **2026-11-07** (the first basket is
+`BD-2026-11-06`), two fields that were sent wrong are corrected. Scoring does
+not change, only what your model reads.
+
+1. **A target on Maximize Conversion Value is a ROAS target.** Its
+   `TARGET_VALUE_CHANGE` magnitude said `"metric": "CPA"`. From the date it
+   says `"ROAS"`, and `current_performance` and `target_vs_current_pct`
+   compare the new target with the campaign's ROAS over the last 14 days
+   (they compared it with its cost per conversion). `new_target`
+   and `previous_target` do not change: they were already the ROAS figures
+   (for example 2.38).
+2. **Conversion value is in micros.** `pre_window.campaigns.*.conversion_value_micros`
+   held whole units of the account's currency (the cents dropped), not
+   micros. From the date it holds micros (× 1,000,000), the same unit as
+   `cost_micros`. `pre_window.account_aggregates.avg_roas` is worked out from
+   it, so it was about a million times too small and, rounded to 4 decimals,
+   almost always `0.0`. From the date it is conversion value ÷ cost (for
+   example 2.38).
+
+**Training data.** v5 (`training-v5-2026-10`) and earlier bundles were built
+before these corrections and carry the old values. To line them up with live
+payloads:
+
+- multiply `conversion_value_micros` by 1,000,000 (the dropped cents stay
+  dropped);
+- recompute `avg_roas` as the sum of the corrected `conversion_value_micros`
+  ÷ the sum of `cost_micros`, from the same campaign's arrays (in v5 it is
+  `0.0` in 98% of the records that have any conversion value);
+- read `"metric": "CPA"` on a target change as `"ROAS"` when the campaign's
+  `bid_strategy_type` is `MAXIMIZE_CONVERSION_VALUE` (1,585 target changes in
+  v5).
+
 ### `account_state.goal_basis` — which efficiency metric you are scored on
 
 Each episode is scored on the account's own optimization goal, resolved and

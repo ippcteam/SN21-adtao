@@ -15,6 +15,12 @@ yet, it says so rather than inventing a CLI.
 > windows, Search campaigns only, with the change descriptions, account
 > context and measurement rules that apply from the run of 2026-10-30.
 >
+> **From the run of 2026-11-07, two payload fields are corrected**: a target on
+> Maximize Conversion Value is sent as ROAS, and `conversion_value_micros` is
+> in micros (so `avg_roas` is a real ratio). v5 and earlier carry the old
+> values; how to line them up:
+> [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md#two-payload-corrections-published-2026-10-31-effective-2026-11-07).
+>
 > **What you are training on, plainly.** **v4**
 > (`training-v4-2026-10`): windows **15 Jun – 14 Aug 2026**, every record in
 > **exactly the shape of a live daily basket episode**: the same payload the
