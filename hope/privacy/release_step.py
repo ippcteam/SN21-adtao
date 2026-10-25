@@ -12,6 +12,8 @@ Switches (both unset = the step does nothing):
                              written but nothing is copied.
   SN21_RELEASE_MIRROR_AUTH   {"username": ..., "password": ...} that may push
                              to that repository.
+  SN21_RELEASE_LIST_REPO /   where the public list of releases is kept, and a
+  SN21_RELEASE_LIST_TOKEN    token that may write it (hope/privacy/release_list.py).
 
 The ledger is recomputed in full every day from the run records (replay), so
 it can never drift from what the records say, and anyone holding the same
@@ -103,9 +105,12 @@ def run_release_step(ledger_root: str, day: date, environ=os.environ,
                "released_today": sum(1 for r in ledger["releases"]
                                      if r["released_on"] == day.isoformat())}
 
+    from hope.privacy.release_list import publish_release_list
     target = (environ.get(MIRROR_ENV) or "").strip()
     if not target:
         summary["mirror"] = f"{MIRROR_ENV} not set"
+        summary["public_list"] = publish_release_list(
+            ledger, _read(os.path.join(ledger_root, MIRRORED_FILE), {}), environ)
         return summary
     if mirror_fn is None:
         from hope.privacy.mirror import mirror_image as mirror_fn
@@ -131,4 +136,5 @@ def run_release_step(ledger_root: str, day: date, environ=os.environ,
         _write(mirrored_path, mirrored)
         done += 1
     summary["mirror"] = {"copied": done, "failed": failed, "total": len(mirrored)}
+    summary["public_list"] = publish_release_list(ledger, mirrored, environ)
     return summary
