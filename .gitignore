@@ -45,6 +45,8 @@ checkpoints/
 
 # Published training bundle (GitHub release asset; ~159MB, not for the repo)
 SN21_training_bundle.jsonl
+SN21_daily_training_bundle.jsonl
+SN21_daily_package_MANIFEST.json
 
 # Internal test files (kept locally, not in public repo)
 tests/unit/test_auth_signatures.py
