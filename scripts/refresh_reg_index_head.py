@@ -43,9 +43,14 @@ from hope.commitment.registration import (
     verify_registration,
 )
 from hope.validator._subtensor import make_subtensor
-from hope.validator.registration_index import _ss58_to_raw_pubkey
+from hope.validator.registration_index import RegistrationIndex, _ss58_to_raw_pubkey
 
 logger = logging.getLogger("refresh_reg_index_head")
+
+# Blocks since the previous sweep are scanned for commitment events and each registration is read at its
+# own block, so a model commit that overwrites the reg-v1 slot before the next sweep cannot hide it. A
+# lite node keeps state for the last ~256 blocks; a sweep every 30 minutes covers ~150.
+RECENT_MAX_BLOCKS = 240
 
 _ROLES = {
     "miner": RegistrationRole.MINER,
@@ -102,6 +107,22 @@ def _stamp_head_refresh(index_path: str, head: int, entries: int) -> None:
     os.replace(tmp, state_path)
 
 
+def _last_head_refresh_block(index_path: str) -> int | None:
+    try:
+        with open(index_path + ".state.json") as f:
+            return int(json.load(f)["last_head_refresh_block"])
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def _recent_registrations(sub, netuid: int, role: RegistrationRole,
+                          start: int, end: int) -> list[dict]:
+    """Registrations committed in blocks [start, end], read at their own block (index entry dicts)."""
+    idx = RegistrationIndex(sub, netuid, expected_role=role)
+    idx.scan_range(start, end)
+    return idx.to_json()
+
+
 def refresh(index_path: str, network: str, netuid: int,
             role: RegistrationRole) -> tuple[int, int]:
     """Merge current-commitment registrations into the index. Returns (before, after)."""
@@ -146,6 +167,22 @@ def refresh(index_path: str, network: str, netuid: int,
                 "block_number": head,
             }
             added.append(hk)
+
+    # Registrations a later commit already overwrote at head: read them at their own block.
+    last = _last_head_refresh_block(index_path)
+    start = head - RECENT_MAX_BLOCKS + 1
+    if last is not None and last + 1 > start:
+        start = last + 1
+    elif last is not None:
+        logger.warning("last sweep at block %d is more than %d blocks back; scanning only [%d, %d]",
+                       last, RECENT_MAX_BLOCKS, start, head)
+    try:
+        for e in _recent_registrations(sub, netuid, role, start, head):
+            if e.get("hotkey_pk_hex") and e["hotkey_pk_hex"] not in by_pk:
+                by_pk[e["hotkey_pk_hex"]] = e
+                added.append(e["hotkey_ss58"])
+    except Exception as exc:  # the head sweep above still counts; the next sweep scans again
+        logger.warning("recent-block scan [%d, %d] failed: %s", start, head, exc)
 
     merged = sorted(by_pk.values(), key=lambda e: e["block_number"])
     _atomic_write(index_path, merged)

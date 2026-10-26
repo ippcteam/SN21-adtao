@@ -123,3 +123,48 @@ def test_skips_bad_signature(tmp_path, monkeypatch):
     _, after = mod.refresh(path, "finney", 21, RegistrationRole.MINER)
 
     assert after == 0  # signature does not verify -> rejected
+
+
+# ---- a registration overwritten by a model commit before the next sweep (26 Oct 2026) ----
+
+def test_a_registration_overwritten_before_the_sweep_is_found_at_its_block(tmp_path, monkeypatch):
+    # The miner registered at block 9_354_787 and committed its model to the same slot 33 blocks later,
+    # so head shows the model commit, not the registration.
+    kp = _keypair("//OverwrittenMiner")
+    _patch_chain(monkeypatch, head=9_354_900, commitments={kp.ss58_address: None})
+    entry = {"hotkey_ss58": kp.ss58_address, "hotkey_pk_hex": kp.public_key.hex(),
+             "ed25519_pk_hex": "ab" * 32, "role": "M", "block_number": 9_354_787}
+    asked = []
+    monkeypatch.setattr(mod, "_recent_registrations",
+                        lambda sub, netuid, role, start, end: asked.append((start, end)) or [entry])
+    path = str(tmp_path / "reg-index.json")
+    Path(path + ".state.json").write_text(json.dumps({"last_head_refresh_block": 9_354_750}))
+
+    before, after = mod.refresh(path, "finney", 21, RegistrationRole.MINER)
+
+    assert (before, after) == (0, 1) and asked == [(9_354_751, 9_354_900)]
+    assert json.loads(Path(path).read_text())[0]["block_number"] == 9_354_787
+
+
+def test_the_recent_scan_is_capped_to_what_a_lite_node_keeps(tmp_path, monkeypatch):
+    _patch_chain(monkeypatch, head=9_400_000, commitments={})
+    asked = []
+    monkeypatch.setattr(mod, "_recent_registrations",
+                        lambda sub, netuid, role, start, end: asked.append((start, end)) or [])
+    path = str(tmp_path / "reg-index.json")
+    Path(path + ".state.json").write_text(json.dumps({"last_head_refresh_block": 9_000_000}))
+    mod.refresh(path, "finney", 21, RegistrationRole.MINER)
+    assert asked == [(9_400_000 - mod.RECENT_MAX_BLOCKS + 1, 9_400_000)]
+
+
+def test_a_failed_recent_scan_keeps_the_head_sweep(tmp_path, monkeypatch):
+    kp = _keypair("//HeadMiner")
+    _patch_chain(monkeypatch, head=8_400_000,
+                 commitments={kp.ss58_address: [_reg_field(kp, RegistrationRole.MINER)]})
+
+    def boom(*a):
+        raise ConnectionError("rpc dropped")
+    monkeypatch.setattr(mod, "_recent_registrations", boom)
+    path = str(tmp_path / "reg-index.json")
+    assert mod.refresh(path, "finney", 21, RegistrationRole.MINER) == (0, 1)
+    assert json.loads(Path(path + ".state.json").read_text())["last_head_refresh_block"] == 8_400_000
