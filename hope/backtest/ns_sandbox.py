@@ -58,6 +58,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 
 # Published budget (MINER_MODEL_SPEC §2): 1 GB memory, 15 min CPU per basket.
@@ -263,6 +264,39 @@ def session_rss_bytes(sid: int, proc_root: str = "/proc") -> int:
     return total
 
 
+# util-linux `unshare --fork` before 2.40 cannot re-raise SIGKILL on itself when
+# its child (the model) was killed by it: signal(SIGKILL, SIG_DFL) fails with
+# EINVAL, so it prints this and exits 1, which read as a model crash. On
+# 2026-10-29 six models were killed by the kernel at the CPU hard limit (all at
+# 905 s, peak 140-417 MB, no container OOM) and were recorded as
+# "exit=1: unshare: sigprocmask unblock failed: Invalid argument". From 2.40 it
+# re-raises the signal, so the same kill arrives as exit 137 / -9 instead.
+UNSHARE_SIGKILL_MARKER = "sigprocmask unblock failed"
+
+
+def killed_child_error(returncode: int, stderr: str, elapsed_s: float,
+                       cpu_seconds: int) -> str | None:
+    """The error for a model the kernel killed with SIGKILL, or None.
+
+    Our own kills (the memory watchdog, the wall timeout) take the whole
+    session, unshare included, and are reported before this is asked; this
+    names the kills that reach only the model. A run that lasted the CPU
+    budget was stopped by RLIMIT_CPU (CPU time never exceeds wall time, so a
+    shorter run cannot have reached it): reported as a time-budget breach,
+    which is what it is. Anything else is a SIGKILL from outside the model,
+    reported with how long it ran so it is not mistaken for a crash.
+    The text after the prefix carries no digits but the budget's, because
+    absence_penalty.operator_fault reads the digits after "timeout>"."""
+    old_unshare = returncode == 1 and UNSHARE_SIGKILL_MARKER in (stderr or "")
+    if not (old_unshare or returncode in (-signal.SIGKILL, 128 + signal.SIGKILL)):
+        return None
+    if elapsed_s >= cpu_seconds:
+        return (f"{ERR_TIMEOUT_PREFIX}{cpu_seconds}s: CPU time limit reached; "
+                "the model was killed by the kernel (SIGKILL) before it returned predictions")
+    return (f"{ERR_EXIT_PREFIX}{OOM_EXIT_CODE}: killed (SIGKILL) after "
+            f"{int(elapsed_s)}s, before the CPU limit")
+
+
 def oom_result(spec: RunSpec, observed_bytes: int) -> SandboxResult:
     """The result for a model killed at the resident-memory budget — the
     docker runner's shape (exit 137), so it classifies as a memory breach."""
@@ -331,6 +365,7 @@ def run_sandboxed(spec: RunSpec, stdin_blob: bytes) -> SandboxResult:
         watchdog.start()
 
     killed = False
+    started = time.monotonic()
     try:
         out, err = proc.communicate(input=stdin_blob, timeout=spec.wall_timeout)
     except subprocess.TimeoutExpired:
@@ -355,6 +390,11 @@ def run_sandboxed(spec: RunSpec, stdin_blob: bytes) -> SandboxResult:
             ok=False, error=f"{ERR_TIMEOUT_PREFIX}{spec.wall_timeout}s",
             peak_rss_bytes=peak)
     if proc.returncode != 0:
+        named = killed_child_error(proc.returncode, stderr, time.monotonic() - started,
+                                   spec.cpu_seconds)
+        if named:
+            return SandboxResult(ok=False, exit_code=proc.returncode, stdout=stdout,
+                                 error=named, peak_rss_bytes=peak)
         detail = stderr.strip()[:200] or stdout.strip()[:200]
         return SandboxResult(ok=False, exit_code=proc.returncode, stdout=stdout,
                              error=f"{ERR_EXIT_PREFIX}{proc.returncode}: {detail}",
