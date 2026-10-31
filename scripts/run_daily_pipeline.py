@@ -478,7 +478,36 @@ def shadow_run_health(results: dict, disk: dict | None = None) -> dict:
         problems.append("low disk: " + ", ".join(f"{p} {mb} MB free" for p, mb in low.items()))
     return {"ok": ok, "failed": sum(by_error.values()), "failed_by_error": by_error,
             "operator_faults": len(ours), "operator_fault_hotkeys": sorted(ours)[:20],
-            "disk_free_mb": disk or {}, "problems": problems}
+            "disk_free_mb": disk or {}, "problems": problems,
+            "model_time_s": model_time_summary(results, PUBLISHED_RUN_BUDGET_S),
+            "model_peak_rss_mb": _spread([r.get("peak_rss_mb") for r in (results or {}).values()])}
+
+
+def _spread(values) -> dict | None:
+    """Median, 90th and 95th percentile and maximum of the numbers given (None skipped)."""
+    xs = sorted(float(v) for v in values if isinstance(v, (int, float)) and not isinstance(v, bool))
+    if not xs:
+        return None
+    at = lambda q: round(xs[min(len(xs) - 1, int(q * len(xs)))], 1)  # noqa: E731
+    return {"n": len(xs), "p50": at(0.5), "p90": at(0.9), "p95": at(0.95), "max": round(xs[-1], 1)}
+
+
+def model_time_summary(results: dict, budget_s: int) -> dict | None:
+    """How long the day's models took, for the heartbeat (31 Oct 2026): the spread, how many
+    ran past 5 and 10 minutes and how many reached the published budget, and the five slowest
+    (hotkey prefix, seconds). Until now these lived only in the per-model records on the
+    executor's disk, read through its shell."""
+    timed = {hk: r.get("duration_s") for hk, r in (results or {}).items()
+             if isinstance(r.get("duration_s"), (int, float))}
+    s = _spread(timed.values())
+    if s is None:
+        return None
+    s.update({"over_300s": sum(1 for v in timed.values() if v > 300),
+              "over_600s": sum(1 for v in timed.values() if v > 600),
+              "at_budget": sum(1 for v in timed.values() if v >= budget_s),
+              "slowest": [[hk[:8], round(v, 1)] for hk, v in
+                          sorted(timed.items(), key=lambda kv: -kv[1])[:5]]})
+    return s
 
 
 # ---- 3. settle + publish -----------------------------------------------------

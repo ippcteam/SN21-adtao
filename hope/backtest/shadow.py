@@ -336,7 +336,9 @@ def run_shadow_day(day: str, episodes: list[dict], models: Iterable[ShadowModel]
     def _note(m, res):
         record_day(root, day, m, res)
         summary[m.hotkey] = {"ok": res.ok, "predictions": res.predictions_out,
-                             "error": res.error}
+                             "error": res.error,
+                             "duration_s": getattr(res, "duration_s", None),
+                             "peak_rss_mb": getattr(res, "peak_rss_mb", None)}
 
     if workers > 1 and len(models) > 1:
         from concurrent.futures import ThreadPoolExecutor
