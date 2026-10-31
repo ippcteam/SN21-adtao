@@ -193,7 +193,7 @@ During cutover, “submitted” for bridge pay means your container delivered us
 - Horizons: **`7`**, **`14`**, **`28`**
 - Per horizon: monotone p10/p50/p90 for `cost_delta_pct`, `conversions_delta_pct`, `efficiency_delta_pct`; plus `goal_miss_probability` and `instability_risk` in `[0, 1]` (accepted, **not scored** — no ground truth)
 - **No network** inside the sandbox — bake weights / constants into the image
-- Budget: **1 GB RAM**, **15 CPU-minutes** per daily basket (~250 episodes)
+- Budget: **1 GB RAM**, **15 CPU-minutes** per daily basket
 
 ### Reference image
 

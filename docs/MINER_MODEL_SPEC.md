@@ -62,7 +62,7 @@ and `instability_risk` in `[0, 1]`.
 | :---- | :---- |
 | Network | **None** — the sandbox runs `--network=none`; everything you need ships in the image |
 | Memory | **1 GB** |
-| CPU time | **15 minutes** per daily basket (~250 episodes) |
+| CPU time | **15 minutes** per daily basket |
 | Filesystem | Read-only root |
 
 Exceeding a limit aborts that day's run: no scores for the day.
