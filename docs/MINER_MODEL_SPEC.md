@@ -317,7 +317,12 @@ the basket and prediction-lock cycle.
 | :---- | :---- |
 | Day 0 | Account changes occur; they become that day's basket |
 | Day 1 | The subnet executes your container against the basket in the sandbox; its output is locked as your predictions |
-| Day 15 / 22 / 36 | Each (episode, horizon) is scored exactly once at 7 / 14 / 28 days plus a 7-day settling window |
+| Day 10 / 17 / 31 | Each (episode, horizon) is scored exactly once at 7 / 14 / 28 days plus a 2-day settling window (SN21_SCORING.md, "Horizon + settle") |
+
+> **Corrected 2026-10-31.** This table said "Day 15 / 22 / 36" and a 7-day
+> settling window. Scoring has always used the 2-day window in SN21_SCORING.md:
+> a live result settles on the change day + 1 + the horizon + 2 days (10 / 17 / 31
+> days).
 
 Scores fold into your episode-age-weighted standing, weights follow the
 published curve, and the champion seat changes only under the promotion rule

@@ -392,16 +392,16 @@ Same episode, three horizons finalise on different days. High-resolution blend w
 
 | Horizon | Settle day | Score | Blend weight | Standing entry weight |
 | :---- | :---- | ---: | ---: | ---: |
-| 7-day | Day 15 | 0.78 | 0.20 | 0.20 |
-| 14-day | Day 22 | 0.72 | 0.35 | 0.35 |
-| 28-day | Day 36 | 0.70 | 0.45 | 0.45 |
+| 7-day | Day 10 | 0.78 | 0.20 | 0.20 |
+| 14-day | Day 17 | 0.72 | 0.35 | 0.35 |
+| 28-day | Day 31 | 0.70 | 0.45 | 0.45 |
 | **Episode total** | | | **1.00** | **1.00** |
 
 Each row is a separate standing entry on its settle day. Nothing is re-scored when a later horizon lands.
 
 ### Example C — standing with age decay (half-life 12 days)
 
-As of **Day 36**, you have only the three entries above (ages 21, 14, and 0 days). Age weight = `0.5 ** (age / 12)`:
+As of **Day 31**, you have only the three entries above (ages 21, 14, and 0 days). Age weight = `0.5 ** (age / 12)`:
 
 | Entry | Score | Blend | Age (days) | Age weight | Effective weight (`blend × age`) | Weighted score |
 | :---- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -422,13 +422,13 @@ A thin day with fewer entries would simply add fewer rows — there is no per-da
 
 ### Example E — account leaves after 7-day has settled
 
-Same high-resolution episode as Example B. The account disconnects on **day 18**.
+Same high-resolution episode as Example B. The account disconnects on **day 12**.
 
 | Horizon | Settle day | Result |
 | :---- | :---- | :---- |
-| 7-day | Day 15 | **Scored** (0.78 × blend 0.20) — already settled before disconnect |
-| 14-day | Day 22 | **Dropped** — reason `left_system`; no standing entry for anyone |
-| 28-day | Day 36 | **Dropped** — reason `left_system`; no standing entry for anyone |
+| 7-day | Day 10 | **Scored** (0.78 × blend 0.20) — already settled before disconnect |
+| 14-day | Day 17 | **Dropped** — reason `left_system`; no standing entry for anyone |
+| 28-day | Day 31 | **Dropped** — reason `left_system`; no standing entry for anyone |
 
 Standing uses only the 7-day row. Blend weight stays **0.20** for that entry; the 0.35 / 0.45 from the dropped horizons are not redistributed.
 

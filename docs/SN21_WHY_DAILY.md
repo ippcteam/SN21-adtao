@@ -16,7 +16,7 @@ This document is the reference statement; where site or channel copy differs, th
 
 SN21 is moving from weekly release cycles to a **daily stream**.
 
-Every day, the changes made across our connected Google Ads accounts go out as one mixed basket. Your admitted **model** predicts each change's outcome that day, before any outcome exists. Outcomes are measured at **7, 14, and 28 days**, then a further **7-day settling window** lets late-reporting conversions land — so the number you're scored against is final and never revised.
+Every day, the changes made across our connected Google Ads accounts go out as one mixed basket. Your admitted **model** predicts each change's outcome that day, before any outcome exists. Outcomes are measured at **7, 14, and 28 days**, then a further **2-day settling window** lets late-reporting conversions land — so the number you're scored against is final and never revised.
 
 Because a different day's basket matures every day, you get fresh scores every day. Weights follow your moving average and update daily, and emissions flow continuously from current weights — no more waiting on a weekly cycle for anything. New models are admitted when they pass the backtest gate (see model spec); there is no weekly admission window.
 

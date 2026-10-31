@@ -621,7 +621,7 @@ magnitudes for direction, rebuild, and commit a **new digest**.
 | Validator | https://validator.adtao.io |
 | What you submit | OCI image + on-chain `sn21-model:v1:<repo>@sha256:…` |
 | Execution | Operator sandbox daily; stdin/stdout NDJSON |
-| Horizons | 7, 14, 28 (+ 7-day settle) |
+| Horizons | 7, 14, 28 (+ 2-day settle) |
 | Budget | 1 GB RAM / 15 CPU-min per basket |
 | Scoring | [SN21_SCORING.md](./SN21_SCORING.md) |
 | Rewards | [SN21_REWARDS.md](./SN21_REWARDS.md) |

@@ -183,7 +183,7 @@ remain listed in [`hope/constants.py:LAUNCH_ACTION_TYPES`](hope/constants.py).
 ## How scoring works
 
 Each admitted model is run against the daily basket; every (episode, horizon)
-prediction is scored **[0, 1]** once its outcome settles (day 15 / 22 / 36).
+prediction is scored **[0, 1]** once its outcome settles (day 10 / 17 / 31).
 Scores enter a **12-day half-life moving average** (your *standing*), weighted
 by horizon: 7-day 20%, 14-day 35%, 28-day 45% at high measurement resolution.
 
