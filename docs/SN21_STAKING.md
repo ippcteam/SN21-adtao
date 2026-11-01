@@ -14,7 +14,7 @@ This document explains the **alpha stake (hold) requirement**. It does **not** e
 
 ## In one line
 
-To remain eligible for emissions under the daily stream, you must **hold a published amount of subnet alpha** on your miner. There is **no upfront buy-in** — the requirement ramps on a published schedule, and earnings can fill the hold as you start winning.
+To be paid under the daily stream, you must **hold a published amount of subnet alpha** on your miner hotkey. You can be scored without it; the requirement ramps on a published schedule.
 
 ## Why this exists
 
@@ -37,10 +37,10 @@ Cutover behaviour (who is paid if you miss the hold) is in [SN21_TRANSITION_PLAN
 
 ## How the hold works
 
-- **No upfront buy-in.** You can start predicting without locking 1,000 alpha on day one.
+- **Scored without the hold, paid with it.** You can register, run a model and be scored from day one. To be paid, the hotkey must hold at least the published amount of SN21 alpha on the day's run (1,000 from 15 September 2026).
 - **Ramp.** The required hold steps up on the dates above.
-- **Earnings path.** As your model earns, incentive can be directed into meeting the floor (capture / escrow path) until the published hold is met; then normal payouts resume.
-- **Zero weight freezes obligation growth from earnings.** If you are not earning, nothing drains from a lock you never filled — but you also do not receive emissions until you meet the then-current hold and other eligibility rules.
+- **How to meet it.** Stake SN21 alpha to your miner hotkey. A hotkey below the hold is scored and ranked as normal but not seated; the next-ranked miner that meets it is paid instead.
+- **Rewards build on it.** Once you're seated, your rewards are added as alpha on your hotkey, so your hold grows while you earn. Unstaking below the hold removes you from the paid set from the next run.
 
 ## Enforcement (in force from 13 September 2026)
 
