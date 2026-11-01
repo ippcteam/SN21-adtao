@@ -528,6 +528,13 @@ python3 -m scripts.run_daily_pipeline --day YYYY-MM-DD --no-reference \
 Shadow execution for a day that already ran is skipped (predictions are
 locked); settle and the publish stages are idempotent.
 
+**Missed days.** With `SN21_CATCHUP_FROM=YYYY-MM-DD` set, each check first
+runs every day of the last `SN21_CATCHUP_DAYS` (default 2, at most 7) that is
+on or after that date and has no run record, oldest first, then today. It runs
+at any hour, so a day dropped at midnight is normally redone before the next
+trigger; a failed catch-up is retried next check while the day is in the
+window. Unset = off (the hand-run above is then the only way).
+
 **Plan and environment changes apply on a deploy, not on a restart.** A
 restarted instance keeps the plan and the environment it was deployed
 with. After changing either, trigger a deploy (same commit is fine) and

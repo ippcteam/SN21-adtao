@@ -25,7 +25,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
@@ -40,6 +40,20 @@ LEDGER_ROOT = os.environ.get("SN21_LEDGER_ROOT", "/var/data/sn21/ledger")
 # existing record as "done" for that day until a rerun exits 0, whose record
 # then overwrites the old one. Unset the var once the rerun lands.
 RERUN_DAY = os.environ.get("SN21_RERUN_DAY", "")
+
+# Missed-day catch-up (1 Nov 2026). The loop above only ever runs TODAY: a day
+# whose run never got a record (the basket never resolved, the host was down,
+# a deploy killed the run before its record) was dropped at midnight and needed
+# a hand-run from the host's shell. With SN21_CATCHUP_FROM=YYYY-MM-DD set, each
+# tick first runs every day of the last SN21_CATCHUP_DAYS (default 2, at most 7)
+# that is on or after that date and has no run record, oldest first, then
+# today. Oldest first keeps settle, receipts and published weights in day
+# order (a skipped day otherwise lands in the next day's receipt as a bundle).
+# It runs at any hour, so a day dropped at midnight is usually redone before
+# the next morning's trigger. A catch-up that fails is retried on the next
+# tick while the day is inside the window. The day runs the models admitted
+# when it runs, as the hand-run always has. Unset = off.
+CATCHUP_MAX_DAYS = 7
 
 # Admission is the expensive stage (pull + two runs per NEW model), and it is
 # idempotent — a gated digest is never re-gated. Bounding it per day spreads
@@ -59,11 +73,49 @@ def run_record_exists(day: str) -> bool:
     return os.path.exists(os.path.join(LEDGER_ROOT, "pipeline_runs", f"{day}.json"))
 
 
+def missed_days(today: date, environ=os.environ, exists=run_record_exists) -> list:
+    """Past days to catch up, oldest first: inside the last SN21_CATCHUP_DAYS,
+    on or after SN21_CATCHUP_FROM, with no run record. Empty when the switch is
+    unset or unreadable (a bad value must not run old days)."""
+    raw = (environ.get("SN21_CATCHUP_FROM") or "").strip()
+    if not raw:
+        return []
+    try:
+        floor = date.fromisoformat(raw)
+        n = int(environ.get("SN21_CATCHUP_DAYS", "2"))
+    except ValueError:
+        return []
+    n = max(0, min(n, CATCHUP_MAX_DAYS))
+    days = (today - timedelta(days=k) for k in range(n, 0, -1))
+    return [d.isoformat() for d in days if d >= floor and not exists(d.isoformat())]
+
+
+def catch_up(today: date, runner=None, environ=os.environ) -> list:
+    """Run each missed day, oldest first; [(day, exit code)]. A failed day is
+    logged and left for the next tick; the later days and today still run."""
+    runner = runner or run_pipeline
+    done = []
+    for day in missed_days(today, environ):
+        log(f"catch-up: {day} has no run record — running it before today")
+        _BUSY["reason"] = f"a missed day ({day}) is being run"
+        try:
+            rc = runner(day)
+        finally:
+            _BUSY["reason"] = None
+        if rc != 0:
+            log(f"catch-up: {day} exited {rc} — will retry next tick")
+        done.append((day, rc))
+    return done
+
+
 def run_pipeline(day: str) -> int:
     log(f"running the daily pipeline for {day} "
         f"(intake_limit={INTAKE_LIMIT}, corpus={CORPUS_SIZE})")
+    # The day is passed explicitly: a run started just before midnight must
+    # not become the next day's run inside the pipeline.
     proc = subprocess.run(
         [sys.executable, "-m", "scripts.run_daily_pipeline",
+         "--day", day,
          "--no-reference",              # the reference image is not digest-pullable here
          "--intake-limit", str(INTAKE_LIMIT),
          "--corpus-size", str(CORPUS_SIZE)],
@@ -119,13 +171,20 @@ def main():
         log(f"forecast relay not started ({e})")
     log(f"start: trigger>={TRIGGER_HOUR_UTC}:00 UTC, check every "
         f"{CHECK_INTERVAL_S}s, ledger={LEDGER_ROOT}"
-        + (f", rerun override for {RERUN_DAY}" if RERUN_DAY else ""))
+        + (f", rerun override for {RERUN_DAY}" if RERUN_DAY else "")
+        + (f", catch-up from {os.environ.get('SN21_CATCHUP_FROM')} "
+           f"({os.environ.get('SN21_CATCHUP_DAYS', '2')} days back)"
+           if os.environ.get("SN21_CATCHUP_FROM") else ""))
     try:
         backfill_tkey_maps_if_sparse()
     except Exception as e:   # labelling must never block the daemon
         log(f"tkey backfill skipped ({e})")
     rerun_pending = bool(RERUN_DAY)
     while True:
+        try:
+            catch_up(datetime.now(timezone.utc).date())
+        except Exception as exc:   # the supervisor must never die
+            log(f"ERROR in catch-up (continuing): {exc}")
         now = datetime.now(timezone.utc)
         day = now.date().isoformat()
         rerun_today = rerun_pending and day == RERUN_DAY
