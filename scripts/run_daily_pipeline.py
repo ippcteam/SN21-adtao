@@ -163,16 +163,26 @@ def container_memory_mb(root: str = "/sys/fs/cgroup") -> dict | None:
         return None
 
 
+# When the run started (time.time()), set by main(); note_memory stamps each
+# stage boundary with the seconds since then (1 Nov 2026), so where a run's
+# time went is in the heartbeat, not only in the log lines.
+_RUN_STARTED: float | None = None
+
+
 def note_memory(stage: str, record: dict) -> None:
     """One line per stage boundary, and the numbers into the run record (and
-    so the heartbeat), so growth is seen weeks before it becomes a kill."""
+    so the heartbeat), so growth is seen weeks before it becomes a kill.
+    `at_s` is the seconds from the run's start to the end of the stage."""
     now, peak = process_memory_mb()
     entry = {"rss": round(now), "peak": round(peak)}
+    if _RUN_STARTED is not None:
+        entry["at_s"] = round(time.time() - _RUN_STARTED)
     box = container_memory_mb()
     if box:
         entry["container"] = box
     record.setdefault("memory_mb", {})[stage] = entry
     log(f"[mem] after {stage}: rss={now:.0f} MiB peak={peak:.0f} MiB"
+        + (f" at {entry['at_s']}s" if "at_s" in entry else "")
         + (f" | container={box['total']} MiB (programs {box['anon']}, file cache {box['file_cache']})"
            if box else ""))
 
@@ -1338,7 +1348,8 @@ def main():
     workdir = os.environ.get("SN21_EXECUTOR_WORKDIR", "/tmp/executor")
     os.makedirs(workdir, exist_ok=True)
 
-    started = time.time()
+    global _RUN_STARTED
+    started = _RUN_STARTED = time.time()
     record = {"day": str(day), "mode": executor_mode(), "stages": {}}
 
     # Unpacked images left by earlier runs (17 Oct 2026: 6.5 GB had collected,
