@@ -209,7 +209,7 @@ same way.
 | `change_context.siblings` | Up to 50 other ad groups in the campaign (cost share, conversion rate against the campaign, keyword count band, main topic), the rest in `siblings_other` |
 | `change_context.account` | Up to 50 campaigns in the account (`id` code, whether it is the one that changed, campaign type, cost and conversion share, ad-group and keyword count bands, main topic, eight-week cost index), the rest in `campaigns_other`; plus the account's topic mix |
 | `change_context.history` | `version` `h2`. The changed campaign's changes in the 30 and 90 days before, by family (`budget`, `campaign_setting`, `ad_group`, `keyword_or_ad_group_target`, `campaign_target`, `shared_list`, `account_negative`, `ad`, `asset`, `conversion`, `other`), with days since the last one (`0-1`, `2-7`, `8-30`, `31-90`, `none_in_90d`). A budget change counts under its campaign when that budget serves only that campaign; a shared budget's changes are not assigned to a campaign. The account's changes in 30 and 90 days, and who made them as shares (`people_web`, `editor`, `api`, `script`, `rule`, `adtao`, `unattributed`). Changes elsewhere in the account in the week before and during the window (`concurrent`). `prior_outcomes`: up to 3 of the account's results that had settled before the window opened, most recent first, each with its change type, horizon and the measured cost, conversions and efficiency changes as bands (`<-50%`, `-50..-20%`, `-20..-5%`, `-5..+5%`, `+5..+20%`, `+20..+50%`, `+50%+`, `unknown`). Upload jobs and IP exclusions are not counted. |
-| `change_context.seasonality` | `version` `s1`. The changed campaign's last 12 whole months of cost and conversions as an index around their own average (point 0 is the same month last year; a month before we hold the account's data is `null`, not zero), the same and next month last year, campaign age (`new`, `<6m`, `6-12m`, `12-24m`, `24m+`, `unknown`), month and week of year. Built from Search keyword data; for Performance Max campaigns (from __PMAX_FROM__), from the campaign's daily cost and conversions (see *Performance Max campaigns* below). `coverage` says `no_keyword_data` when neither is held. |
+| `change_context.seasonality` | `version` `s1`. The changed campaign's last 12 whole months of cost and conversions as an index around their own average (point 0 is the same month last year; a month before we hold the account's data is `null`, not zero), the same and next month last year, campaign age (`new`, `<6m`, `6-12m`, `12-24m`, `24m+`, `unknown`), month and week of year. Built from Search keyword data; for Performance Max campaigns (from 2026-11-08), from the campaign's daily cost and conversions (see *Performance Max campaigns* below). `coverage` says `no_keyword_data` when neither is held. |
 | `change_context.cohort` | `version` `c1`. Where the account sits among active accounts in its industry (at least 100 clicks over the three whole months before): CTR, conversion rate and CPA as deciles (`p0-10` … `p90-100`), with `cohort_depth` and `cohort_size` (`20-50`, `51-200`, `200+`). A cohort needs at least 20 accounts; CPA is ranked only against accounts in the same currency, and only when at least 20 share it. Never the industry's name. |
 | `change_context.geo` | `version` `g1`. The changed campaign's area type (`major_metro`, `metro`, `suburban`, `small_town`, `rural`, `mixed`, `unknown`), the urbanity mix as shares, and how much results depend on location (`none` … `high`) with a confidence. If any campaign-level targeting change happened since the window, the location may have changed, and `coverage` says `changed_since` instead. |
 
@@ -295,11 +295,11 @@ payloads:
   `bid_strategy_type` is `MAXIMIZE_CONVERSION_VALUE` (1,585 target changes in
   v5).
 
-### Performance Max campaigns (rule amendment, published __NOTICE_DATE__, effective __LIVE_DATE__)
+### Performance Max campaigns (rule amendment, published 2026-11-02, effective 2026-11-09)
 
 Until now every episode was a change on a Search campaign. For changes made
-from **__PMAX_FROM__** (the first basket under the rule is `BD-__PMAX_FROM__`,
-served by the run of __FIRST_RUN__), changes on **Performance Max** campaigns
+from **2026-11-08** (the first basket under the rule is `BD-2026-11-08`,
+served by the run of 2026-11-09), changes on **Performance Max** campaigns
 are episodes too. Only changes made at the campaign level count, because
 Performance Max has no ad groups or keywords:
 
