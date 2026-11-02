@@ -120,6 +120,10 @@ unpacked), first line a `_manifest`. Each record is
   campaign's type. Daily baskets are selected from campaigns recorded as
   Search, and nearly all episodes in them since September are on Search
   campaigns, so you may want to leave these 368 records out of training.
+  From `BD-2026-11-08`, baskets also hold campaign-level changes on
+  Performance Max campaigns (MINER_MODEL_SPEC.md, *Performance Max
+  campaigns*); the 133 Performance Max records here were built before that
+  rule.
 
 ```bash
 curl -L -o SN21_training_v4.jsonl.gz \
