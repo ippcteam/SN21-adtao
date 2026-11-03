@@ -4,16 +4,19 @@
 | :---- | :---- |
 | **Audience** | Miners |
 | **Status** | Authoritative training path for the daily stream |
-| **Last updated** | 2026-10-09 |
+| **Last updated** | 2026-11-03 |
 | **Prerequisites** | Registered hotkey ([quickstart §2](./miner_quickstart.md)) |
 
 One route from published data to a container the subnet will run. Six steps,
 each with the exact command. If a step needs something that does not exist
 yet, it says so rather than inventing a CLI.
 
-> **From 23 Oct 2026, start with v5** (`training-v5-2026-10`, section 1): v4's
-> windows, Search campaigns only, with the change descriptions, account
-> context and measurement rules that apply from the run of 2026-10-30.
+> **From 3 Nov 2026, train on v5 and v6 together** (section 1). v6
+> (`training-v6-2026-11`) adds the next windows, **15 Aug – 20 Sep 2026**, in
+> exactly v5's shape and under v5's rules. v5 (`training-v5-2026-10`) keeps
+> v4's windows (15 Jun – 14 Aug). Both are Search campaigns only, with the change
+> descriptions, account context and measurement rules that apply from the run
+> of 2026-10-30.
 >
 > **From the run of 2026-11-07, two payload fields are corrected**: a target on
 > Maximize Conversion Value is sent as ROAS, and `conversion_value_micros` is
@@ -34,8 +37,20 @@ yet, it says so rather than inventing a CLI.
 > types are in these bundles **and** in live daily baskets from
 > **20 August 2026**.
 >
-> Two things are deliberately excluded from both the bundles and the live
-> baskets: IP-blocklist hygiene churn, and budget moves under $5/day.
+> Two things are deliberately excluded from the live baskets: IP-blocklist
+> hygiene churn, and budget moves under 5 per day. A budget move is left out
+> when the episode's only change is the budget and its **net** move over the
+> episode window (the budget before the window against the budget after it) is
+> under 5 in the account's own currency. A budget change inside a window with
+> other changes is a composite episode and is kept. This applies to episodes
+> from windows ending 2026-08-20.
+>
+> **Corrected 2026-11-03.** This note said the budget rule also applies to the
+> training bundles. It does not apply to v5 or earlier: their windows were
+> classified before the rule, and about half of v5's budget episodes move less
+> than 5. To match live baskets, drop pure-budget episodes whose
+> `|to − from|` is under 5. v6's windows from 2026-08-20 follow the rule. Asked
+> by a miner.
 >
 > **Release policy.** A slice is published once every window in it is old
 > enough for all three horizons to have settled **and** the held-out
@@ -56,6 +71,34 @@ yet, it says so rather than inventing a CLI.
 > exactly as published. Each slice's `_manifest` says which codes it uses.
 
 ## 1. Get the data
+
+**Training data v6: the next windows (published 2026-11-03):**
+13,224 episodes, windows **2026-08-15 – 2026-09-20**, gzipped JSONL (53 MB;
+1.1 GB unpacked), first line a `_manifest`. Same record shape, same payload
+contents and same label rules as v5 (below), so the two can be used together:
+
+- **Search campaigns only**, with the change descriptions, account context and
+  the industry path one level up, each built as of the end of its own change
+  window.
+- **Labels measured live.** Almost all of these windows (92–100% by week) were
+  measured as the live daily results are, at the live age (10 / 17 / 31 days
+  after the change, the 2-day settling window in SN21_SCORING.md), so they
+  include no more late-reported conversions than a live label. The labels
+  follow the measurement rules in force from 2026-10-30.
+- **The two payload corrections from the run of 2026-11-07 are not applied**,
+  as in v5 (MINER_MODEL_SPEC.md, "Two payload corrections", says how to line
+  them up).
+
+Codes in v6 are new to this slice: records cannot be joined to v5 or earlier.
+Shared negative-list changes and Performance Max episodes are not in v6 (they
+start after its windows). The held-out evaluation set has moved to windows
+after 2026-09-20.
+
+```bash
+curl -L -o SN21_training_v6.jsonl.gz \
+  https://github.com/ippcteam/SN21-adtao/releases/download/training-v6-2026-11/SN21_training_v6.jsonl.gz
+gunzip SN21_training_v6.jsonl.gz
+```
 
 **Training data v5: the rules from 30 Oct 2026 (published 2026-10-23):**
 27,325 episodes, windows **2026-06-15 – 2026-08-14** (the same windows
