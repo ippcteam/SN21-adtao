@@ -430,6 +430,19 @@ def _write_model_since(ledger_root) -> None:
         log(f"[shadow] model_since not written ({exc}) — no previous-model discount today")
 
 
+def _ours_without_predictions(ledger_root, day) -> list:
+    """Hotkeys whose last line on `day` failed on our side and delivered nothing."""
+    from hope.backtest import shadow as _shadow_store
+    from hope.scoring.absence_penalty import PUBLISHED_RUN_BUDGET_S, operator_fault
+    out = []
+    for hk in sorted(_shadow_store.day_models(ledger_root, day)):
+        last = _shadow_store.last_record(ledger_root, day, hk) or {}
+        if (last.get("ok") is False and not last.get("predictions_out")
+                and operator_fault(last.get("error"), PUBLISHED_RUN_BUDGET_S)):
+            out.append(hk)
+    return out
+
+
 def stage_shadow(ledger_root, basket_key, episodes, include_reference):
     from scripts.run_shadow_day_bd import (
         REFERENCE_HOTKEY,
@@ -457,6 +470,29 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
     # models with no record yet are run, so every prediction already written
     # stays as it was.
     resumed = already_ran and not _shadow_store.run_complete(ledger_root, _guard_day)
+    # A finished day whose models failed on OUR side (low disk, a failed pull,
+    # our timeout) with nothing delivered is run again for those models only
+    # (4 Nov 2026: 112 refused for low disk). Their last line wins, as
+    # day_run_status reads it; every prediction already written stays.
+    retry = (set(_ours_without_predictions(ledger_root, _guard_day))
+             if already_ran and not resumed else set())
+    if retry:
+        day = basket_key.replace("BD-", "")
+        models = [m for m in models if m.hotkey in retry]
+        log(f"[shadow] {day} finished, {len(models)} model(s) failed on our side "
+            "with no predictions: running those again")
+        run_basket = basket_runner()
+        summary = run_shadow_day(day, episodes, models, lambda m, eps: run_basket(m.image_digest, eps),
+                                 ledger_root)
+        _shadow_store.record_run_marker(ledger_root, day, len(episodes),
+                                        len(_shadow_store.day_models(ledger_root, day)))
+        _write_model_since(ledger_root)
+        workdir = os.environ.get("SN21_EXECUTOR_WORKDIR", "/tmp/executor")
+        return {"registry": stats, "models_run": summary.get("models_run"), "retried_ours": len(models),
+                "health": shadow_run_health(summary.get("results", {}),
+                                            disk_free_mb(ledger_root, workdir)),
+                "results": {hk: r.get("predictions")
+                            for hk, r in summary.get("results", {}).items()}}
     if already_ran and not resumed:
         _write_model_since(ledger_root)
         return {"registry": stats, "models_run": 0,
@@ -1421,7 +1457,12 @@ def main():
         import tempfile
 
         from hope.backtest.ns_sandbox import sweep_stale_images
-        sweeps = {d: sweep_stale_images(d) for d in sorted({workdir, tempfile.gettempdir()})}
+        # At the start of a run nothing of this process is unpacking yet, so any
+        # folder older than a few minutes is a leftover: 4 Nov 2026 a run killed
+        # for memory left 4 images (about 7 GB) that the 6-hour rule kept, and
+        # 112 models of the re-run were refused for low disk.
+        sweeps = {d: sweep_stale_images(d, older_than_s=600)
+                  for d in sorted({workdir, tempfile.gettempdir()})}
         record["disk_sweep"] = sweeps
         log(f"[disk] stale image sweep {json.dumps(sweeps)} | free_mb={disk_free_mb(args.ledger_root, workdir)}")
     except Exception as e:   # housekeeping must never stop the run

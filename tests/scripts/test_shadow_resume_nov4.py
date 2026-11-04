@@ -58,3 +58,21 @@ def test_the_resume_cancels_the_charges_for_the_models_it_never_reached(tmp_path
                      for hk, m in (("a", 1), ("b", 2), ("c", 2)))
     P.stage_shadow(root, "BD-2026-11-03", EPS, include_reference=False)
     assert sorted(c["hotkey"] for c in load_cancellations(root)) == ["b", "c"]
+
+
+def test_a_finished_day_runs_again_only_the_models_that_failed_on_our_side(tmp_path, monkeypatch):
+    root, ran = str(tmp_path), []
+    _setup(monkeypatch, ran)
+    day = "2026-11-03"
+    shadow.record_day(root, day, ShadowModel("a", "r@sha256:a", "x"),
+                      RunResult(ok=True, predictions={"e1": {}}, episodes_in=2, predictions_out=1))
+    shadow.record_day(root, day, ShadowModel("b", "r@sha256:b", "x"),
+                      RunResult(ok=False, error="disk_low: 1500 MB free", episodes_in=2, predictions_out=0))
+    shadow.record_day(root, day, ShadowModel("c", "r@sha256:c", "x"),
+                      RunResult(ok=False, error="exit=1", episodes_in=2, predictions_out=0))
+    shadow.record_run_marker(root, day, 2, 3)
+    out = P.stage_shadow(root, "BD-2026-11-03", EPS, include_reference=False)
+    assert ran == ["r@sha256:b"] and out["retried_ours"] == 1
+    assert shadow.last_record(root, day, "b")["ok"] is True
+    ran.clear()
+    assert "skipped" in P.stage_shadow(root, "BD-2026-11-03", EPS, include_reference=False) and ran == []
