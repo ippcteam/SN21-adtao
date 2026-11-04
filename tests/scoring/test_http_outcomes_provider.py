@@ -155,3 +155,25 @@ def test_the_conversion_counts_reach_the_count_score():
     assert (small.expected_conversions, small.actual_conversions) == (1.4, 0.0)
     assert small.conversions_delta_pct is None and small.cost_delta_pct == 0.1
     assert usual.expected_conversions is None and usual.actual_conversions is None
+
+
+def test_censored_counts_reach_the_receipt_over_http():
+    """4 Nov 2026: only the database reader filled the receipt's `censored`,
+    so every receipt the executor wrote over HTTP said {} (a miner found it)."""
+    from hope.scoring.settle_day_flow import last_censored_counts
+    body = dict(PAYLOAD, censored_on_day={"left_system": 4, "spend_inactive": 9})
+    with patch("urllib.request.urlopen", return_value=_Resp(body)):
+        http_outcomes_provider("https://api.example", "k")(date(2026, 8, 18))
+    assert last_censored_counts() == {"left_system": 4, "spend_inactive": 9}
+
+
+def test_an_operator_without_the_field_reads_as_nothing_censored():
+    """An older operator sends no `censored_on_day`; the last day's counts must
+    not carry over into this day's receipt."""
+    from hope.scoring.settle_day_flow import last_censored_counts
+    with patch("urllib.request.urlopen", return_value=_Resp(
+            dict(PAYLOAD, censored_on_day={"left_system": 1}))):
+        http_outcomes_provider("https://api.example", "k")(date(2026, 8, 18))
+    with patch("urllib.request.urlopen", return_value=_Resp(PAYLOAD)):
+        http_outcomes_provider("https://api.example", "k")(date(2026, 8, 19))
+    assert last_censored_counts() == {}

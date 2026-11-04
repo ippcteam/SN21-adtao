@@ -1003,6 +1003,14 @@ def http_outcomes_provider(base_url: str, api_key: str, timeout_s: int = 60,
                 actual_conversions=(None if r.get("actual_conversions") is None
                                     else float(r["actual_conversions"])),
             ))
+        # The horizons the endpoint left out as censored, by reason, for the
+        # ones settling on this day: the receipt states them (SN21_VERIFYING).
+        # Until 4 Nov 2026 only the database reader filled this, so every
+        # receipt written over HTTP said {}. An operator that does not send
+        # the field yet reads as nothing censored, as before.
+        _LAST_CENSORED_COUNTS.clear()
+        _LAST_CENSORED_COUNTS.update(
+            {str(k): int(v) for k, v in (payload.get("censored_on_day") or {}).items()})
         return rows
 
     return provider
@@ -1091,10 +1099,20 @@ def operator_outcomes_provider(day: date) -> list[SettledHorizon]:
         has_censoring = _has_censoring_column(s)
         censor_filter = ("AND o.censored_reason IS NULL" if has_censoring else "")
         if has_censoring:
+            # The censored horizons that settle on this day, as the HTTP
+            # reader gets them (it counted every censored row ever, so a
+            # receipt's figure grew each day instead of describing the day).
             censored_counts = s.execute(T("""
-                SELECT censored_reason, count(*) FROM bittensor_episode_outcomes
-                WHERE censored_reason IS NOT NULL GROUP BY 1
-            """)).fetchall()
+                SELECT o.censored_reason, count(*)
+                FROM bittensor_episode_outcomes o
+                JOIN bittensor_episode_candidates c ON c.id = o.episode_candidate_id
+                WHERE o.censored_reason IS NOT NULL
+                  AND o.measured_at >= :cutover
+                  AND (c.action_window_end::date
+                       + make_interval(days => 1 + o.horizon_days + :settle)) = :day
+                GROUP BY 1
+            """), {"day": day, "cutover": SETTLE_CLOCK_CUTOVER_UTC,
+                   "settle": SETTLING_WINDOW_DAYS}).fetchall()
             if censored_counts:
                 print("[settle-day] censored horizons excluded from scoring: "
                       + ", ".join(f"{r[0]}={r[1]}" for r in censored_counts),
