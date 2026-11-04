@@ -161,7 +161,7 @@ def apply(root: str, active: dict, as_of: str, environ=os.environ) -> dict:
     record = refresh(root, save_it=False)
     out = to_remove(record, active, as_of) if enabled(as_of, environ) else {}
     removed = dict(record.get("removed") or {})
-    for hk, why in out.items():
+    for hk in out:
         dg = bare_digest(getattr(active[hk], "image_digest", active[hk]))
         removed.setdefault(dg, {"hotkey": hk, "removed_on": str(as_of)[:10],
                                 "image_ref": str(getattr(active[hk], "image_digest", active[hk]))})

@@ -101,7 +101,7 @@ def test_the_status_feed_shows_each_miners_days():
 
 # ---- a removed model re-added under a new digest -------------------------------
 
-from hope.scoring.duplication import LineageParams  # noqa: E402
+from hope.scoring.duplication import LineageParams
 
 PARAMS = LineageParams(corr_min=0.99, sign_agree_min=0.95, distance_max=0.02,
                        disagree_max=0.05, version="t")

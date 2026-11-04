@@ -11,7 +11,7 @@ def _env(**kw):
 
 
 def test_off_when_unset_or_unreadable():
-    never = lambda day: False   # noqa: E731 - no day has a record
+    never = lambda day: False
     assert d.missed_days(TODAY, {}, never) == []
     assert d.missed_days(TODAY, {"SN21_CATCHUP_FROM": "soon"}, never) == []
     assert d.missed_days(TODAY, _env(SN21_CATCHUP_DAYS="two"), never) == []

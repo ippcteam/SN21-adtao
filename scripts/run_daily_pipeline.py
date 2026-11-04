@@ -537,7 +537,7 @@ def _spread(values) -> dict | None:
     xs = sorted(float(v) for v in values if isinstance(v, (int, float)) and not isinstance(v, bool))
     if not xs:
         return None
-    at = lambda q: round(xs[min(len(xs) - 1, int(q * len(xs)))], 1)  # noqa: E731
+    at = lambda q: round(xs[min(len(xs) - 1, int(q * len(xs)))], 1)
     return {"n": len(xs), "p50": at(0.5), "p90": at(0.9), "p95": at(0.95), "max": round(xs[-1], 1)}
 
 

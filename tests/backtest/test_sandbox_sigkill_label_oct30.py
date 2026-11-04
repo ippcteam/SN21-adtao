@@ -6,11 +6,17 @@ on itself, printed "sigprocmask unblock failed: Invalid argument" and exited 1,
 so each read as "exit=1" - a crash. The label changes; who is charged does not
 (running out of the published time budget was already the miner's)."""
 from hope.backtest.ns_sandbox import (
-    DEFAULT_CPU_SECONDS, ERR_EXIT_PREFIX, ERR_TIMEOUT_PREFIX, killed_child_error,
+    DEFAULT_CPU_SECONDS,
+    ERR_EXIT_PREFIX,
+    ERR_TIMEOUT_PREFIX,
+    killed_child_error,
 )
 from hope.scoring.absence_penalty import PUBLISHED_RUN_BUDGET_S, operator_fault
 from hope.scoring.chronic_failure import (
-    FAULT_MINER, REASON_TIMEOUT, classify_failure, failure_reason,
+    FAULT_MINER,
+    REASON_TIMEOUT,
+    classify_failure,
+    failure_reason,
 )
 
 OLD_UNSHARE = "unshare: sigprocmask unblock failed: Invalid argument\n"
