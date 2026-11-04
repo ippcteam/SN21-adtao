@@ -300,13 +300,14 @@ def stage_intake(ledger_root, corpus, key, timeout_s, limit, corpus_info=None):
 
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     run_basket = basket_runner()
+    post_check, probes = _removed_model_check(ledger_root, corpus, corpus_info, run_basket)
 
     def gate_runner(pinned_ref):
         return gate_submission(
             pinned_ref, corpus[0], corpus[1], generated_at=now,
             private_key=key, timeout_s=timeout_s,
             runner=lambda ref, eps, _t: run_basket(ref, eps),
-            corpus_info=corpus_info)
+            corpus_info=corpus_info, post_check=post_check)
 
     # Bound a single sweep so a run cannot be a hundred untrusted container
     # starts unattended. The bound applies to digests that still NEED a
@@ -360,7 +361,45 @@ def stage_intake(ledger_root, corpus, key, timeout_s, limit, corpus_info=None):
                for d in (result.details or [])]
     return {"gated": result.gated, "admitted": result.admitted,
             "rejected": result.rejected, "admitted_total": len(admitted),
-            "verdicts": reasons}
+            "verdicts": reasons, "removed_model_check": probes}
+
+
+def _removed_model_check(ledger_root, corpus, corpus_info, run_basket):
+    """From SN21_UNCHANGED_REMOVAL_FROM: run today's due probes (removed models
+    on the corpus in force) and return the admission check that refuses a new
+    model predicting the same as one of them, with a summary for the run
+    record. Off, on a corpus without a sha, or with the copy check unset:
+    (None, reason). A failure here never stops the intake."""
+    from hope.backtest import unchanged_models as U
+    from hope.validator.daily_stream_weights import lineage_params_from_env
+    today = datetime.now(timezone.utc).date().isoformat()
+    if not U.enabled(today):
+        return None, "off"
+    sha = (corpus_info or {}).get("sha256")
+    params = lineage_params_from_env(os.environ)
+    if not sha or not params.configured():
+        return None, ("no corpus sha" if not sha else "copy check (SN21_LINEAGE_*) not set")
+    ran, failed = 0, 0
+    try:
+        for dg, ref in U.probes_due(ledger_root, sha):
+            res = run_basket(ref, corpus[0])
+            if getattr(res, "ok", False) and getattr(res, "predictions", None):
+                U.save_probe(ledger_root, sha, dg, res.predictions)
+                ran += 1
+            else:
+                failed += 1
+        probes = U.load_probes(ledger_root, sha)
+    except Exception as exc:
+        return None, f"probes failed: {str(exc)[:160]}"
+    removed = len((U.load(ledger_root) or {}).get("removed") or {})
+    log(f"[intake] removed-model check: {len(probes)} of {removed} removed models probed "
+        f"on corpus {sha[:12]} ({ran} today, {failed} failed)")
+
+    def post_check(predictions):
+        return U.same_as_removed(predictions, corpus[1], probes, params)
+
+    return post_check, {"probed": len(probes), "removed": removed, "probed_today": ran,
+                        "probe_failed_today": failed}
 
 
 def _digest_of(raw):

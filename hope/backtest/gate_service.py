@@ -91,7 +91,8 @@ def gate_submission(image_digest: str,
                     timeout_s: int = 15 * 60,
                     determinism_sample: int = DETERMINISM_SAMPLE_EPISODES,
                     runner=None,
-                    corpus_info: dict | None = None) -> dict:
+                    corpus_info: dict | None = None,
+                    post_check=None) -> dict:
     """Run the full admission: sandbox -> gate -> attested verdict document.
 
     Includes a DETERMINISM check, because the subnet publishes that a rerun
@@ -111,6 +112,11 @@ def gate_submission(image_digest: str,
     `corpus_info` names the corpus the verdict was judged on (source, key,
     sha256, cutoff, counts). It goes into the verdict before attestation, so
     a published verdict says which episode set produced it.
+
+    `post_check(predictions) -> dict | None` runs on a model that would be
+    admitted; a dict refuses it with that detail, before the verdict is
+    signed. Used for a model removed for running unchanged for 40 days and
+    re-added under a new digest (hope.backtest.unchanged_models).
     """
     run_fn = runner or _default_runner
     run = run_fn(image_digest, episodes, timeout_s)
@@ -150,6 +156,12 @@ def gate_submission(image_digest: str,
                     "episodes_in": run.episodes_in,
                     "predictions_out": run.predictions_out,
                 })
+                same = post_check(run.predictions) if (post_check and verdict["admitted"]) else None
+                if same:
+                    verdict = {"admitted": False, "reason": "same_as_removed_model",
+                               "detail": same,
+                               "episodes_in": run.episodes_in,
+                               "predictions_out": run.predictions_out}
 
     if corpus_info:
         verdict["corpus"] = dict(corpus_info)
