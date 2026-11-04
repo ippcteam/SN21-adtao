@@ -168,6 +168,23 @@ def subnet_ran(root: str, day: str) -> bool:
     return any(fn.endswith(".jsonl") for fn in os.listdir(d))
 
 
+def run_complete(root: str, day: str) -> bool:
+    """Did the day's run reach its end? run_shadow_day writes the marker
+    last, so a day with model files and no marker was cut off part way (the
+    executor was killed for memory on 4 Nov 2026 with about a fifth of the
+    models run): the models after the cut were never run, which is our fault,
+    not the miners'."""
+    return os.path.exists(os.path.join(shadow_dir(root, day), RUN_MARKER))
+
+
+def day_models(root: str, day: str) -> set:
+    """Hotkeys with a record on the day."""
+    d = shadow_dir(root, day)
+    if not os.path.isdir(d):
+        return set()
+    return {fn[:-6] for fn in os.listdir(d) if fn.endswith(".jsonl")}
+
+
 def shadow_days(root: str) -> list:
     """Every shadow day present on disk that the subnet RAN, ascending.
 

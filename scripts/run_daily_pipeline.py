@@ -452,7 +452,12 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
     models, stats = admitted_models(
         ledger_root, os.environ.get("SN21_NETWORK", "finney"),
         int(os.environ.get("SN21_NETUID", "21")), as_of)
-    if already_ran:
+    # A day cut off part way (model files but no end marker; the executor was
+    # killed for memory on 4 Nov 2026) is finished, not skipped: only the
+    # models with no record yet are run, so every prediction already written
+    # stays as it was.
+    resumed = already_ran and not _shadow_store.run_complete(ledger_root, _guard_day)
+    if already_ran and not resumed:
         _write_model_since(ledger_root)
         return {"registry": stats, "models_run": 0,
                 "skipped": (f"shadow day {_guard_day} already ran — "
@@ -464,15 +469,25 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
                                   admitted_at=as_of))
 
     day = basket_key.replace("BD-", "")
+    done = _shadow_store.day_models(ledger_root, day) if resumed else set()
+    if resumed:
+        models = [m for m in models if m.hotkey not in done]
+        log(f"[shadow] resuming {day}: {len(done)} model(s) already ran, "
+            f"{len(models)} to run")
     run_basket = basket_runner()
 
     def runner(m, eps):
         return run_basket(m.image_digest, eps)
 
     summary = run_shadow_day(day, episodes, models, runner, ledger_root)
+    if resumed:
+        _shadow_store.record_run_marker(ledger_root, day, len(episodes),
+                                        len(done) + len(summary.get("results", {})))
+        summary["resumed_after"] = len(done)
     _write_model_since(ledger_root)
     workdir = os.environ.get("SN21_EXECUTOR_WORKDIR", "/tmp/executor")
     return {"registry": stats, "models_run": summary.get("models_run"),
+            **({"resumed_after": summary["resumed_after"]} if resumed else {}),
             "health": shadow_run_health(summary.get("results", {}),
                                         disk_free_mb(ledger_root, workdir)),
             "results": {hk: r.get("predictions")

@@ -187,3 +187,15 @@ def test_a_model_removed_as_unchanged_is_not_charged(tmp_path):
     rec["removed"] = {"sha256:b": {"hotkey": "bob", "removed_on": "2026-08-24"}}
     U.save(root, rec)
     assert compute_penalties(root, DAY) == []
+
+
+def test_a_cut_off_day_charges_no_model_it_never_ran(tmp_path):
+    # 4 Nov 2026: the executor was killed for memory part way through the day,
+    # so the day has model files but no end marker. bob was never run: our
+    # fault, no charge. alice ran and skipped 20 episodes: still charged.
+    root = str(tmp_path)
+    _shadow_day(root, "2026-08-23", {"bob": (90, 90), "alice": (90, 90)})
+    _shadow_day(root, "2026-08-24", {"alice": (100, 80)}, ran=False)
+    assert compute_penalties(root, DAY) == [{"day": "2026-08-24", "hotkey": "alice", "missed": 20}]
+    open(os.path.join(root, "shadow", "2026-08-24", "_run.json"), "w").write("{}")
+    assert {p["hotkey"] for p in compute_penalties(root, DAY)} == {"alice", "bob"}

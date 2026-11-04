@@ -257,6 +257,7 @@ def compute_penalties(root: str, day: date,
         return []
     done = applied(root)
     status = shadow.day_run_status(root, d)
+    complete = shadow.run_complete(root, d)
     # A model removed for running unchanged for 40 days is not run, and its
     # absence is not charged (Sir Rob, KzoNlmEF, 2 Nov 2026).
     from hope.backtest.unchanged_models import removed_hotkeys
@@ -270,6 +271,9 @@ def compute_penalties(root: str, day: date,
             # The model was scheduled and OUR side failed it — no charge.
             # It simply adds no evidence for the day, like a censored
             # horizon: absence of a fair chance is not absence.
+            continue
+        if hk not in coverage and not complete:
+            # The day's run was cut off before this model ran: ours, no charge.
             continue
         eps_in, preds_out = coverage.get(hk, (0, 0))
         missed = (day_episodes if hk not in coverage

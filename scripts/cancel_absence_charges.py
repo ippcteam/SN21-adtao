@@ -16,6 +16,12 @@ Runs where the ledger disk is mounted (the executor service shell):
     python -m scripts.cancel_absence_charges \
         --ledger-root /var/data/sn21/ledger \
         --charge "2026-09-01:5G7JTZ...:image pull failed on the operator side"
+
+`--interrupted-day DAY` cancels every charge on DAY whose model has no record
+that day and the day has no end marker: the run was cut off on our side before
+those models ran (4 Nov 2026, basket 3 Nov: the executor was killed for
+memory). Run it BEFORE the day is resumed, while the unrun models still have
+no record.
 """
 
 from __future__ import annotations
@@ -28,7 +34,9 @@ import sys
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ledger-root", required=True)
-    parser.add_argument("--charge", action="append", required=True,
+    parser.add_argument("--interrupted-day", metavar="DAY",
+                        help="cancel the charges for the models a cut-off run never reached")
+    parser.add_argument("--charge", action="append", default=[],
                         metavar="DAY:HOTKEY:REASON",
                         help="one charged (day, hotkey) and the reason for "
                              "cancelling it; repeatable")
@@ -47,8 +55,23 @@ def main() -> int:
     already = {(c["day"], c["hotkey"])
                for c in load_cancellations(args.ledger_root)}
 
+    specs = list(args.charge)
+    if args.interrupted_day:
+        from hope.backtest import shadow
+        day = args.interrupted_day
+        if shadow.run_complete(args.ledger_root, day):
+            print(f"REFUSED {day}: the day's run finished (it has its end marker)")
+            return 1
+        ran = shadow.day_models(args.ledger_root, day)
+        specs += [f"{day}:{hk}:the day's run was cut off on our side before this model ran"
+                  for (d, hk) in sorted(charges)
+                  if d == day and hk not in ran and (d, hk) not in already]
+    if not specs:
+        print("nothing to cancel")
+        return 1
+
     to_write = []
-    for spec in args.charge:
+    for spec in specs:
         try:
             day, hotkey, reason = spec.split(":", 2)
         except ValueError:
