@@ -173,3 +173,17 @@ def test_never_charges_before_the_effective_date(tmp_path):
     _shadow_day(root, "2026-08-23", {"alice": (50, 0)})
     from hope.scoring.absence_penalty import compute_penalties as cp
     assert cp(root, date(2026, 8, 23)) == []
+
+
+def test_a_model_removed_as_unchanged_is_not_charged(tmp_path):
+    """Sir Rob, KzoNlmEF (2 Nov 2026): a model not run because it ran unchanged
+    for 40 days is not charged for its absence."""
+    from hope.backtest import unchanged_models as U
+    root = str(tmp_path)
+    _shadow_day(root, "2026-08-23", {"bob": (90, 90)})
+    _shadow_day(root, "2026-08-24", {"alice": (100, 100)})
+    rec = U.empty()
+    rec["hotkeys"] = {"bob": {"digest": "sha256:b", "since": "2026-07-01"}}
+    rec["removed"] = {"sha256:b": {"hotkey": "bob", "removed_on": "2026-08-24"}}
+    U.save(root, rec)
+    assert compute_penalties(root, DAY) == []

@@ -257,9 +257,13 @@ def compute_penalties(root: str, day: date,
         return []
     done = applied(root)
     status = shadow.day_run_status(root, d)
+    # A model removed for running unchanged for 40 days is not run, and its
+    # absence is not charged (Sir Rob, KzoNlmEF, 2 Nov 2026).
+    from hope.backtest.unchanged_models import removed_hotkeys
+    removed = removed_hotkeys(root, d)
     out: list[dict] = []
     for hk in sorted(chargeable_hotkeys(root, day, environ=environ)):
-        if (d, hk) in done:
+        if (d, hk) in done or hk in removed:
             continue
         ok, error = status.get(hk, (None, None))
         if ok is False and operator_fault(error, published_budget_s):

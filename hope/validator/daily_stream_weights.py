@@ -770,6 +770,18 @@ def allocation_from_ledger(
             state = vac.state
             if vac.event and persist:
                 standing_ledger.append_promotion_event(root, vac.event)
+    # A model removed for running unchanged for 40 days earns nothing from its
+    # removal day, like an evicted one: standings untouched, no seat (Sir Rob,
+    # KzoNlmEF, 2 Nov 2026). Empty until SN21_UNCHANGED_REMOVAL_FROM is set.
+    from hope.backtest.unchanged_models import removed_hotkeys
+    removed = removed_hotkeys(root, day)
+    if removed:
+        evicted = evicted | removed
+        if state.champion is not None and state.champion in removed:
+            vac = vacate_seat(state, day, "unchanged_model_removed")
+            state = vac.state
+            if vac.event and persist:
+                standing_ledger.append_promotion_event(root, vac.event)
 
     tenure_min = tenure_min_days(environ) if tenure_gate_enabled(environ) else 0
     _house = chronic_failure.house_hotkey_from(environ)

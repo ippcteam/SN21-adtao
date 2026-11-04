@@ -1146,3 +1146,27 @@ def test_min_survivors_cannot_be_set_to_zero():
     assert min_survivors_from({MIN_SURVIVORS_ENV: "0"}) == 1
     assert min_survivors_from({MIN_SURVIVORS_ENV: "-5"}) == 1
     assert min_survivors_from({MIN_SURVIVORS_ENV: "none"}) == 1
+
+
+def test_a_champion_removed_as_unchanged_loses_the_seat_and_its_pay(tmp_path):
+    """Sir Rob, KzoNlmEF (2 Nov 2026): a model removed for running unchanged for
+    40 days is not paid, and the seat is refilled the same day."""
+    from hope.backtest import unchanged_models as U
+    from hope.validator.daily_stream_weights import allocation_from_ledger
+
+    root = str(tmp_path)
+    _seed_standings(root, DAY, {"alpha": 0.9, "beta": 0.4})
+    seated = allocation_from_ledger(root, DAY, 300, min_daily_episodes=0, environ={})
+    assert seated.promotion.state.champion == "alpha"
+
+    nxt = DAY + timedelta(days=1)
+    rec = U.empty()
+    rec["hotkeys"] = {"alpha": {"digest": "sha256:a", "since": "2026-01-01"}}
+    rec["removed"] = {"sha256:a": {"hotkey": "alpha", "removed_on": str(nxt)}}
+    U.save(root, rec)
+    after = allocation_from_ledger(root, nxt, 300, min_daily_episodes=0, environ={})
+    assert set(after.weights) == {"beta"}
+    assert after.promotion.state.champion == "beta"
+    assert after.promotion.event["reason"] == "unchanged_model_removed"
+    # standings are facts: untouched
+    assert set(sl.load_entries(root, as_of=nxt)) == {"alpha", "beta"}

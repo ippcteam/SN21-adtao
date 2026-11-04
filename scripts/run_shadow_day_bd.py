@@ -127,7 +127,22 @@ def admitted_models(root: str, network: str, netuid: int,
     except Exception as exc:
         stats["last_admitted_error"] = str(exc)[:200]
     stats["kept_last_admitted"] = len(kept)
-    return list(registry["active"].values()) + list(kept.values()), stats
+    models = {**registry["active"], **kept}
+    # A model that has run unchanged for 40 days, or a digest removed before,
+    # is not run from the switch date (Sir Rob, KzoNlmEF, 2 Nov 2026). The
+    # record is kept every day so the counts are right when the switch turns
+    # on; a problem with it never stops the run, and then nobody is removed.
+    from hope.backtest import unchanged_models
+    try:
+        removed = unchanged_models.apply(root, models, as_of)
+    except Exception as exc:
+        removed = {}
+        stats["unchanged_error"] = str(exc)[:200]
+    stats["removed_unchanged"] = len(removed)
+    if removed:
+        print("[unchanged] not run today: " + ", ".join(
+            f"{hk[:12]} ({why})" for hk, why in sorted(removed.items())), flush=True)
+    return [m for hk, m in models.items() if hk not in removed], stats
 
 
 def _parse_args(argv):
