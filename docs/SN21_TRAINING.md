@@ -4,7 +4,7 @@
 | :---- | :---- |
 | **Audience** | Miners |
 | **Status** | Authoritative training path for the daily stream |
-| **Last updated** | 2026-11-03 |
+| **Last updated** | 2026-11-04 |
 | **Prerequisites** | Registered hotkey ([quickstart §2](./miner_quickstart.md)) |
 
 One route from published data to a container the subnet will run. Six steps,
@@ -58,6 +58,21 @@ yet, it says so rather than inventing a CLI.
 > windows *after* the last published slice, so later windows stay
 > unpublished until the next rotation. Slices are announced here and on the
 > releases page; nothing is refreshed silently.
+>
+> **Schedule: a new slice every 2 weeks (from 2026-11-04).** Each release adds
+> the next 2 weeks of windows whose 28-day results have settled, and the
+> held-out set moves to the days after them first. Windows settle about 5 weeks
+> after they close, so a slice always ends about 6 weeks before its release
+> date.
+>
+> | Slice | Windows | Release (about) |
+> | :---- | :---- | :---- |
+> | v6 | 2026-08-15 – 2026-09-20 | published 2026-11-03 |
+> | v7 | 2026-09-21 – 2026-10-04 | 2026-11-19 |
+> | v8 | 2026-10-05 – 2026-10-18 | 2026-12-03 |
+>
+> and every 2 weeks after that. A date can move by a few days when the checks
+> before publishing find something to fix; the new date is posted here first.
 
 ---
 
