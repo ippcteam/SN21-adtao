@@ -2,12 +2,18 @@
 
 | | |
 | :---- | :---- |
-| **Version** | 1.2 |
+| **Version** | 1.3 |
 | **Audience** | Miners, validators, auditors |
-| **Status** | How model images are pulled **today**, and the **planned** closed-while-earning rule (not in force yet) |
-| **Last updated** | 2026-10-19 |
+| **Status** | How model images are pulled **today**; released models copied and listed **from 2026-11-16**; closed access while earning still **planned** |
+| **Last updated** | 2026-11-09 |
 | **Related** | [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md) · [SN21_REWARDS.md](./SN21_REWARDS.md) · [SN21_VERIFYING.md](./SN21_VERIFYING.md) · [miner_quickstart.md](./miner_quickstart.md) |
 
+> **From the run of 2026-11-16, released models are copied and listed**
+> (rule amendment, published 2026-11-09). The release part of the rule below
+> is in force from that run; the closed part is not built yet, so images are
+> still pulled anonymously and must stay public. See
+> [Released models: copied and listed](#released-models-copied-and-listed-from-2026-11-16).
+>
 > **Updated 2026-10-19.** Validators do not run models: the subnet's executor
 > runs every admitted model and publishes signed receipts, and validators set
 > weights from those. So the planned rule no longer gives validators a
@@ -39,11 +45,45 @@
 
 ---
 
+## Released models: copied and listed (from 2026-11-16)
+
+Rule amendment, published 2026-11-09, in force from the run of **2026-11-16**.
+
+Each day, after weights are set, the run works out which models are
+**released**, using the three triggers in
+[When a digest is released](#when-a-digest-is-released): 5 consecutive run
+days out of the earning set, dethroned as champion, or 45 days after
+`closed_since`. Then:
+
+- **A copy is kept.** The released image is copied, by its digest, to
+  `ghcr.io/adtaoai/sn21-released`, so it stays pullable even if the original
+  image is deleted. A copy that fails is retried the next day; the release
+  stands either way.
+- **It is listed publicly** in
+  [github.com/adtaoai/sn21_models](https://github.com/adtaoai/sn21_models):
+  `released.json` and a table in its README, one row per released digest
+  (`digest`, `hotkey`, `released_on`, `reason`, `closed_since` and the copy).
+  Only released models are listed.
+
+Counting starts with the run of 2026-11-16; nothing before it counts. Because
+closed access is not built yet, `closed_since` is the first day from
+2026-11-16 that the digest is in the earning set. A new digest starts its own
+clock, and a released digest stays released.
+
+What does not change: scoring, pay, the earning set and how images are pulled.
+Your image is already public, so there is nothing to do; keep it pullable by
+its digest, as today. The miner obligations and the closed-access sections
+below are still planned and not in force.
+
+---
+
 ## Planned: closed while earning, public on release (not in force)
 
 Everything from here down is the **target rule**, kept so miners can see where
-this is going. **None of it is in force.** When it is built, the date it
-starts will be announced in advance, with notice, as for any rule change.
+this is going. **None of it is in force**, except the release triggers, the
+release ledger and the operator copy, which apply from the run of 2026-11-16
+as described above. When the rest is built, the date it starts will be
+announced in advance, with notice, as for any rule change.
 
 ## In one line (planned)
 
@@ -175,8 +215,9 @@ stream rules. Changes are announced in advance.
 
 ## Rollout
 
-Not in force. The release ledger, the executor's pull account and the public
-copy are built and switched off. Until the rule is announced with a start
+The release ledger, the operator's copy and the public list are in force from
+the run of 2026-11-16 (above). Closed access is not: the executor's pull
+account is built and switched off. Until that part is announced with a start
 date, every committed image is pulled anonymously and must stay public
 (see "How it works today" above). The announcement will name the first day the
 rule applies and the commit prefix (e.g. `sn21-model:v2`) needed for closed
