@@ -471,6 +471,14 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
     day = basket_key.replace("BD-", "")
     done = _shadow_store.day_models(ledger_root, day) if resumed else set()
     if resumed:
+        # The settle after the cut charged the models it never reached as
+        # absent; those charges are cancelled first, while they still have no
+        # record (a model that then fails on its own is not charged again).
+        from hope.scoring.absence_penalty import cancel_cut_off_charges
+        cancelled = cancel_cut_off_charges(ledger_root, day)
+        if cancelled:
+            log(f"[shadow] {len(cancelled)} absence charge(s) on {day} cancelled: "
+                "the run was cut off before those models ran")
         models = [m for m in models if m.hotkey not in done]
         log(f"[shadow] resuming {day}: {len(done)} model(s) already ran, "
             f"{len(models)} to run")

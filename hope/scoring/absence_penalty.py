@@ -283,6 +283,28 @@ def compute_penalties(root: str, day: date,
     return out
 
 
+CUT_OFF_REASON = "the day's run was cut off on our side before this model ran"
+
+
+def cancel_cut_off_charges(root: str, day: str, apply: bool = True) -> list[dict]:
+    """Cancel the charges on `day` for models the day's run never reached: the
+    day has no end marker and the model has no record. Called before a cut-off
+    day is resumed (charges made by the settle that followed the cut, 4 Nov
+    2026) and by scripts/cancel_absence_charges --interrupted-day. Returns the
+    charges cancelled (or, with apply=False, that would be)."""
+    if shadow.run_complete(root, day):
+        return []
+    ran = shadow.day_models(root, day)
+    done = {(c["day"], c["hotkey"]) for c in standing_ledger.load_cancellations(root)}
+    out = [p for p in penalty_log(root)
+           if p["day"] == day and p["hotkey"] not in ran and (p["day"], p["hotkey"]) not in done]
+    if apply:
+        for p in out:
+            standing_ledger.record_cancellation(root, p["day"], p["hotkey"], p["missed"],
+                                                p["score"], PENALTY_ENTRY_WEIGHT, CUT_OFF_REASON)
+    return out
+
+
 def apply_penalties(root: str, day: date, environ=os.environ) -> dict:
     """Charge `day` and the trailing catch-up days. Idempotent. The FLAG is
     the caller's job (daily_loop), so dry reads stay possible flag-off."""

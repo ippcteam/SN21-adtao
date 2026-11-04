@@ -58,14 +58,13 @@ def main() -> int:
     specs = list(args.charge)
     if args.interrupted_day:
         from hope.backtest import shadow
+        from hope.scoring.absence_penalty import CUT_OFF_REASON, cancel_cut_off_charges
         day = args.interrupted_day
         if shadow.run_complete(args.ledger_root, day):
             print(f"REFUSED {day}: the day's run finished (it has its end marker)")
             return 1
-        ran = shadow.day_models(args.ledger_root, day)
-        specs += [f"{day}:{hk}:the day's run was cut off on our side before this model ran"
-                  for (d, hk) in sorted(charges)
-                  if d == day and hk not in ran and (d, hk) not in already]
+        specs += [f"{p['day']}:{p['hotkey']}:{CUT_OFF_REASON}"
+                  for p in cancel_cut_off_charges(args.ledger_root, day, apply=False)]
     if not specs:
         print("nothing to cancel")
         return 1

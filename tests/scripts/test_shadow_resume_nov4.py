@@ -41,3 +41,20 @@ def test_a_finished_day_stays_locked(tmp_path, monkeypatch):
     ran.clear()
     out = P.stage_shadow(root, "BD-2026-11-03", EPS, include_reference=False)
     assert ran == [] and "skipped" in out
+
+
+def test_the_resume_cancels_the_charges_for_the_models_it_never_reached(tmp_path, monkeypatch):
+    import json
+
+    from hope.scoring.absence_penalty import _log_path
+    from hope.scoring.standing_ledger import load_cancellations
+    root, ran = str(tmp_path), []
+    _setup(monkeypatch, ran)
+    shadow.record_day(root, "2026-11-03", ShadowModel("a", "r@sha256:a", "x"),
+                      RunResult(ok=True, predictions={"e1": {}}, episodes_in=2, predictions_out=1))
+    os.makedirs(os.path.dirname(_log_path(root)), exist_ok=True)
+    with open(_log_path(root), "w") as f:
+        f.writelines(json.dumps({"day": "2026-11-03", "hotkey": hk, "missed": m, "score": 0.0}) + "\n"
+                     for hk, m in (("a", 1), ("b", 2), ("c", 2)))
+    P.stage_shadow(root, "BD-2026-11-03", EPS, include_reference=False)
+    assert sorted(c["hotkey"] for c in load_cancellations(root)) == ["b", "c"]
