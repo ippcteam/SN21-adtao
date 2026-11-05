@@ -99,6 +99,20 @@ def test_the_status_feed_shows_each_miners_days():
     assert "days_unchanged" not in out[1] and "days_unchanged" not in out[2]
 
 
+def test_the_feed_never_shows_a_day_before_the_rule_starts():
+    """Shown from the notice day: a model past its 40 days stops on the rule's first day."""
+    from hope.publication.registration_status_feed import add_unchanged_days
+    rec = U.update(U.empty(), {"old": A, "young": B}, "2026-09-01")
+    rec = U.update(rec, {"young": "repo/y@sha256:" + "c" * 64}, "2026-11-01")
+    rows = [{"hotkey": "old", "current_digest": "a" * 16},
+            {"hotkey": "young", "current_digest": "c" * 16}]
+    out = add_unchanged_days(rows, rec, "2026-11-09", start="2026-11-16")
+    assert out[0]["not_run_from"] == "2026-11-16" and out[0]["days_unchanged"] == 70
+    assert out[1]["not_run_from"] == "2026-12-11"
+    assert U.switch_date({U.SWITCH_ENV: "2026-11-16"}) == "2026-11-16"
+    assert U.switch_date({U.SWITCH_ENV: "soon"}) is None and U.switch_date({}) is None
+
+
 # ---- a removed model re-added under a new digest -------------------------------
 
 from hope.scoring.duplication import LineageParams

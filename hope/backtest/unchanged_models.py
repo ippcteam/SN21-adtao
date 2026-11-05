@@ -29,13 +29,20 @@ RECORD = os.path.join("registry", "_digest_since.json")
 MAX_DAYS = 40
 
 
+def switch_date(environ=os.environ) -> str | None:
+    """The date the rule applies from (YYYY-MM-DD), or None when unset or unreadable."""
+    raw = (environ.get(SWITCH_ENV) or "").strip()
+    try:
+        return date.fromisoformat(raw).isoformat() if raw else None
+    except ValueError:
+        return None
+
+
 def enabled(as_of: str, environ=os.environ) -> bool:
     """True from the switch date on; off when unset or unreadable."""
-    raw = (environ.get(SWITCH_ENV) or "").strip()
-    if not raw:
-        return False
+    start = switch_date(environ)
     try:
-        return date.fromisoformat(str(as_of)[:10]) >= date.fromisoformat(raw)
+        return bool(start) and date.fromisoformat(str(as_of)[:10]) >= date.fromisoformat(start)
     except ValueError:
         return False
 

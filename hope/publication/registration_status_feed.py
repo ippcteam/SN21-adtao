@@ -95,11 +95,14 @@ def assemble(registry: dict,
     return out
 
 
-def add_unchanged_days(statuses: list[dict], record: dict, as_of: str) -> list[dict]:
+def add_unchanged_days(statuses: list[dict], record: dict, as_of: str,
+                       start: str | None = None) -> list[dict]:
     """Each miner's days with its current model, and the first day it is not run
     (Sir Rob, KzoNlmEF, 2 Nov 2026: a miner must be able to see them). Only for a
     hotkey whose committed digest is the one it has been running; a model that
-    has not run yet has no days. `removed_on` is set once it is not run any more."""
+    has not run yet has no days. `removed_on` is set once it is not run any more.
+    `start` is the rule's first day: no model stops before it, so a model past
+    its 40 days before then shows that day."""
     from hope.backtest import unchanged_models as U
     removed = (record or {}).get("removed") or {}
     for rec in statuses:
@@ -111,7 +114,7 @@ def add_unchanged_days(statuses: list[dict], record: dict, as_of: str) -> list[d
             continue
         rec["model_since"] = st["digest_since"]
         rec["days_unchanged"] = st["days_unchanged"]
-        rec["not_run_from"] = st["removal_on"]
+        rec["not_run_from"] = max(st["removal_on"], start) if start else st["removal_on"]
         if entry.get("digest") in removed:
             rec["removed_on"] = removed[entry["digest"]]["removed_on"]
     return statuses
@@ -203,11 +206,13 @@ def build_registration_status_document(ledger_root: str,
         _scored_hotkeys(ledger_root, today),
         _first_settle_by_hotkey(ledger_root),
     )
-    # Shown from the date the rule applies (SN21_UNCHANGED_REMOVAL_FROM), as
-    # announced; the record behind it is kept every day by the run.
+    # Shown once the rule's date is set (SN21_UNCHANGED_REMOVAL_FROM, set on the
+    # notice day), so each miner sees its date during the notice week (Sir Rob,
+    # KzoNlmEF, 4 Nov 2026); the record behind it is kept every day by the run.
     from hope.backtest import unchanged_models
-    if unchanged_models.enabled(as_of):
-        add_unchanged_days(statuses, unchanged_models.load(ledger_root) or {}, as_of)
+    start = unchanged_models.switch_date()
+    if start:
+        add_unchanged_days(statuses, unchanged_models.load(ledger_root) or {}, as_of, start)
     return {
         "feed": "sn21-registration-status",
         "note": ("per hotkey: the model digest currently committed on chain, "
