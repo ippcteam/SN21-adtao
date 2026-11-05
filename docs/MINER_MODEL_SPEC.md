@@ -66,7 +66,10 @@ and `instability_risk` in `[0, 1]`.
 | CPU time | **15 minutes** per daily basket |
 | Filesystem | Read-only root |
 
-Exceeding a limit aborts that day's run: no scores for the day.
+Exceeding a limit aborts that day's run: no scores for the day. A run stopped
+by any sandbox limit (resident memory, the address-space cap below, or CPU
+time) counts as that model's own failed run for the day, and the absence
+penalty applies to it as to any other failed run.
 
 **The address-space cap.** Besides the 1 GB resident limit, the sandbox caps
 your process's *virtual* address space at 3,072 MB (`setrlimit(RLIMIT_AS)`).
