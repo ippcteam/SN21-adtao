@@ -341,7 +341,9 @@ Performance Max has no ad groups or keywords:
 | Campaign negative keywords | `NEGATIVE_KEYWORD_ADD` / `REMOVE` |
 | Campaign assets (sitelinks, callouts and the like) | `ASSET_CHANGE` |
 
-Asset groups, listing groups, search themes and shared negative keyword list changes are not episodes. Combined
+Asset groups, listing groups and search themes are not episodes. Shared
+negative keyword list changes on Performance Max campaigns are episodes from
+2026-11-15 (see the amendment below); before that they are not. Combined
 72-hour windows work as for Search (`COMPOSITE:*`).
 
 **How to tell them apart.** `pre_window.campaigns.<id>.campaign_type` (and the
@@ -374,6 +376,21 @@ published limit stay as they are.
 
 **Training data.** v5 has 133 Performance Max records, built before this rule
 and without these context fields; v6 is Search only.
+
+### Shared negative keyword lists on Performance Max (rule amendment, published 2026-11-09, effective 2026-11-16)
+
+For changes made from **2026-11-15** (the first basket under the rule is
+`BD-2026-11-15`, served by the run of 2026-11-16), keywords added to or
+removed from a shared negative keyword list attached to a **Performance Max**
+campaign are episodes too, one per affected campaign, exactly as they have
+been for Search campaigns since 2026-10-30 (see "Shared negative keyword
+lists" above): the same `transition_key` values
+(`SHARED_NEGATIVE_KEYWORD_ADD:<match>:<count>`, `SHARED_NEGATIVE_KEYWORD_REMOVE`),
+the same `list_change` block, the same dating between two morning checks and
+the same `source` of `unknown`. The episode's campaign is a Performance Max
+one, so it carries the Performance Max context described above (no ad-group
+or keyword detail). These episodes count toward the one-fifth Performance Max
+share of each basket. Scoring does not change.
 
 ### `account_state.goal_basis` — which efficiency metric you are scored on
 
