@@ -71,6 +71,35 @@ import threading
 
 _UNPACK_LOCK = threading.Lock()
 
+# Unpacked images on disk right now, across the run's workers. While one is,
+# low disk is temporary: each is removed when its model ends, so an unpack
+# waits for that (up to DISK_WAIT_ENV seconds) instead of failing. Failing at
+# once let a few large images in flight fail the rest of the day's queue in
+# seconds (5 Nov 2026: 79 of 150 disk_low with 12 GB free before and after).
+_IN_FLIGHT = 0
+_IN_FLIGHT_LOCK = threading.Lock()
+DISK_WAIT_ENV = "SN21_DISK_WAIT_S"
+DEFAULT_DISK_WAIT_S = 1800
+DISK_POLL_S = 5.0
+
+
+def _disk_wait_s(environ=os.environ) -> float:
+    try:
+        return max(0.0, float(environ.get(DISK_WAIT_ENV) or DEFAULT_DISK_WAIT_S))
+    except ValueError:
+        return float(DEFAULT_DISK_WAIT_S)
+
+
+def _wait_for_disk(path: str, sleep=time.sleep, clock=time.monotonic) -> int:
+    """Free bytes at `path`, after waiting while it is low and another image
+    is unpacked (that space comes back when its model ends)."""
+    deadline = clock() + _disk_wait_s()
+    free = _free_disk_bytes(path)
+    while free < MIN_FREE_DISK_BYTES and _IN_FLIGHT > 0 and clock() < deadline:
+        sleep(DISK_POLL_S)
+        free = _free_disk_bytes(path)
+    return free
+
 
 def _as_limit_bytes(environ=os.environ) -> int:
     raw = (environ.get(MEM_MB_ENV) or "").strip()
@@ -112,18 +141,20 @@ def run_basket_local(
     counts. The unpacked image is always removed, success or failure — disk is
     the scarce resource on this host.
     """
+    global _IN_FLIGHT
     eps = list(episodes)
     ids = {str(e["episode_id"]) for e in eps}
     stdin_blob = ("\n".join(json.dumps(e, default=str) for e in eps) + "\n").encode()
 
     dest = tempfile.mkdtemp(prefix="sn21-img-", dir=workdir_root)
+    counted = False
     try:
         # The free-disk check and the unpack are ONE step under a lock: with
         # models running a few at a time, two unpacks that both passed the
         # check a moment apart could together fill the volume the check was
         # protecting. Unpacks are serialised; the runs themselves are not.
         with _UNPACK_LOCK:
-            free = _free_disk_bytes(dest)
+            free = _wait_for_disk(dest)
             if free < MIN_FREE_DISK_BYTES:
                 # Better to skip than to evict the whole service unpacking a huge
                 # image onto a nearly-full volume.
@@ -131,6 +162,9 @@ def run_basket_local(
                     ok=False, episodes_in=len(eps),
                     error=f"disk_low: {free >> 20} MB free < "
                           f"{MIN_FREE_DISK_BYTES >> 20} MB required")
+            with _IN_FLIGHT_LOCK:
+                _IN_FLIGHT += 1
+            counted = True
             try:
                 image = pull_and_unpack(image_ref, digest, dest)
             except PullError as exc:
@@ -170,6 +204,9 @@ def run_basket_local(
                          duration_s=_took, peak_rss_mb=_peak)
     finally:
         cleanup_rootfs(dest)
+        if counted:
+            with _IN_FLIGHT_LOCK:
+                _IN_FLIGHT -= 1
 
 
 def _resolve_entrypoint(image, override):
