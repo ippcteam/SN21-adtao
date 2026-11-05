@@ -182,6 +182,46 @@ From the run of **2026-10-30**:
 
 Results already scored and charges already applied do not change.
 
+## Models unchanged for 40 days (rule amendment, published 2026-11-09, effective 2026-11-16)
+
+From the run of **2026-11-16**, a model that has run unchanged for 40 days is
+no longer run.
+
+1. **Unchanged** means the same image digest. The count starts on the first
+   daily run on which that digest delivered predictions (that day is day 1)
+   and runs every calendar day after it. A day your model did not run does
+   not reset it; committing a new digest that is admitted and runs starts a
+   new count from its own first run.
+2. **From day 41 the model is not run:** no score, no pay and no absence
+   charge for it. Your hotkey stays registered. To come back, commit a new
+   model; it goes through admission like any new model and starts its own 40
+   days from its first run.
+3. **A removed model cannot come back unchanged.** Its digest is never run
+   again, from any hotkey. A rebuilt copy has a new digest, so at admission
+   every new model's predictions on the admission corpus are compared with
+   each removed model's, using the same check as "One payer per model". A
+   model that predicts the same is refused as `same_as_removed_model`. A real
+   update is a model that predicts differently.
+4. **Models already past 40 days on 2026-11-16** are not run from that day.
+   No model stops before 2026-11-16.
+
+**How to see your date.** From the notice day, the registration status feed
+(see the miner quickstart, step 3) carries three fields for each hotkey whose
+committed digest is the one it has been running: `model_since` (its first
+run day), `days_unchanged` (counting that day as 1) and `not_run_from` (the
+first day it will not run). The same date is shown on the miner status page
+at adtao.io/sn21/miner-status. A model that has not run yet has no date.
+
+**Working it out from the chain.** Your commitment
+(`sn21-model:v1:<repo>@sha256:<digest>`) is on chain with the block it was
+made in. A digest can first run on the first daily run after it is admitted,
+so its first run day is never earlier than the day of that block, and
+`not_run_from` is that first run day plus 40 days. The commitment gives the
+earliest possible date; the status feed gives the exact one, because
+admission can take more than a day.
+
+Results already scored and charges already applied do not change.
+
 ## Shared negative keyword list changes (rule amendment, published 2026-10-23, effective 2026-10-30)
 
 From the run of **2026-10-30**, keywords added to or removed from a shared negative

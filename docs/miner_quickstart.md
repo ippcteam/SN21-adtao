@@ -369,6 +369,12 @@ admitted model, which keeps running and being scored until the new one is
 admitted. See [SN21_REWARDS.md](./SN21_REWARDS.md), "Absence and model
 updates".
 
+From **2026-11-09** (rule amendment, effective with the run of 2026-11-16), a
+record whose committed digest is the one running also carries `model_since`,
+`days_unchanged` and `not_run_from`: a model unchanged for 40 days is not run
+from `not_run_from` on. See [SN21_REWARDS.md](./SN21_REWARDS.md), "Models
+unchanged for 40 days".
+
 **4. Is your model being run each day, and did the day count?**
 
 Per-day, per-miner coverage (`episodes_in` / `predictions_out`) is recorded by
