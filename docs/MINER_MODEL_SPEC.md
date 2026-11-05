@@ -62,14 +62,14 @@ and `instability_risk` in `[0, 1]`.
 | :---- | :---- |
 | Network | **None** — the sandbox runs `--network=none`; everything you need ships in the image |
 | Memory | **1 GB** resident (RSS) |
-| Address space | **1,600 MB** virtual (`RLIMIT_AS`) — see below |
+| Address space | **3,072 MB** virtual (`RLIMIT_AS`) — see below |
 | CPU time | **15 minutes** per daily basket |
 | Filesystem | Read-only root |
 
 Exceeding a limit aborts that day's run: no scores for the day.
 
 **The address-space cap.** Besides the 1 GB resident limit, the sandbox caps
-your process's *virtual* address space at 1,600 MB (`setrlimit(RLIMIT_AS)`).
+your process's *virtual* address space at 3,072 MB (`setrlimit(RLIMIT_AS)`).
 Virtual memory counts everything your process reserves, not only what it
 touches: thread stacks, per-thread allocator arenas, BLAS/OpenMP thread pools
 and memory-mapped files all count, even when resident memory stays far below
@@ -89,7 +89,7 @@ in size from day to day, and a cap failure often shows only on a large one:
 
 ```bash
 docker run --rm -i --network=none --memory=1g --read-only \
-  --entrypoint sh <your-image> -c 'ulimit -v 1638400 && exec <your entrypoint command>' \
+  --entrypoint sh <your-image> -c 'ulimit -v 3145728 && exec <your entrypoint command>' \
   < basket.jsonl > out.jsonl
 ```
 

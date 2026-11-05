@@ -174,7 +174,7 @@ The script also auto-confirms when stdin isn't a TTY.
 | 1 | **You** | Build an OCI/Docker image that implements the model contract |
 | 2 | **You** | Push it to a registry the subnet can pull; commit `sn21-model:v1:<repo>@sha256:<digest>` on chain |
 | 3 | **Subnet** | Runs the **backtest gate** on a held-out corpus — must beat the published naive baseline |
-| 4 | **Subnet (daily)** | Executes your admitted image against that day’s basket (`--network=none`, 1 GB / 1,600 MB virtual / 15 CPU-min) |
+| 4 | **Subnet (daily)** | Executes your admitted image against that day’s basket (`--network=none`, 1 GB / 3,072 MB virtual / 15 CPU-min) |
 | 5 | **Subnet** | Locks stdout predictions; scores later at 7 / 14 / 28 (+ settle) |
 
 Full contract: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md).  
@@ -193,7 +193,7 @@ During cutover, “submitted” for bridge pay means your container delivered us
 - Horizons: **`7`**, **`14`**, **`28`**
 - Per horizon: monotone p10/p50/p90 for `cost_delta_pct`, `conversions_delta_pct`, `efficiency_delta_pct`; plus `goal_miss_probability` and `instability_risk` in `[0, 1]` (accepted, **not scored** — no ground truth)
 - **No network** inside the sandbox — bake weights / constants into the image
-- Budget: **1 GB RAM**, **1,600 MB virtual address space**, **15 CPU-minutes** per daily basket (the address-space cap and how to test with it: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md))
+- Budget: **1 GB RAM**, **3,072 MB virtual address space**, **15 CPU-minutes** per daily basket (the address-space cap and how to test with it: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md))
 
 ### Reference image
 
