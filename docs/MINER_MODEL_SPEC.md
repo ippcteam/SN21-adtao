@@ -61,11 +61,37 @@ and `instability_risk` in `[0, 1]`.
 | Limit | Value |
 | :---- | :---- |
 | Network | **None** — the sandbox runs `--network=none`; everything you need ships in the image |
-| Memory | **1 GB** |
+| Memory | **1 GB** resident (RSS) |
+| Address space | **1,600 MB** virtual (`RLIMIT_AS`) — see below |
 | CPU time | **15 minutes** per daily basket |
 | Filesystem | Read-only root |
 
 Exceeding a limit aborts that day's run: no scores for the day.
+
+**The address-space cap.** Besides the 1 GB resident limit, the sandbox caps
+your process's *virtual* address space at 1,600 MB (`setrlimit(RLIMIT_AS)`).
+Virtual memory counts everything your process reserves, not only what it
+touches: thread stacks, per-thread allocator arenas, BLAS/OpenMP thread pools
+and memory-mapped files all count, even when resident memory stays far below
+1 GB. A model that reaches the cap gets `MemoryError` (or a failed `mmap`)
+and the run ends with a non-zero exit, which counts as a failed run.
+
+Common ways to stay well inside it:
+
+- one thread per library: `OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`,
+  `MKL_NUM_THREADS=1` (set them with `ENV` in your Dockerfile)
+- fewer glibc malloc arenas: `MALLOC_ARENA_MAX=2`
+- stream the basket line by line instead of reading it all, and do not keep
+  every prediction in memory before writing
+
+Test with the cap on, using the largest basket you can build — baskets vary
+in size from day to day, and a cap failure often shows only on a large one:
+
+```bash
+docker run --rm -i --network=none --memory=1g --read-only \
+  --entrypoint sh <your-image> -c 'ulimit -v 1638400 && exec <your entrypoint command>' \
+  < basket.jsonl > out.jsonl
+```
 
 > **Amended 2026-08-24 — the absence penalty.** This document previously
 > said a missed day "costs you evidence rather than incurring a separate
