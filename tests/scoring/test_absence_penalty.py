@@ -199,3 +199,15 @@ def test_a_cut_off_day_charges_no_model_it_never_ran(tmp_path):
     assert compute_penalties(root, DAY) == [{"day": "2026-08-24", "hotkey": "alice", "missed": 20}]
     open(os.path.join(root, "shadow", "2026-08-24", "_run.json"), "w").write("{}")
     assert {p["hotkey"] for p in compute_penalties(root, DAY)} == {"alice", "bob"}
+
+
+def test_a_cut_off_day_with_a_plan_spares_only_planned_models(tmp_path):
+    # With the day's plan kept, only a model the run set out to run and never
+    # reached is spared; carol, with no model planned that day, is charged.
+    from hope.backtest import shadow
+    root = str(tmp_path)
+    _shadow_day(root, "2026-08-23", {"bob": (90, 90), "alice": (90, 90), "carol": (90, 90)})
+    _shadow_day(root, "2026-08-24", {"alice": (100, 80)}, ran=False)
+    shadow.record_run_plan(root, "2026-08-24", ["alice", "bob"])
+    got = {p["hotkey"]: p["missed"] for p in compute_penalties(root, DAY)}
+    assert got == {"alice": 20, "carol": 100}

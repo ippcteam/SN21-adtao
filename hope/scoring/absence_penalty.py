@@ -258,6 +258,7 @@ def compute_penalties(root: str, day: date,
     done = applied(root)
     status = shadow.day_run_status(root, d)
     complete = shadow.run_complete(root, d)
+    plan = None if complete else shadow.day_plan(root, d)
     # A model removed for running unchanged for 40 days is not run, and its
     # absence is not charged (Sir Rob, KzoNlmEF, 2 Nov 2026).
     from hope.backtest.unchanged_models import removed_hotkeys
@@ -272,8 +273,10 @@ def compute_penalties(root: str, day: date,
             # It simply adds no evidence for the day, like a censored
             # horizon: absence of a fair chance is not absence.
             continue
-        if hk not in coverage and not complete:
+        if hk not in coverage and not complete and (plan is None or hk in plan):
             # The day's run was cut off before this model ran: ours, no charge.
+            # A hotkey the run had no model for is charged as on any day; a
+            # day recorded before the plan was kept spares every hotkey.
             continue
         eps_in, preds_out = coverage.get(hk, (0, 0))
         missed = (day_episodes if hk not in coverage
@@ -290,14 +293,18 @@ def cancel_cut_off_charges(root: str, day: str, apply: bool = True) -> list[dict
     """Cancel the charges on `day` for models the day's run never reached: the
     day has no end marker and the model has no record. Called before a cut-off
     day is resumed (charges made by the settle that followed the cut, 4 Nov
-    2026) and by scripts/cancel_absence_charges --interrupted-day. Returns the
-    charges cancelled (or, with apply=False, that would be)."""
+    2026) and by scripts/cancel_absence_charges --interrupted-day. Only a
+    hotkey in the day's plan: one with no model to run that day keeps its
+    charge (4 Nov: about 70 such were let off before the plan was kept).
+    Returns the charges cancelled (or, with apply=False, that would be)."""
     if shadow.run_complete(root, day):
         return []
     ran = shadow.day_models(root, day)
+    plan = shadow.day_plan(root, day)
     done = {(c["day"], c["hotkey"]) for c in standing_ledger.load_cancellations(root)}
     out = [p for p in penalty_log(root)
-           if p["day"] == day and p["hotkey"] not in ran and (p["day"], p["hotkey"]) not in done]
+           if p["day"] == day and p["hotkey"] not in ran and (p["day"], p["hotkey"]) not in done
+           and (plan is None or p["hotkey"] in plan)]
     if apply:
         for p in out:
             standing_ledger.record_cancellation(root, p["day"], p["hotkey"], p["missed"],

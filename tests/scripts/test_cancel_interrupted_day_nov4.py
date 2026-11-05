@@ -38,3 +38,14 @@ def test_refuses_a_finished_day(tmp_path, monkeypatch):
     root = str(tmp_path)
     _ledger(root, marker=True)
     assert _run(monkeypatch, root, "--apply") == 1
+
+
+def test_a_hotkey_outside_the_days_plan_keeps_its_charge(tmp_path, monkeypatch):
+    from hope.backtest import shadow
+    root = str(tmp_path)
+    _ledger(root, marker=False)
+    shadow.record_run_plan(root, "2026-11-03", ["a", "b"])
+    shadow.record_run_plan(root, "2026-11-03", ["a"])          # a resume adds, never shrinks
+    assert shadow.day_plan(root, "2026-11-03") == {"a", "b"}
+    assert _run(monkeypatch, root, "--apply") == 0
+    assert [c["hotkey"] for c in load_cancellations(root)] == ["b"]

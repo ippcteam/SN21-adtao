@@ -41,6 +41,10 @@ def shadow_dir(root: str, day: str) -> str:
 # zero models were admitted. Without it an empty/absent day directory is
 # ambiguous between "nobody ran" and "we never ran it" — see subnet_ran.
 RUN_MARKER = "_run.json"
+# The hotkeys a day's run set out to run, written before the first model:
+# on a day cut off part way it tells a model the run never reached (ours)
+# from a hotkey that had no model to run that day (its own absence).
+RUN_PLAN = "_plan.json"
 
 # Shadow day directories are named by the BASKET day (BD-<day> minus the
 # prefix), never by the day the script happened to execute.
@@ -175,6 +179,29 @@ def run_complete(root: str, day: str) -> bool:
     models run): the models after the cut were never run, which is our fault,
     not the miners'."""
     return os.path.exists(os.path.join(shadow_dir(root, day), RUN_MARKER))
+
+
+def record_run_plan(root: str, day: str, hotkeys) -> str:
+    """Add `hotkeys` to the day's plan. A resumed or retried day adds to the
+    first run's plan, never replaces it. Written atomically."""
+    d = shadow_dir(root, day)
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, RUN_PLAN)
+    plan = sorted((day_plan(root, day) or set()) | set(hotkeys))
+    with open(path + ".tmp", "w") as f:
+        json.dump({"day": day, "hotkeys": plan}, f)
+    os.replace(path + ".tmp", path)
+    return path
+
+
+def day_plan(root: str, day: str) -> set | None:
+    """The hotkeys the day's run set out to run, or None for a day recorded
+    before the plan was kept (or an unreadable one)."""
+    try:
+        with open(os.path.join(shadow_dir(root, day), RUN_PLAN)) as f:
+            return set(json.load(f)["hotkeys"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def day_models(root: str, day: str) -> set:
@@ -349,6 +376,7 @@ def run_shadow_day(day: str, episodes: list[dict], models: Iterable[ShadowModel]
     models = list(models)
     workers = shadow_workers() if workers is None else max(1, int(workers))
     summary = {}
+    record_run_plan(root, day, [m.hotkey for m in models])
 
     def _note(m, res):
         record_day(root, day, m, res)
