@@ -374,3 +374,75 @@ def test_final_verdict_rule_in_isolation():
     assert is_final_verdict(STATUS_PULL_FAILED) is False
     assert is_final_verdict(STATUS_REJECTED_GATE, "run_failed: pull_failed: x") is False
     assert is_final_verdict(STATUS_REJECTED_GATE, "run_failed: exit=137: killed") is True
+
+
+# ---- the gate code itself raised: ours, retried up to a limit (8 Nov 2026) --
+
+def _file_persist(root):
+    """The same file layout as scripts/run_model_intake._persist: one record per digest."""
+    d = verdict_dir(root)
+    os.makedirs(d, exist_ok=True)
+
+    def persist(digest, record):
+        safe = digest.replace(":", "_").replace("/", "_")
+        with open(os.path.join(d, f"{safe}.json"), "w") as f:
+            json.dump({"image_digest": digest, **record}, f)
+    return persist
+
+
+def _sweep(root, gate):
+    return run_intake(ledger_root=root, hotkeys=["hk232"], read_commitment=lambda hk: _commit(DIGEST_A),
+                      gate_runner=gate, puller=_ok_pull, inspector=_inspector_for(DIGEST_A),
+                      persist=_file_persist(root))
+
+
+@pytest.mark.parametrize("detail", [
+    "gate raised: The read operation timed out",
+    "gate raised: HTTP Error 404: Not Found",
+])
+def test_a_gate_error_written_before_the_count_stays_eligible(tmp_path, detail):
+    """UID 232 (8 Nov 2026): a read of ours timed out inside the gate and the model was rejected for good. Records
+    written before the count existed count as one error, so those digests are tested again."""
+    root = str(tmp_path)
+    _write_gate_rejection(root, "ours", DIGEST_A, detail)
+    assert DIGEST_A not in verdicted_digests(root)
+
+
+def test_the_timed_out_digest_is_gated_again_and_judged(tmp_path):
+    root = str(tmp_path)
+    _write_gate_rejection(root, "sha256_" + "a" * 64, DIGEST_A, "gate raised: The read operation timed out")
+    result = _sweep(root, lambda ref: {"verdict": {"admitted": True}})
+    assert result.gated == 1 and result.admitted == 1
+    assert DIGEST_A in verdicted_digests(root)
+
+
+def test_a_gate_that_raises_every_time_becomes_final_after_the_limit(tmp_path):
+    from hope.backtest.intake_runner import GATE_ERROR_LIMIT
+
+    root = str(tmp_path)
+
+    def boom(ref):
+        raise TimeoutError("The read operation timed out")
+
+    for n in range(1, GATE_ERROR_LIMIT + 1):
+        assert DIGEST_A not in verdicted_digests(root)
+        result = _sweep(root, boom)
+        assert result.gated == 1
+        assert result.details[0]["gate_errors"] == n
+    assert DIGEST_A in verdicted_digests(root)
+    assert _sweep(root, boom).gated == 0
+
+
+def test_a_judged_rejection_carries_no_gate_error_count(tmp_path):
+    root = str(tmp_path)
+    result = _sweep(root, lambda ref: {"verdict": {"admitted": False, "reason": "below_baseline_or_coverage"}})
+    assert "gate_errors" not in result.details[0]
+    assert DIGEST_A in verdicted_digests(root)
+
+
+def test_gate_error_rule_in_isolation():
+    assert is_final_verdict(STATUS_REJECTED_GATE, "gate raised: x") is False
+    assert is_final_verdict(STATUS_REJECTED_GATE, "gate raised: x", 2) is False
+    assert is_final_verdict(STATUS_REJECTED_GATE, "gate raised: x", 3) is True
+    assert is_final_verdict(STATUS_REJECTED_GATE, "gate raised: x", "junk") is False
+    assert is_final_verdict(STATUS_REJECTED_GATE, "below_baseline_or_coverage", 5) is True

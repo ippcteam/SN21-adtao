@@ -118,8 +118,21 @@ FINAL_STATUSES = frozenset({STATUS_ADMITTED, STATUS_REJECTED_GATE})
 
 _GATE_RUN_FAILED = "run_failed: "
 
+# The gate code itself raised (image_intake.intake_model: "gate raised: ..."):
+# our read timed out, our feed answered 404, our signing or scoring failed. The
+# model's own run failures never arrive this way - the runner reports them as a
+# result - so such a record is a verdict on our side, not on the model. Until
+# 2026-11-08 it was final: UID 232's new model was rejected for good by a read
+# of ours that timed out, and UIDs 149 and 186 earlier by our own 404s. It now
+# stays eligible, and becomes final only after GATE_ERROR_LIMIT such errors on
+# the same digest, so an image that makes the gate raise every time cannot be
+# re-run forever. The count travels in the verdict record (`gate_errors`); a
+# record written before the count existed counts as one.
+_GATE_RAISED = "gate raised: "
+GATE_ERROR_LIMIT = 3
 
-def is_final_verdict(status, detail=None) -> bool:
+
+def is_final_verdict(status, detail=None, gate_errors=None) -> bool:
     """Whether a verdict record settles its digest for good. Pure.
 
     A gate verdict is final — except when the gate never got to judge the
@@ -140,12 +153,38 @@ def is_final_verdict(status, detail=None) -> bool:
     if status not in FINAL_STATUSES:
         return False
     if status == STATUS_REJECTED_GATE and isinstance(detail, str) \
+            and detail.startswith(_GATE_RAISED):
+        return _gate_error_count(gate_errors) >= GATE_ERROR_LIMIT
+    if status == STATUS_REJECTED_GATE and isinstance(detail, str) \
             and detail.startswith(_GATE_RUN_FAILED):
         from hope.scoring.absence_penalty import operator_fault
 
         if operator_fault(detail[len(_GATE_RUN_FAILED):]):
             return False
     return True
+
+
+def _gate_error_count(value) -> int:
+    try:
+        return max(int(value), 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def previous_gate_errors(ledger_root: str, digest: str | None) -> int:
+    """How many gate errors the digest's verdict record already counts (0 if it has none). Pure read."""
+    if not digest:
+        return 0
+    safe = digest.replace(":", "_").replace("/", "_")
+    try:
+        with open(os.path.join(verdict_dir(ledger_root), f"{safe}.json")) as f:
+            rec = json.load(f)
+    except (OSError, ValueError):
+        return 0
+    body = (rec.get("document") or {}).get("metrics") or rec
+    if body.get("status") != STATUS_REJECTED_GATE or not str(body.get("detail") or "").startswith(_GATE_RAISED):
+        return 0
+    return _gate_error_count(body.get("gate_errors"))
 
 
 def verdicted_digests(ledger_root: str) -> set[str]:
@@ -183,7 +222,7 @@ def verdicted_digests(ledger_root: str) -> set[str]:
         status = body.get("status")
         if not digest:
             continue
-        if is_final_verdict(status, body.get("detail")):
+        if is_final_verdict(status, body.get("detail"), body.get("gate_errors")):
             out.add(digest)
     return out
 
@@ -263,6 +302,9 @@ def run_intake(
             # rejection can be argued with rather than just announced.
             "gate": getattr(result, "gate", None),
         }
+        if record["status"] == STATUS_REJECTED_GATE \
+                and str(record["detail"] or "").startswith(_GATE_RAISED):
+            record["gate_errors"] = previous_gate_errors(ledger_root, record["digest"]) + 1
         # An admitted model is one that PASSED the gate, not one that merely
         # pulled. A pull failure and a below-baseline model are both "not
         # admitted" and must stay distinguishable in the record.
