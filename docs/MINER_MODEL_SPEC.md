@@ -336,7 +336,7 @@ Performance Max has no ad groups or keywords:
 | :---- | :---- |
 | Budget | `BUDGET:*` |
 | Bid strategy and target CPA / ROAS | `BID_STRATEGY_CHANGE`, `TARGET_VALUE_CHANGE` |
-| Status | `CAMPAIGN_PAUSE` and its reverse |
+| Status | `CAMPAIGN_PAUSE` (re-enabling a campaign is not an episode, as on Search) |
 | Campaign targeting: locations, ad schedule, demographics, audiences | `GEO_CHANGE`, `SCHEDULE_CHANGE`, `DEMOGRAPHIC_CHANGE`, `AUDIENCE_CHANGE`, `CRITERION_*` |
 | Campaign negative keywords | `NEGATIVE_KEYWORD_ADD` / `REMOVE` |
 | Campaign assets (sitelinks, callouts and the like) | `ASSET_CHANGE` |
