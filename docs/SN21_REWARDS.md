@@ -205,7 +205,7 @@ no longer run.
 4. **Models already past 40 days on 2026-11-16** are not run from that day.
    No model stops before 2026-11-16.
 
-**How to see your date.** From the notice day, the registration status feed
+**How to see your date.** From the run of 2026-11-10, the registration status feed
 (see the miner quickstart, step 3) carries three fields for each hotkey whose
 committed digest is the one it has been running: `model_since` (its first
 run day), `days_unchanged` (counting that day as 1) and `not_run_from` (the
