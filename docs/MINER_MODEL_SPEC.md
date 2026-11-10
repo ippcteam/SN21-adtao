@@ -61,22 +61,21 @@ and `instability_risk` in `[0, 1]`.
 | Limit | Value |
 | :---- | :---- |
 | Network | **None** — the sandbox runs `--network=none`; everything you need ships in the image |
-| Memory | **1 GB** resident (RSS) |
-| Address space | **3,072 MB** virtual (`RLIMIT_AS`) — see below |
+| Memory | **3,072 MB** virtual address space (`RLIMIT_AS`) — see below. Resident memory (RSS) is recorded each day, not limited separately |
 | CPU time | **15 minutes** per daily basket |
 | Filesystem | Read-only root |
 
 Exceeding a limit aborts that day's run: no scores for the day. A run stopped
-by any sandbox limit (resident memory, the address-space cap below, or CPU
+by any sandbox limit (the address-space cap below, or CPU
 time) counts as that model's own failed run for the day, and the absence
 penalty applies to it as to any other failed run.
 
-**The address-space cap.** Besides the 1 GB resident limit, the sandbox caps
+**The address-space cap.** The memory limit is a cap on
 your process's *virtual* address space at 3,072 MB (`setrlimit(RLIMIT_AS)`).
 Virtual memory counts everything your process reserves, not only what it
 touches: thread stacks, per-thread allocator arenas, BLAS/OpenMP thread pools
 and memory-mapped files all count, even when resident memory stays far below
-1 GB. A model that reaches the cap gets `MemoryError` (or a failed `mmap`)
+the cap. A model that reaches the cap gets `MemoryError` (or a failed `mmap`)
 and the run ends with a non-zero exit, which counts as a failed run.
 
 Common ways to stay well inside it:
@@ -91,7 +90,7 @@ Test with the cap on, using the largest basket you can build — baskets vary
 in size from day to day, and a cap failure often shows only on a large one:
 
 ```bash
-docker run --rm -i --network=none --memory=1g --read-only \
+docker run --rm -i --network=none --memory=3g --read-only \
   --entrypoint sh <your-image> -c 'ulimit -v 3145728 && exec <your entrypoint command>' \
   < basket.jsonl > out.jsonl
 ```
@@ -145,7 +144,7 @@ compare the output byte for byte:
 
 ```bash
 for i in 1 2 3; do
-  docker run --rm -i --network=none --memory=1g --read-only \
+  docker run --rm -i --network=none --memory=3g --read-only \
     <your-image> < basket.jsonl > run$i.jsonl
 done
 cmp run1.jsonl run2.jsonl && cmp run2.jsonl run3.jsonl && echo "deterministic"
@@ -489,6 +488,12 @@ is bounded by a published policy:
 | Strike | A day your container was run and delivered nothing usable, where the fault is yours |
 | Eviction | **5 strikes within a rolling 14 days** |
 | Return | After **7 days**, on a clean run |
+
+**In force from the run of 2026-11-17** (notice of 2026-11-10). Until then
+strikes are recorded but evict no one. The 14 days are rolling, so on 17 Nov
+they reach back to the run of 3 Nov: a model with 5 strikes in that window is
+evicted on 17 Nov. An evicted model earns nothing until it returns; its past
+scores are kept.
 
 Three things are explicitly **not** strikes:
 

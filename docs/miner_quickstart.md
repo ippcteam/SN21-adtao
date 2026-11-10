@@ -174,13 +174,13 @@ The script also auto-confirms when stdin isn't a TTY.
 | 1 | **You** | Build an OCI/Docker image that implements the model contract |
 | 2 | **You** | Push it to a registry the subnet can pull; commit `sn21-model:v1:<repo>@sha256:<digest>` on chain |
 | 3 | **Subnet** | Runs the **backtest gate** on a held-out corpus — must beat the published naive baseline by 5% |
-| 4 | **Subnet (daily)** | Executes your admitted image against that day’s basket (`--network=none`, 1 GB / 3,072 MB virtual / 15 CPU-min) |
+| 4 | **Subnet (daily)** | Executes your admitted image against that day’s basket (`--network=none`, 3,072 MB virtual memory / 15 CPU-min) |
 | 5 | **Subnet** | Locks stdout predictions; scores later at 7 / 14 / 28 (+ settle) |
 
 Full contract: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md).  
 You do **not** fetch live baskets and POST predictions yourself — the operator sandbox runs your image.
 
-During cutover, “submitted” for bridge pay means your container delivered usable predictions for **≥75%** of that day’s basket — see [SN21_TRANSITION_PLAN.md](./SN21_TRANSITION_PLAN.md).
+Cover every episode of each day's basket: each one you leave out is charged by the absence penalty — see [SN21_REWARDS.md](./SN21_REWARDS.md).
 
 ---
 
@@ -193,7 +193,7 @@ During cutover, “submitted” for bridge pay means your container delivered us
 - Horizons: **`7`**, **`14`**, **`28`**
 - Per horizon: monotone p10/p50/p90 for `cost_delta_pct`, `conversions_delta_pct`, `efficiency_delta_pct`; plus `goal_miss_probability` and `instability_risk` in `[0, 1]` (accepted, **not scored** — no ground truth)
 - **No network** inside the sandbox — bake weights / constants into the image
-- Budget: **1 GB RAM**, **3,072 MB virtual address space**, **15 CPU-minutes** per daily basket (the address-space cap and how to test with it: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md))
+- Budget: **3,072 MB virtual address space** (the memory limit), **15 CPU-minutes** per daily basket (the address-space cap and how to test with it: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md))
 
 ### Reference image
 
@@ -207,13 +207,13 @@ Smoke-test the contract locally:
 ```bash
 # One fake episode line (shape only — use real training payloads for quality)
 printf '%s\n' '{"episode_id":"demo","action_type":"BUDGET_CHANGE","from_value":100,"to_value":120}' \
-  | docker run --rm -i --network=none --memory=1g --read-only sn21-reference-model:v1
+  | docker run --rm -i --network=none --memory=3g --read-only sn21-reference-model:v1
 ```
 
 You should see one JSON line with `episode_id` and `horizons.7` / `.14` / `.28`.
 
-Production sandbox flags match `hope/backtest/container_runner.py`
-(`--network=none`, `--memory=1g`, `--read-only`, `--pids-limit=256`, etc.).
+The production sandbox runs with no network, a read-only root and the 3,072 MB
+address-space cap (how to test with it: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md)).
 
 ### Prediction line shape
 
@@ -596,8 +596,8 @@ Public RPCs flake under load. Retry 2–3 times on a fresh WebSocket.
 
 Non-JSON lines are ignored. Ensure every episode gets a valid JSON prediction
 line with `episode_id` and `horizons`. Crashes / OOM / timeout → **no scores
-that day** (self-penalising via the standing average). Aim for ≥75% coverage
-on live days during the bridge.
+that day**, and every uncovered episode is charged by the absence penalty.
+Cover every episode.
 
 ### Image fails the gate
 
@@ -613,7 +613,6 @@ magnitudes for direction, rebuild, and commit a **new digest**.
 | Registered + staked but **never scored**; admission verdict `no_scoreable_predictions` | Your container runs but its output does not match the prediction contract, so every line is dropped | Emit **one JSON object per line on stdout**: `{"episode_id": "...", "horizons": {"7": {...}, "14": {...}, "28": {...}}}`. Echo `episode_id` back exactly; horizon keys are the strings `"7"`/`"14"`/`"28"`; each horizon needs monotone `p10`/`p50`/`p90` for **all three** metrics (`cost_delta_pct`, `conversions_delta_pct`, `efficiency_delta_pct`) plus `goal_miss_probability` and `instability_risk` in `[0,1]`. No nulls/NaN, no point estimates, no log lines on stdout. Run your image against a sample basket and confirm every line parses before re-committing. |
 | Digest mismatch at intake | Registry tag moved after you committed | Re-commit the digest you actually pushed; never rely on tags |
 | Paid nothing despite scoring | Below the 250-unit evidence floor, below the score threshold, or stake below the day's alpha hold | Check standing and the [staking ladder](./SN21_STAKING.md) |
-| Weight fell after missed days | Bridge miss decay (1 miss 50%, 2 misses 25%, 3+ zero) | Submit ≥75% of a day's basket; weight restores immediately on return |
 | **Score** fell after missed days | Absence penalty (from 2026-08-24 amendment): every uncovered episode of a subnet-run day enters your standing as a full-weight zero | Cover every day fully; the charge log is public at `/v1/daily/absence-penalties` — see [SN21_REWARDS.md](./SN21_REWARDS.md) |
 | Evicted | 5 miner-fault failed days in a rolling 14 | Fix the container; return after 7 days on a clean run |
 | `verify_day` says `score_reproduction` FAIL | Your recomputed score differs from the published one | The output names the entry — post the diff in the Discord miner channel; see [SN21_VERIFYING.md](./SN21_VERIFYING.md) |
@@ -629,7 +628,7 @@ magnitudes for direction, rebuild, and commit a **new digest**.
 | What you submit | OCI image + on-chain `sn21-model:v1:<repo>@sha256:…` |
 | Execution | Operator sandbox daily; stdin/stdout NDJSON |
 | Horizons | 7, 14, 28 (+ 2-day settle) |
-| Budget | 1 GB RAM / 15 CPU-min per basket |
+| Budget | 3,072 MB virtual memory / 15 CPU-min per basket |
 | Scoring | [SN21_SCORING.md](./SN21_SCORING.md) |
 | Rewards | [SN21_REWARDS.md](./SN21_REWARDS.md) |
 | Staking | [SN21_STAKING.md](./SN21_STAKING.md) |

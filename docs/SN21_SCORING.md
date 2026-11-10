@@ -423,8 +423,8 @@ Cold-start evidence floors (used when placing you for emissions — see rewards 
 | Full standing | **1000** | Full standing confidence |
 
 **First-cycle bootstrap.** During the weekly→daily transition the placement
-floor starts at **50** and ramps back to **250** as daily volume accumulates;
-the full-standing floor stays **1000**. See the note in [SN21_REWARDS.md](./SN21_REWARDS.md#placement-eligibility).
+floor started at **50**; it is **250** from the run of 2026-11-17 (notice of
+2026-11-10). The full-standing floor stays **1000**. See the note in [SN21_REWARDS.md](./SN21_REWARDS.md#placement-eligibility).
 
 ---
 

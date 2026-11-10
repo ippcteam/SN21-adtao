@@ -126,11 +126,12 @@ A skipped episode produces no ledger entry, so it cannot pull an average down.
 Answering only the easiest part of each basket would make a standing the mean
 of a best third rather than the mean of the work.
 
-**Control — the participation gate.** Earning requires covering a published
-fraction of each day's bundle. Fall below it and weight decays; stay below it
-and it reaches zero. Coverage is measured as predictions actually delivered,
-not as "the container exited cleanly" — a model that prints nothing usable
-exits successfully and must not be paid for it.
+**Control — the absence penalty.** Every episode of a day the subnet ran that
+a model leaves uncovered enters its standing as a full-weight zero
+([SN21_REWARDS.md](./SN21_REWARDS.md), absence penalty), so skipping the hard
+part lowers a standing instead of protecting it. Coverage is measured as
+predictions actually delivered, not as "the container exited cleanly" — a
+model that prints nothing usable is charged for every episode.
 
 Two protections in the other direction, because a liveness rule must never
 punish somebody for our failures:
@@ -139,9 +140,6 @@ punish somebody for our failures:
   could have answered it, and that day is dropped from the calculation
   entirely rather than counted against anyone.
 - **A day with nothing to predict is not a miss.** Thin days do not punish.
-
-Only *consecutive* shortfalls at the tail matter. A miner who misses once and
-then shows up is participating; scoring is where history lives.
 
 ### 2.2 Split a basket across two hotkeys to avoid comparison
 

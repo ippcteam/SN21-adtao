@@ -91,13 +91,12 @@ You need enough scored predictions in the standing window before the curve can p
   so far and your evidence against the floor; the curve cannot place you
   until you reach it
 
-> **First-cycle bootstrap.** During the weekly→daily transition the settled
-> evidence is thin by construction — the earliest daily baskets are still
-> maturing — so the placement floor starts at **50** and rises back to **250**
-> as daily volume accumulates. By the time it returns to 250, a miner
-> predicting daily is well past it, so the step-up seats and unseats no one.
-> The full-standing floor stays **1000** throughout, so thin early standings
-> are weighted conservatively.
+> **The floor is 250 from the run of 2026-11-17** (notice of 2026-11-10).
+> During the weekly→daily transition the settled evidence was thin by
+> construction, so the placement floor started at **50**. Daily volume has
+> since built up: on 10 Nov every hotkey in the top 25 held more than 1,700
+> scored predictions, so the step-up to 250 changes no paid seat. The
+> full-standing floor stays **1000**.
 
 (Details in [SN21_SCORING.md](./SN21_SCORING.md).)
 
@@ -132,8 +131,7 @@ The design, stated plainly so nobody has to reverse-engineer it:
    non-empty block for every horizon the episode lists in
    `episode_metadata.outcome_horizons_days`. An empty, partial or null
    `horizons` is an abstention and the episode is charged as uncovered.
-1. **No threshold to duck under.** The 75% participation bar still gates
-   *payment* exactly as before, but the score penalty charges every
+1. **No threshold to duck under.** The score penalty charges every
    uncovered episode — covering 80% of a day still charges the other 20%.
    Predicting only the comfortable episodes is not a strategy.
 2. **No exit.** You are charged for every uncovered subnet-run day for as

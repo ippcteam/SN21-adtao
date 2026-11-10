@@ -382,7 +382,7 @@ ENTRYPOINT ["python", "-u", "predict.py"]
 ```
 
 Contract: one episode JSON per line on **stdin** → one prediction JSON per line
-on **stdout**. Budget: 1 GB RAM, 3,072 MB virtual address space, 15 CPU-minutes per
+on **stdout**. Budget: 3,072 MB virtual address space (the memory limit), 15 CPU-minutes per
 basket (the address-space cap: [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md)).
 
 ---
