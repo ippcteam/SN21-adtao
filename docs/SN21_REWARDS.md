@@ -137,7 +137,9 @@ The design, stated plainly so nobody has to reverse-engineer it:
    uncovered episode — covering 80% of a day still charges the other 20%.
    Predicting only the comfortable episodes is not a strategy.
 2. **No exit.** You are charged for every uncovered subnet-run day for as
-   long as you hold any entries in the 35-day standing window. Going
+   long as you hold any entries in the 35-day absence window (this
+   window decides only who is charged; your standing averages the last 28
+   days, see [SN21_SCORING.md](./SN21_SCORING.md)). Going
    quiet does not freeze your number — it bleeds it toward the floor
    until you return, or your entries age out and you leave the board the
    natural way. This is deliberate: a standing you are not defending is
@@ -336,6 +338,16 @@ The champion changes **only** when a challenger:
 
 Miss any one → incumbent stays. Weights can shift gradually while the champion seat does not.
 
+## One earning seat per coldkey
+
+One coldkey holds at most one earning seat. When several hotkeys under the
+same coldkey are placed, the one with the highest standing keeps the seat;
+ties go to the earlier model commitment, then the hotkey. The others still
+run, still score and stay on the leaderboard, but they earn nothing that
+day. The seat is decided again every day from the standings, so it moves
+when they do. Each day's allocation audit lists the hotkeys left out by this
+rule. Why the limit is one: see [SN21_THREAT_MODEL.md](./SN21_THREAT_MODEL.md) §1.5.
+
 ## One payer per model (copied models)
 
 Models must be public and pullable, so copying one is trivial. The rules
@@ -358,7 +370,7 @@ make it unprofitable rather than pretending it is impossible:
 - **The published reference model is exempt.** Running the reference
   unchanged is participation, not plagiarism. It is also how everyone
   starts. It cannot earn on its own, because admission requires beating the
-  naive baseline by a published margin and the reference model does not clear
+  naive baseline by a published margin (5%, MINER_MODEL_SPEC.md §3) and the reference model does not clear
   its own bar — you are expected to start from it and improve on it.
 - **Evidence, not accusation.** Every detected group is published with its
   working — the shared digest, or the matching prediction fingerprint,

@@ -173,7 +173,7 @@ The script also auto-confirms when stdin isn't a TTY.
 | :---- | :---- | :---- |
 | 1 | **You** | Build an OCI/Docker image that implements the model contract |
 | 2 | **You** | Push it to a registry the subnet can pull; commit `sn21-model:v1:<repo>@sha256:<digest>` on chain |
-| 3 | **Subnet** | Runs the **backtest gate** on a held-out corpus — must beat the published naive baseline |
+| 3 | **Subnet** | Runs the **backtest gate** on a held-out corpus — must beat the published naive baseline by 5% |
 | 4 | **Subnet (daily)** | Executes your admitted image against that day’s basket (`--network=none`, 1 GB / 3,072 MB virtual / 15 CPU-min) |
 | 5 | **Subnet** | Locks stdout predictions; scores later at 7 / 14 / 28 (+ settle) |
 
@@ -348,7 +348,7 @@ docker pull <repo>@sha256:<digest>   # if this fails publicly, intake fails too
 
 **3. Did your model pass the admission gate?**
 
-The gate (beat the naive baseline; ≥90% of reference coverage on the backtest)
+The gate (beat the naive baseline's gate score by 5%; predict ≥90% of the outcomes the baseline is scored on)
 is run by the operator when a new digest lands. Results are announced in the
 Discord miner channel and on [adtao.io/sn21](https://adtao.io/sn21/) as
 admission completes. There is no self-serve gate API yet — interim path is the
@@ -601,8 +601,9 @@ on live days during the bridge.
 
 ### Image fails the gate
 
-Admission requires beating the published naive baseline on the held-out corpus
-(and ≥90% of reference coverage). Re-train, widen calibration, use action
+Admission requires beating the published naive baseline's gate score by 5% on the
+held-out corpus, and predicting ≥90% of the outcomes the baseline is scored on
+(see MINER_MODEL_SPEC.md §3). Re-train, widen calibration, use action
 magnitudes for direction, rebuild, and commit a **new digest**.
 
 ### Other common symptoms

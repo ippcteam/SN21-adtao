@@ -444,10 +444,14 @@ record as `account_state.goal_basis`, so no join is needed.
 
 A newly committed digest runs against a **held-out historical corpus** of
 episodes with settled outcomes. Admission requires **beating the published
-naive baseline** (persistence: zero-change medians with corpus-calibrated
+naive baseline by 5%** (persistence: zero-change medians with corpus-calibrated
 spreads) on the gate metric — quantile pinball blended with direction
-accuracy, 70/30 — and reaching at least 90% of the reference model's
-coverage. Every model update re-runs the gate, and gate results are published.
+accuracy, 70/30. "By 5%" means the model's gate score must be above the
+baseline's gate score × 1.05; each verdict shows both scores, the required
+score and the margin (`margin_required`). The model must also predict at
+least 90% of the outcomes the baseline is scored on (the baseline predicts
+every one of them), so skipping hard cases cannot buy admission. Every model
+update re-runs the gate, and gate results are published.
 The corpus is not published; each published verdict names the corpus it was
 judged on (its key and the sha256 of the document), so two verdicts can be
 compared only when they name the same corpus.
