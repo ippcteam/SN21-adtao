@@ -240,6 +240,7 @@ Each record is `{"episode_id", "input": {"payload", "transition_key"}, "labels"}
 > (`{episode_id, efficiency_basis, source, guarded}`; `efficiency_basis` is
 > `cpa` or `conversion_value`). It covers the training-v2 episodes; the daily
 > map at `/v1/daily/episode-basis-map` covers settled daily-receipt episodes
+> up to 2026-08-23 (later receipts carry `efficiency_basis` on each outcome)
 > and does not overlap this corpus. From the next refresh, the basis also ships
 > inline on each record as `account_state.goal_basis`. See
 > [MINER_MODEL_SPEC](./MINER_MODEL_SPEC.md#account_stategoal_basis--which-efficiency-metric-you-are-scored-on).

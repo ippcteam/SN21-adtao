@@ -429,10 +429,10 @@ and both carrying `{episode_id, efficiency_basis, source, guarded}`:
 
 | Map | Route | Covers |
 | :---- | :---- | :---- |
-| Daily | `/v1/daily/episode-basis-map` | Episodes that have appeared in a settled **daily receipt**. |
+| Daily | `/v1/daily/episode-basis-map` | Episodes in settled **daily receipts** up to 2026-08-23 (6,116 episodes). It is not rebuilt: for later episodes, read `efficiency_basis` on each outcome in the daily receipt, or `account_state.goal_basis` in the payload. |
 | Training | `/v1/daily/training-basis-map` | Every episode in the published **rich training-v2** corpus. |
 
-The two populations do not overlap: the daily map is recent settled receipts,
+The two populations do not overlap: the daily map is the early settled receipts,
 the training map is the reconstructed historical windows in the bundle. If you
 train on the bundle, use the **training** map. Fetch either from the same host
 as the receipts, e.g.
