@@ -83,10 +83,13 @@ def _api_get(path: str, timeout_s: int = 120):
         return json.loads(resp.read().decode())
 
 
-# The package endpoint builds every episode payload on the request (480 of
-# them took 36 s on a quiet database and over two minutes under load); the
-# listing is a small query. Give the package its own, longer patience.
-PACKAGE_TIMEOUT_S = 600
+# The package endpoint builds every episode payload on the request, about
+# 0.2-0.35 s per episode on the live database (1,132 took 4 min 38 s on 11 Nov
+# 2026); the listing is a small query. The limit was 600 s until 12 Nov 2026,
+# and the two largest baskets ran past it: BD-2026-11-03 (2,915 payloads, 4 Nov)
+# and BD-2026-11-07 (2,417, 8 Nov, the build took 680 s), each losing 15 min to
+# the next tick. 1,800 s covers about 6,000 episodes at the slow rate.
+PACKAGE_TIMEOUT_S = 1800
 
 
 def _api_post(path: str, body: dict):
