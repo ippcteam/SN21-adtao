@@ -191,7 +191,10 @@ no longer run.
    daily run on which that digest delivered predictions (that day is day 1)
    and runs every calendar day after it. A day your model did not run does
    not reset it; committing a new digest that is admitted and runs starts a
-   new count from its own first run.
+   new count from its own first run. The count belongs to the digest, not to
+   the hotkey: going back to a digest you ran before continues its count from
+   its first run, and the same digest on another hotkey counts from its first
+   run too.
 2. **From day 41 the model is not run:** no score, no pay and no absence
    charge for it. Your hotkey stays registered. To come back, commit a new
    model; it goes through admission like any new model and starts its own 40
