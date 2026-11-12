@@ -491,11 +491,17 @@ is bounded by a published policy:
 
 **In force from the run of 2026-11-17** (notice of 2026-11-10). Until then
 strikes are recorded but evict no one. The 14 days are rolling, so on 17 Nov
-they reach back to the run of 3 Nov: a model with 5 strikes in that window is
-evicted on 17 Nov. Nothing earlier counts: no eviction recorded before 17 Nov
-is enforced or counts as a previous one. An evicted model earns nothing until
+they cover the 14 runs of 4-17 Nov (the baskets of 3-16 Nov): a model with 5
+strikes in them is evicted on 17 Nov. Nothing earlier counts: no eviction
+recorded before 17 Nov is enforced or counts as a previous one. An evicted model earns nothing until
 it returns; its past scores are kept. Every eviction returns on the first clean
 run 7 days or more after it.
+
+A run that exits cleanly but answers none of the episodes it was given
+delivered nothing usable: it is a strike, and it does not count as the clean
+run that ends an eviction. A run that answers any episode is unaffected. A
+run that ends with a non-zero exit is a failed run (§2) whatever it printed
+before it.
 
 Things that are explicitly **not** strikes:
 
