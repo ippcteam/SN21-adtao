@@ -148,3 +148,25 @@ def test_replay_names_where_each_released_digest_came_from(tmp_path):
     _, rel, _ = R.replay(str(tmp_path), D0, D0 + timedelta(days=5))
     assert [(r["digest"], r["reason"], r["image_ref"]) for r in rel] == \
         [("sha256:aaa", "left_earning_set", "ghcr.io/x/m")]
+
+def test_copy_withheld_reads_the_audit_the_allocation_writes(tmp_path):
+    """12 Nov 2026 (a miner's review): the allocation audit lists copies in
+    "suppressed" (lineage and one-payer copies, after restored payees); the release
+    step read "groups"/"excluded", which the audit never had, so no day was ever
+    withheld and a copy's days counted toward its release."""
+    run_day = D0
+    (tmp_path / f"intended_weights_{run_day}.json").write_text(json.dumps({
+        "weights": {"hkA": 1.0, "hkD": 0.0}, "champion": "hkA",
+        "collapse_audit": {"suppressed": ["hkD", "hkE"],
+                           "lineage": {"groups": [{"cluster": 0, "payee": "hkA", "eliminated": ["hkD"]}]},
+                           "one_payer_groups": [{"payee": "hkA", "eliminated": ["hkE"]}]}}))
+    _shadow(tmp_path, run_day - timedelta(days=1), "hkA", "repo/m@sha256:aaa")
+    assert R.day_inputs(str(tmp_path), run_day)["copy_withheld"] == {"hkD", "hkE"}
+
+
+def test_the_allocation_still_writes_suppressed():
+    """The key the release step reads is the one the allocation writes."""
+    import inspect
+
+    from hope.validator import daily_stream_weights as W
+    assert 'audit["suppressed"] = sorted(suppressed)' in inspect.getsource(W)

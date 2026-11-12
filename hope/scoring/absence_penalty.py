@@ -260,9 +260,14 @@ def compute_penalties(root: str, day: date,
     complete = shadow.run_complete(root, d)
     plan = None if complete else shadow.day_plan(root, d)
     # A model removed for running unchanged for 40 days is not run, and its
-    # absence is not charged (Sir Rob, KzoNlmEF, 2 Nov 2026).
+    # absence is not charged (Sir Rob, KzoNlmEF, 2 Nov 2026). Removals are
+    # recorded by RUN day, and the day charged here is the BASKET day, which
+    # the next day's run serves (run D serves BD-(D-1)). Asked for the basket
+    # day itself, a model removed in the run that served this basket was left
+    # in and charged the whole basket it was never run on (12 Nov 2026, before
+    # the first removals on 16 Nov). The seat check asks with the run day too.
     from hope.backtest.unchanged_models import removed_hotkeys
-    removed = removed_hotkeys(root, d)
+    removed = removed_hotkeys(root, (day + timedelta(days=1)).isoformat())
     out: list[dict] = []
     for hk in sorted(chargeable_hotkeys(root, day, environ=environ)):
         if (d, hk) in done or hk in removed:

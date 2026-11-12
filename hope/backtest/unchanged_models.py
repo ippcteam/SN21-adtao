@@ -10,12 +10,17 @@ the notice sets the date (SN21_UNCHANGED_REMOVAL_FROM, YYYY-MM-DD).
 The record lives in the ledger (registry/_digest_since.json):
   through   the last shadow day folded in
   hotkeys   hotkey -> {"digest": sha256:<hex>, "since": first run day of it}
+  digests   digest -> the first basket day it delivered predictions, on any hotkey
   removed   digest -> {"hotkey", "removed_on", "image_ref"}
   by_day    run day -> hotkeys not run that day (last 14 days)
 It is brought up to date from the shadow ledger on every read, whether or not
 the switch is on, so the counts are right on the switch date and the public
-status feed can show each miner's days before then. A new digest restarts the
-count; a day a hotkey did not run does not reset it.
+status feed can show each miner's days before then. The count is per digest:
+a new digest starts its own count, and a digest run before keeps the count it
+started with (12 Nov 2026, decided with Khurram: SN21_REWARDS.md counts "the
+same image digest" from its first daily run, and a per-hotkey restart let a
+miner switch between two digests and never reach day 41). A day a hotkey did
+not run does not reset it.
 """
 
 from __future__ import annotations
@@ -60,7 +65,7 @@ def _path(root: str) -> str:
 
 
 def empty() -> dict:
-    return {"through": None, "hotkeys": {}, "removed": {}, "by_day": {}}
+    return {"through": None, "hotkeys": {}, "digests": {}, "removed": {}, "by_day": {}}
 
 
 def load(root: str) -> dict | None:
@@ -87,13 +92,19 @@ def update(record: dict, ran: dict, day: str) -> dict:
     predictions that day."""
     out = {**empty(), **(record or {})}
     hotkeys = dict(out["hotkeys"])
+    digests = dict(out.get("digests") or {})
+    d = str(day)[:10]
     for hk, ref in (ran or {}).items():
         dg = bare_digest(ref)
         if not dg:
             continue
+        first = min(digests.get(dg) or d, d)
+        digests[dg] = first
         if (hotkeys.get(hk) or {}).get("digest") != dg:
-            hotkeys[hk] = {"digest": dg, "since": str(day)[:10]}
+            # A digest run before, by this hotkey or another, keeps its first day.
+            hotkeys[hk] = {"digest": dg, "since": first}
     out["hotkeys"] = hotkeys
+    out["digests"] = digests
     out["through"] = max(filter(None, (out.get("through"), str(day)[:10])))
     return out
 
@@ -118,6 +129,12 @@ def refresh(root: str, save_it: bool = True) -> dict:
     from hope.backtest import shadow
 
     record = load(root) or empty()
+    if "digests" not in record:
+        # A record from before the count was per digest: rebuild the counts from
+        # every shadow day, so a digest a hotkey went back to carries its first
+        # day. What was removed, and when, is kept as it is.
+        record = {**empty(), "removed": record.get("removed") or {},
+                  "by_day": record.get("by_day") or {}}
     through = record.get("through")
     for day in shadow.shadow_days(root):
         if through is None or day > through:
@@ -129,14 +146,20 @@ def refresh(root: str, save_it: bool = True) -> dict:
 
 def standing(entry: dict | None, as_of: str) -> dict | None:
     """What the status feed shows for one hotkey: the digest's first run day,
-    days unchanged counting that day as 1, and the first day it is not run."""
+    days unchanged counting that day as 1, and the first run day it is not run.
+
+    `since` is the BASKET day the digest first delivered predictions on; the run
+    that served it is the next day (run D serves BD-(D-1)), and every date here
+    is a run day, as `as_of` is. Counting from the basket day gave each model
+    39 runs and put its first day not run one day before the published rule
+    (first run day + 40; found 12 Nov 2026, before the first removals)."""
     if not entry or not entry.get("since"):
         return None
-    since = date.fromisoformat(entry["since"])
+    first_run = date.fromisoformat(entry["since"]) + timedelta(days=1)
     today = date.fromisoformat(str(as_of)[:10])
-    return {"digest_since": since.isoformat(),
-            "days_unchanged": max(0, (today - since).days + 1),
-            "removal_on": (since + timedelta(days=MAX_DAYS)).isoformat()}
+    return {"digest_since": first_run.isoformat(),
+            "days_unchanged": max(0, (today - first_run).days + 1),
+            "removal_on": (first_run + timedelta(days=MAX_DAYS)).isoformat()}
 
 
 def to_remove(record: dict, active: dict, as_of: str) -> dict:

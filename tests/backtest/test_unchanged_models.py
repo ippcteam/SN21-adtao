@@ -37,11 +37,23 @@ def test_a_missed_day_does_not_reset_the_count():
 
 
 def test_day_40_runs_and_day_41_does_not():
+    """The record holds the BASKET day a digest first delivered on (1 Oct); the run
+    that served it is the next day (2 Oct), and that run is day 1 (SN21_REWARDS.md:
+    the count starts on the first daily run). 12 Nov 2026: counted from the basket
+    day, a model got 39 runs and its first day not run was a day early."""
     r = U.update(U.empty(), {"hk": A}, "2026-10-01")
-    st = U.standing(r["hotkeys"]["hk"], "2026-11-09")
-    assert st == {"digest_since": "2026-10-01", "days_unchanged": 40, "removal_on": "2026-11-10"}
-    assert U.to_remove(r, {"hk": _m(A)}, "2026-11-09") == {}
-    assert U.to_remove(r, {"hk": _m(A)}, "2026-11-10") == {"hk": "unchanged"}
+    st = U.standing(r["hotkeys"]["hk"], "2026-11-10")
+    assert st == {"digest_since": "2026-10-02", "days_unchanged": 40, "removal_on": "2026-11-11"}
+    assert U.to_remove(r, {"hk": _m(A)}, "2026-11-10") == {}
+    assert U.to_remove(r, {"hk": _m(A)}, "2026-11-11") == {"hk": "unchanged"}
+
+
+def test_a_model_gets_exactly_40_runs():
+    from datetime import date, timedelta
+    r = U.update(U.empty(), {"hk": A}, "2026-10-01")
+    runs = [(date(2026, 10, 2) + timedelta(days=n)).isoformat() for n in range(60)]
+    ran = [d for d in runs if U.to_remove(r, {"hk": _m(A)}, d) == {}]
+    assert len(ran) == 40 and ran[0] == "2026-10-02" and ran[-1] == "2026-11-10"
 
 
 def test_a_new_model_not_yet_run_is_never_removed():
@@ -94,8 +106,8 @@ def test_the_status_feed_shows_each_miners_days():
             {"hotkey": "new", "current_digest": "b" * 16},      # committed a model not run yet
             {"hotkey": "none", "current_digest": None}]
     out = add_unchanged_days(rows, rec, "2026-11-04")
-    assert out[0] == {"hotkey": "hk", "current_digest": "a" * 16, "model_since": "2026-10-01",
-                      "days_unchanged": 35, "not_run_from": "2026-11-10"}
+    assert out[0] == {"hotkey": "hk", "current_digest": "a" * 16, "model_since": "2026-10-02",
+                      "days_unchanged": 34, "not_run_from": "2026-11-11"}
     assert "days_unchanged" not in out[1] and "days_unchanged" not in out[2]
 
 
@@ -107,8 +119,8 @@ def test_the_feed_never_shows_a_day_before_the_rule_starts():
     rows = [{"hotkey": "old", "current_digest": "a" * 16},
             {"hotkey": "young", "current_digest": "c" * 16}]
     out = add_unchanged_days(rows, rec, "2026-11-09", start="2026-11-16")
-    assert out[0]["not_run_from"] == "2026-11-16" and out[0]["days_unchanged"] == 70
-    assert out[1]["not_run_from"] == "2026-12-11"
+    assert out[0]["not_run_from"] == "2026-11-16" and out[0]["days_unchanged"] == 69
+    assert out[1]["not_run_from"] == "2026-12-12"
     assert U.switch_date({U.SWITCH_ENV: "2026-11-16"}) == "2026-11-16"
     assert U.switch_date({U.SWITCH_ENV: "soon"}) is None and U.switch_date({}) is None
 
@@ -173,3 +185,53 @@ def test_the_gate_refuses_a_model_the_check_matches_before_signing():
                           post_check=lambda p: U.same_as_removed(p, _outcomes(), {"sha256:" + "a" * 64: preds}, PARAMS))
     assert res["verdict"]["admitted"] is False
     assert res["verdict"]["reason"] == "same_as_removed_model"
+
+
+# ---- the count is per digest (12 Nov 2026) --------------------------------------------
+
+def test_going_back_to_a_digest_keeps_its_first_day():
+    """A hotkey that switches A -> B -> A does not restart A's count."""
+    r = U.update(U.empty(), {"hk": A}, "2026-10-01")
+    r = U.update(r, {"hk": B}, "2026-10-20")
+    assert r["hotkeys"]["hk"] == {"digest": U.bare_digest(B), "since": "2026-10-20"}
+    r = U.update(r, {"hk": A}, "2026-11-01")
+    assert r["hotkeys"]["hk"] == {"digest": U.bare_digest(A), "since": "2026-10-01"}
+    assert U.to_remove(r, {"hk": _m(A)}, "2026-11-11") == {"hk": "unchanged"}
+
+
+def test_switching_between_two_digests_cannot_avoid_day_41():
+    from datetime import date, timedelta
+    r = U.empty()
+    for n in range(60):
+        day = (date(2026, 10, 1) + timedelta(days=n)).isoformat()
+        r = U.update(r, {"hk": A if (n // 10) % 2 == 0 else B}, day)
+    assert r["hotkeys"]["hk"]["since"] in ("2026-10-01", "2026-10-11")
+    active = {"hk": _m(A if ((59 // 10) % 2 == 0) else B)}
+    assert U.to_remove(r, active, "2026-11-30") == {"hk": "unchanged"}
+
+
+def test_the_same_digest_on_another_hotkey_counts_from_its_first_run():
+    r = U.update(U.empty(), {"hk": A}, "2026-10-01")
+    r = U.update(r, {"other": A}, "2026-10-25")
+    assert r["hotkeys"]["other"]["since"] == "2026-10-01"
+
+
+def test_a_day_not_run_still_does_not_reset_the_count():
+    r = U.update(U.empty(), {"hk": A}, "2026-10-01")
+    r = U.update(r, {}, "2026-10-05")
+    r = U.update(r, {"hk": A}, "2026-10-09")
+    assert r["hotkeys"]["hk"]["since"] == "2026-10-01"
+
+
+def test_an_old_record_is_rebuilt_from_the_shadow_days_keeping_removals(tmp_path, monkeypatch):
+    """A record written before the count was per digest has no "digests": it is
+    rebuilt from every shadow day, and its removals are kept."""
+    _with_ledger(monkeypatch, {"2026-10-01": {"hk": A}, "2026-10-20": {"hk": B}, "2026-11-01": {"hk": A}})
+    old = {"through": "2026-11-01", "hotkeys": {"hk": {"digest": U.bare_digest(A), "since": "2026-11-01"}},
+           "removed": {"sha256:z": {"hotkey": "x", "removed_on": "2026-11-16"}},
+           "by_day": {"2026-11-16": ["x"]}}
+    U.save(str(tmp_path), old)
+    r = U.refresh(str(tmp_path))
+    assert r["hotkeys"]["hk"] == {"digest": U.bare_digest(A), "since": "2026-10-01"}
+    assert r["removed"] == old["removed"] and r["by_day"] == old["by_day"]
+    assert r["through"] == "2026-11-01" and "digests" in U.load(str(tmp_path))

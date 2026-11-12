@@ -184,8 +184,15 @@ def day_inputs(ledger_root: str, day: date) -> dict | None:
             earning[hk] = dg
             if repo:
                 refs[dg] = repo
+    # Hotkeys withheld as copies that day. The allocation audit lists them in
+    # "suppressed" (lineage copies and one-payer copies together, after any
+    # payee is restored: daily_stream_weights). This read "groups"/"excluded",
+    # a shape the audit never had, so no day was ever withheld and a copy's
+    # withheld days counted toward its release (12 Nov 2026). The old shape is
+    # still read, for any record written that way.
     withheld = set()
     audit = rec.get("collapse_audit") or {}
+    withheld |= set(audit.get("suppressed") or [])
     for g in audit.get("groups") or []:
         withheld |= set(g.get("excluded") or [])
     return {"earning": earning, "copy_withheld": withheld,

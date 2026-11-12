@@ -189,6 +189,35 @@ def test_a_model_removed_as_unchanged_is_not_charged(tmp_path):
     assert compute_penalties(root, DAY) == []
 
 
+def test_a_model_removed_in_the_run_that_serves_the_basket_is_not_charged(tmp_path):
+    """12 Nov 2026 (a miner's review): removals are stamped with the RUN day, and the
+    run of D serves basket D-1. The basket day was looked up, so a model removed in
+    the run that served it was charged that whole basket though it never ran."""
+    from hope.backtest import unchanged_models as U
+    root = str(tmp_path)
+    _shadow_day(root, "2026-08-23", {"bob": (90, 90), "carol": (90, 90)})
+    _shadow_day(root, "2026-08-24", {"alice": (100, 100)})
+    rec = U.empty()
+    rec["hotkeys"] = {"bob": {"digest": "sha256:b", "since": "2026-07-01"}}
+    rec["removed"] = {"sha256:b": {"hotkey": "bob", "removed_on": "2026-08-25"}}   # the run serving 24 Aug
+    rec["by_day"] = {"2026-08-25": ["bob", "carol"]}       # carol: refused for a removed digest that run
+    U.save(root, rec)
+    assert compute_penalties(root, DAY) == []
+
+
+def test_a_model_removed_a_day_later_is_still_charged_for_the_basket_it_skipped(tmp_path):
+    """Removed in the run after the next: it was due to run this basket and did not."""
+    from hope.backtest import unchanged_models as U
+    root = str(tmp_path)
+    _shadow_day(root, "2026-08-23", {"bob": (90, 90)})
+    _shadow_day(root, "2026-08-24", {"alice": (100, 100)})
+    rec = U.empty()
+    rec["hotkeys"] = {"bob": {"digest": "sha256:b", "since": "2026-07-01"}}
+    rec["removed"] = {"sha256:b": {"hotkey": "bob", "removed_on": "2026-08-26"}}
+    U.save(root, rec)
+    assert [p["hotkey"] for p in compute_penalties(root, DAY)] == ["bob"]
+
+
 def test_a_cut_off_day_charges_no_model_it_never_ran(tmp_path):
     # 4 Nov 2026: the executor was killed for memory part way through the day,
     # so the day has model files but no end marker. bob was never run: our
