@@ -492,16 +492,26 @@ is bounded by a published policy:
 **In force from the run of 2026-11-17** (notice of 2026-11-10). Until then
 strikes are recorded but evict no one. The 14 days are rolling, so on 17 Nov
 they reach back to the run of 3 Nov: a model with 5 strikes in that window is
-evicted on 17 Nov. An evicted model earns nothing until it returns; its past
-scores are kept.
+evicted on 17 Nov. Nothing earlier counts: no eviction recorded before 17 Nov
+is enforced or counts as a previous one. An evicted model earns nothing until
+it returns; its past scores are kept. Every eviction returns on the first clean
+run 7 days or more after it.
 
-Three things are explicitly **not** strikes:
+Things that are explicitly **not** strikes:
 
 - A weak, wrong or missing **prediction**. Accuracy is priced in your
   standing; liveness is a separate axis and stays one.
 - A day the **subnet did not run**, or ran an empty basket.
-- A failure on the **operator's** side. Those days count neither against you
-  nor for you.
+- A failure on the **operator's** side: the image could not be pulled or
+  unpacked on our host, the sandbox could not start, or our own limit stopped
+  the run before the published budget. A day whose absence charge is cancelled
+  as our failure is not a strike either.
+- A run **killed from outside before its CPU limit**, which cannot be told
+  apart from our host running short of memory.
+
+Those days count neither against you nor for you. Your strikes in the window,
+and an eviction with the first day you can return, are in the registration
+status feed (`strikes`, `evicted_on`, `returns_from`; miner quickstart, step 3).
 
 The policy is published ahead of enforcement, and any change to how it
 affects weights is announced through the miner channels before it takes

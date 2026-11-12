@@ -375,6 +375,11 @@ record whose committed digest is the one running also carries `model_since`,
 from `not_run_from` on. See [SN21_REWARDS.md](./SN21_REWARDS.md), "Models
 unchanged for 40 days".
 
+From 2026-11-13 every record also carries `strikes`: the strikes in the last 14
+days (eviction rule, in force from the run of 2026-11-17). An evicted hotkey
+carries `evicted_on` and `returns_from`, the first day a clean run can bring it
+back. See [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md) §5.
+
 **4. Is your model being run each day, and did the day count?**
 
 Per-day, per-miner coverage (`episodes_in` / `predictions_out`) is recorded by
