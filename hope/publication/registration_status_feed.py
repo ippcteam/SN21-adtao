@@ -120,6 +120,32 @@ def add_unchanged_days(statuses: list[dict], record: dict, as_of: str,
     return statuses
 
 
+def add_liveness(statuses: list[dict], events, states: dict, as_of, params) -> list[dict]:
+    """Each hotkey's strikes in the published window, and its eviction with the
+    first day it can return, so a miner can see them before they cost anything
+    (MINER_MODEL_SPEC §5; a miner's review, 12 Nov 2026: they were in no public
+    feed). An eviction from before the rule's first day is not shown: it is
+    not enforced and does not count."""
+    from hope.scoring import chronic_failure as cf
+    day = as_of if isinstance(as_of, date) else date.fromisoformat(str(as_of)[:10])
+    eff = params.effective_from
+    for rec in statuses:
+        hk = rec["hotkey"]
+        st = (states or {}).get(hk)
+        # While evicted: the strikes in the window that led to it. After a
+        # return: those since the eviction, as the next one would count them.
+        evicted = st is not None and st.evicted_on is not None
+        since = st.last_eviction_on if st is not None and not evicted else None
+        if eff is not None and since is not None and since < eff:
+            since = None
+        rec["strikes"] = cf.strikes_in_window(events, hk, day, params.window_days, since=since)
+        if st is not None and st.evicted_on is not None and (eff is None or st.evicted_on >= eff):
+            rec["evicted_on"] = st.evicted_on.isoformat()
+            if st.reinstate_not_before is not None:
+                rec["returns_from"] = st.reinstate_not_before.isoformat()
+    return statuses
+
+
 def _first_settle_by_hotkey(ledger_root: str, horizon_days: int = 7) -> dict:
     """hotkey -> first-settle date (ISO) from its earliest real shadow run.
 
@@ -213,6 +239,20 @@ def build_registration_status_document(ledger_root: str,
     start = unchanged_models.switch_date()
     if start:
         add_unchanged_days(statuses, unchanged_models.load(ledger_root) or {}, as_of, start)
+    # Strikes and evictions, once the eviction rule has its date (MINER_MODEL_SPEC §5).
+    from hope.scoring import chronic_failure as cf
+    from hope.scoring import standing_ledger
+    params = cf.params_from_env()
+    liveness = None
+    if params.effective_from is not None:
+        add_liveness(statuses,
+                     standing_ledger.load_strike_events(ledger_root, as_of=today,
+                                                        window_days=params.window_days),
+                     standing_ledger.load_eviction_states(ledger_root), today, params)
+        liveness = {"strikes_window_days": params.window_days,
+                    "strikes_to_evict": params.strikes_to_evict,
+                    "return_after_days": params.repeat_review_days,
+                    "rule_from_basket_day": params.effective_from.isoformat()}
     return {
         "feed": "sn21-registration-status",
         "note": ("per hotkey: the model digest currently committed on chain, "
@@ -224,4 +264,5 @@ def build_registration_status_document(ledger_root: str,
         "as_of": as_of,
         "statuses": statuses,
         "total": len(statuses),
+        **({"liveness": liveness} if liveness else {}),
     }

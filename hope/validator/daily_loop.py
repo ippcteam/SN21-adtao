@@ -396,6 +396,20 @@ def run_daily_loop(
             retracted: list = []
             withheld: list = []
             observed = 0
+            # A cancelled absence charge was our failure, so it is not a strike
+            # either; an eviction it brought about is undone (MINER_MODEL_SPEC §5;
+            # 12 Nov 2026). Applied before the new days, from the published record.
+            cancelled = []
+            for c in standing_ledger.load_cancellations(ledger_root):
+                try:
+                    cancelled.append((date.fromisoformat(str(c["day"])[:10]), str(c["hotkey"])))
+                except (KeyError, ValueError):
+                    continue
+            undo = cf.apply_cancellations(states, log, cancelled, params)
+            states = undo.states
+            log.extend(undo.events)
+            emitted.extend(undo.events)
+            retracted.extend(undo.retracted)
             for d in days:
                 runs = day_run_status(shadow_root, str(d))
                 observed += len(runs)

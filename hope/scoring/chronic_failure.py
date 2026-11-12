@@ -85,6 +85,13 @@ STRIKES_ENV = "SN21_CHRONIC_STRIKES"
 WINDOW_ENV = "SN21_CHRONIC_WINDOW_DAYS"
 REVIEW_ENV = "SN21_CHRONIC_REVIEW_DAYS"
 REPEAT_LOOKBACK_ENV = "SN21_CHRONIC_REPEAT_LOOKBACK_DAYS"
+# The first OBSERVED day (a basket day; the run of D observes BD-(D-1)) the
+# published rule applies to: 2026-11-16, observed by the run of 2026-11-17
+# (notice of 2026-11-10, MINER_MODEL_SPEC §5). The liveness step has recorded
+# strikes and evictions every day since August with enforcement off; from this
+# day nothing evicted before it is enforced or counts as a previous eviction,
+# and only strikes in the published window count (a miner's review, 12 Nov 2026).
+EFFECTIVE_FROM_ENV = "SN21_CHRONIC_FAILURE_FROM"
 
 # ---- THE NON-EMPTY-FIELD FLOOR — ruled 2026-08-03 ---------------------------
 # The field must never be emptied, and at least one house model must survive.
@@ -171,14 +178,21 @@ KIND_EVICTED = "evicted"          # lifecycle
 KIND_REINSTATED = "reinstated"    # lifecycle
 KIND_EVICTION_RETRACTED = "eviction_retracted"   # lifecycle (see observe_day)
 KIND_EVICTION_WITHHELD = "eviction_withheld"     # lifecycle — the non-empty-field floor
+KIND_PRE_RULE_CLEARED = "pre_rule_cleared"       # lifecycle — an eviction from before the rule's date
+REASON_CHARGE_CANCELLED = "charge_cancelled"     # the day's absence charge was cancelled as our fault
 
 # Only these three are day OBSERVATIONS; lifecycle events never participate
 # in strike counting.
 OBSERVATION_KINDS = (KIND_STRIKE, KIND_CLEAN, KIND_EXCLUDED)
-LIFECYCLE_KINDS = (KIND_EVICTED, KIND_REINSTATED, KIND_EVICTION_RETRACTED,
+LIFECYCLE_KINDS = (KIND_PRE_RULE_CLEARED, KIND_EVICTED, KIND_REINSTATED, KIND_EVICTION_RETRACTED,
                    KIND_EVICTION_WITHHELD)
 
 _EXIT_CODE_RE = re.compile(re.escape(ERR_EXIT_PREFIX) + r"(-?\d+)")
+# "exit=1: unshare: ..." is util-linux reporting that it could not set the
+# sandbox up (ns_sandbox records stderr after the exit code).
+_UNSHARE_HOST_RE = re.compile(re.escape(ERR_EXIT_PREFIX) + r"-?\d+: unshare: ")
+# ns_sandbox.killed_child_error's wording for a SIGKILL short of the CPU limit.
+KILLED_BEFORE_CPU_LIMIT = "before the CPU limit"
 
 
 @dataclass(frozen=True)
@@ -198,6 +212,9 @@ class ChronicFailureParams:
     # count or the four-weekly review cadence (SN21_REWARD_MECHANISM.md §
     # review cadence) is unruled — PENDING RATIFICATION.
     repeat_lookback_days: int | None = None
+    # The first observed day the published rule applies to (EFFECTIVE_FROM_ENV).
+    # None keeps the history-from-August behaviour, for replays and tests.
+    effective_from: date | None = None
 
 
 @dataclass(frozen=True)
@@ -280,7 +297,17 @@ def params_from_env(environ=os.environ) -> ChronicFailureParams:
                                     DEFAULT_REPEAT_REVIEW_DAYS,
                                     minimum=0),
         repeat_lookback_days=_int_env(environ, REPEAT_LOOKBACK_ENV, None),
+        effective_from=_date_env(environ, EFFECTIVE_FROM_ENV),
     )
+
+
+def _date_env(environ, name: str) -> date | None:
+    raw = environ.get(name, "")
+    raw = raw.strip() if isinstance(raw, str) else ""
+    try:
+        return date.fromisoformat(raw) if raw else None
+    except ValueError:
+        return None
 
 
 # ---- fault classification ---------------------------------------------------
@@ -312,6 +339,22 @@ def classify_failure(ok: bool, error: str | None) -> str:
     if err.startswith(ERR_DOCKER_UNAVAILABLE):
         # Our host has no docker daemon. Never the miner's fault.
         return FAULT_SUBNET
+    # The same test the absence charge uses for a failure on OUR side (a pull
+    # we could not make, low disk, no sandbox, a timeout our wall ceiling cut
+    # below the published budget): never a strike (MINER_MODEL_SPEC §5;
+    # a miner's review, 12 Nov 2026 - absence excused these while the
+    # liveness step struck them).
+    from hope.scoring.absence_penalty import PUBLISHED_RUN_BUDGET_S, operator_fault
+    if operator_fault(err, PUBLISHED_RUN_BUDGET_S):
+        return FAULT_SUBNET
+    if _UNSHARE_HOST_RE.match(err):
+        # The sandbox's own `unshare` failed on our host before the model ran.
+        return FAULT_SUBNET
+    if exit_code(err) == OOM_EXIT_CODE and KILLED_BEFORE_CPU_LIMIT in err:
+        # A SIGKILL from outside the model before its CPU limit: our host's
+        # memory, or a model that used its CPU early. The two cannot be told
+        # apart from the result, so it counts toward nothing.
+        return FAULT_UNKNOWN
     if err.startswith((ERR_PULL_TIMEOUT_PREFIX, ERR_PULL_EXIT_PREFIX)):
         # Registry-side: could be the miner's registry or our network.
         # UNRULED (blocker) -> counts toward nothing. NOTE the pull-exit
@@ -434,6 +477,8 @@ def _is_repeat(state: EvictionState, day: date,
                params: ChronicFailureParams) -> bool:
     if state.evictions_total <= 0 or state.last_eviction_on is None:
         return False
+    if params.effective_from is not None and state.last_eviction_on < params.effective_from:
+        return False
     if params.repeat_lookback_days is None:
         return True
     return (day - state.last_eviction_on).days <= int(params.repeat_lookback_days)
@@ -444,13 +489,14 @@ def evict(state: EvictionState, day: date,
           strikes: int | None = None) -> tuple:
     """Evict a miner as of `day`. Returns (new_state, lifecycle event).
 
-    Clause (b): a FIRST eviction is eligible to return as soon as the model
-    runs clean (reinstate_not_before = the eviction day itself, so the next
-    clean run re-admits). A REPEAT eviction serves `repeat_review_days`
-    first — the clean run is still required, the wait is additional.
+    Every eviction serves `repeat_review_days` (7) and then returns on a clean
+    run, as MINER_MODEL_SPEC §5 publishes ("Return: after 7 days, on a clean
+    run"). Until 12 Nov 2026 a first eviction returned on the next clean run
+    and only a repeat waited (a miner's review). `repeat` stays in the event
+    for the record.
     """
     repeat = _is_repeat(state, day, params)
-    not_before = day + timedelta(days=int(params.repeat_review_days)) if repeat else day
+    not_before = day + timedelta(days=int(params.repeat_review_days))
     new = EvictionState(
         hotkey=state.hotkey,
         evicted_on=day,
@@ -474,7 +520,7 @@ def evict(state: EvictionState, day: date,
 
 
 def retract_eviction(state: EvictionState, events: Sequence[StrikeEvent],
-                     day: date) -> tuple:
+                     day: date, effective_from: date | None = None) -> tuple:
     """Undo an eviction recorded ON `day` because that day's strike is gone.
 
     `reinstate` is the wrong tool here and getting this wrong is silent: a
@@ -509,7 +555,8 @@ def retract_eviction(state: EvictionState, events: Sequence[StrikeEvent],
                       and e.kind == KIND_EVICTION_RETRACTED}
     others = [e for e in events
               if e.hotkey == state.hotkey and e.kind == KIND_EVICTED
-              and e.day != day and e.day not in retracted_days]
+              and e.day != day and e.day not in retracted_days
+              and (effective_from is None or e.day >= effective_from)]
     prev = others[-1].day if others else None
     new = EvictionState(
         hotkey=state.hotkey,
@@ -621,6 +668,25 @@ def observe_day(
     # counting only day_runs would let a quiet day look empty.
     known_hotkeys = frozenset(states) | frozenset(day_runs)
 
+    # From the rule's first day, an eviction recorded before it is cleared:
+    # not enforced, not a previous eviction, and it no longer cuts the strike
+    # window (which reaches back as far as the published window does).
+    eff = params.effective_from
+    if eff is not None and day >= eff:
+        for hotkey in sorted(new_states):
+            st = new_states[hotkey]
+            if ((st.evicted_on is not None and st.evicted_on < eff)
+                    or (st.last_eviction_on is not None and st.last_eviction_on < eff)):
+                new_states[hotkey] = EvictionState(hotkey=hotkey)
+                lifecycle = StrikeEvent(
+                    day=day, hotkey=hotkey, kind=KIND_PRE_RULE_CLEARED,
+                    fault=FAULT_NONE, reason=REASON_NONE,
+                    detail={"evicted_on": str(st.evicted_on) if st.evicted_on else None,
+                            "evictions_total": st.evictions_total,
+                            "rule_from": str(eff)})
+                log.append(lifecycle)
+                emitted.append(lifecycle)
+
     for hotkey in sorted(day_runs):
         ok, error = day_runs[hotkey]
         ok = bool(ok)
@@ -656,7 +722,7 @@ def observe_day(
         # retract_eviction for why clearing `evicted_on` alone is a trap.
         if (prior is not None and prior.kind == KIND_STRIKE
                 and kind != KIND_STRIKE and st.evicted_on == day):
-            st, lifecycle = retract_eviction(st, log, day)
+            st, lifecycle = retract_eviction(st, log, day, params.effective_from)
             log.append(lifecycle)
             emitted.append(lifecycle)
             retracted_today.append(hotkey)
@@ -706,6 +772,49 @@ def observe_day(
         retracted=tuple(retracted_today),
         withheld=tuple(withheld_today),
     )
+
+
+def apply_cancellations(
+    states: Mapping[str, EvictionState],
+    events: Sequence[StrikeEvent],
+    cancelled: Sequence[tuple],
+    params: ChronicFailureParams = ChronicFailureParams(),
+) -> EvictionDecision:
+    """A day whose absence charge was cancelled as OUR failure is not a strike
+    (MINER_MODEL_SPEC §5). `cancelled`: (day, hotkey) pairs from the published
+    cancellation record. The strike's operative observation becomes excluded
+    (last record wins), and an eviction that the strike brought about, which
+    no longer reaches the published count without it, is retracted whole.
+    Idempotent: a day already excluded is left as it is. Until 12 Nov 2026 a
+    cancelled charge left its strike (a miner's review)."""
+    new_states = dict(states)
+    log = list(events)
+    emitted: list = []
+    retracted: list = []
+    for d, hotkey in sorted({(d, hk) for d, hk in cancelled}):
+        if (_observations(log, hotkey).get(d) or StrikeEvent(d, hotkey, KIND_CLEAN)).kind != KIND_STRIKE:
+            continue
+        ev = StrikeEvent(day=d, hotkey=hotkey, kind=KIND_EXCLUDED, fault=FAULT_SUBNET,
+                         reason=REASON_CHARGE_CANCELLED)
+        log.append(ev)
+        emitted.append(ev)
+        st = new_states.get(hotkey)
+        if st is None or st.evicted_on is None or st.evicted_on < d:
+            continue
+        undone = {e.day for e in log if e.hotkey == hotkey and e.kind == KIND_EVICTION_RETRACTED}
+        earlier = [e.day for e in log if e.hotkey == hotkey and e.kind == KIND_EVICTED
+                   and e.day < st.evicted_on and e.day not in undone
+                   and (params.effective_from is None or e.day >= params.effective_from)]
+        n = strikes_in_window(log, hotkey, st.evicted_on, params.window_days,
+                              since=max(earlier) if earlier else None)
+        if n < max(1, int(params.strikes_to_evict)):
+            st, lifecycle = retract_eviction(st, log, st.evicted_on, params.effective_from)
+            log.append(lifecycle)
+            emitted.append(lifecycle)
+            new_states[hotkey] = st
+            retracted.append(hotkey)
+    return EvictionDecision(states=new_states, events=tuple(emitted),
+                            retracted=tuple(retracted))
 
 
 def evicted_hotkeys(states: Mapping[str, EvictionState],

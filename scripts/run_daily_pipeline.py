@@ -981,7 +981,7 @@ def stage_settle(ledger_root, day):
     return {k: v for k, v in summary.items()
             if k in ("day", "settle", "receipt", "publish", "weights",
                      "collateral_floor_alpha", "absence_penalty",
-                     "standing_preview")}
+                     "standing_preview", "liveness")}
 
 
 def stage_publish_weights(ledger_root, day):

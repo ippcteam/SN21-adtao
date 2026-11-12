@@ -178,7 +178,8 @@ def test_classify_failure_against_the_real_error_strings():
     # subnet fault — our host has no docker
     assert classify_failure(False, ERR_DOCKER_UNAVAILABLE) == FAULT_SUBNET
     # unruled / unattributable
-    assert classify_failure(False, f"{ERR_PULL_TIMEOUT_PREFIX}600s") == FAULT_UNKNOWN
+    # a pull timeout is our side, by the rule the absence charge uses (12 Nov 2026)
+    assert classify_failure(False, f"{ERR_PULL_TIMEOUT_PREFIX}600s") == FAULT_SUBNET
     assert classify_failure(False, None) == FAULT_UNKNOWN
     assert classify_failure(False, "something nobody has seen") == FAULT_UNKNOWN
     # success
@@ -242,7 +243,7 @@ def test_pull_side_strings_are_the_intake_modules_own(monkeypatch):
     monkeypatch.setattr(ii.subprocess, "run", _timeout)
     ok, err = ii._default_puller("example.com/m@sha256:" + "0" * 64)
     assert not ok and err.startswith(ERR_PULL_TIMEOUT_PREFIX)
-    assert classify_failure(False, err) == FAULT_UNKNOWN   # unruled
+    assert classify_failure(False, err) == FAULT_SUBNET    # our side, as for the absence charge (12 Nov 2026)
 
     def _no_docker(*a, **k):
         raise FileNotFoundError("docker")
@@ -341,11 +342,11 @@ def test_subnet_fault_days_are_excluded_from_the_denominator_too():
     assert strikes_in_window(log, HK, _d(5), P.window_days) == 5
 
 
-def test_pull_timeout_is_unruled_and_counts_toward_nothing():
+def test_pull_timeout_is_our_side_and_counts_toward_nothing():
     decision = observe_day({}, [], DAY,
                            {HK: (False, f"{ERR_PULL_TIMEOUT_PREFIX}600s")}, P)
     assert decision.struck == () and decision.excluded == (HK,)
-    assert decision.events[0].fault == FAULT_UNKNOWN
+    assert decision.events[0].fault == FAULT_SUBNET
 
 
 # ---- strike accrual --------------------------------------------------------
@@ -448,7 +449,7 @@ def test_a_retracted_eviction_does_not_make_the_next_one_a_repeat():
     after = observe_day(back.states, log, nxt, _fail(), P)
     st = after.states[HK]
     assert st.evictions_total == 1                       # this is their FIRST
-    assert st.reinstate_not_before == nxt                # no cooldown served
+    assert st.reinstate_not_before == nxt + timedelta(days=P.repeat_review_days)   # the published 7 days
     ev = next(e for e in after.events if e.kind == KIND_EVICTED)
     assert ev.detail["repeat"] is False
 
@@ -462,19 +463,20 @@ def test_a_genuine_second_eviction_is_still_a_repeat_after_a_retraction():
     states, log, first = _run_days(
         {}, [], [(d0, _fail()), (d0 + timedelta(days=1), _fail())], params)
     assert first.evicted == (HK,)
-    back = observe_day(states, log, d0 + timedelta(days=2), _ok(), params)
+    back = observe_day(states, log, d0 + timedelta(days=15), _ok(), params)   # after the wait
     log = log + list(back.events)
     assert back.reinstated == (HK,) and back.retracted == ()
     assert back.states[HK].evictions_total == 1   # a real eviction survives
 
     states, log, second = _run_days(
         back.states, log,
-        [(d0 + timedelta(days=5), _fail()), (d0 + timedelta(days=6), _fail())],
+        [(d0 + timedelta(days=18), _fail()), (d0 + timedelta(days=19), _fail())],
         params)
     assert second.evicted == (HK,)
     assert states[HK].evictions_total == 2
+    assert next(e for e in second.events if e.kind == KIND_EVICTED).detail["repeat"] is True
     assert states[HK].reinstate_not_before == \
-        d0 + timedelta(days=6) + timedelta(days=14)
+        d0 + timedelta(days=19) + timedelta(days=14)
 
 
 def test_an_eviction_is_also_retracted_when_the_rerun_hits_a_subnet_fault():
@@ -562,17 +564,22 @@ def _evict_once(params=P, start=5):
     return states, log, _d(start)
 
 
-def test_first_eviction_returns_on_the_first_clean_run():
+def test_first_eviction_returns_after_7_days_on_a_clean_run():
+    """MINER_MODEL_SPEC §5: "Return: after 7 days, on a clean run" (until 12 Nov
+    2026 a first eviction returned on the next clean run)."""
     states, log, ev_day = _evict_once()
     assert states[HK].evictions_total == 1
-    # clause (b): no waiting period on a FIRST eviction
-    assert states[HK].reinstate_not_before == ev_day
+    assert states[HK].reinstate_not_before == ev_day + timedelta(days=7)
     assert evicted_hotkeys(states, ev_day) == frozenset({HK})
 
-    back = observe_day(states, log, ev_day + timedelta(days=1), _ok(), P)
+    early = observe_day(states, log, ev_day + timedelta(days=1), _ok(), P)
+    assert early.reinstated == ()
+    log = list(log) + list(early.events)
+    back_day = ev_day + timedelta(days=7)
+    back = observe_day(early.states, log, back_day, _ok(), P)
     assert back.reinstated == (HK,)
     assert back.states[HK].evicted_on is None
-    assert evicted_hotkeys(back.states, ev_day + timedelta(days=1)) == frozenset()
+    assert evicted_hotkeys(back.states, back_day) == frozenset()
     # scoped to HK: the healthy bystander logs its own clean day too
     assert [e.kind for e in back.events if e.hotkey == HK] == \
         [KIND_CLEAN, KIND_REINSTATED]
@@ -615,18 +622,18 @@ def test_repeat_eviction_serves_the_cooldown():
         {}, [], [(d0, _fail()), (d0 + timedelta(days=1), _fail())], params)
     assert first.evicted == (HK,)
 
-    # first eviction -> straight back on the next clean run
-    back = observe_day(states, log, d0 + timedelta(days=2), _ok(), params)
+    # first eviction -> back on the first clean run after its wait
+    back = observe_day(states, log, d0 + timedelta(days=15), _ok(), params)
     log = log + list(back.events)
     assert back.reinstated == (HK,)
 
-    # second eviction, 3 and 4 days later
+    # second eviction, soon after
     states, log, second = _run_days(
         back.states, log,
-        [(d0 + timedelta(days=3), _fail()), (d0 + timedelta(days=4), _fail())],
+        [(d0 + timedelta(days=16), _fail()), (d0 + timedelta(days=17), _fail())],
         params)
     assert second.evicted == (HK,)
-    ev2 = d0 + timedelta(days=4)
+    ev2 = d0 + timedelta(days=17)
     st = states[HK]
     assert st.evictions_total == 2
     assert st.reinstate_not_before == ev2 + timedelta(days=14)
@@ -668,7 +675,7 @@ def test_eviction_event_carries_the_numbers_that_produced_it():
     assert ev.detail["strikes_to_evict"] == P.strikes_to_evict
     assert ev.detail["window_days"] == P.window_days
     assert ev.detail["repeat"] is False
-    assert ev.detail["reinstate_not_before"] == str(ev_day)
+    assert ev.detail["reinstate_not_before"] == str(ev_day + timedelta(days=P.repeat_review_days))
 
 
 def test_observe_day_is_deterministic_regardless_of_input_order():
