@@ -497,15 +497,16 @@ recorded before 17 Nov is enforced or counts as a previous one. An evicted model
 it returns; its past scores are kept. Every eviction returns on the first clean
 run 7 days or more after it.
 
-A run that exits cleanly but answers none of the episodes it was given
-delivered nothing usable: it is a strike, and it does not count as the clean
+From the basket of 16 Nov, a run that exits cleanly but answers none of the
+episodes it was given delivered nothing usable: it is a strike, and it does not count as the clean
 run that ends an eviction. A run that answers any episode is unaffected. A
 run that ends with a non-zero exit is a failed run (§2) whatever it printed
 before it.
 
 Things that are explicitly **not** strikes:
 
-- A weak, wrong or missing **prediction**. Accuracy is priced in your
+- A weak, wrong or missing **prediction**, as long as the run answered at
+  least one episode. Accuracy is priced in your
   standing; liveness is a separate axis and stays one.
 - A day the **subnet did not run**, or ran an empty basket.
 - A failure on the **operator's** side: the image could not be pulled or

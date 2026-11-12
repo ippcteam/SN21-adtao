@@ -65,7 +65,8 @@ def _path(root: str) -> str:
 
 
 def empty() -> dict:
-    return {"through": None, "hotkeys": {}, "digests": {}, "removed": {}, "by_day": {}}
+    return {"through": None, "hotkeys": {}, "digests": {}, "runs": {}, "removed": {}, "by_day": {},
+            "cleared": {}}
 
 
 def load(root: str) -> dict | None:
@@ -93,18 +94,30 @@ def update(record: dict, ran: dict, day: str) -> dict:
     out = {**empty(), **(record or {})}
     hotkeys = dict(out["hotkeys"])
     digests = dict(out.get("digests") or {})
+    runs = {hk: dict(v) for hk, v in (out.get("runs") or {}).items()}
     d = str(day)[:10]
+    # A basket written after a later one was folded (a catch-up day, 12 Nov
+    # 2026): it can only move a digest's first day earlier. It never changes
+    # which digest a hotkey runs now - that is the latest day's.
+    late = out.get("through") is not None and d < out["through"]
     for hk, ref in (ran or {}).items():
         dg = bare_digest(ref)
         if not dg:
             continue
         first = min(digests.get(dg) or d, d)
         digests[dg] = first
-        if (hotkeys.get(hk) or {}).get("digest") != dg:
+        mine = runs.setdefault(hk, {})
+        mine[dg] = min(mine.get(dg) or d, d)
+        entry = hotkeys.get(hk) or {}
+        if late:
+            if entry.get("digest") == dg and entry.get("since", first) > first:
+                hotkeys[hk] = {**entry, "since": first}
+        elif entry.get("digest") != dg:
             # A digest run before, by this hotkey or another, keeps its first day.
             hotkeys[hk] = {"digest": dg, "since": first}
     out["hotkeys"] = hotkeys
     out["digests"] = digests
+    out["runs"] = runs
     out["through"] = max(filter(None, (out.get("through"), str(day)[:10])))
     return out
 
@@ -129,19 +142,36 @@ def refresh(root: str, save_it: bool = True) -> dict:
     from hope.backtest import shadow
 
     record = load(root) or empty()
-    if "digests" not in record:
+    if "digests" not in record or "runs" not in record:
         # A record from before the count was per digest: rebuild the counts from
         # every shadow day, so a digest a hotkey went back to carries its first
         # day. What was removed, and when, is kept as it is.
         record = {**empty(), "removed": record.get("removed") or {},
-                  "by_day": record.get("by_day") or {}}
+                  "by_day": record.get("by_day") or {}, "cleared": record.get("cleared") or {}}
     through = record.get("through")
+    folded = set(record.get("folded") or ())
     for day in shadow.shadow_days(root):
-        if through is None or day > through:
+        # Also a day written after a later one was folded: until 12 Nov 2026
+        # only days after `through` were read, so a catch-up basket written
+        # late never counted.
+        if through is None or day > through or (day not in folded and day >= _folded_floor(through)):
             record = update(record, _ran_on(root, day), day)
+            folded.add(day)
+    if record.get("through"):
+        floor = _folded_floor(record["through"])
+        record["folded"] = sorted(d for d in folded if d >= floor)
     if save_it:
         save(root, record)
     return record
+
+
+FOLDED_DAYS = 30   # how far back a late-written basket is still folded in
+
+
+def _folded_floor(through: str | None) -> str:
+    if not through:
+        return ""
+    return (date.fromisoformat(str(through)[:10]) - timedelta(days=FOLDED_DAYS)).isoformat()
 
 
 def standing(entry: dict | None, as_of: str) -> dict | None:
@@ -172,7 +202,9 @@ def to_remove(record: dict, active: dict, as_of: str) -> dict:
     out = {}
     for hk, model in (active or {}).items():
         dg = bare_digest(getattr(model, "image_digest", model))
-        if dg in removed:
+        # Removed on or before this run day only: a late pass over an earlier
+        # run day (a catch-up) runs the model as that day would have (12 Nov 2026).
+        if dg in removed and str(removed[dg].get("removed_on") or "")[:10] <= str(as_of)[:10]:
             out[hk] = "removed_digest"
             continue
         entry = (record.get("hotkeys") or {}).get(hk)
@@ -184,7 +216,7 @@ def to_remove(record: dict, active: dict, as_of: str) -> dict:
     return out
 
 
-def apply(root: str, active: dict, as_of: str, environ=os.environ) -> dict:
+def apply(root: str, active: dict, as_of: str, environ=os.environ, save_it: bool = True) -> dict:
     """The run's step: refresh the record and, when the switch is on, mark the
     day's removals (their digests stay removed). Returns hotkey -> reason;
     {} while the switch is off."""
@@ -198,25 +230,64 @@ def apply(root: str, active: dict, as_of: str, environ=os.environ) -> dict:
     record["removed"] = removed
     # The day's list too, so a hotkey refused for committing a removed digest
     # it never ran is also not charged or seated that day. Last 14 days kept.
-    by_day = {d: h for d, h in (record.get("by_day") or {}).items()
-              if d > (date.fromisoformat(str(as_of)[:10]) - timedelta(days=14)).isoformat()}
-    if out:
-        by_day[str(as_of)[:10]] = sorted(out)
+    keep_from = (date.fromisoformat(str(as_of)[:10]) - timedelta(days=14)).isoformat()
+    by_day = {d: h for d, h in (record.get("by_day") or {}).items() if d > keep_from}
+    # And who that run gave a model that is not removed ("cleared"), so a
+    # removed miner's new model is seated and charged on its first run (see
+    # removed_hotkeys). Both lists belong to the first run that served the day:
+    # a later pass over the same run day (a resumed or retried run, a
+    # supplement) sees the registry as it is later and must not rewrite them
+    # (12 Nov 2026).
+    cleared = {d: h for d, h in (record.get("cleared") or {}).items() if d > keep_from}
+    d = str(as_of)[:10]
+    if enabled(as_of, environ) and d not in by_day:
+        by_day[d] = sorted(out)
+        cleared[d] = sorted(hk for hk in (active or {}) if hk not in out)
     record["by_day"] = by_day
-    save(root, record)
+    record["cleared"] = cleared
+    if save_it:
+        save(root, record)
+    return out
+
+
+def model_first_days(root: str) -> dict:
+    """hotkey -> the first basket day THIS hotkey ran the model it runs now.
+
+    Precedence over a model is per model, not per hotkey (quickstart, "Protect
+    your model"): a hotkey that has been in the receipts for months with
+    another model does not outrank the miner who ran this one first (a
+    miner's review, 12 Nov 2026). Nobody can run a model before it exists, so
+    this cannot be back-dated."""
+    record = load(root) or empty()
+    runs = record.get("runs") or {}
+    out = {}
+    for hk, entry in (record.get("hotkeys") or {}).items():
+        first = (runs.get(hk) or {}).get(entry.get("digest"))
+        if first:
+            out[hk] = first
     return out
 
 
 def removed_hotkeys(root: str, day: str) -> frozenset:
-    """Hotkeys whose last recorded model was removed on or before `day`: they are
-    neither charged for absence nor seated. A hotkey that has since run a new
-    model is not in it."""
+    """Hotkeys whose model was not run on run day `day` because it was removed:
+    they are neither charged for absence nor seated. A hotkey that has since run
+    a new model is not in it.
+
+    Who the run of that day did not run because it was removed (by_day), and
+    every hotkey whose last recorded model was removed on or before the day -
+    except those that run gave a model that is not removed (cleared). Before
+    12 Nov 2026 there was no cleared list: on the run a removed miner's new
+    model first ran, the record (not yet folded with that basket) still showed
+    the removed model, so the new one lost its seat and its misses that day
+    were not charged. A hotkey the run did not see at all (its new model still
+    waiting for admission) stays exempt, as before."""
     record = load(root) or empty()
     removed = record.get("removed") or {}
     d = str(day)[:10]
-    return frozenset(hk for hk, e in (record.get("hotkeys") or {}).items()
-                     if e.get("digest") in removed and removed[e["digest"]]["removed_on"] <= d
-                     ) | frozenset((record.get("by_day") or {}).get(d) or ())
+    cleared = frozenset((record.get("cleared") or {}).get(d) or ())
+    by_last = frozenset(hk for hk, e in (record.get("hotkeys") or {}).items()
+                        if e.get("digest") in removed and removed[e["digest"]]["removed_on"] <= d)
+    return frozenset((record.get("by_day") or {}).get(d) or ()) | (by_last - cleared)
 
 
 # ---- a removed model re-added under a new digest ------------------------------

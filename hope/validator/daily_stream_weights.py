@@ -142,6 +142,48 @@ class DailyAllocation:
     standings_absolute: dict = field(default_factory=dict)
 
 
+MODEL_SENIORITY_FROM_ENV = "SN21_MODEL_SENIORITY_FROM"
+_NEVER = "9999-12-31"
+
+
+def model_seniority_on(environ, day) -> bool:
+    """Copy-group precedence by the model's own first run, from the date in
+    SN21_MODEL_SENIORITY_FROM (unset = off, the receipt order as before)."""
+    raw = (environ.get(MODEL_SENIORITY_FROM_ENV) or "").strip()
+    try:
+        return bool(raw) and str(day)[:10] >= date.fromisoformat(raw).isoformat()
+    except ValueError:
+        return False
+
+
+def model_seniority(root: str, receipt_order: Mapping, environ, day) -> dict:
+    """The precedence copy tests use. Off: `receipt_order` as it is (the first
+    receipt day each hotkey appears in, with any model). On: first the day the
+    hotkey first ran the model it runs now, then that receipt order - so a
+    hotkey that has been around longer cannot take the seat of the miner who
+    ran this model first by committing it later (a miner's review, 12 Nov
+    2026). A hotkey with no record of its current model comes last."""
+    if not model_seniority_on(environ, day):
+        return dict(receipt_order)
+    from hope.backtest.unchanged_models import model_first_days
+    first = model_first_days(root)
+    return {hk: (first.get(hk, _NEVER), order) for hk, order in receipt_order.items()}
+
+
+def enforced_evictions(states, day, environ=os.environ) -> frozenset:
+    """Who the eviction rule keeps out of the earning set on `day`. Nothing
+    evicted before the rule's first day is enforced (MINER_MODEL_SPEC §5), even
+    if the flag goes on before the run that clears those evictions, or that
+    run's liveness step fails (12 Nov 2026)."""
+    from hope.scoring.chronic_failure import params_from_env
+    out = evicted_hotkeys(states, day)
+    eff = params_from_env(environ).effective_from
+    if eff is None:
+        return out
+    return frozenset(hk for hk in out
+                     if states[hk].evicted_on is not None and states[hk].evicted_on >= eff)
+
+
 def absolute_standings(root: str, day: date, environ=os.environ) -> dict:
     """hotkey -> D13 mean of the ledger's absolute scores over the window and
     half-life in force on `day`, without the field prior. Published beside the
@@ -761,8 +803,7 @@ def allocation_from_ledger(
 
     evicted: frozenset = frozenset()
     if chronic_failure_policy_enabled(environ):
-        evicted = evicted_hotkeys(
-            standing_ledger.load_eviction_states(root), day)
+        evicted = enforced_evictions(standing_ledger.load_eviction_states(root), day, environ)
         if state.champion is not None and state.champion in evicted:
             # Force-vacate: omission alone would leave a crashing incumbent
             # seated for the full [D8] hold (champion_promotion.vacate_seat).
@@ -1179,6 +1220,8 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ,
                     if hotkey not in seniority or day_name < seniority[hotkey]:
                         seniority[hotkey] = day_name
 
+        seniority = model_seniority(root, seniority, environ, day)
+
         groups = []
         for kind in kinds:
             if not today[kind]:
@@ -1496,6 +1539,9 @@ def lineage_from_receipts(root: str, day: date, environ):
     if not predictions:
         return [], {}
 
+    # Lineage keeps the receipt order even with SN21_MODEL_SENIORITY_FROM on:
+    # it groups by behaviour across digests, so an author's rebuild under a new
+    # digest would lose to a copy of the old build (review of 12 Nov 2026).
     groups, audit = lineage_collisions(predictions, actuals, params,
                                        precedence=first_seen)
 

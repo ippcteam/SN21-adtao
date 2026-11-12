@@ -26,7 +26,7 @@ is the caller's to swallow — this is a convenience feed, never a blocker.
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 
 def _hex(digest: str | None) -> str | None:
@@ -122,12 +122,20 @@ def add_unchanged_days(statuses: list[dict], record: dict, as_of: str,
 
 def add_liveness(statuses: list[dict], events, states: dict, as_of, params) -> list[dict]:
     """Each hotkey's strikes in the published window, and its eviction with the
-    first day it can return, so a miner can see them before they cost anything
-    (MINER_MODEL_SPEC §5; a miner's review, 12 Nov 2026: they were in no public
-    feed). An eviction from before the rule's first day is not shown: it is
-    not enforced and does not count."""
+    first run that can bring it back, so a miner can see them before they cost
+    anything (MINER_MODEL_SPEC §5; a miner's review, 12 Nov 2026: they were in no
+    public feed). An eviction from before the rule's first day is not shown: it
+    is not enforced and does not count.
+
+    `as_of` is the RUN day (the feed's day). Strikes are kept by basket day, and
+    the run of day D has seen baskets up to D-1, so the window is the 14 baskets
+    ending D-1 - the count eviction uses (it ended on D, one basket short, until
+    12 Nov 2026). `evicted_on` and `returns_from` are run days like every other
+    date in this feed: the first run the model is not paid, and the first run
+    whose clean result can bring it back (each one day after its basket day)."""
     from hope.scoring import chronic_failure as cf
-    day = as_of if isinstance(as_of, date) else date.fromisoformat(str(as_of)[:10])
+    run_day = as_of if isinstance(as_of, date) else date.fromisoformat(str(as_of)[:10])
+    basket = run_day - timedelta(days=1)
     eff = params.effective_from
     for rec in statuses:
         hk = rec["hotkey"]
@@ -138,11 +146,11 @@ def add_liveness(statuses: list[dict], events, states: dict, as_of, params) -> l
         since = st.last_eviction_on if st is not None and not evicted else None
         if eff is not None and since is not None and since < eff:
             since = None
-        rec["strikes"] = cf.strikes_in_window(events, hk, day, params.window_days, since=since)
+        rec["strikes"] = cf.strikes_in_window(events, hk, basket, params.window_days, since=since)
         if st is not None and st.evicted_on is not None and (eff is None or st.evicted_on >= eff):
-            rec["evicted_on"] = st.evicted_on.isoformat()
+            rec["evicted_on"] = (st.evicted_on + timedelta(days=1)).isoformat()
             if st.reinstate_not_before is not None:
-                rec["returns_from"] = st.reinstate_not_before.isoformat()
+                rec["returns_from"] = (st.reinstate_not_before + timedelta(days=1)).isoformat()
     return statuses
 
 
@@ -246,7 +254,7 @@ def build_registration_status_document(ledger_root: str,
     liveness = None
     if params.effective_from is not None:
         add_liveness(statuses,
-                     standing_ledger.load_strike_events(ledger_root, as_of=today,
+                     standing_ledger.load_strike_events(ledger_root, as_of=today - timedelta(days=1),
                                                         window_days=params.window_days),
                      standing_ledger.load_eviction_states(ledger_root), today, params)
         liveness = {"strikes_window_days": params.window_days,

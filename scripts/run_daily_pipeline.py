@@ -465,9 +465,11 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
 
     as_of = str(date.today() if not hasattr(date, "today") else datetime.now(
         timezone.utc).date())
+    from scripts.run_shadow_day_bd import _run_day
     models, stats = admitted_models(
         ledger_root, os.environ.get("SN21_NETWORK", "finney"),
-        int(os.environ.get("SN21_NETUID", "21")), as_of)
+        int(os.environ.get("SN21_NETUID", "21")), as_of,
+        run_day=_run_day(_guard_day))
     # A day cut off part way (model files but no end marker; the executor was
     # killed for memory on 4 Nov 2026) is finished, not skipped: only the
     # models with no record yet are run, so every prediction already written

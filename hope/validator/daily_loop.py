@@ -370,7 +370,7 @@ def run_daily_loop(
     # WHICH day is observed comes from the SHADOW LEDGER, never from the
     # loop's own calendar day — see liveness_days_to_observe.
     try:
-        from hope.backtest.shadow import day_run_status
+        from hope.backtest.shadow import day_coverage, day_run_status
         from hope.scoring import chronic_failure as cf
 
         params = cf.params_from_env(environ)
@@ -412,8 +412,12 @@ def run_daily_loop(
             retracted.extend(undo.retracted)
             for d in days:
                 runs = day_run_status(shadow_root, str(d))
+                # "Delivered nothing usable" counts from the rule's first day,
+                # so one eviction window is never judged by two definitions.
+                if params.effective_from is None or d >= params.effective_from:
+                    runs = cf.with_delivery(runs, day_coverage(shadow_root, str(d)))
                 observed += len(runs)
-                decision = cf.observe_day(states, log, d, runs, params)
+                decision = cf.observe_day(states, log, d, runs, params, cancelled=cancelled)
                 states = decision.states
                 log.extend(decision.events)
                 emitted.extend(decision.events)

@@ -174,9 +174,10 @@ def test_the_feed_shows_strikes_and_the_return_date():
     from hope.publication.registration_status_feed import add_liveness
     states, log = _five_strikes_then_evicted()
     rows = [{"hotkey": HK}, {"hotkey": OTHER}, {"hotkey": "5New"}]
-    out = add_liveness(rows, log, states, RULE + timedelta(days=4), P)
-    assert out[0]["strikes"] == 5 and out[0]["evicted_on"] == "2026-11-20"
-    assert out[0]["returns_from"] == "2026-11-27"
+    # The run of 21 Nov has seen baskets 16-20 Nov; dates are run days.
+    out = add_liveness(rows, log, states, RULE + timedelta(days=5), P)
+    assert out[0]["strikes"] == 5 and out[0]["evicted_on"] == "2026-11-21"
+    assert out[0]["returns_from"] == "2026-11-28"
     assert out[1] == {"hotkey": OTHER, "strikes": 0}
     assert out[2] == {"hotkey": "5New", "strikes": 0}
 

@@ -39,7 +39,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import date
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 # The outcomes/basket readers below need the operator's data platform package
@@ -89,7 +89,8 @@ def load_basket_episodes(release_key: str) -> list[dict]:
 
 
 def admitted_models(root: str, network: str, netuid: int,
-                    as_of: str) -> tuple[list, dict]:
+                    as_of: str, run_day: str | None = None,
+                    dry_run: bool = False) -> tuple[list, dict]:
     """The admitted miner models, resolved from chain + the verdict feed.
 
     A digest is runnable only when the chain proves WHO submitted it and the
@@ -134,7 +135,11 @@ def admitted_models(root: str, network: str, netuid: int,
     # on; a problem with it never stops the run, and then nobody is removed.
     from hope.backtest import unchanged_models
     try:
-        removed = unchanged_models.apply(root, models, as_of)
+        # The run day the basket belongs to (basket day + 1), not the clock: a
+        # catch-up run executed days late was stamped with the day it ran, so a
+        # removed model was charged for the basket its removal run served, and a
+        # model on its 40th run was removed a run early (12 Nov 2026).
+        removed = unchanged_models.apply(root, models, run_day or as_of, save_it=not dry_run)
     except Exception as exc:
         removed = {}
         stats["unchanged_error"] = str(exc)[:200]
@@ -143,6 +148,11 @@ def admitted_models(root: str, network: str, netuid: int,
         print("[unchanged] not run today: " + ", ".join(
             f"{hk[:12]} ({why})" for hk, why in sorted(removed.items())), flush=True)
     return [m for hk, m in models.items() if hk not in removed], stats
+
+
+def _run_day(basket_day: str) -> str:
+    """The run that serves basket day X runs on X + 1."""
+    return (date.fromisoformat(str(basket_day)[:10]) + timedelta(days=1)).isoformat()
 
 
 def _parse_args(argv):
@@ -179,7 +189,9 @@ def main():
     models = []
     if args.models in ("admitted", "both"):
         miner_models, stats = admitted_models(root, args.network,
-                                              args.netuid, as_of)
+                                              args.netuid, as_of,
+                                              run_day=_run_day(day),
+                                              dry_run=args.dry_run)
         models.extend(miner_models)
         print(f"registry: {stats}")
         if not miner_models:

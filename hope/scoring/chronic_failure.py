@@ -49,7 +49,7 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
@@ -179,6 +179,8 @@ KIND_REINSTATED = "reinstated"    # lifecycle
 KIND_EVICTION_RETRACTED = "eviction_retracted"   # lifecycle (see observe_day)
 KIND_EVICTION_WITHHELD = "eviction_withheld"     # lifecycle — the non-empty-field floor
 KIND_PRE_RULE_CLEARED = "pre_rule_cleared"       # lifecycle — an eviction from before the rule's date
+REASON_NOTHING_USABLE = "nothing_usable"         # exited cleanly, answered no episode
+ERR_NOTHING_USABLE = "nothing_usable:"            # marker set by with_delivery()
 REASON_CHARGE_CANCELLED = "charge_cancelled"     # the day's absence charge was cancelled as our fault
 
 # Only these three are day OBSERVATIONS; lifecycle events never participate
@@ -336,6 +338,9 @@ def classify_failure(ok: bool, error: str | None) -> str:
     if not err:
         # ok=False with no error string is unattributable by construction.
         return FAULT_UNKNOWN
+    if err.startswith(ERR_NOTHING_USABLE):
+        # It ran to a clean exit and answered no episode (with_delivery).
+        return FAULT_MINER
     if err.startswith(ERR_DOCKER_UNAVAILABLE):
         # Our host has no docker daemon. Never the miner's fault.
         return FAULT_SUBNET
@@ -375,6 +380,22 @@ def classify_failure(ok: bool, error: str | None) -> str:
     return FAULT_UNKNOWN
 
 
+def with_delivery(day_runs: Mapping[str, tuple], coverage: Mapping[str, tuple]) -> dict:
+    """The day's runs with what each delivered: a run that exited cleanly but
+    answered none of the episodes it was given delivered nothing usable, so it
+    is a strike (MINER_MODEL_SPEC §5), not a clean day. Until 12 Nov 2026 only
+    the exit status was read: such a run was clean and could end an eviction
+    (a miner's review). `coverage`: hotkey -> (episodes_in, predictions_out),
+    shadow.day_coverage. A run with any answer, or with no coverage record, or
+    given no episodes, is left as it is."""
+    out = dict(day_runs)
+    for hk, (ok, error) in day_runs.items():
+        given, answered = (coverage or {}).get(hk) or (None, None)
+        if ok and given and int(given) > 0 and int(answered or 0) == 0:
+            out[hk] = (False, f"{ERR_NOTHING_USABLE} exit 0, 0 of {int(given)} episodes answered")
+    return out
+
+
 def exit_code(error: str | None) -> int | None:
     """The exit code embedded in a runner error string, when there is one."""
     m = _EXIT_CODE_RE.search(error or "")
@@ -393,6 +414,8 @@ def failure_reason(ok: bool, error: str | None) -> str:
     if fault != FAULT_MINER:
         return REASON_UNKNOWN
     err = (error or "").strip()
+    if err.startswith(ERR_NOTHING_USABLE):
+        return REASON_NOTHING_USABLE
     if err.startswith(ERR_TIMEOUT_PREFIX):
         return REASON_TIMEOUT
     if exit_code(err) == OOM_EXIT_CODE:
@@ -637,8 +660,15 @@ def observe_day(
     day: date,
     day_runs: Mapping[str, tuple],
     params: ChronicFailureParams = ChronicFailureParams(),
+    cancelled: Iterable[tuple] = (),
 ) -> EvictionDecision:
     """Fold one day's EXECUTION RESULTS into the liveness state machine.
+
+    `cancelled`: (day, hotkey) pairs whose absence charge was cancelled as our
+    failure (apply_cancellations). Such a day is never a strike when it is
+    folded again: the run re-reads its last observed day, and without this the
+    crash record turned the cancelled day back into a strike and re-evicted in
+    the same run (found 12 Nov 2026, before the rule's first day).
 
     `day_runs`: hotkey -> (ok, error) as recorded by the shadow ledger
     (hope.backtest.shadow.day_run_status). An EMPTY mapping is a no-op by
@@ -667,6 +697,7 @@ def observe_day(
     # that did not run today is still part of the field, and
     # counting only day_runs would let a quiet day look empty.
     known_hotkeys = frozenset(states) | frozenset(day_runs)
+    cancelled_here = frozenset((d, hk) for d, hk in (cancelled or ()) if d == day)
 
     # From the rule's first day, an eviction recorded before it is cleared:
     # not enforced, not a previous eviction, and it no longer cuts the strike
@@ -691,6 +722,9 @@ def observe_day(
         ok, error = day_runs[hotkey]
         ok = bool(ok)
         fault = classify_failure(ok, error)
+        reason = failure_reason(ok, error)
+        if not ok and fault == FAULT_MINER and (day, hotkey) in cancelled_here:
+            fault, reason = FAULT_SUBNET, REASON_CHARGE_CANCELLED
         if ok:
             kind = KIND_CLEAN
         elif fault == FAULT_MINER:
@@ -704,7 +738,7 @@ def observe_day(
         prior = _observations(log, hotkey).get(day)
         ev = StrikeEvent(day=day, hotkey=hotkey, kind=kind, fault=fault,
                          error=(None if ok else error),
-                         reason=failure_reason(ok, error))
+                         reason=reason)
         if prior is None or prior.kind != kind:
             log.append(ev)
             emitted.append(ev)

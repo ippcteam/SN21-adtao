@@ -77,9 +77,11 @@ def main(argv=None) -> int:
         return 0
 
     as_of = str(datetime.now(timezone.utc).date())
+    from scripts.run_shadow_day_bd import _run_day
     models, stats = admitted_models(
         args.ledger_root, os.environ.get("SN21_NETWORK", "finney"),
-        int(os.environ.get("SN21_NETUID", "21")), as_of)
+        int(os.environ.get("SN21_NETUID", "21")), as_of,
+        run_day=_run_day(args.basket.replace("BD-", "")), dry_run=args.dry_run)
     log(f"admitted models: {len(models)} (registry {stats})")
     if args.dry_run:
         for m in models[:5]:
