@@ -193,14 +193,11 @@ def test_an_older_hotkey_committing_a_newer_miners_model_does_not_take_its_seat(
     assert U.model_first_days(root) == {"author": "2026-11-01", "old": "2026-11-05"}
     receipts = {"old": "2026-08-02", "author": "2026-11-02"}       # first receipt day, any model
     today = {"author": "fp", "old": "fp"}
-    off = W.model_seniority(root, receipts, {}, "2026-11-06")
-    assert prediction_collisions(today, precedence=off)[0].original == "old"     # as before
+    assert prediction_collisions(today, precedence=receipts)[0].original == "old"   # receipt order
+    stats = {"group_detail": [{"payee": "old", "eliminated": ["author"], "kind": "same_predictions"}]}
     env = {W.MODEL_SENIORITY_FROM_ENV: "2026-11-06"}
-    on = W.model_seniority(root, receipts, env, "2026-11-06")
-    assert prediction_collisions(today, precedence=on)[0].original == "author"
-    assert W.model_seniority(root, receipts, env, "2026-11-05") == receipts       # before its date
-    # a hotkey with no record of its current model comes last
-    assert W.model_seniority(root, {**receipts, "new": "2026-11-06"}, env, "2026-11-06")["new"][0] == "9999-12-31"
+    W.rank_by_model_line(root, "2026-11-06", env, stats, [], receipts)
+    assert stats["group_detail"][0]["payee"] == "author"   # more in tests/scoring/test_model_line_precedence_nov13.py
 
 
 def test_an_old_record_gains_the_per_hotkey_runs_on_refresh(tmp_path, monkeypatch):

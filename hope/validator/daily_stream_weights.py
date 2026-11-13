@@ -156,18 +156,65 @@ def model_seniority_on(environ, day) -> bool:
         return False
 
 
-def model_seniority(root: str, receipt_order: Mapping, environ, day) -> dict:
-    """The precedence copy tests use. Off: `receipt_order` as it is (the first
-    receipt day each hotkey appears in, with any model). On: first the day the
-    hotkey first ran the model it runs now, then that receipt order - so a
-    hotkey that has been around longer cannot take the seat of the miner who
-    ran this model first by committing it later (a miner's review, 12 Nov
-    2026). A hotkey with no record of its current model comes last."""
+def rank_by_model_line(root: str, day, environ, one_payer_stats: dict,
+                       lineage_groups: list, first_receipt: Mapping,
+                       persist: bool = True, lineage_audit: Mapping | None = None):
+    """Record today's copy sets and, from SN21_MODEL_SENIORITY_FROM, choose
+    every group's payee by the model's line (hope.scoring.model_line).
+
+    Each member is recorded with the digest it was judged under: for the
+    exact tests the digest behind its rows on the receipt read, for the
+    lineage test the current-model digest it compared rows under.
+
+    Returns (lineage_groups, suppressed-by-one-payer or None, key or None).
+    Off: the groups as the tests named them, and only the record is written
+    (so the history is there on the day the rule starts)."""
+    from hope.backtest.unchanged_models import load as load_models
+    from hope.scoring import model_line
+    from hope.scoring.duplication import CopyGroup
+
+    detail = list((one_payer_stats or {}).get("group_detail") or [])
+    exact = [[d.get("payee"), *(d.get("eliminated") or [])] for d in detail]
+    if not exact and not lineage_groups:
+        return lineage_groups, None, None
+    models = load_models(root) or {}
+    runs = models.get("runs") or {}
+    receipt_day = str((one_payer_stats or {}).get("receipt_day")
+                      or (lineage_audit or {}).get("receipt_day") or day)[:10]
+    rows = model_line.row_digests(root, receipt_day, {m for g in exact for m in g}, runs) \
+        if exact else {}
+    compared = (lineage_audit or {}).get("current_model") or {}
+    judged = ([{m: rows.get(m) or [] for m in g} for g in exact]
+              + [{m: [model_line.short(compared.get(m))] if compared.get(m) else []
+                  for m in g.members} for g in (lineage_groups or [])])
+    if persist:
+        try:
+            model_line.record(root, day, judged, runs=runs)
+        except Exception:
+            logger.exception("[model line] copy sets not recorded for %s", day)
     if not model_seniority_on(environ, day):
-        return dict(receipt_order)
-    from hope.backtest.unchanged_models import model_first_days
-    first = model_first_days(root)
-    return {hk: (first.get(hk, _NEVER), order) for hk, order in receipt_order.items()}
+        return lineage_groups, None, None
+    history = {d: v for d, v in model_line.load(root, runs).items() if d < str(day)[:10]}
+    current = {hk: e.get("digest") for hk, e in (models.get("hotkeys") or {}).items()}
+    key = model_line.precedence(judged, runs, history, first_receipt, fallback=current)
+    reranked = []
+    for d in detail:
+        order = model_line.ranked([d.get("payee"), *(d.get("eliminated") or [])], key)
+        d["payee"], d["eliminated"] = order[0], order[1:]
+        reranked.append(CopyGroup(kind=d.get("kind") or "same_predictions",
+                                  original=order[0], copies=tuple(order[1:]),
+                                  evidence=d.get("evidence") or ""))
+    lineage_groups = [
+        replace(g, original=o[0], copies=tuple(o[1:]))
+        for g in (lineage_groups or []) for o in [model_line.ranked(g.members, key)]]
+    suppressed = frozenset(suppressed_copies(
+        DuplicationReport(groups=reranked), exempt_hotkeys=copy_exempt_hotkeys(environ)))
+    one_payer_stats["seniority"] = {hk: list(k) for hk, k in key.items()}
+    one_payer_stats["precedence"] = {
+        "rule": "model_line",
+        "line_since": {hk: k[0] for hk, k in sorted(key.items())},
+        "first_receipt": {hk: k[1] for hk, k in sorted(key.items())}}
+    return lineage_groups, suppressed, key
 
 
 def enforced_evictions(states, day, environ=os.environ) -> frozenset:
@@ -632,6 +679,12 @@ def compute_daily_allocation(
                 "fingerprints": (one_payer_stats or {}).get(
                     "point_fingerprints_today"),
             },
+            # Who keeps a group's seat: "receipt_order" (the first receipt
+            # day, any model) or, from SN21_MODEL_SENIORITY_FROM,
+            # "model_line" with each grouped hotkey's line start and first
+            # receipt day, so the payee can be recomputed.
+            "precedence": (one_payer_stats or {}).get("precedence")
+            or {"rule": "receipt_order"},
         },
         "lineage": {
             "configured": lineage_on,
@@ -775,7 +828,17 @@ def allocation_from_ledger(
             one_payer_stats.get("days_indexed", 0),
             one_payer_stats.get("groups", 0), len(copy_suppressed))
 
-    lineage_groups, lineage_audit = lineage_from_receipts(root, day, environ)
+    first_receipt: dict = {}
+    lineage_groups, lineage_audit = lineage_from_receipts(
+        root, day, environ, first_seen_days=first_receipt)
+    for hk, seen in ((one_payer_stats or {}).get("seniority") or {}).items():
+        if isinstance(seen, str) and (hk not in first_receipt or seen < first_receipt[hk]):
+            first_receipt[hk] = seen
+    lineage_groups, _reranked, _line_key = rank_by_model_line(
+        root, day, environ, one_payer_stats, lineage_groups, first_receipt,
+        persist=persist, lineage_audit=lineage_audit)
+    if _reranked is not None:
+        copy_suppressed = _reranked
     if lineage_groups:
         logger.info("[lineage] %d group(s) collapsed under params@%s",
                     len(lineage_groups), lineage_audit.get("params_version"))
@@ -1220,8 +1283,6 @@ def one_payer_suppression_from_receipts(root: str, day: date, environ,
                     if hotkey not in seniority or day_name < seniority[hotkey]:
                         seniority[hotkey] = day_name
 
-        seniority = model_seniority(root, seniority, environ, day)
-
         groups = []
         for kind in kinds:
             if not today[kind]:
@@ -1461,7 +1522,8 @@ def copy_exempt_hotkeys(environ) -> frozenset:
             | exempt_hotkeys_from(environ))
 
 
-def lineage_from_receipts(root: str, day: date, environ):
+def lineage_from_receipts(root: str, day: date, environ,
+                          first_seen_days: dict | None = None):
     """(groups, pairwise_audit) for `day`, from the published receipts.
 
     Reads the same documents a miner reads, so any grouping this produces can
@@ -1539,9 +1601,10 @@ def lineage_from_receipts(root: str, day: date, environ):
     if not predictions:
         return [], {}
 
-    # Lineage keeps the receipt order even with SN21_MODEL_SENIORITY_FROM on:
-    # it groups by behaviour across digests, so an author's rebuild under a new
-    # digest would lose to a copy of the old build (review of 12 Nov 2026).
+    if first_seen_days is not None:
+        first_seen_days.update({hk: on_or_before[r] for hk, r in first_seen.items()})
+    # Receipt order here; from SN21_MODEL_SENIORITY_FROM the caller re-ranks
+    # every group by the model's line (rank_by_model_line).
     groups, audit = lineage_collisions(predictions, actuals, params,
                                        precedence=first_seen)
 
