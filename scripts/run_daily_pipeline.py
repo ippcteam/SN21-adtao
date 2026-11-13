@@ -1708,6 +1708,18 @@ def main():
         log(f"[mirror-sync] ERROR (non-fatal) {e}")
     note_memory("mirror", record)
 
+    # 9. the ledger disk (hope/backtest/ledger_keep.py): every folder's size,
+    #    and the files no step reads again - removed only with
+    #    SN21_LEDGER_KEEP_APPLY=1, otherwise counted (a dry run).
+    try:
+        from hope.backtest.ledger_keep import run_ledger_keep
+        s = run_ledger_keep(args.ledger_root, day)
+        record["stages"]["ledger_keep"] = s
+        log(f"[ledger-keep] {json.dumps(s, default=str)[:900]}")
+    except Exception as e:
+        record["stages"]["ledger_keep"] = {"error": str(e)}
+        log(f"[ledger-keep] ERROR (non-fatal) {e}")
+
     record["elapsed_s"] = round(time.time() - started, 1)
     path = write_run_record(args.ledger_root, record)
     log(f"[pipeline] run record -> {path}")
