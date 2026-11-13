@@ -122,15 +122,23 @@ def run_release_step(ledger_root: str, day: date, environ=os.environ,
         dg = r["digest"]
         if dg in mirrored:
             continue
-        if not r.get("image_ref"):
-            failed.append({"digest": dg, "error": "no source repository on record"})
+        # Our private copy first (hope.privacy.keep): it is there even if the
+        # miner has since deleted or closed the image.
+        from hope.privacy import keep
+        source, source_auth = r.get("image_ref"), None
+        if keep.kept_ref(ledger_root, dg, environ):
+            source, source_auth = keep.target(environ), keep.credentials(environ)
+        if not source:
+            failed.append({"digest": dg, "error": "no source repository on record and no kept copy"})
             continue
         try:
-            res = mirror_fn(r["image_ref"], dg, target, target_credentials=auth)
+            res = (mirror_fn(source, dg, target, source_credentials=source_auth, target_credentials=auth)
+                   if source_auth else mirror_fn(source, dg, target, target_credentials=auth))
         except Exception as exc:                       # retried tomorrow
             failed.append({"digest": dg, "error": str(exc)[:200]})
             continue
-        mirrored[dg] = {"target": res["target"], "source": f"{r['image_ref']}@{dg}",
+        mirrored[dg] = {"target": res["target"], "source": f"{r.get('image_ref') or source}@{dg}",
+                        "copied_from": "kept copy" if source_auth else "miner image",
                         "released_on": r["released_on"],
                         "copied_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
         _write(mirrored_path, mirrored)

@@ -153,6 +153,20 @@ def credentials_for(registry: str, environ=None) -> tuple[str, str] | None:
     return None
 
 
+def _kept_repo_credentials(registry: str, repo: str, environ=None):
+    """The operator's login, for the operator's own private copies only
+    (hope.privacy.keep): never offered for a miner's repository."""
+    environ = environ if environ is not None else os.environ
+    try:
+        from hope.privacy import keep
+        kept = keep.target(environ)
+        if kept and f"{registry}/{repo}" == kept:
+            return keep.credentials(environ)
+    except Exception:
+        return None
+    return None
+
+
 def _basic(credentials: tuple[str, str]) -> str:
     return "Basic " + base64.b64encode(f"{credentials[0]}:{credentials[1]}".encode()).decode()
 
@@ -204,7 +218,9 @@ class _Registry:
         self.registry = registry
         self.repo = repo
         self.base = f"https://{registry}/v2/{repo}"
-        self.credentials = credentials_for(registry) if credentials is None else (credentials or None)
+        if credentials is None:
+            credentials = credentials_for(registry) or _kept_repo_credentials(registry, repo)
+        self.credentials = credentials or None
         self.actions = actions
         self._auth: str | None = None
 

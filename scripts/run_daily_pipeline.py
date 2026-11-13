@@ -1642,6 +1642,19 @@ def main():
         log(f"[model-release] ERROR {e}")
     note_memory("model release", record)
 
+    # 4c. the operator's private copy of each model it ran (hope/privacy/keep.py),
+    #     so removed-model probes and release copies don't depend on the miner
+    #     keeping the image. Off until SN21_MODEL_KEEP is set, and only into a
+    #     repository GitHub reports as private; capped per run.
+    try:
+        from hope.privacy.keep import run_keep_step
+        s = run_keep_step(args.ledger_root)
+        record["stages"]["model_keep"] = s
+        log(f"[model-keep] {json.dumps(s, default=str)[:600]}")
+    except Exception as e:
+        record["stages"]["model_keep"] = {"error": str(e)}
+        log(f"[model-keep] ERROR {e}")
+
     # 5. publish the daily leaderboard report to the CMS (GATED — nothing is
     #    posted before the transition-plan reveal date; see _report_publish_gate)
     try:

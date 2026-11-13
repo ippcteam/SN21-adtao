@@ -59,6 +59,11 @@ days out of the earning set, dethroned as champion, or 45 days after
   `ghcr.io/adtaoai/sn21-released`, so it stays pullable even if the original
   image is deleted. A copy that fails is retried the next day; the release
   stands either way.
+- **Before release, the copy is private.** The operator also keeps its own
+  copy of each model it runs, by digest, in a private repository. It is used
+  only to check a removed model is not committed again (SN21_REWARDS.md,
+  "Models unchanged for 40 days") and as the source of the release copy, and
+  nothing in it is published before the model is released.
 - **It is listed publicly** in
   [github.com/adtaoai/sn21_models](https://github.com/adtaoai/sn21_models):
   `released.json` and a table in its README, one row per released digest

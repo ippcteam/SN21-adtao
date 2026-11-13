@@ -336,17 +336,21 @@ def load_probes(root: str, corpus_sha: str) -> dict:
 
 
 def probes_due(root: str, corpus_sha: str, environ=os.environ) -> list[tuple[str, str]]:
-    """(digest, image_ref) of removed models with no probe on this corpus yet,
-    oldest removal first, at most SN21_UNCHANGED_PROBES_PER_DAY."""
+    """(digest, image ref) of removed models with no probe on this corpus yet,
+    oldest removal first, at most SN21_UNCHANGED_PROBES_PER_DAY. The ref is our
+    private copy when we hold one (hope.privacy.keep), else the miner's image."""
     try:
         cap = int(environ.get(PROBES_PER_DAY_ENV) or DEFAULT_PROBES_PER_DAY)
     except ValueError:
         cap = DEFAULT_PROBES_PER_DAY
+    from hope.privacy import keep
     have = set(load_probes(root, corpus_sha))
     removed = (load(root) or empty()).get("removed") or {}
-    due = sorted(((e.get("removed_on") or "", dg, e.get("image_ref")) for dg, e in removed.items()
-                  if dg not in have and e.get("image_ref")))
-    return [(dg, ref) for _, dg, ref in due][:max(0, cap)]
+    # Our private copy first, so a removed model whose image the miner has
+    # since deleted or closed still gets its probe (13 Nov 2026).
+    due = sorted(((e.get("removed_on") or "", dg, keep.kept_ref(root, dg, environ) or e.get("image_ref"))
+                  for dg, e in removed.items() if dg not in have))
+    return [(dg, ref) for _, dg, ref in due if ref][:max(0, cap)]
 
 
 def same_as_removed(predictions: dict, outcomes, probes: dict, params) -> dict | None:
