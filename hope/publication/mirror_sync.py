@@ -240,6 +240,17 @@ def build_mirror_items(ledger_root: str,
     except Exception:
         pass
 
+    # Each group's accuracy day by day over the last 30 documents, for the
+    # website's chart: a few numbers per group and day, not 30 whole
+    # documents (13 Nov 2026).
+    try:
+        from hope.reporting.performance_series import build_series
+        series = build_series(os.path.join(ledger_root, "prediction_performance"))
+        if series:
+            items.append({"path": "/v1/daily/prediction-performance-series", "body": series})
+    except Exception:
+        pass
+
     # Absence penalties change standings, and standings must stay
     # reproducible from public documents alone — so the applied-penalty log
     # publishes beside the receipts. Empty log publishes as an empty list,

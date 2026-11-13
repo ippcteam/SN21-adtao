@@ -34,7 +34,7 @@ def _left(root):
 def test_a_dry_run_counts_and_removes_nothing(tmp_path):
     root = _ledger(tmp_path)
     before = _left(root)
-    s = K.run_ledger_keep(str(root), TODAY, environ={})
+    s = K.run_ledger_keep(str(root), TODAY, environ={K.DAYS_ENV: "14"})
     assert s["mode"] == "dry run" and s["removed"] == 0
     assert s["files"] == 3 and s["mb"] == round(2010 / 1e6, 1)
     assert _left(root) == before
@@ -43,7 +43,7 @@ def test_a_dry_run_counts_and_removes_nothing(tmp_path):
 
 def test_apply_removes_only_old_performance_documents_and_stale_tmp_files(tmp_path):
     root = _ledger(tmp_path)
-    s = K.run_ledger_keep(str(root), TODAY, environ={K.APPLY_ENV: "1"})
+    s = K.run_ledger_keep(str(root), TODAY, environ={K.APPLY_ENV: "1", K.DAYS_ENV: "14"})
     assert s["removed"] == 3 and s["failed"] == 0
     left = _left(root)
     assert "prediction_performance/2026-10-01.json" not in left
@@ -74,3 +74,9 @@ def test_the_keep_window_is_configurable_and_a_bad_value_is_the_default(tmp_path
 def test_a_missing_ledger_reports_nothing(tmp_path):
     s = K.run_ledger_keep(str(tmp_path / "none"), TODAY, environ={})
     assert s["files"] == 0 and s["folders_mb"] == {}
+
+
+def test_by_default_45_days_are_kept_so_the_30_day_series_has_its_documents(tmp_path):
+    root = _ledger(tmp_path)
+    s = K.run_ledger_keep(str(root), TODAY, environ={})
+    assert s["keep_days"] == 45 and s["files"] == 1               # only the stale tmp file

@@ -7,9 +7,9 @@ what this step would remove.
 
 Removed only when SN21_LEDGER_KEEP_APPLY=1 (otherwise a dry run), and only
 files no step reads again:
-  - prediction_performance/<day>.json older than SN21_LEDGER_KEEP_DAYS (14):
-    each is the cumulative document of its day, and only the newest is read
-    (the mirror publishes it; every day is recomputable from the receipts).
+  - prediction_performance/<day>.json older than SN21_LEDGER_KEEP_DAYS (45):
+    each is the cumulative document of its day; the mirror publishes the newest
+    and a 30-day series from them (every day is recomputable from the receipts).
     The newest is never removed.
   - a *.tmp file more than a day old: an atomic write that never finished.
 
@@ -26,7 +26,7 @@ from datetime import date, timedelta
 
 APPLY_ENV = "SN21_LEDGER_KEEP_APPLY"
 DAYS_ENV = "SN21_LEDGER_KEEP_DAYS"
-DEFAULT_DAYS = 14
+DEFAULT_DAYS = 45   # the published series reads the last 30 (hope.reporting.performance_series)
 TMP_AGE_S = 24 * 3600
 
 
