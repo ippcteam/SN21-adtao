@@ -108,6 +108,14 @@ def admitted_models(root: str, network: str, netuid: int,
     commitments = bulk_model_commitments(subtensor, netuid, hotkeys)
     registry = build_registry(hotkeys, as_registry_reader(commitments),
                               admitted, as_of)
+    # The first block each hotkey was seen committing each digest: the chain
+    # keeps only the latest, so it is read here every day (commit_blocks.py).
+    # A problem with it never stops the run.
+    from hope.backtest import commit_blocks
+    try:
+        commit_blocks.remember(root, commitments, save_it=not dry_run)
+    except Exception as exc:
+        print(f"[commit-blocks] not recorded today: {str(exc)[:200]}", flush=True)
     stats = {
         "registered_hotkeys": len(hotkeys),
         "model_commitments": len(commitments),
