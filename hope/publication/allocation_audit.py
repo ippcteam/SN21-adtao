@@ -152,6 +152,18 @@ def build_document(day: date | str, collapse_audit: dict | None) -> dict:
         # seated (a seat given to them cannot be paid). Named, so the paid
         # set can be recomputed from the document.
         "deregistered": _names(audit.get("deregistered")),
+        # A copy set left with no earner gets its earliest member back
+        # (SN21_REWARDS.md, corrected 2026-10-09); named here as that section
+        # says it is.
+        "payee_restored": _names(audit.get("payee_restored")),
+        # A copy set whose seat holder cannot be paid: the most senior member
+        # that can be, and why each holder ahead of it cannot. `on` false
+        # means the rule's date has not come and nobody moved; the list is who
+        # would have.
+        "payable_seat": {
+            "on": bool((audit.get("payable_seat") or {}).get("on")),
+            "passed": list((audit.get("payable_seat") or {}).get("passed") or []),
+        },
         "controls": policies,
         # Per-hotkey standings (rule amendment 2026-09-05): the relative
         # standing that ranks and pays, the absolute accuracy over the same

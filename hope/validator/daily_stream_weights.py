@@ -366,6 +366,110 @@ def orphaned_payees(groups, suppressed, seniority=None, preferred=()) -> set:
     return restore
 
 
+PAYABLE_SEAT_FROM_ENV = "SN21_PAYABLE_SEAT_FROM"
+
+
+def payable_seat_switch_on(environ, day) -> bool:
+    """The copy set's seat goes to its most senior member that can be paid,
+    from the date in SN21_PAYABLE_SEAT_FROM (unset = off)."""
+    raw = (environ.get(PAYABLE_SEAT_FROM_ENV) or "").strip()
+    try:
+        return bool(raw) and str(day)[:10] >= date.fromisoformat(raw).isoformat()
+    except ValueError:
+        return False
+
+
+def cannot_be_paid(members, placements, *, deregistered=(), coldkey_dropped=(),
+                   scored_days=None, tenure_min=0, tenure_exempt=frozenset(),
+                   alpha_of=None, alpha_floor=0.0, alpha_hold_enforced=False) -> dict:
+    """Copy-set members that could not be paid today if seated, with why.
+
+    The same tests the allocation applies, read before the seat is chosen:
+    a seat needs a hotkey still in `placements` (registered, kept by the
+    coldkey cap, over the placement floor, not evicted), with tenure, and
+    not under the alpha hold when it is enforced. Each test that would stand
+    down (empty the curve) counts as passed, as it does in the allocation;
+    an alpha the chain did not report is kept, as the hold keeps it.
+    """
+    members = sorted({m for m in members if m})
+    deregistered, coldkey_dropped = set(deregistered), set(coldkey_dropped)
+    out: dict = {}
+    for m in members:
+        if m in placements:
+            continue
+        out[m] = ("deregistered" if m in deregistered else
+                  "second seat on a coldkey" if m in coldkey_dropped else
+                  "no placement")
+    if tenure_min > 0:
+        short = short_tenure_hotkeys(scored_days or {}, placements.keys(),
+                                     tenure_min, tenure_exempt)
+        if len(short) < len(placements):
+            for m in members:
+                if m in short and m not in out:
+                    out[m] = "short of tenure"
+    if alpha_hold_enforced and alpha_of is not None and alpha_floor > 0:
+        def under(hk):
+            try:
+                raw = alpha_of.get(hk)
+                return raw is not None and float(raw) < alpha_floor
+            except (TypeError, ValueError):
+                return False
+        if sum(1 for hk in placements if under(hk)) < len(placements):
+            for m in members:
+                if m not in out and under(m):
+                    out[m] = "under the alpha hold"
+    return out
+
+
+def payable_seats(groups, suppressed, unpayable, seniority=None, preferred=()) -> list:
+    """Copy sets whose members are all either suppressed or unpayable, and the
+    member that takes the seat: the most senior that can be paid, by the same
+    order as orphaned_payees (`seniority`, lineage payees ahead, then the
+    hotkey). A set with nobody payable is left as it is.
+    """
+    seniority = seniority or {}
+    preferred = set(preferred)
+    parent: dict = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    holders = set()
+    for payee, excluded in groups:
+        members = [m for m in [payee, *excluded] if m]
+        if payee:
+            holders.add(payee)
+        for m in members[1:]:
+            parent[find(m)] = find(members[0])
+        for m in members:
+            find(m)
+    sets: dict = {}
+    for m in parent:
+        sets.setdefault(find(m), []).append(m)
+
+    def order(m):
+        return ((0, seniority[m]) if m in seniority else (1,),
+                0 if m in preferred else 1, m)
+
+    out = []
+    for members in sets.values():
+        if any(m not in suppressed and m not in unpayable for m in members):
+            continue
+        payable = [m for m in members if m not in unpayable]
+        if not payable:
+            continue
+        held = sorted((m for m in members if m in holders), key=order)
+        out.append({"to": min(payable, key=order),
+                    "instead_of": [{"hotkey": m, "why": unpayable.get(m)}
+                                   for m in held if m in unpayable],
+                    "members": len(members)})
+    return sorted(out, key=lambda p: p["to"])
+
+
 def compute_daily_allocation(
     entries: dict[str, list[ScoredEpisode]],
     day: date,
@@ -390,6 +494,7 @@ def compute_daily_allocation(
     alpha_of: Mapping[str, float] | None = None,
     alpha_floor: float = 0.0,
     alpha_hold_enforced: bool = False,
+    payable_seat_on: bool = False,
 ) -> DailyAllocation:
     """One day's standings → weights (D7) + promotion observation (D8).
 
@@ -485,9 +590,11 @@ def compute_daily_allocation(
     # same coldkey is not a distinct principal at all, so it should never have
     # been a champion candidate either.
     coldkey_state: dict = {"applied": False, "identities": 0, "dropped": 0}
+    coldkey_dropped: set = set()
     if coldkey_of:
         cap = apply_coldkey_cap(placements, coldkey_of, commit_block=commit_block)
         placements = dict(cap.kept)
+        coldkey_dropped = set(cap.dropped)
         coldkey_state = {"applied": True, "identities": len(coldkey_of),
                          "dropped": len(cap.dropped)}
         if cap.dropped:
@@ -543,6 +650,33 @@ def compute_daily_allocation(
     if restored:
         suppressed -= restored
         audit["payee_restored"] = sorted(restored)
+
+    # A seat its holder cannot be paid for (deregistered, a second seat on a
+    # coldkey, under the alpha hold, short of tenure, under the placement
+    # floor) left the whole copy set unpaid: every day 9-15 Nov 2026 at least
+    # one group's seat holder could not be paid while another member could
+    # (MrCyRex, 13 Nov). From SN21_PAYABLE_SEAT_FROM the seat passes to the
+    # most senior member that can be paid, in the precedence order in force.
+    # Before that date the audit records who would take it, changing nothing.
+    unpayable = cannot_be_paid(
+        [m for d in ((one_payer_stats or {}).get("group_detail") or [])
+         for m in [d.get("payee"), *(d.get("eliminated") or [])] if m]
+        + [m for g in (lineage_groups or []) for m in [g.original, *g.copies]],
+        placements, deregistered=deregistered, coldkey_dropped=coldkey_dropped,
+        scored_days=scored_days, tenure_min=tenure_min, tenure_exempt=tenure_exempt,
+        alpha_of=alpha_of, alpha_floor=alpha_floor,
+        alpha_hold_enforced=alpha_hold_enforced)
+    passed = payable_seats(
+        [(d.get("payee"), d.get("eliminated") or [])
+         for d in ((one_payer_stats or {}).get("group_detail") or [])]
+        + [(g.original, list(g.copies)) for g in (lineage_groups or [])],
+        suppressed, unpayable,
+        seniority=(one_payer_stats or {}).get("seniority") or {},
+        preferred=[g.original for g in (lineage_groups or [])],
+    )
+    audit["payable_seat"] = {"on": bool(payable_seat_on), "passed": passed}
+    if payable_seat_on and passed:
+        suppressed -= {p["to"] for p in passed}
 
     # One payer per model: the curve renormalises over genuine models only.
     if suppressed:
@@ -922,6 +1056,7 @@ def allocation_from_ledger(
         alpha_of=alpha_of,
         alpha_floor=alpha_floor,
         alpha_hold_enforced=_alpha_hold_enforced(environ),
+        payable_seat_on=payable_seat_switch_on(environ, day),
         # Read from the environment HERE, where the switches actually live, so
         # the published status is what the run was configured with rather than
         # something inferred from an empty result. "Suppressed nobody" and
