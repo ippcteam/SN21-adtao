@@ -179,12 +179,19 @@ def line_since(hk: str, members: set, judged: Mapping[str, str | None],
 def precedence(groups: Iterable[Mapping[str, str | None]],
                runs: Mapping[str, Mapping[str, str]], days: Mapping[str, list],
                first_receipt: Mapping[str, str],
-               fallback: Mapping[str, str] | None = None) -> dict:
-    """hotkey -> (line start, first receipt day): the order every copy test and
-    the restore of an orphaned set use when the rule is in force. `groups` are
-    today's, each {hotkey: the digest or digests it was judged under}. A member
-    with none is ranked on `fallback` (the digest the 40-day record says it
-    runs), which is never evidence for anyone's line."""
+               fallback: Mapping[str, str] | None = None,
+               blocks: Mapping[str, Mapping[str, int]] | None = None) -> dict:
+    """hotkey -> (line start, commit block, first receipt day): the order every
+    copy test and the restore of an orphaned set use when the rule is in force.
+    `groups` are today's, each {hotkey: the digest or digests it was judged
+    under}. A member with none is ranked on `fallback` (the digest the 40-day
+    record says it runs), which is never evidence for anyone's line.
+
+    Two lines that start on the same day (a copy committed before the same
+    intake) are ordered by the first block each hotkey was seen committing
+    the digest its line starts with (`blocks`, hope.backtest.commit_blocks);
+    a block not seen sorts after every known one, and then the first receipt
+    day decides as before."""
     groups = list(groups)
     rows: dict = {}
     for g in groups:
@@ -202,13 +209,19 @@ def precedence(groups: Iterable[Mapping[str, str | None]],
     out = {}
     for members in copy_sets(g.keys() for g in groups):
         for hk in members:
-            out[hk] = (line_since(hk, members, judged, runs, days, newest.get(hk)),
+            since = line_since(hk, members, judged, runs, days, newest.get(hk))
+            started = digest_on(timeline(runs, hk), since) if since != NEVER else None
+            block = ((blocks or {}).get(hk) or {}).get(started) if started else None
+            out[hk] = (since, int(block) if block else UNKNOWN_BLOCK,
                        str(first_receipt.get(hk) or NEVER))
     return out
 
 
+UNKNOWN_BLOCK = 10 ** 18
+
+
 def ranked(members: Iterable[str], key: Mapping[str, tuple]) -> list[str]:
-    return sorted(members, key=lambda hk: (tuple(key.get(hk, (NEVER, NEVER))), hk))
+    return sorted(members, key=lambda hk: (tuple(key.get(hk, (NEVER, UNKNOWN_BLOCK, NEVER))), hk))
 
 
 def row_digests(root: str, receipt_day: str, hotkeys: Iterable[str],

@@ -312,6 +312,7 @@ def test_the_audit_names_the_rule_and_each_line_start(tmp_path, monkeypatch):
     assert stats["precedence"] == {
         "rule": "model_line",
         "line_since": {"author": "2026-10-01", "copier": "2026-10-05"},
+        "commit_block": {"author": None, "copier": None},
         "first_receipt": {"author": "2026-10-02", "copier": "2026-10-06"}}
 
 
@@ -321,3 +322,59 @@ def test_a_hotkey_with_no_record_of_its_model_comes_last(tmp_path, monkeypatch):
     stats = _stats("unknown", "author")
     _rank(root, stats)
     assert _payee(stats) == "author"
+
+
+def test_just_after_a_switch_rows_on_the_old_digest_judge_the_old_digest(tmp_path, monkeypatch):
+    """MrCyRex, 13 Nov: for about 10 days after the author moves to a new
+    digest, the exact group is built on rows of the old one. A copier that ran
+    the author's old digest from early on must not outrank the author then.
+    Each member is judged by the digest its rows came from, so both are on A1
+    and the author ran A1 first."""
+    days = _runs(("2026-10-01", "2026-11-09", {"author": A1}),
+                 ("2026-10-05", TODAY, {"copier": A1}),
+                 ("2026-11-10", TODAY, {"author": A2}))
+    root = _root(tmp_path, monkeypatch, days, (),
+                 {TODAY: {"author": ["2026-11-08"], "copier": ["2026-11-08"]}})
+    # The current digest's first day (the live rule's input) would seat the copier.
+    assert U.model_first_days(root) == {"author": "2026-11-10", "copier": "2026-10-05"}
+    stats = _stats("copier", "author")
+    _, suppressed, key = _rank(root, stats)
+    assert _payee(stats) == "author" and suppressed == {"copier"}
+    assert key["author"][0] == "2026-10-01"
+
+
+def test_a_copy_committed_before_the_same_intake_falls_to_the_earlier_block(tmp_path, monkeypatch):
+    """MrCyRex, 13 Nov: both first run the model on the same day, so the day
+    cannot order them; the older hotkey (the earlier first receipt) won. The
+    first block each was seen committing the digest breaks the tie."""
+    from hope.backtest import commit_blocks as CB
+    days = _runs(("2026-11-01", TODAY, {"old": A1, "author": A1}))
+    root = _root(tmp_path, monkeypatch, days, (),
+                 {TODAY: {"old": ["2026-11-12"], "author": ["2026-11-12"]}})
+    first = {"old": "2026-08-01", "author": "2026-11-02"}
+    stats = _stats("old", "author")
+    _rank(root, stats, first=first)
+    assert _payee(stats) == "old"                       # no blocks seen: receipt order
+    CB.remember(root, {"author": (1000, "sn21-model:v1:ghcr.io/x/m@" + A1.split("@")[1]),
+                       "old": (1005, "sn21-model:v1:ghcr.io/x/m@" + A1.split("@")[1])})
+    stats = _stats("old", "author")
+    _, _, key = _rank(root, stats, first=first)
+    assert _payee(stats) == "author" and key["author"][1] == 1000
+    assert stats["precedence"]["commit_block"] == {"author": 1000, "old": 1005}
+
+
+def test_an_unseen_block_sorts_after_a_seen_one(tmp_path, monkeypatch):
+    from hope.backtest import commit_blocks as CB
+    days = _runs(("2026-11-01", TODAY, {"old": A1, "author": A1}))
+    root = _root(tmp_path, monkeypatch, days, (),
+                 {TODAY: {"old": ["2026-11-12"], "author": ["2026-11-12"]}})
+    CB.remember(root, {"author": (1000, "sn21-model:v1:ghcr.io/x/m@" + A1.split("@")[1])})
+    stats = _stats("old", "author")
+    _rank(root, stats, first={"old": "2026-08-01", "author": "2026-11-02"})
+    assert _payee(stats) == "author"
+
+
+def test_the_block_record_uses_the_receipt_digest_form():
+    from hope.backtest import commit_blocks as CB
+    for x in ("sha256:" + "a" * 64, A1, None, ""):
+        assert CB.short(x) == ML.short(x)

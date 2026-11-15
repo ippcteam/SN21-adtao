@@ -196,7 +196,9 @@ def rank_by_model_line(root: str, day, environ, one_payer_stats: dict,
         return lineage_groups, None, None
     history = {d: v for d, v in model_line.load(root, runs).items() if d < str(day)[:10]}
     current = {hk: e.get("digest") for hk, e in (models.get("hotkeys") or {}).items()}
-    key = model_line.precedence(judged, runs, history, first_receipt, fallback=current)
+    from hope.backtest import commit_blocks
+    key = model_line.precedence(judged, runs, history, first_receipt, fallback=current,
+                                blocks=commit_blocks.load(root))
     reranked = []
     for d in detail:
         order = model_line.ranked([d.get("payee"), *(d.get("eliminated") or [])], key)
@@ -213,7 +215,9 @@ def rank_by_model_line(root: str, day, environ, one_payer_stats: dict,
     one_payer_stats["precedence"] = {
         "rule": "model_line",
         "line_since": {hk: k[0] for hk, k in sorted(key.items())},
-        "first_receipt": {hk: k[1] for hk, k in sorted(key.items())}}
+        "commit_block": {hk: (k[1] if k[1] != model_line.UNKNOWN_BLOCK else None)
+                         for hk, k in sorted(key.items())},
+        "first_receipt": {hk: k[-1] for hk, k in sorted(key.items())}}
     return lineage_groups, suppressed, key
 
 
