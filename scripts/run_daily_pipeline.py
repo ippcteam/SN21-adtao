@@ -495,7 +495,7 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
         workdir = os.environ.get("SN21_EXECUTOR_WORKDIR", "/tmp/executor")
         return {"registry": stats, "models_run": summary.get("models_run"), "retried_ours": len(models),
                 "health": shadow_run_health(summary.get("results", {}),
-                                            disk_free_mb(ledger_root, workdir)),
+                                            disk_free_mb(ledger_root, workdir), day),
                 "results": {hk: r.get("predictions")
                             for hk, r in summary.get("results", {}).items()}}
     if already_ran and not resumed:
@@ -538,7 +538,7 @@ def stage_shadow(ledger_root, basket_key, episodes, include_reference):
     return {"registry": stats, "models_run": summary.get("models_run"),
             **({"resumed_after": summary["resumed_after"]} if resumed else {}),
             "health": shadow_run_health(summary.get("results", {}),
-                                        disk_free_mb(ledger_root, workdir)),
+                                        disk_free_mb(ledger_root, workdir), day),
             "results": {hk: r.get("predictions")
                         for hk, r in summary.get("results", {}).items()}}
 
@@ -562,15 +562,18 @@ def disk_free_mb(*paths) -> dict:
     return out
 
 
-def shadow_run_health(results: dict, disk: dict | None = None) -> dict:
+def shadow_run_health(results: dict, disk: dict | None = None, day: str | None = None) -> dict:
     """What the day's shadow run did, for the run record and heartbeat.
 
     results: hotkey -> {"ok", "predictions", "error"} (run_shadow_day).
     A failure on OUR side (operator_fault: pull, low disk, no sandbox, a
     timeout under the published budget) is excused from absence, so the
     miner loses the day without any charge or trace; it is counted here so
-    the operator sees it the same morning."""
-    from hope.scoring.absence_penalty import PUBLISHED_RUN_BUDGET_S, operator_fault
+    the operator sees it the same morning. `day` is the basket day: from
+    SN21_PULL_REFUSAL_FROM a refused pull is the miner's and is not counted."""
+    from hope.scoring.absence_penalty import PUBLISHED_RUN_BUDGET_S, operator_fault, pull_refusal_from
+    basket_day = date.fromisoformat(day) if day else None
+    refused_from = pull_refusal_from(os.environ)
     by_error: dict = {}
     ours: list = []
     ok = 0
@@ -581,7 +584,7 @@ def shadow_run_health(results: dict, disk: dict | None = None) -> dict:
         err = str(r.get("error") or "unknown")
         kind = err.split(":")[0].split(">")[0].strip() or "unknown"
         by_error[kind] = by_error.get(kind, 0) + 1
-        if operator_fault(err, PUBLISHED_RUN_BUDGET_S):
+        if operator_fault(err, PUBLISHED_RUN_BUDGET_S, basket_day, refused_from):
             ours.append(hk)
     low = {p: mb for p, mb in (disk or {}).items() if mb < DISK_WARN_MB}
     problems = []

@@ -28,7 +28,7 @@ from collections.abc import Iterable
 
 from hope.backtest.container_runner import RunResult, _parse_output, required_horizons
 from hope.backtest.ns_sandbox import RunSpec, cleanup_rootfs, run_sandboxed, sandbox_env
-from hope.backtest.oci_pull import PullError, pull_and_unpack
+from hope.backtest.oci_pull import ERR_PULL_REFUSED_PREFIX, PullError, pull_and_unpack
 
 # Opt-in virtual-memory cap for the sandboxed model, in MB. On a host whose own
 # memory is smaller than a model might want, set this BELOW the container limit
@@ -171,7 +171,12 @@ def run_basket_local(
                 # A pull/verify failure is NOT a run failure: the fault taxonomy
                 # keeps them distinct so a registry problem never strikes a miner
                 # the way a crashing container would.
-                return RunResult(ok=False, error=f"pull_failed: {exc}",
+                # A registry that refused the image (private or deleted) is
+                # marked apart; whose fault it is depends on the day
+                # (absence_penalty.operator_fault).
+                prefix = (f"{ERR_PULL_REFUSED_PREFIX} {exc.refused}:"
+                          if getattr(exc, "refused", None) else "pull_failed:")
+                return RunResult(ok=False, error=f"{prefix} {exc}",
                                  episodes_in=len(eps))
 
         argv = _resolve_entrypoint(image, entrypoint_override)

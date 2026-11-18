@@ -181,7 +181,9 @@ KIND_EVICTION_WITHHELD = "eviction_withheld"     # lifecycle — the non-empty-f
 KIND_PRE_RULE_CLEARED = "pre_rule_cleared"       # lifecycle — an eviction from before the rule's date
 REASON_NOTHING_USABLE = "nothing_usable"         # exited cleanly, answered no episode
 ERR_NOTHING_USABLE = "nothing_usable:"            # marker set by with_delivery()
-REASON_CHARGE_CANCELLED = "charge_cancelled"     # the day's absence charge was cancelled as our fault
+REASON_CHARGE_CANCELLED = "charge_cancelled"
+REASON_IMAGE_REFUSED = "image_refused"           # the registry refused an anonymous pull (from the start date)
+PULL_REFUSAL_FROM_ENV = "SN21_PULL_REFUSAL_FROM"  # the same setting absence_penalty reads     # the day's absence charge was cancelled as our fault
 
 # Only these three are day OBSERVATIONS; lifecycle events never participate
 # in strike counting.
@@ -217,6 +219,9 @@ class ChronicFailureParams:
     # The first observed day the published rule applies to (EFFECTIVE_FROM_ENV).
     # None keeps the history-from-August behaviour, for replays and tests.
     effective_from: date | None = None
+    # The first basket day a refused pull is the miner's fault
+    # (absence_penalty.PULL_REFUSAL_FROM_ENV). None keeps it ours.
+    pull_refusal_from: date | None = None
 
 
 @dataclass(frozen=True)
@@ -300,6 +305,7 @@ def params_from_env(environ=os.environ) -> ChronicFailureParams:
                                     minimum=0),
         repeat_lookback_days=_int_env(environ, REPEAT_LOOKBACK_ENV, None),
         effective_from=_date_env(environ, EFFECTIVE_FROM_ENV),
+        pull_refusal_from=_date_env(environ, PULL_REFUSAL_FROM_ENV),
     )
 
 
@@ -314,7 +320,8 @@ def _date_env(environ, name: str) -> date | None:
 
 # ---- fault classification ---------------------------------------------------
 
-def classify_failure(ok: bool, error: str | None) -> str:
+def classify_failure(ok: bool, error: str | None, day: date | None = None,
+                     refusal_from: date | None = None) -> str:
     """Who owns this failed run — the miner, us, or nobody knowable.
 
     The ONLY place the error-string taxonomy lives. The markers are imported
@@ -344,6 +351,11 @@ def classify_failure(ok: bool, error: str | None) -> str:
     if err.startswith(ERR_DOCKER_UNAVAILABLE):
         # Our host has no docker daemon. Never the miner's fault.
         return FAULT_SUBNET
+    from hope.scoring.absence_penalty import refusal_is_miners
+    if refusal_is_miners(err, day, refusal_from):
+        # The registry refused an anonymous pull of the miner's image, on or
+        # after the start date (Sir Rob, 17 Nov 2026). Before it: ours, below.
+        return FAULT_MINER
     # The same test the absence charge uses for a failure on OUR side (a pull
     # we could not make, low disk, no sandbox, a timeout our wall ceiling cut
     # below the published budget): never a strike (MINER_MODEL_SPEC §5;
@@ -402,18 +414,22 @@ def exit_code(error: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def failure_reason(ok: bool, error: str | None) -> str:
+def failure_reason(ok: bool, error: str | None, day: date | None = None,
+                   refusal_from: date | None = None) -> str:
     """Miner-facing label for a failed day. Display only — the strike COUNT
     never depends on this, so refining it (e.g. teaching container_runner to
     name an OOM explicitly) cannot move anybody's eviction date."""
     if ok:
         return REASON_NONE
-    fault = classify_failure(ok, error)
+    fault = classify_failure(ok, error, day, refusal_from)
     if fault == FAULT_SUBNET:
         return REASON_SUBNET_UNAVAILABLE
     if fault != FAULT_MINER:
         return REASON_UNKNOWN
     err = (error or "").strip()
+    from hope.backtest.oci_pull import ERR_PULL_REFUSED_PREFIX
+    if err.startswith(ERR_PULL_REFUSED_PREFIX):
+        return REASON_IMAGE_REFUSED
     if err.startswith(ERR_NOTHING_USABLE):
         return REASON_NOTHING_USABLE
     if err.startswith(ERR_TIMEOUT_PREFIX):
@@ -721,8 +737,8 @@ def observe_day(
     for hotkey in sorted(day_runs):
         ok, error = day_runs[hotkey]
         ok = bool(ok)
-        fault = classify_failure(ok, error)
-        reason = failure_reason(ok, error)
+        fault = classify_failure(ok, error, day, params.pull_refusal_from)
+        reason = failure_reason(ok, error, day, params.pull_refusal_from)
         if not ok and fault == FAULT_MINER and (day, hotkey) in cancelled_here:
             fault, reason = FAULT_SUBNET, REASON_CHARGE_CANCELLED
         if ok:

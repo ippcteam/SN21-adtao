@@ -187,7 +187,36 @@ def chargeable_hotkeys(root: str, day: date,
     return ranked | active
 
 
-def operator_fault(error: str | None, wall_budget_s: int | None = None) -> bool:
+# From this basket day, a registry that refuses an anonymous pull of the
+# miner's image (401, 403 or 404 on the token or the manifest: the image is
+# private or deleted) is the miner's fault: charged as missed, and a strike.
+# Before it, and with the setting unset, it stays ours. Sir Rob, 17 Nov 2026
+# (mlrJIz2A); the notice gives the date.
+PULL_REFUSAL_FROM_ENV = "SN21_PULL_REFUSAL_FROM"
+
+
+def pull_refusal_from(environ=os.environ) -> date | None:
+    """The first basket day a refused pull is the miner's fault, or None."""
+    raw = (environ.get(PULL_REFUSAL_FROM_ENV) or "").strip()
+    try:
+        return date.fromisoformat(raw) if raw else None
+    except ValueError:
+        return None
+
+
+def refusal_is_miners(error: str | None, day: date | None,
+                      refusal_from: date | None) -> bool:
+    """A refused pull (oci_pull.ERR_PULL_REFUSED_PREFIX) on or after the
+    start date. Without a day or a date, never."""
+    from hope.backtest.oci_pull import ERR_PULL_REFUSED_PREFIX
+    return bool(error and str(error).startswith(ERR_PULL_REFUSED_PREFIX)
+                and day is not None and refusal_from is not None
+                and day >= refusal_from)
+
+
+def operator_fault(error: str | None, wall_budget_s: int | None = None,
+                   day: date | None = None,
+                   refusal_from: date | None = None) -> bool:
     """Is this day-run failure OURS rather than the miner's?
 
     WHY THIS EXISTS (2026-09-02). The rule charges a miner for what it did
@@ -205,6 +234,12 @@ def operator_fault(error: str | None, wall_budget_s: int | None = None) -> bool:
     OURS: the image could not be pulled, the host had no disk, the sandbox
     was unavailable — the model never got a fair chance to run.
 
+    A REFUSED PULL (the registry answered 401, 403 or 404 to an anonymous
+    request for the image) is ours too, except on a basket `day` on or after
+    `refusal_from` (pull_refusal_from): then it is the miner's. Callers that
+    pass no day (the admission gate) keep it ours, so a refused new model
+    stays pending and is admitted once its image is public.
+
     THEIRS: the container ran and crashed, had no entrypoint, or printed
     nothing usable. That is what the rule is for.
 
@@ -218,7 +253,9 @@ def operator_fault(error: str | None, wall_budget_s: int | None = None) -> bool:
     if not error:
         return False
     err = str(error)
-    for marker in ("pull_failed", "pull timeout>", "disk_low",
+    if refusal_is_miners(err, day, refusal_from):
+        return False
+    for marker in ("pull_failed", "pull_refused", "pull timeout>", "disk_low",
                    "sandbox_not_available"):
         if err.startswith(marker):
             return True
@@ -256,6 +293,7 @@ def compute_penalties(root: str, day: date,
     if day_episodes <= 0:
         return []
     done = applied(root)
+    refused_from = pull_refusal_from(environ)
     status = shadow.day_run_status(root, d)
     complete = shadow.run_complete(root, d)
     plan = None if complete else shadow.day_plan(root, d)
@@ -273,7 +311,7 @@ def compute_penalties(root: str, day: date,
         if (d, hk) in done or hk in removed:
             continue
         ok, error = status.get(hk, (None, None))
-        if ok is False and operator_fault(error, published_budget_s):
+        if ok is False and operator_fault(error, published_budget_s, day, refused_from):
             # The model was scheduled and OUR side failed it — no charge.
             # It simply adds no evidence for the day, like a censored
             # horizon: absence of a fair chance is not absence.

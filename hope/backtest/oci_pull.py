@@ -76,7 +76,31 @@ _INDEX_TYPES = {
 
 
 class PullError(Exception):
-    """Any failure to fetch or verify — never a partial, trusted result."""
+    """Any failure to fetch or verify — never a partial, trusted result.
+
+    `refused` is the HTTP status (401, 403 or 404) when the miner's registry
+    refused an anonymous request for the token or the manifest: the image is
+    private or gone (SN21_MODEL_PRIVACY.md: it must stay public and pullable).
+    None for everything else, which stays ours: timeouts, 429, 5xx, digest
+    mismatch, a blob the registry would not serve after the manifest, unpack
+    errors, and any request made with our own login (our kept copy, or a
+    registry login in SN21_PULL_AUTH), since then the refusal may be our
+    account's. Sir Rob, 17 Nov 2026 (mlrJIz2A)."""
+
+    def __init__(self, message: str, refused: int | None = None):
+        super().__init__(message)
+        self.refused = refused
+
+
+REFUSED_STATUSES = (401, 403, 404)
+# The run's error string for a refused pull. Not "pull_failed:", so the day-run
+# taxonomy (absence_penalty.operator_fault) can tell the two apart; before the
+# rule's start date both are ours.
+ERR_PULL_REFUSED_PREFIX = "pull_refused:"
+
+
+def _refusal(code: int, credentials) -> int | None:
+    return code if (code in REFUSED_STATUSES and not credentials) else None
 
 
 @dataclass
@@ -209,7 +233,8 @@ def _bearer_token(registry: str, repo: str, www_authenticate: str,
         with _http_get(url, headers, timeout=60) as resp:
             body = json.load(resp)
     except urllib.error.HTTPError as exc:
-        raise PullError(f"token request failed: {exc.code}") from exc
+        raise PullError(f"token request failed: {exc.code}",
+                        refused=_refusal(exc.code, credentials)) from exc
     return body.get("token") or body.get("access_token")
 
 
@@ -240,10 +265,16 @@ class _Registry:
         token = _bearer_token(self.registry, self.repo, challenge,
                               self.credentials, self.actions)
         if not token:
-            raise PullError("registry requires auth we do not have") from exc
+            raise PullError("registry requires auth we do not have",
+                            refused=_refusal(401, self.credentials)) from exc
         self._auth = f"Bearer {token}"
 
-    def _get(self, url: str, accept: str):
+    def _get(self, url: str, accept: str, refusable: bool = False):
+        """`refusable`: a 401/403/404 here means the registry refused the image
+        (the manifest), not a passing fault on one blob."""
+        def failed(code: int) -> PullError:
+            refused = _refusal(code, self.credentials) if refusable else None
+            return PullError(f"GET {url} -> {code}", refused=refused)
         try:
             return _http_get(url, self._auth_headers(accept))
         except urllib.error.HTTPError as exc:
@@ -254,8 +285,8 @@ class _Registry:
                 try:
                     return _http_get(url, self._auth_headers(accept))
                 except urllib.error.HTTPError as again:
-                    raise PullError(f"GET {url} -> {again.code}") from again
-            raise PullError(f"GET {url} -> {exc.code}") from exc
+                    raise failed(again.code) from again
+            raise failed(exc.code) from exc
 
     def request(self, method: str, url: str, body=None, headers=None, timeout=300):
         """Any other registry call (HEAD/POST/PUT for the release mirror),
@@ -285,7 +316,7 @@ class _Registry:
         bytes must hash to it: the digest the miner committed is the anchor
         for the manifest as much as for every blob it names."""
         url = f"{self.base}/manifests/{reference}"
-        with self._get(url, _MANIFEST_ACCEPT) as resp:
+        with self._get(url, _MANIFEST_ACCEPT, refusable=True) as resp:
             media_type = resp.headers.get("Content-Type", "").split(";")[0].strip()
             body = resp.read()
         if reference.startswith("sha256:"):
