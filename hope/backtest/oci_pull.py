@@ -25,8 +25,8 @@ TRUST MODEL
 SCOPE
 
     Enough of the OCI spec to run a real miner image: token auth, image
-    indexes (multi-arch -> linux/amd64), v2 and OCI manifests, gzipped layers,
-    whiteouts. Not a general-purpose registry client; it does one job and
+    indexes (multi-arch -> linux/amd64), v2 and OCI manifests, gzipped and
+    uncompressed layers, whiteouts. Not a general-purpose registry client; it does one job and
     fails closed on anything it does not understand.
 
 CREDENTIALS (model privacy, docs/SN21_MODEL_PRIVACY.md)
@@ -511,8 +511,29 @@ def _write_member(tar, member, root: str, dest: str) -> None:
     # for them; they are skipped.
 
 
+GZIP_MAGIC = b"\x1f\x8b"
+ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+
+
+def _open_layer(tar_path: str):
+    """The layer blob as a stream of tar bytes, by what the blob is, not its name.
+
+    OCI allows a layer to be gzipped (`...tar+gzip`, what docker builds by default) or a
+    plain tar (`...tar`, what some builders push). Until 18 Nov 2026 every layer was read
+    as gzip, so an image with a plain tar layer failed with "Not a gzipped file" and was
+    rejected at the gate by our own error (UID 50). A zstd layer is not read yet: it
+    fails as a PullError, which is our failure, so the model stays pending, not rejected."""
+    with open(tar_path, "rb") as f:
+        head = f.read(4)
+    if head[:2] == GZIP_MAGIC:
+        return gzip.open(tar_path, "rb")
+    if head == ZSTD_MAGIC:
+        raise PullError("zstd-compressed layer: not supported by this puller")
+    return open(tar_path, "rb")
+
+
 def _apply_layer(tar_path: str, rootfs: str) -> None:
-    """Unpack one gzipped layer tar onto the rootfs, honouring whiteouts.
+    """Unpack one layer tar (gzipped or plain) onto the rootfs, honouring whiteouts.
 
     Every member is placed where the chrooted model will find it: its parent
     path is resolved inside the rootfs (`resolve_in_rootfs`), so a lower
@@ -520,8 +541,8 @@ def _apply_layer(tar_path: str, rootfs: str) -> None:
     A member NAME that is absolute or climbs above the root is refused and
     fails the pull — no real image layer carries one, a hostile one does."""
     root = os.path.abspath(rootfs)
-    with gzip.open(tar_path, "rb") as gz, \
-            tarfile.open(fileobj=gz, mode="r|") as tar:
+    with _open_layer(tar_path) as raw, \
+            tarfile.open(fileobj=raw, mode="r|") as tar:
         for member in tar:
             name = member.name
             if name.startswith("/") or _climbs_out(0, name):
