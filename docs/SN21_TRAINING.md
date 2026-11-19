@@ -4,24 +4,26 @@
 | :---- | :---- |
 | **Audience** | Miners |
 | **Status** | Authoritative training path for the daily stream |
-| **Last updated** | 2026-11-04 |
+| **Last updated** | 2026-11-19 |
 | **Prerequisites** | Registered hotkey ([quickstart §2](./miner_quickstart.md)) |
 
 One route from published data to a container the subnet will run. Six steps,
 each with the exact command. If a step needs something that does not exist
 yet, it says so rather than inventing a CLI.
 
-> **From 3 Nov 2026, train on v5 and v6 together** (section 1). v6
-> (`training-v6-2026-11`) adds the next windows, **15 Aug – 20 Sep 2026**, in
-> exactly v5's shape and under v5's rules. v5 (`training-v5-2026-10`) keeps
-> v4's windows (15 Jun – 14 Aug). Both are Search campaigns only, with the change
-> descriptions, account context and measurement rules that apply from the run
-> of 2026-10-30.
+> **From 19 Nov 2026, train on v5, v6 and v7 together** (section 1). v7
+> (`training-v7-2026-11`) adds the next windows, **21 Sep – 4 Oct 2026**, in
+> v5's shape and under v5's rules, and is the first slice with **the two
+> payload corrections applied**, as in live payloads (below). v6
+> (`training-v6-2026-11`) covers **15 Aug – 20 Sep 2026** and v5
+> (`training-v5-2026-10`) keeps v4's windows (15 Jun – 14 Aug). All three are
+> Search campaigns only, with the change descriptions, account context and
+> measurement rules that apply from the run of 2026-10-30.
 >
 > **From the run of 2026-11-07, two payload fields are corrected**: a target on
 > Maximize Conversion Value is sent as ROAS, and `conversion_value_micros` is
-> in micros (so `avg_roas` is a real ratio). v5 and earlier carry the old
-> values; how to line them up:
+> in micros (so `avg_roas` is a real ratio). v7 carries the corrected values;
+> v6 and earlier carry the old ones. How to line them up:
 > [MINER_MODEL_SPEC.md](./MINER_MODEL_SPEC.md#two-payload-corrections-published-2026-10-31-effective-2026-11-07).
 >
 > **What you are training on, plainly.** **v4**
@@ -68,7 +70,7 @@ yet, it says so rather than inventing a CLI.
 > | Slice | Windows | Release (about) |
 > | :---- | :---- | :---- |
 > | v6 | 2026-08-15 – 2026-09-20 | published 2026-11-03 |
-> | v7 | 2026-09-21 – 2026-10-04 | 2026-11-19 |
+> | v7 | 2026-09-21 – 2026-10-04 | published 2026-11-19 |
 > | v8 | 2026-10-05 – 2026-10-18 | 2026-12-03 |
 >
 > and every 2 weeks after that. A date can move by a few days when the checks
@@ -86,6 +88,32 @@ yet, it says so rather than inventing a CLI.
 > exactly as published. Each slice's `_manifest` says which codes it uses.
 
 ## 1. Get the data
+
+**Training data v7: the next windows (published 2026-11-19):**
+5,982 episodes, windows **2026-09-21 – 2026-10-04**, gzipped JSONL (27 MB;
+403 MB unpacked), first line a `_manifest`. The same record shape and label
+rules as v5 and v6, with one difference:
+
+- **The two payload corrections from the run of 2026-11-07 are applied**, as
+  in live payloads: `conversion_value_micros` is in micros, `avg_roas` is a
+  real ratio, and a target on Maximize Conversion Value is sent as ROAS. v6
+  and earlier carry the old values; to train on them together, line the
+  older slices up as MINER_MODEL_SPEC.md, "Two payload corrections", says.
+- **Search campaigns only**, with the change descriptions, account context and
+  the industry path one level up, each built as of the end of its own change
+  window. Every record has all three horizons.
+
+Codes in v7 are new to this slice: records cannot be joined to v6 or earlier.
+Shared negative-list changes and Performance Max episodes are not in v7 (the
+first shared-list episodes are from the week of 19 Oct; they come with v9,
+about 17 Dec). The held-out evaluation set has moved to windows after
+2026-10-04.
+
+```bash
+curl -L -o SN21_training_v7.jsonl.gz \
+  https://github.com/ippcteam/SN21-adtao/releases/download/training-v7-2026-11/SN21_training_v7.jsonl.gz
+gunzip SN21_training_v7.jsonl.gz
+```
 
 **Training data v6: the next windows (published 2026-11-03):**
 13,224 episodes, windows **2026-08-15 – 2026-09-20**, gzipped JSONL (53 MB;
